@@ -51,7 +51,11 @@ import {
   Filter,
   RefreshCw,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  ZoomIn,
+  ZoomOut,
+  RotateCw,
+  ExternalLink,
 } from 'lucide-react';
 import { calculateLoyalisDailyDuration } from '@/lib/payroll/loyalisPresenceWindow';
 import {
@@ -287,10 +291,60 @@ export default function PresenceCorrectionsAdminPage() {
   const [editingScanOut, setEditingScanOut] = useState('14:00');
   const [editingAbsenceType, setEditingAbsenceType] = useState('izin_resmi');
 
-  const [expandedReqIds, setExpandedReqIds] = useState<Record<string, boolean>>({});
+  const [expandedReqId, setExpandedReqId] = useState<string | null>(null);
   const [rawLogsMap, setRawLogsMap] = useState<Record<string, LoyalisRawLog | null>>({});
   const [loadingRawMap, setLoadingRawMap] = useState<Record<string, boolean>>({});
   const fetchSequence = useRef(0);
+
+  const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
+  const [lightboxZoom, setLightboxZoom] = useState(1);
+  const [lightboxRotation, setLightboxRotation] = useState(0);
+  const [lightboxPan, setLightboxPan] = useState({ x: 0, y: 0 });
+  const [isPanningLightbox, setIsPanningLightbox] = useState(false);
+  const lightboxPanRef = useRef<{ startX: number; startY: number; panX: number; panY: number; moved: boolean } | null>(null);
+
+  const openImageLightbox = (url: string) => {
+    setLightboxImageUrl(url);
+    setLightboxZoom(1);
+    setLightboxRotation(0);
+    setLightboxPan({ x: 0, y: 0 });
+  };
+  const closeImageLightbox = () => setLightboxImageUrl(null);
+
+  useEffect(() => {
+    if (lightboxZoom <= 1) setLightboxPan({ x: 0, y: 0 });
+  }, [lightboxZoom]);
+
+  const handleLightboxPointerDown = (event: React.PointerEvent<HTMLImageElement>) => {
+    lightboxPanRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      panX: lightboxPan.x,
+      panY: lightboxPan.y,
+      moved: false,
+    };
+    setIsPanningLightbox(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleLightboxPointerMove = (event: React.PointerEvent<HTMLImageElement>) => {
+    const pan = lightboxPanRef.current;
+    if (!pan) return;
+    const dx = event.clientX - pan.startX;
+    const dy = event.clientY - pan.startY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) pan.moved = true;
+    setLightboxPan({ x: pan.panX + dx, y: pan.panY + dy });
+  };
+
+  const handleLightboxPointerUp = (event: React.PointerEvent<HTMLImageElement>) => {
+    const pan = lightboxPanRef.current;
+    setIsPanningLightbox(false);
+    if (pan && !pan.moved) {
+      setLightboxZoom((z) => (z > 1 ? 1 : 2));
+    }
+    lightboxPanRef.current = null;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  };
 
   useEffect(() => {
     if (!periodFromUrl || periodFromUrl === selectedPeriod) return;
@@ -516,8 +570,8 @@ export default function PresenceCorrectionsAdminPage() {
   };
 
   const handleExpandToggle = async (req: PresenceCorrectionRequest) => {
-    const isExpanding = !expandedReqIds[req.id];
-    setExpandedReqIds(prev => ({ ...prev, [req.id]: isExpanding }));
+    const isExpanding = expandedReqId !== req.id;
+    setExpandedReqId(isExpanding ? req.id : null);
 
     const hasLoadedRawLog = Object.prototype.hasOwnProperty.call(rawLogsMap, req.id);
     if (isExpanding && !hasLoadedRawLog) {
@@ -1467,7 +1521,7 @@ export default function PresenceCorrectionsAdminPage() {
               </TableHeader>
               <TableBody>
                 {requests.map((req) => {
-                  const isExpanded = !!expandedReqIds[req.id];
+                  const isExpanded = expandedReqId === req.id;
                   const rawLog = rawLogsMap[req.id];
                   const loadingRaw = !!loadingRawMap[req.id];
                   const statusLabel = STATUS_LABELS[req.status] || req.status;
@@ -1538,82 +1592,94 @@ export default function PresenceCorrectionsAdminPage() {
                         <TableRow className="border-slate-100 bg-white">
                           <TableCell colSpan={6} className="p-0 whitespace-normal">
                             <div className="p-5 lg:p-6 space-y-5 animate-in fade-in slide-in-from-top-1 duration-200">
-                              <div className="space-y-2">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Bandingkan Data Presensi</span>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
-                                  <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4 space-y-2">
-                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Data Log Asli (Excel)</span>
-                                    {loadingRaw ? (
-                                      <div className="py-3 flex items-center gap-2 text-slate-400 text-xs">
-                                        <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" /> Memuat data...
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                                <div className="space-y-5">
+                                  <div className="space-y-2">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Bandingkan Data Presensi</span>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left">
+                                      <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4 space-y-2">
+                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Data Log Asli (Excel)</span>
+                                        {loadingRaw ? (
+                                          <div className="py-3 flex items-center gap-2 text-slate-400 text-xs">
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" /> Memuat data...
+                                          </div>
+                                        ) : rawLog ? (
+                                          <div className="space-y-1.5 text-xs font-semibold text-slate-650">
+                                            <div className="flex items-center justify-between border-b border-slate-100/50 pb-1">
+                                              <span>Status Log:</span>
+                                              <span className="text-indigo-600 uppercase text-[10px] font-bold">{String(rawLog['Jam kerja'] || 'MASUK')}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between">
+                                              <span>Scan Masuk:</span>
+                                              <span className="font-mono text-slate-500">{String(rawLog['Scan masuk'] || '--:--')}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between">
+                                              <span>Scan Pulang:</span>
+                                              <span className="font-mono text-slate-500">{String(rawLog['Scan pulang'] || '--:--')}</span>
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <div className="text-xs font-medium text-slate-400 py-3">
+                                            Tidak ada scan logs asli di sistem untuk tanggal ini.
+                                          </div>
+                                        )}
                                       </div>
-                                    ) : rawLog ? (
-                                      <div className="space-y-1.5 text-xs font-semibold text-slate-650">
-                                        <div className="flex items-center justify-between border-b border-slate-100/50 pb-1">
-                                          <span>Status Log:</span>
-                                          <span className="text-indigo-600 uppercase text-[10px] font-bold">{String(rawLog['Jam kerja'] || 'MASUK')}</span>
+
+                                      <div className="bg-indigo-50/20 rounded-2xl border border-indigo-100/50 p-4 space-y-2">
+                                        <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">Koreksi yang Diajukan</span>
+                                        <div className="space-y-1.5 text-xs font-semibold text-slate-700">
+                                          <div className="flex items-center justify-between border-b border-indigo-100/30 pb-1 gap-3">
+                                            <span>Tipe Koreksi:</span>
+                                            <span className="text-indigo-600 text-[10px] font-bold text-right">{correctionTypeLabel(req.type)}</span>
+                                          </div>
+                                          <div className="flex items-center justify-between">
+                                            <span>Koreksi Masuk:</span>
+                                            <span className="font-mono text-slate-900">{req.checkInTime || '--:--'}</span>
+                                          </div>
+                                          <div className="flex items-center justify-between">
+                                            <span>Koreksi Pulang:</span>
+                                            <span className="font-mono text-slate-900">{req.checkOutTime || '--:--'}</span>
+                                          </div>
                                         </div>
-                                        <div className="flex items-center justify-between">
-                                          <span>Scan Masuk:</span>
-                                          <span className="font-mono text-slate-500">{String(rawLog['Scan masuk'] || '--:--')}</span>
-                                        </div>
-                                        <div className="flex items-center justify-between">
-                                          <span>Scan Pulang:</span>
-                                          <span className="font-mono text-slate-500">{String(rawLog['Scan pulang'] || '--:--')}</span>
-                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-1.5 bg-slate-50/50 p-4 rounded-2xl border border-slate-100 text-left">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Alasan Pengajuan</span>
+                                    <p className="text-xs text-slate-650 font-semibold leading-relaxed mt-1">{req.reason || '—'}</p>
+                                  </div>
+                                </div>
+
+                                <div className="text-left">
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Dokumen Pendukung</span>
+                                  {req.proofUrl ? (
+                                    isImageProofUrl(req.proofUrl) ? (
+                                      <div className="border border-slate-100 rounded-2xl overflow-hidden bg-slate-50 p-2 h-[calc(100%-1.25rem)]">
+                                        <button
+                                          type="button"
+                                          onClick={() => openImageLightbox(req.proofUrl as string)}
+                                          className="group block relative cursor-zoom-in h-full w-full"
+                                        >
+                                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                                          <img src={req.proofUrl} alt="Bukti Pendukung" className="h-full max-h-[280px] object-contain rounded-xl w-full hover:opacity-90 transition-opacity" />
+                                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-[10px] font-bold gap-1 rounded-xl">
+                                            <ZoomIn className="w-3.5 h-3.5" /> Perbesar Gambar
+                                          </div>
+                                        </button>
                                       </div>
                                     ) : (
-                                      <div className="text-xs font-medium text-slate-400 py-3">
-                                        Tidak ada scan logs asli di sistem untuk tanggal ini.
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  <div className="bg-indigo-50/20 rounded-2xl border border-indigo-100/50 p-4 space-y-2">
-                                    <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">Koreksi yang Diajukan</span>
-                                    <div className="space-y-1.5 text-xs font-semibold text-slate-700">
-                                      <div className="flex items-center justify-between border-b border-indigo-100/30 pb-1 gap-3">
-                                        <span>Tipe Koreksi:</span>
-                                        <span className="text-indigo-600 text-[10px] font-bold text-right">{correctionTypeLabel(req.type)}</span>
-                                      </div>
-                                      <div className="flex items-center justify-between">
-                                        <span>Koreksi Masuk:</span>
-                                        <span className="font-mono text-slate-900">{req.checkInTime || '--:--'}</span>
-                                      </div>
-                                      <div className="flex items-center justify-between">
-                                        <span>Koreksi Pulang:</span>
-                                        <span className="font-mono text-slate-900">{req.checkOutTime || '--:--'}</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="space-y-1.5 bg-slate-50/50 p-4 rounded-2xl border border-slate-100 text-left">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Alasan Pengajuan</span>
-                                <p className="text-xs text-slate-650 font-semibold leading-relaxed mt-1">{req.reason || '—'}</p>
-                              </div>
-
-                              {req.proofUrl && (
-                                <div className="space-y-2 text-left">
-                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Dokumen Pendukung</span>
-                                  {isImageProofUrl(req.proofUrl) ? (
-                                    <div className="border border-slate-100 rounded-2xl overflow-hidden bg-slate-50 p-2 max-w-sm">
-                                      <a href={req.proofUrl} target="_blank" rel="noreferrer" className="group block relative cursor-zoom-in">
-                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                        <img src={req.proofUrl} alt="Bukti Pendukung" className="max-h-[160px] object-contain rounded-xl w-full hover:opacity-90 transition-opacity" />
-                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-[10px] font-bold gap-1 rounded-xl">
-                                          <FileText className="w-3.5 h-3.5" /> Buka Ukuran Penuh
-                                        </div>
+                                      <a href={req.proofUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs text-indigo-500 font-bold hover:underline cursor-pointer">
+                                        <FileText className="w-4 h-4" /> Buka Lampiran Bukti (PDF/Dokumen)
                                       </a>
-                                    </div>
+                                    )
                                   ) : (
-                                    <a href={req.proofUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs text-indigo-500 font-bold hover:underline cursor-pointer">
-                                      <FileText className="w-4 h-4" /> Buka Lampiran Bukti (PDF/Dokumen)
-                                    </a>
+                                    <div className="h-[calc(100%-1.25rem)] min-h-[160px] flex items-center justify-center rounded-2xl border border-dashed border-slate-200 text-xs font-semibold text-slate-400">
+                                      Tidak ada dokumen pendukung
+                                    </div>
                                   )}
                                 </div>
-                              )}
+                              </div>
 
                               {req.status === 'rejected' && req.rejectionReason && (
                                 <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 text-xs text-rose-800 font-medium text-left">
@@ -1799,7 +1865,7 @@ export default function PresenceCorrectionsAdminPage() {
                     item.source === 'satpam' &&
                     item.request.payrollExcludedFromHarian === true;
 
-                  const isExpanded = !!expandedReqIds[reasonKey];
+                  const isExpanded = expandedReqId === reasonKey;
                   const isEditingType = editingTypeRequestId === reasonKey;
                   const typeActionKey = `type:${reasonKey}`;
 
@@ -1809,17 +1875,11 @@ export default function PresenceCorrectionsAdminPage() {
                         role="button"
                         tabIndex={0}
                         aria-expanded={isExpanded}
-                        onClick={() => setExpandedReqIds((current) => ({
-                          ...current,
-                          [reasonKey]: !current[reasonKey],
-                        }))}
+                        onClick={() => setExpandedReqId((current) => (current === reasonKey ? null : reasonKey))}
                         onKeyDown={(event) => {
                           if (event.key === 'Enter' || event.key === ' ') {
                             event.preventDefault();
-                            setExpandedReqIds((current) => ({
-                              ...current,
-                              [reasonKey]: !current[reasonKey],
-                            }));
+                            setExpandedReqId((current) => (current === reasonKey ? null : reasonKey));
                           }
                         }}
                         className={`border-slate-100 cursor-pointer transition-colors ${isExpanded ? 'bg-indigo-50/50' : 'hover:bg-slate-50/60'}`}
@@ -2055,26 +2115,34 @@ export default function PresenceCorrectionsAdminPage() {
                                     )}
                                   </div>
 
-                                  {request.evidenceUrl && (
-                                    <div className="space-y-2 text-left">
-                                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Dokumen Pendukung</span>
-                                      {isImageProofUrl(request.evidenceUrl) ? (
-                                        <div className="border border-slate-100 rounded-2xl overflow-hidden bg-slate-50 p-2">
-                                          <a href={request.evidenceUrl} target="_blank" rel="noreferrer" className="group block relative cursor-zoom-in">
+                                  <div className="text-left">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Dokumen Pendukung</span>
+                                    {request.evidenceUrl ? (
+                                      isImageProofUrl(request.evidenceUrl) ? (
+                                        <div className="border border-slate-100 rounded-2xl overflow-hidden bg-slate-50 p-2 h-[calc(100%-1.25rem)]">
+                                          <button
+                                            type="button"
+                                            onClick={() => openImageLightbox(request.evidenceUrl as string)}
+                                            className="group block relative cursor-zoom-in h-full w-full"
+                                          >
                                             {/* eslint-disable-next-line @next/next/no-img-element */}
-                                            <img src={request.evidenceUrl} alt="Bukti Pendukung" className="max-h-[240px] object-contain rounded-xl w-full hover:opacity-90 transition-opacity" />
+                                            <img src={request.evidenceUrl} alt="Bukti Pendukung" className="h-full max-h-[280px] object-contain rounded-xl w-full hover:opacity-90 transition-opacity" />
                                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-[10px] font-bold gap-1 rounded-xl">
-                                              <FileText className="w-3.5 h-3.5" /> Buka Ukuran Penuh
+                                              <ZoomIn className="w-3.5 h-3.5" /> Perbesar Gambar
                                             </div>
-                                          </a>
+                                          </button>
                                         </div>
                                       ) : (
                                         <a href={request.evidenceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs text-indigo-500 font-bold hover:underline cursor-pointer">
                                           <FileText className="w-4 h-4" /> Buka Lampiran Bukti (PDF/Dokumen)
                                         </a>
-                                      )}
-                                    </div>
-                                  )}
+                                      )
+                                    ) : (
+                                      <div className="h-[calc(100%-1.25rem)] min-h-[160px] flex items-center justify-center rounded-2xl border border-dashed border-slate-200 text-xs font-semibold text-slate-400">
+                                        Tidak ada dokumen pendukung
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
 
@@ -2229,6 +2297,95 @@ export default function PresenceCorrectionsAdminPage() {
             </p>
           </CardContent>
         </Card>
+      )}
+
+      {lightboxImageUrl && (
+        <div
+          className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[9999] flex flex-col items-center justify-center p-4 sm:p-6"
+          onClick={closeImageLightbox}
+        >
+          <div
+            className="relative max-w-5xl w-full h-[88vh] flex flex-col bg-slate-900/95 p-4 rounded-3xl border border-white/10 shadow-2xl overflow-hidden"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between w-full pb-3 mb-3 border-b border-white/10 px-2 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0 pr-4">
+                <FileText className="w-5 h-5 text-indigo-400 shrink-0" />
+                <span className="text-white font-semibold text-xs sm:text-sm truncate">Dokumen Pendukung</span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setLightboxZoom((z) => Math.max(0.5, Number((z - 0.25).toFixed(2))))}
+                  disabled={lightboxZoom <= 0.5}
+                  className="text-slate-300 hover:text-white hover:bg-white/10 rounded-full h-8 w-8 transition-colors disabled:opacity-30"
+                >
+                  <ZoomOut className="w-4 h-4" />
+                </Button>
+                <span className="text-slate-300 text-[11px] font-bold w-10 text-center select-none">
+                  {Math.round(lightboxZoom * 100)}%
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setLightboxZoom((z) => Math.min(4, Number((z + 0.25).toFixed(2))))}
+                  disabled={lightboxZoom >= 4}
+                  className="text-slate-300 hover:text-white hover:bg-white/10 rounded-full h-8 w-8 transition-colors disabled:opacity-30"
+                >
+                  <ZoomIn className="w-4 h-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setLightboxRotation((r) => (r + 90) % 360)}
+                  className="text-slate-300 hover:text-white hover:bg-white/10 rounded-full h-8 w-8 transition-colors"
+                >
+                  <RotateCw className="w-4 h-4" />
+                </Button>
+                <a
+                  href={lightboxImageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all shadow-md ml-1"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Buka di Tab Baru</span>
+                </a>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={closeImageLightbox}
+                  className="text-slate-400 hover:text-white hover:bg-white/10 rounded-full h-8 w-8 transition-colors ml-1"
+                >
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+            </div>
+
+            <div className="w-full flex-1 flex items-center justify-center overflow-hidden rounded-2xl bg-slate-950/60">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={lightboxImageUrl}
+                alt="Bukti Pendukung"
+                draggable={false}
+                onPointerDown={handleLightboxPointerDown}
+                onPointerMove={handleLightboxPointerMove}
+                onPointerUp={handleLightboxPointerUp}
+                className={`max-w-none rounded-2xl object-contain shadow-2xl select-none touch-none ${isPanningLightbox ? '' : 'transition-transform duration-150'} ${lightboxZoom <= 1 ? 'cursor-zoom-in' : isPanningLightbox ? 'cursor-grabbing' : 'cursor-zoom-out'}`}
+                style={{
+                  transform: `translate(${lightboxPan.x}px, ${lightboxPan.y}px) scale(${lightboxZoom}) rotate(${lightboxRotation}deg)`,
+                  maxHeight: lightboxRotation % 180 === 0 ? '82vh' : '65vw',
+                  maxWidth: lightboxRotation % 180 === 0 ? '100%' : '82vh',
+                }}
+              />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
