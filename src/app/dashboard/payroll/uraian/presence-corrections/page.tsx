@@ -18,6 +18,15 @@ import {
   CardContent,
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
@@ -32,6 +41,7 @@ import {
 } from '@/components/ui/table';
 import {
   Loader2,
+  CheckCircle2,
   Calendar,
   Clock,
   AlertCircle,
@@ -140,6 +150,24 @@ type BlueCollarReviewItem =
 
 type ReviewSource = 'all' | 'loyalis' | 'blue_collar';
 
+type BlueCollarReviewAction =
+  | 'approve'
+  | 'decline'
+  | 'supersede_approve'
+  | 'supersede_decline';
+
+interface ReviewProgressState {
+  status: 'processing' | 'success' | 'error';
+  scope: 'single' | 'bulk';
+  total: number;
+  completed: number;
+  succeeded: number;
+  failed: number;
+  message: string;
+  currentLabel?: string;
+  errors?: string[];
+}
+
 const STATUS_LABELS: Record<PresenceCorrectionStatus, string> = {
   pending: 'Tertunda',
   approved: 'Disetujui',
@@ -189,6 +217,16 @@ function blueCollarRequestStatus(item: BlueCollarReviewItem): string {
   return item.request.status;
 }
 
+function blueCollarRequestKey(item: BlueCollarReviewItem): string {
+  return `${item.source}:${item.request.id}`;
+}
+
+function isBlueCollarLeaveRequest(item: BlueCollarReviewItem): boolean {
+  return item.source === 'satpam'
+    ? satpamAttendanceReportType(item.request) === 'izin_resmi'
+    : pekaryaAttendanceReportType(item.request) === 'izin_resmi';
+}
+
 function satpamAbsenceTypeLabel(value: string | undefined): string {
   return {
     sakit: 'Sakit',
@@ -236,6 +274,10 @@ export default function PresenceCorrectionsAdminPage() {
   const [rejectingReqId, setRejectingReqId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [selectedLeaveKeys, setSelectedLeaveKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [reviewProgress, setReviewProgress] = useState<ReviewProgressState | null>(null);
   const [editingTypeRequestId, setEditingTypeRequestId] = useState<string | null>(null);
   const [editingReportType, setEditingReportType] = useState<PekaryaAttendanceReportType>('scan');
   const [editingScanIn, setEditingScanIn] = useState('08:00');
@@ -254,6 +296,13 @@ export default function PresenceCorrectionsAdminPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedPeriod(periodFromUrl);
   }, [periodFromUrl, selectedPeriod]);
+
+  useEffect(() => {
+    // A selection belongs to one period/filter scope; never carry it into a
+    // different list of requests.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedLeaveKeys(new Set());
+  }, [selectedPeriod, selectedSource, selectedStatus]);
 
   const fetchRequests = useCallback(async (showError = true) => {
     const sequence = ++fetchSequence.current;
@@ -360,6 +409,28 @@ export default function PresenceCorrectionsAdminPage() {
     [blueCollarPeriodRequests, canAuditBlueCollar, selectedSource, selectedStatus],
   );
 
+  const bulkEligibleLeaveRequests = useMemo(
+    () => blueCollarPeriodRequests.filter((item) =>
+      canAuditBlueCollar &&
+      (selectedSource === 'all' || selectedSource === 'blue_collar') &&
+      (selectedStatus === 'pending' || selectedStatus === 'all') &&
+      blueCollarRequestStatus(item) === 'pending' &&
+      isBlueCollarLeaveRequest(item),
+    ),
+    [blueCollarPeriodRequests, canAuditBlueCollar, selectedSource, selectedStatus],
+  );
+
+  const selectedBulkLeaveItems = useMemo(
+    () => bulkEligibleLeaveRequests.filter((item) =>
+      selectedLeaveKeys.has(blueCollarRequestKey(item)),
+    ),
+    [bulkEligibleLeaveRequests, selectedLeaveKeys],
+  );
+
+  const allBulkLeavesSelected =
+    bulkEligibleLeaveRequests.length > 0 &&
+    selectedBulkLeaveItems.length === bulkEligibleLeaveRequests.length;
+
   const periodRequests = useMemo(
     () => [
       ...(canAuditLoyalis && (selectedSource === 'all' || selectedSource === 'loyalis')
@@ -378,6 +449,28 @@ export default function PresenceCorrectionsAdminPage() {
     rejected: periodRequests.filter((request) => request.status === 'rejected' || request.status === 'declined').length,
     total: periodRequests.length,
   }), [periodRequests]);
+
+  const toggleLeaveSelection = (item: BlueCollarReviewItem, checked: boolean) => {
+    const key = blueCollarRequestKey(item);
+    setSelectedLeaveKeys((current) => {
+      const next = new Set(current);
+      if (checked) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  };
+
+  const toggleAllLeaveSelection = (checked: boolean) => {
+    setSelectedLeaveKeys((current) => {
+      const next = new Set(current);
+      bulkEligibleLeaveRequests.forEach((item) => {
+        const key = blueCollarRequestKey(item);
+        if (checked) next.add(key);
+        else next.delete(key);
+      });
+      return next;
+    });
+  };
 
   const handleExpandToggle = async (req: PresenceCorrectionRequest) => {
     const isExpanding = !expandedReqIds[req.id];
@@ -507,6 +600,20 @@ export default function PresenceCorrectionsAdminPage() {
   const handleApprove = async (req: PresenceCorrectionRequest) => {
     setActionLoading(req.id);
     setMessage(null);
+    setReviewProgress({
+      status: 'processing',
+      scope: 'single',
+      total: 1,
+      completed: 0,
+      succeeded: 0,
+      failed: 0,
+      currentLabel: `${req.employeeName || req.employeeId} · ${formatPresenceDate(req.date, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      })}`,
+      message: 'Menyimpan persetujuan koreksi presensi.',
+    });
     try {
       const dateKey = parseDateToDDMMYYYY(req.date); // e.g. "01-06-2026"
       if (!dateKey || !parseDateOnly(req.date)) {
@@ -620,13 +727,34 @@ export default function PresenceCorrectionsAdminPage() {
       setAllRequests((current) => current.map((request) => request.id === req.id
         ? { ...request, status: 'approved', resolvedBy: profile?.email || 'Admin' }
         : request));
-      setMessage({ type: 'success', text: `Koreksi presensi ${req.employeeName} untuk tanggal ${dateKey} berhasil disetujui dan diterapkan.` });
       await fetchRequests(false);
+      const successText = `Koreksi presensi ${req.employeeName || req.employeeId} untuk tanggal ${dateKey} berhasil disetujui dan diterapkan.`;
+      setMessage({ type: 'success', text: successText });
+      setReviewProgress({
+        status: 'success',
+        scope: 'single',
+        total: 1,
+        completed: 1,
+        succeeded: 1,
+        failed: 0,
+        message: successText,
+      });
     } catch (err: unknown) {
       console.error(err);
+      const errorText = err instanceof Error ? err.message : 'Gagal menyetujui koreksi presensi.';
       setMessage({
         type: 'error',
-        text: err instanceof Error ? err.message : 'Gagal menyetujui koreksi presensi.',
+        text: errorText,
+      });
+      setReviewProgress({
+        status: 'error',
+        scope: 'single',
+        total: 1,
+        completed: 1,
+        succeeded: 0,
+        failed: 1,
+        message: errorText,
+        errors: [errorText],
       });
     } finally {
       setActionLoading(null);
@@ -676,59 +804,210 @@ export default function PresenceCorrectionsAdminPage() {
     }
   };
 
+  const submitBlueCollarReview = async (
+    item: BlueCollarReviewItem,
+    action: BlueCollarReviewAction,
+  ) => {
+    const isSatpam = item.source === 'satpam';
+    return authenticatedJson<{
+      payrollExcludedFromHarian?: boolean;
+    }>(
+      isSatpam
+        ? '/api/satpam/absences/review'
+        : '/api/attendance/pekarya/official-leave/review',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          requestId: createFinancialRequestId(
+            isSatpam ? 'satpam-absence-review' : 'pekarya-official-leave-review',
+          ),
+          ...(isSatpam
+            ? { absenceRequestId: item.request.id }
+            : { officialLeaveRequestId: item.request.id }),
+          action,
+          expectedRevision: item.request.revision,
+        }),
+      },
+    );
+  };
+
+  const blueCollarApprovalMessage = (
+    item: BlueCollarReviewItem,
+    reviewResult: { payrollExcludedFromHarian?: boolean },
+  ) => {
+    const isSatpam = item.source === 'satpam';
+    const requestType = isSatpam
+      ? satpamAttendanceReportType(item.request)
+      : pekaryaAttendanceReportType(item.request);
+    const sourceLabel = isSatpam ? 'Satpam' : 'Pekarya';
+    return isSatpam &&
+      requestType === 'izin_resmi' &&
+      reviewResult.payrollExcludedFromHarian === true
+      ? 'Izin Satpam berhasil disetujui tanpa tambahan Harian karena pegawai sudah terdaftar shift pada tanggal tersebut.'
+      : `${requestType === 'scan' ? 'Laporan scan' : 'Izin'} ${sourceLabel} berhasil disetujui dan presensi diperbarui.`;
+  };
+
+  const reviewItemLabel = (item: BlueCollarReviewItem) =>
+    `${item.request.employeeName || item.request.employeeId} · ${formatPresenceDate(
+      blueCollarRequestDate(item),
+      { year: 'numeric', month: 'short', day: 'numeric' },
+    )}`;
+
   const handleReviewBlueCollar = async (
     item: BlueCollarReviewItem,
-    action: 'approve' | 'decline' | 'supersede_approve' | 'supersede_decline',
+    action: BlueCollarReviewAction,
   ) => {
-    const reasonKey = `${item.source}:${item.request.id}`;
+    const reasonKey = blueCollarRequestKey(item);
+    const approved = action.endsWith('approve');
 
     setActionLoading(reasonKey);
     setMessage(null);
+    if (approved) {
+      setReviewProgress({
+        status: 'processing',
+        scope: 'single',
+        total: 1,
+        completed: 0,
+        succeeded: 0,
+        failed: 0,
+        currentLabel: reviewItemLabel(item),
+        message: 'Menyimpan persetujuan pengajuan.',
+      });
+    }
     try {
-      const isSatpam = item.source === 'satpam';
-      const reviewResult = await authenticatedJson<{
-        payrollExcludedFromHarian?: boolean;
-      }>(
-        isSatpam
-          ? '/api/satpam/absences/review'
-          : '/api/attendance/pekarya/official-leave/review',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            requestId: createFinancialRequestId(
-              isSatpam ? 'satpam-absence-review' : 'pekarya-official-leave-review',
-            ),
-            ...(isSatpam
-              ? { absenceRequestId: item.request.id }
-              : { officialLeaveRequestId: item.request.id }),
-            action,
-            expectedRevision: item.request.revision,
-          }),
-        },
-      );
-
-      const approved = action.endsWith('approve');
-      const requestType = isSatpam
+      const reviewResult = await submitBlueCollarReview(item, action);
+      const requestType = item.source === 'satpam'
         ? satpamAttendanceReportType(item.request)
         : pekaryaAttendanceReportType(item.request);
-      const sourceLabel = isSatpam ? 'Satpam' : 'Pekarya';
-      setMessage({
-        type: 'success',
-        text: approved
-          ? isSatpam &&
-            requestType === 'izin_resmi' &&
-            reviewResult.payrollExcludedFromHarian === true
-            ? 'Izin Satpam berhasil disetujui tanpa tambahan Harian karena pegawai sudah terdaftar shift pada tanggal tersebut.'
-            : `${requestType === 'scan' ? 'Laporan scan' : 'Izin'} ${sourceLabel} berhasil disetujui dan presensi diperbarui.`
-          : `${requestType === 'scan' ? 'Laporan scan' : 'Izin'} ${sourceLabel} berhasil ditolak.`,
-      });
+      const sourceLabel = item.source === 'satpam' ? 'Satpam' : 'Pekarya';
+      const decisionMessage = approved
+        ? blueCollarApprovalMessage(item, reviewResult)
+        : `${requestType === 'scan' ? 'Laporan scan' : 'Izin'} ${sourceLabel} berhasil ditolak.`;
+
       await fetchRequests(false);
+      setMessage({ type: 'success', text: decisionMessage });
+      if (approved) {
+        setReviewProgress({
+          status: 'success',
+          scope: 'single',
+          total: 1,
+          completed: 1,
+          succeeded: 1,
+          failed: 0,
+          message: decisionMessage,
+        });
+      }
     } catch (err: unknown) {
       console.error('Error reviewing Blue Collar request:', err);
-      setMessage({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Gagal memutuskan pengajuan Blue Collar.',
+      const errorText = err instanceof Error
+        ? err.message
+        : 'Gagal memutuskan pengajuan Blue Collar.';
+      setMessage({ type: 'error', text: errorText });
+      if (approved) {
+        setReviewProgress({
+          status: 'error',
+          scope: 'single',
+          total: 1,
+          completed: 1,
+          succeeded: 0,
+          failed: 1,
+          message: errorText,
+          errors: [errorText],
+        });
+      }
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleBulkApproveLeaves = async () => {
+    const selectedItems = bulkEligibleLeaveRequests.filter((item) =>
+      selectedLeaveKeys.has(blueCollarRequestKey(item)),
+    );
+    if (selectedItems.length === 0) {
+      setMessage({ type: 'error', text: 'Pilih minimal satu pengajuan izin untuk disetujui.' });
+      return;
+    }
+
+    setActionLoading('bulk-leave-approve');
+    setMessage(null);
+    setReviewProgress({
+      status: 'processing',
+      scope: 'bulk',
+      total: selectedItems.length,
+      completed: 0,
+      succeeded: 0,
+      failed: 0,
+      currentLabel: reviewItemLabel(selectedItems[0]),
+      message: `Menyimpan ${selectedItems.length} persetujuan izin.`,
+    });
+
+    let succeeded = 0;
+    const errors: string[] = [];
+    try {
+      for (let index = 0; index < selectedItems.length; index += 1) {
+        const item = selectedItems[index];
+        setReviewProgress((current) => current
+          ? {
+              ...current,
+              currentLabel: reviewItemLabel(item),
+              message: `Menyimpan persetujuan ${index + 1} dari ${selectedItems.length}.`,
+            }
+          : current);
+        try {
+          await submitBlueCollarReview(item, 'approve');
+          succeeded += 1;
+        } catch (err: unknown) {
+          const errorText = err instanceof Error ? err.message : 'Gagal menyetujui pengajuan.';
+          errors.push(`${reviewItemLabel(item)}: ${errorText}`);
+          console.error('Error bulk reviewing Blue Collar request:', err);
+        }
+        setReviewProgress((current) => current
+          ? {
+              ...current,
+              completed: index + 1,
+              succeeded,
+              failed: index + 1 - succeeded,
+            }
+          : current);
+      }
+
+      setSelectedLeaveKeys(new Set());
+      await fetchRequests(false);
+      const failed = errors.length;
+      const summaryMessage = failed === 0
+        ? `${succeeded} pengajuan izin berhasil disetujui dan disimpan.`
+        : `${succeeded} pengajuan izin berhasil disetujui; ${failed} pengajuan gagal diproses.`;
+      setReviewProgress({
+        status: failed === 0 ? 'success' : 'error',
+        scope: 'bulk',
+        total: selectedItems.length,
+        completed: selectedItems.length,
+        succeeded,
+        failed,
+        message: summaryMessage,
+        errors: failed > 0 ? errors : undefined,
       });
+      setMessage({
+        type: failed === 0 ? 'success' : 'error',
+        text: summaryMessage,
+      });
+    } catch (err: unknown) {
+      const errorText = err instanceof Error
+        ? err.message
+        : 'Gagal menyelesaikan persetujuan massal.';
+      console.error('Error finishing bulk Blue Collar review:', err);
+      setReviewProgress({
+        status: 'error',
+        scope: 'bulk',
+        total: selectedItems.length,
+        completed: succeeded,
+        succeeded,
+        failed: selectedItems.length - succeeded,
+        message: errorText,
+        errors: [...errors, errorText],
+      });
+      setMessage({ type: 'error', text: errorText });
     } finally {
       setActionLoading(null);
     }
@@ -1223,16 +1502,33 @@ export default function PresenceCorrectionsAdminPage() {
       {canAuditBlueCollar && (selectedSource === 'all' || selectedSource === 'blue_collar') && (
         <Card className="bg-white rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.02)] border-none overflow-hidden">
           <div className="border-b border-slate-100 px-5 py-4 lg:px-6">
-            <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <h2 className="font-bold text-slate-800">Pengajuan Koreksi &amp; Izin Blue Collar</h2>
                 <p className="text-xs text-slate-500">
                   Semua kategori Blue Collar aktif ditampilkan di sini, termasuk Pekarya dan Satpam.
                 </p>
               </div>
-              <span className="inline-flex w-fit items-center rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
-                Review oleh Kepala SatKer
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex w-fit items-center rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+                  Review oleh Kepala SatKer
+                </span>
+                {bulkEligibleLeaveRequests.length > 0 && (
+                  <Button
+                    type="button"
+                    onClick={() => void handleBulkApproveLeaves()}
+                    disabled={actionLoading !== null || selectedBulkLeaveItems.length === 0}
+                    className="h-9 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white shadow-sm hover:bg-emerald-700"
+                  >
+                    {actionLoading === 'bulk-leave-approve' ? (
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Check className="mr-1.5 h-3.5 w-3.5" />
+                    )}
+                    Setujui Izin Terpilih ({selectedBulkLeaveItems.length})
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
           <CardContent className="p-0">
@@ -1253,6 +1549,15 @@ export default function PresenceCorrectionsAdminPage() {
               <Table>
                 <TableHeader className="bg-slate-50/60 sticky top-0 z-20">
                   <TableRow className="border-slate-100">
+                    <TableHead className="w-12 pl-5">
+                      <Checkbox
+                        checked={allBulkLeavesSelected}
+                        onCheckedChange={(checked) => toggleAllLeaveSelection(checked === true)}
+                        disabled={bulkEligibleLeaveRequests.length === 0 || actionLoading !== null}
+                        aria-label="Pilih semua pengajuan izin tertunda"
+                      />
+                      <span className="sr-only">Pilih pengajuan izin</span>
+                    </TableHead>
                     <TableHead className="font-bold text-slate-500">Nama Pegawai</TableHead>
                     <TableHead className="font-bold text-slate-500">Tanggal</TableHead>
                     <TableHead className="font-bold text-slate-500">Koreksi</TableHead>
@@ -1264,6 +1569,7 @@ export default function PresenceCorrectionsAdminPage() {
                 {visibleBlueCollarRequests.map((item) => {
                   const request = item.request;
                   const isSatpam = item.source === 'satpam';
+                  const isLeaveRequest = isBlueCollarLeaveRequest(item);
                   const reportType = isSatpam
                     ? satpamAttendanceReportType(request)
                     : pekaryaAttendanceReportType(request);
@@ -1319,6 +1625,19 @@ export default function PresenceCorrectionsAdminPage() {
                         }}
                         className={`border-slate-100 cursor-pointer transition-colors ${isExpanded ? 'bg-indigo-50/50' : 'hover:bg-slate-50/60'}`}
                       >
+                        <TableCell
+                          className="w-12 pl-5"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          {isLeaveRequest && status === 'pending' && (
+                            <Checkbox
+                              checked={selectedLeaveKeys.has(reasonKey)}
+                              onCheckedChange={(checked) => toggleLeaveSelection(item, checked === true)}
+                              disabled={actionLoading !== null}
+                              aria-label={`Pilih pengajuan izin ${request.employeeName || request.employeeId}`}
+                            />
+                          )}
+                        </TableCell>
                         <TableCell className="min-w-48">
                           <div className="font-bold text-slate-800">{request.employeeName || request.employeeId || '—'}</div>
                           <div className="mt-1 inline-flex items-center rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase text-indigo-700">
@@ -1366,7 +1685,7 @@ export default function PresenceCorrectionsAdminPage() {
 
                       {isExpanded && (
                         <TableRow className="border-slate-100 bg-white">
-                          <TableCell colSpan={5} className="p-0 whitespace-normal">
+                          <TableCell colSpan={6} className="p-0 whitespace-normal">
                             <div className="p-5 lg:p-6 space-y-5 animate-in fade-in slide-in-from-top-1 duration-200">
                               <div className="space-y-2">
                                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Detail Pengajuan</span>
@@ -1595,6 +1914,111 @@ export default function PresenceCorrectionsAdminPage() {
           </CardContent>
         </Card>
       )}
+
+      <Dialog
+        open={reviewProgress !== null}
+        onOpenChange={(open) => {
+          if (!open && reviewProgress?.status !== 'processing') {
+            setReviewProgress(null);
+          }
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          className="sm:max-w-md rounded-3xl border-none bg-white p-6 text-center shadow-2xl"
+        >
+          <DialogHeader className="items-center">
+            {reviewProgress?.status === 'processing' ? (
+              <Loader2 className="h-10 w-10 animate-spin text-indigo-600" aria-hidden="true" />
+            ) : reviewProgress?.status === 'success' ? (
+              <CheckCircle2 className="h-10 w-10 text-emerald-500" aria-hidden="true" />
+            ) : (
+              <AlertCircle className="h-10 w-10 text-rose-500" aria-hidden="true" />
+            )}
+            <DialogTitle className="text-lg font-bold text-slate-900">
+              {reviewProgress?.status === 'processing'
+                ? reviewProgress?.scope === 'bulk'
+                  ? 'Memproses Persetujuan Massal'
+                  : 'Memproses Persetujuan'
+                : reviewProgress?.status === 'success'
+                  ? 'Persetujuan Berhasil'
+                  : 'Persetujuan Tidak Selesai'}
+            </DialogTitle>
+            <DialogDescription className="text-center text-slate-500">
+              {reviewProgress?.message}
+            </DialogDescription>
+          </DialogHeader>
+
+          {reviewProgress?.status === 'processing' && (
+            <div className="space-y-3" role="status" aria-live="polite">
+              <div
+                className="h-2 overflow-hidden rounded-full bg-slate-100"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={reviewProgress.total}
+                aria-valuenow={reviewProgress.completed}
+                aria-label="Kemajuan persetujuan"
+              >
+                <div
+                  className="h-full rounded-full bg-indigo-600 transition-all duration-300"
+                  style={{
+                    width: `${reviewProgress.total > 0
+                      ? Math.round((reviewProgress.completed / reviewProgress.total) * 100)
+                      : 0}%`,
+                  }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-xs font-semibold text-slate-400">
+                <span>
+                  {reviewProgress.completed} dari {reviewProgress.total} diproses
+                </span>
+                <span>
+                  {reviewProgress.total > 0
+                    ? Math.round((reviewProgress.completed / reviewProgress.total) * 100)
+                    : 0}%
+                </span>
+              </div>
+              {reviewProgress.currentLabel && (
+                <p className="truncate text-xs font-semibold text-slate-500">
+                  {reviewProgress.currentLabel}
+                </p>
+              )}
+            </div>
+          )}
+
+          {reviewProgress?.status !== 'processing' && (
+            <>
+              <div className="space-y-1 text-xs font-semibold text-slate-500">
+                <p>
+                  {reviewProgress?.succeeded || 0} berhasil
+                  {reviewProgress?.failed ? ` · ${reviewProgress.failed} gagal` : ''}
+                </p>
+                {reviewProgress?.errors && reviewProgress.errors.length > 0 && (
+                  <div className="max-h-24 overflow-y-auto rounded-xl bg-rose-50 p-3 text-left text-[11px] text-rose-700">
+                    {reviewProgress.errors.slice(0, 4).map((error, index) => (
+                      <p key={`${error}-${index}`}>{error}</p>
+                    ))}
+                    {reviewProgress.errors.length > 4 && (
+                      <p className="mt-1">+{reviewProgress.errors.length - 4} kegagalan lainnya</p>
+                    )}
+                  </div>
+                )}
+              </div>
+              <DialogFooter className="pt-2 sm:justify-center">
+                <Button
+                  type="button"
+                  onClick={() => setReviewProgress(null)}
+                  className={`rounded-xl px-6 font-bold text-white ${reviewProgress?.status === 'success'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : 'bg-rose-600 hover:bg-rose-700'}`}
+                >
+                  Selesai
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {profile && !canAuditLoyalis && !canAuditBlueCollar && (
         <Card className="rounded-2xl border-none bg-white shadow-sm">
