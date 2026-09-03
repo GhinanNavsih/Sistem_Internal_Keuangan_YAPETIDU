@@ -239,21 +239,27 @@ interface PeriodAggregate {
   label: string; // e.g., "Mei 2026"
   totalGross: number;
   totalDeductions: number;
+  totalTax: number;
   totalNet: number;
+  totalTaxedCount: number;
 
   // Loyalis (White Collar) aggregates
   loyalisGross: number;
   loyalisDeductions: number;
+  loyalisTax: number;
   loyalisNet: number;
   loyalisCount: number;
   confirmedLoyalisCount: number;
+  loyalisTaxedCount: number;
 
   // Pekarya (Blue Collar) aggregates
   pekaryaGross: number;
   pekaryaDeductions: number;
+  pekaryaTax: number;
   pekaryaNet: number;
   pekaryaCount: number;
   confirmedPekaryaCount: number;
+  pekaryaTaxedCount: number;
 
   totalSlipsCount: number;
   confirmedSlipsCount: number;
@@ -327,17 +333,23 @@ const createEmptyPeriodAggregate = (period: string): PeriodAggregate => ({
   label: formatPeriodLabel(period),
   totalGross: 0,
   totalDeductions: 0,
+  totalTax: 0,
   totalNet: 0,
+  totalTaxedCount: 0,
   loyalisGross: 0,
   loyalisDeductions: 0,
+  loyalisTax: 0,
   loyalisNet: 0,
   loyalisCount: 0,
   confirmedLoyalisCount: 0,
+  loyalisTaxedCount: 0,
   pekaryaGross: 0,
   pekaryaDeductions: 0,
+  pekaryaTax: 0,
   pekaryaNet: 0,
   pekaryaCount: 0,
   confirmedPekaryaCount: 0,
+  pekaryaTaxedCount: 0,
   totalSlipsCount: 0,
   confirmedSlipsCount: 0,
   deductionsBreakdown: {},
@@ -1034,22 +1046,28 @@ export default function TreasuryDashboard() {
 
       aggregate.totalGross += gross;
       aggregate.totalDeductions += deductions;
+      aggregate.totalTax += tax;
       aggregate.totalNet += net;
+      if (tax > 0) aggregate.totalTaxedCount++;
       aggregate.totalSlipsCount++;
       aggregate.confirmedSlipsCount++;
 
       if (collar === 'loyalis') {
         aggregate.loyalisGross += gross;
         aggregate.loyalisDeductions += deductions;
+        aggregate.loyalisTax += tax;
         aggregate.loyalisNet += net;
         aggregate.loyalisCount++;
         aggregate.confirmedLoyalisCount++;
+        if (tax > 0) aggregate.loyalisTaxedCount++;
       } else {
         aggregate.pekaryaGross += gross;
         aggregate.pekaryaDeductions += deductions;
+        aggregate.pekaryaTax += tax;
         aggregate.pekaryaNet += net;
         aggregate.pekaryaCount++;
         aggregate.confirmedPekaryaCount++;
+        if (tax > 0) aggregate.pekaryaTaxedCount++;
       }
 
       data.deductions.forEach(field => {
@@ -1127,15 +1145,33 @@ export default function TreasuryDashboard() {
   }, [periodAggregates, selectedPeriod]);
 
   // Filtered metrics based on selected filterCollar
-  const { filteredGross, filteredDeductions, filteredNet, filteredConfirmedCount, filteredActiveCount } = useMemo(() => {
+  const {
+    filteredGross,
+    filteredDeductions,
+    filteredTax,
+    filteredNet,
+    filteredTaxedCount,
+    filteredConfirmedCount,
+    filteredActiveCount,
+  } = useMemo(() => {
     if (!currentPeriodData) {
-      return { filteredGross: 0, filteredDeductions: 0, filteredNet: 0, filteredConfirmedCount: 0, filteredActiveCount: activeStaffCounts.total };
+      return {
+        filteredGross: 0,
+        filteredDeductions: 0,
+        filteredTax: 0,
+        filteredNet: 0,
+        filteredTaxedCount: 0,
+        filteredConfirmedCount: 0,
+        filteredActiveCount: activeStaffCounts.total,
+      };
     }
     if (filterCollar === 'loyalis') {
       return {
         filteredGross: currentPeriodData.loyalisGross,
         filteredDeductions: currentPeriodData.loyalisDeductions,
+        filteredTax: currentPeriodData.loyalisTax,
         filteredNet: currentPeriodData.loyalisNet,
+        filteredTaxedCount: currentPeriodData.loyalisTaxedCount,
         filteredConfirmedCount: currentPeriodData.confirmedLoyalisCount,
         filteredActiveCount: activeStaffCounts.loyalis,
       };
@@ -1143,7 +1179,9 @@ export default function TreasuryDashboard() {
       return {
         filteredGross: currentPeriodData.pekaryaGross,
         filteredDeductions: currentPeriodData.pekaryaDeductions,
+        filteredTax: currentPeriodData.pekaryaTax,
         filteredNet: currentPeriodData.pekaryaNet,
+        filteredTaxedCount: currentPeriodData.pekaryaTaxedCount,
         filteredConfirmedCount: currentPeriodData.confirmedPekaryaCount,
         filteredActiveCount: activeStaffCounts.pekarya,
       };
@@ -1151,7 +1189,9 @@ export default function TreasuryDashboard() {
       return {
         filteredGross: currentPeriodData.totalGross,
         filteredDeductions: currentPeriodData.totalDeductions,
+        filteredTax: currentPeriodData.totalTax,
         filteredNet: currentPeriodData.totalNet,
+        filteredTaxedCount: currentPeriodData.totalTaxedCount,
         filteredConfirmedCount: currentPeriodData.confirmedSlipsCount,
         filteredActiveCount: activeStaffCounts.total,
       };
@@ -1174,11 +1214,18 @@ export default function TreasuryDashboard() {
       if (prev === 0) return 0;
       return ((curr - prev) / prev) * 100;
     };
+    // A first non-zero tax month has no meaningful percentage comparison.
+    // Keep it distinct from a genuine 0% month-over-month change.
+    const calcTaxPct = (curr: number, prev: number): number | null => {
+      if (prev === 0 && curr > 0) return null;
+      return calcPct(curr, prev);
+    };
 
     if (filterCollar === 'loyalis') {
       return {
         gross: calcPct(currAgg.loyalisGross, prevAgg.loyalisGross),
         deductions: calcPct(currAgg.loyalisDeductions, prevAgg.loyalisDeductions),
+        tax: calcTaxPct(currAgg.loyalisTax, prevAgg.loyalisTax),
         net: calcPct(currAgg.loyalisNet, prevAgg.loyalisNet),
         staff: calcPct(currAgg.loyalisCount, prevAgg.loyalisCount),
       };
@@ -1186,6 +1233,7 @@ export default function TreasuryDashboard() {
       return {
         gross: calcPct(currAgg.pekaryaGross, prevAgg.pekaryaGross),
         deductions: calcPct(currAgg.pekaryaDeductions, prevAgg.pekaryaDeductions),
+        tax: calcTaxPct(currAgg.pekaryaTax, prevAgg.pekaryaTax),
         net: calcPct(currAgg.pekaryaNet, prevAgg.pekaryaNet),
         staff: calcPct(currAgg.pekaryaCount, prevAgg.pekaryaCount),
       };
@@ -1193,6 +1241,7 @@ export default function TreasuryDashboard() {
       return {
         gross: calcPct(currAgg.totalGross, prevAgg.totalGross),
         deductions: calcPct(currAgg.totalDeductions, prevAgg.totalDeductions),
+        tax: calcTaxPct(currAgg.totalTax, prevAgg.totalTax),
         net: calcPct(currAgg.totalNet, prevAgg.totalNet),
         staff: calcPct(currAgg.confirmedSlipsCount, prevAgg.confirmedSlipsCount),
       };
@@ -1772,14 +1821,14 @@ export default function TreasuryDashboard() {
         ) : (
           <>
             {/* Section 2: Summary Metric Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
 
               {/* Card 1: Gross Revenue / Expenses */}
               <div className="group bg-white/60 backdrop-blur-md p-5 rounded-2xl border border-slate-200/50 shadow-sm hover:shadow-lg hover:border-emerald-200/60 hover:-translate-y-0.5 transition-all duration-300">
                 <div className="flex items-center justify-between mb-4">
                   <div className="space-y-0.5">
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Pendapatan Kotor</p>
-                    <p className="text-slate-400 text-[11px]">Total beban pra-potongan</p>
+                    <p className="text-slate-400 text-[11px]">Sebelum potongan dan pajak</p>
                   </div>
                   <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 group-hover:bg-emerald-100 transition-colors">
                     <Banknote className="w-5 h-5" />
@@ -1818,7 +1867,7 @@ export default function TreasuryDashboard() {
                 <div className="flex items-center justify-between mb-4">
                   <div className="space-y-0.5">
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Potongan Gaji</p>
-                    <p className="text-slate-400 text-[11px]">BPJS, Koperasi, Zakat, dll</p>
+                    <p className="text-slate-400 text-[11px]">BPJS, Koperasi, Zakat (tanpa pajak)</p>
                   </div>
                   <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600 group-hover:bg-rose-100 transition-colors">
                     <Scissors className="w-5 h-5" />
@@ -1852,12 +1901,55 @@ export default function TreasuryDashboard() {
                 </div>
               </div>
 
-              {/* Card 3: Net Salary (Payout Expense) */}
+              {/* Card 3: Income Tax */}
+              <div className="group bg-white/60 backdrop-blur-md p-5 rounded-2xl border border-slate-200/50 shadow-sm hover:shadow-lg hover:border-amber-200/60 hover:-translate-y-0.5 transition-all duration-300">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Pajak Penghasilan</p>
+                    <p className="text-slate-400 text-[11px]">Tarif 5% • {filteredTaxedCount} pegawai</p>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 group-hover:bg-amber-100 transition-colors">
+                    <Percent className="w-5 h-5" />
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div className="text-2xl font-black text-amber-600 tracking-tight">
+                    {formatIDR(filteredTax)}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {deltas ? (
+                      deltas.tax === null ? (
+                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 rounded-lg py-0.5 px-2 text-xs font-semibold">
+                          Baru periode ini
+                        </Badge>
+                      ) : deltas.tax > 0 ? (
+                        <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 rounded-lg py-0.5 px-2 flex items-center gap-0.5 text-xs font-semibold">
+                          <TrendingUp className="w-3.5 h-3.5" />
+                          {deltas.tax.toFixed(1)}% MoM
+                        </Badge>
+                      ) : deltas.tax < 0 ? (
+                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 rounded-lg py-0.5 px-2 flex items-center gap-0.5 text-xs font-semibold">
+                          <TrendingDown className="w-3.5 h-3.5" />
+                          {Math.abs(deltas.tax).toFixed(1)}% MoM
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 rounded-lg py-0.5 px-2 text-xs font-semibold">
+                          0% MoM
+                        </Badge>
+                      )
+                    ) : (
+                      <span className="text-slate-400 text-xs font-medium">Bulan pertama data</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 4: Net Salary (Payout Expense) */}
               <div className="group bg-white/60 backdrop-blur-md p-5 rounded-2xl border border-slate-200/50 shadow-sm hover:shadow-lg hover:border-indigo-200/60 hover:-translate-y-0.5 transition-all duration-300">
                 <div className="flex items-center justify-between mb-4">
                   <div className="space-y-0.5">
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Gaji Bersih</p>
-                    <p className="text-slate-400 text-[11px]">Kas ditransfer ke pegawai</p>
+                    <p className="text-slate-400 text-[11px]">Kas setelah potongan dan pajak</p>
                   </div>
                   <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-100 transition-colors">
                     <DollarSign className="w-5 h-5" />
@@ -1891,7 +1983,7 @@ export default function TreasuryDashboard() {
                 </div>
               </div>
 
-              {/* Card 4: Confirmed Staff Count */}
+              {/* Card 5: Confirmed Staff Count */}
               <div className="group bg-white/60 backdrop-blur-md p-5 rounded-2xl border border-slate-200/50 shadow-sm hover:shadow-lg hover:border-slate-300/60 hover:-translate-y-0.5 transition-all duration-300">
                 <div className="flex items-center justify-between mb-4">
                   <div className="space-y-0.5">

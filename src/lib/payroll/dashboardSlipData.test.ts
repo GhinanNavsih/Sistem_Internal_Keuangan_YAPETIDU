@@ -5,6 +5,7 @@ import {
   DashboardPeriodInputs,
   sumSlipFields,
 } from './dashboardSlipData';
+import { PAYROLL_TAX_LABEL } from './payrollTax';
 import { loyalisPresenceAmounts } from './uraianPropagation';
 
 const inputs: DashboardPeriodInputs = {
@@ -57,6 +58,26 @@ test('a persisted slip remains authoritative over fallback calculations', () => 
     // An untaxed slip returns the same rows plus an empty tax category.
     { ...saved, taxes: [] },
   );
+});
+
+test('a persisted tax selection is exposed separately and recalculated from its rows', () => {
+  const data = buildDashboardSlipData(
+    { id: 'pekarya-1', employment: { jobCategory: 'SOPIR' } },
+    'pekarya',
+    {
+      earnings: [{ label: 'Gaji Pokok', amount: 10_000_000 }],
+      deductions: [{ label: 'BPJS', amount: 1_000_000 }],
+      taxApplied: true,
+      // A stale stored amount must not leak into the dashboard aggregate.
+      taxes: [{ label: PAYROLL_TAX_LABEL, amount: 1 }],
+    },
+    inputs,
+  );
+
+  assert.deepEqual(data.deductions, [{ label: 'BPJS', amount: 1_000_000 }]);
+  assert.deepEqual(data.taxes, [
+    { label: PAYROLL_TAX_LABEL, amount: 450_000 },
+  ]);
 });
 
 // ─── Persisted-state precedence for Pekarya ──────────────────────────────
@@ -218,4 +239,3 @@ test('historical period with saved slips resolves immediately without pekaryaPre
   assert.equal(sumSlipFields(data.earnings), 3_950_000);
   assert.equal(sumSlipFields(data.deductions), 50_000);
 });
-
