@@ -28,6 +28,7 @@ import {
   getStatusConfig,
 } from './activityModel';
 import type { EmployeeActivitiesModel } from './activityModel';
+import type { ActivityReport } from './activityShared';
 
 interface ActivityHistoryPanelProps {
   model: EmployeeActivitiesModel;
@@ -48,6 +49,67 @@ function satpamShiftDisplayTitle(postName: string | undefined, fallback: string)
   const [postId, label] = postName.split(': ');
   if (!postId || !label) return fallback;
   return `Shift ${postId} ${label.replace(/^Pos\s+/, '')}`;
+}
+
+// A regular guard duty shift (Harian / Jumat & Libur / Lembur) is priced by
+// its own fixed shift-type rate, set once at approval — that model has
+// nothing to do with the time-based Pekarya SPJ rate this header summarizes,
+// so shift-assignment cards are the one report kind excluded here.
+const UANG_MAKAN_MIN_MINUTES = 120;
+
+function cardActivityMinutes(timeStart: string, timeEnd: string): number {
+  const [sh, sm] = timeStart.split(':').map(Number);
+  const [eh, em] = timeEnd.split(':').map(Number);
+  if ([sh, sm, eh, em].some((n) => Number.isNaN(n))) return 0;
+  let minutes = (eh * 60 + em) - (sh * 60 + sm);
+  if (minutes < 0) minutes += 24 * 60;
+  return minutes;
+}
+
+interface CardHeaderUpah {
+  amount: number;
+  pending: boolean;
+  hasUangMakan: boolean;
+}
+
+/**
+ * The amount shown above the status pill on the collapsed card, and reused by
+ * the expanded panel's own estimate so the two never disagree. Approved cards
+ * show the reviewed amount as-is; pending cards show what the employee would
+ * get if approved as submitted — the Satker can still change it at review.
+ */
+function resolveCardHeaderUpah(activity: ActivityReport): CardHeaderUpah | null {
+  if (activity.reportKind === 'satpam_shift_assignment') return null;
+
+  if (activity.status === 'approved') {
+    return activity.fee > 0
+      ? { amount: activity.fee, pending: false, hasUangMakan: !!activity.hasUangMakan }
+      : null;
+  }
+
+  if (activity.status !== 'pending') return null;
+
+  if (activity.reportKind === 'satpam_found_item' || activity.reportKind === 'satpam_reprimand') {
+    const amount =
+      activity.submittedFeeRecommendation ||
+      (activity.reportKind === 'satpam_reprimand' ? 15_000 : 5_000);
+    return { amount, pending: true, hasUangMakan: false };
+  }
+
+  if (activity.jobCategory === 'SOPIR') return null;
+
+  const isFlat = activity.activityType === 'Buang Sampah' || activity.activityName === 'Buang Sampah';
+  const baseFee =
+    activity.submittedFeeEstimate && activity.submittedFeeEstimate > 0
+      ? activity.submittedFeeEstimate
+      : calculateDefaultFee(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName, activity.activityDate);
+  const qualifies = !isFlat && cardActivityMinutes(activity.timeStart, activity.timeEnd) >= UANG_MAKAN_MIN_MINUTES;
+
+  return {
+    amount: qualifies ? baseFee + 7_500 : baseFee,
+    pending: true,
+    hasUangMakan: qualifies,
+  };
 }
 
 export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProps) {
@@ -156,6 +218,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                   const sc = getStatusConfig(activity.status);
                   const isExpanded = expandedId === activity.id;
                   const canEdit = activity.status === 'declined' || activity.status === 'pending';
+                  const headerUpah = resolveCardHeaderUpah(activity);
                   const displayName =
                     activity.reportKind === 'satpam_shift_assignment'
                       ? satpamShiftDisplayTitle(activity.postName, activity.activityName)
@@ -212,6 +275,14 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                               <Badge className="border-none bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-800">
                                 {activity.shiftType === 'Off-Duty' ? 'Hari Libur' : activity.shiftType}
                               </Badge>
+                            )}
+                            {headerUpah && (
+                              <span className={`text-xs font-bold ${headerUpah.pending ? 'text-amber-600' : 'text-emerald-700'}`}>
+                                {fmtRp(headerUpah.amount)}
+                                {headerUpah.hasUangMakan && (
+                                  <span className={headerUpah.pending ? 'text-amber-500/70' : 'text-emerald-600/70'}> +UM</span>
+                                )}
+                              </span>
                             )}
                             <Badge className={`${sc.bgClass} ${sc.textClass} border ${sc.borderClass} text-[10px] font-bold rounded-lg px-2 py-0.5`}>
                               {sc.label}
@@ -503,22 +574,11 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                                 })()
                               ) : (
                                 (() => {
-                                  const baseFee = calculateDefaultFee(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName, activity.activityDate);
-
-                                  // Calculate if it qualifies for Uang Makan
-                                  const [sh, sm] = activity.timeStart.split(':').map(Number);
-                                  const [eh, em] = activity.timeEnd.split(':').map(Number);
-                                  let minutes = (eh * 60 + em) - (sh * 60 + sm);
-                                  if (minutes < 0) minutes += 24 * 60;
-                                  const halfHours = Math.round(minutes / 30);
-                                  const qualifies = halfHours > 4 && activity.activityType !== 'Buang Sampah' && activity.activityName !== 'Buang Sampah';
-
-                                  const totalEstimated = qualifies ? baseFee + 7500 : baseFee;
+                                  // Reuses headerUpah (computed once above) so the amount can never
+                                  // read differently expanded than it does on the collapsed card.
                                   const breakdown = getActivityFeeBreakdown(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName, activity.activityDate);
-
-                                  // Format breakdown with asterisk if qualifies
                                   const breakdownStr = breakdown
-                                    ? (qualifies ? `(${breakdown} + *Rp7.500*)` : `(${breakdown})`)
+                                    ? (headerUpah?.hasUangMakan ? `(${breakdown} + *Rp7.500*)` : `(${breakdown})`)
                                     : '';
 
                                   return (
@@ -527,7 +587,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                                         <div className="flex items-center gap-2">
                                           <Banknote className="w-4 h-4 text-amber-600" />
                                           <span className="text-sm font-bold text-amber-700">
-                                            Estimasi Upah: {fmtRp(totalEstimated)}
+                                            Estimasi Upah: {fmtRp(headerUpah?.amount ?? 0)}
                                           </span>
                                         </div>
                                         {breakdownStr && (
@@ -536,7 +596,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                                           </span>
                                         )}
                                       </div>
-                                      {qualifies && (
+                                      {headerUpah?.hasUangMakan && (
                                         <span className="text-xs text-amber-600 font-medium ml-6">
                                           * Uang Makan jika disetujui oleh Kepala SatKer
                                         </span>
