@@ -25,7 +25,7 @@ import { Label } from '@/components/ui/label';
 import {
   Loader2, CheckCircle2, FileText, AlertCircle, Trash2, Plus, Save, Edit,
   Calendar, Check, ShieldCheck, FileSpreadsheet, Users, Info, Settings, Clock, Upload,
-  ChevronDown, ChevronUp, Wand2
+  ChevronDown, ChevronUp, Wand2, Undo2
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import {
@@ -49,6 +49,39 @@ import {
 
 import Link from 'next/link';
 import { generatePresensiLoyalisXlsx } from '@/utils/generatePresensiLoyalisXlsx';
+
+/**
+ * How long an unsaved working table is kept in localStorage. Past this the
+ * saved Firestore record is likelier to be the current truth than local
+ * scratch work — especially since another admin may have saved the period in
+ * the meantime — so a stale draft is discarded rather than restored.
+ */
+const PRESENCE_DRAFT_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
+
+/** One date's row inside an employee's `dailyLogs`. */
+interface LoyalisDailyLogRow {
+  Tanggal: string;
+  'Jam kerja': string;
+  'Scan masuk': string;
+  'Scan pulang': string;
+  scanMasukAuto?: boolean;
+  scanPulangAuto?: boolean;
+  duration?: number;
+}
+
+/** The unsaved working table as mirrored into localStorage. */
+interface PresenceDraft {
+  savedAt?: number;
+  uploadedData?: unknown[];
+  workingDays?: number | '';
+  expectedHours?: number;
+  calcMode?: 'worked' | 'absent';
+  pendingResolutionUpdates?: Record<
+    string,
+    { status: 'approved' | 'rejected'; rejectionReason?: string }
+  >;
+  bulkFillSnapshots?: Record<string, LoyalisDailyLogRow[]>;
+}
 
 const parseDateToDDMMYYYY = (dateStr: string) => {
   if (!dateStr || !dateStr.includes('-')) return dateStr;
@@ -189,6 +222,10 @@ export default function PresensiLoyalisRawPage() {
   const [bulkScanMasuk, setBulkScanMasuk] = useState('');
   const [bulkScanPulang, setBulkScanPulang] = useState('');
   const [bulkIncludeAbsent, setBulkIncludeAbsent] = useState(false);
+  // Keyed by excelName: the employee's dailyLogs exactly as they stood right
+  // before their first Isi Massal Scan Sebulan in this edit session, so Undo
+  // always restores the true pre-bulk-fill data — not just the last change.
+  const [bulkFillSnapshots, setBulkFillSnapshots] = useState<Record<string, LoyalisDailyLogRow[]>>({});
   const [activeImport, setActiveImport] = useState<{
     activeRevision?: number;
     activeRevisionId?: string;
@@ -466,6 +503,142 @@ export default function PresensiLoyalisRawPage() {
     fetchCorrections();
   }, [fetchCorrections]);
 
+  // ── Local Draft Persistence ───────────────────────────────────────────────
+  // Everything in the working table is in-memory until "Simpan Data Presensi"
+  // writes to Firestore, so an accidental refresh — or a trip to another page
+  // and back — used to discard a whole session of employee linking, scan edits
+  // and bulk fills. The table is mirrored into localStorage on every change and
+  // restored on mount. This is a per-browser safety net only: it never touches
+  // Firestore, so nothing here reaches payroll until the admin actually saves.
+  const draftStorageKey = useMemo(
+    () => `loyalis-presence-draft:${profile?.uid || 'anon'}:${canonicalPeriod}`,
+    [profile?.uid, canonicalPeriod],
+  );
+  // Blocks the writer below until the restore pass has run — on the first
+  // render uploadedData is still null, and writing then would overwrite the
+  // very draft we are about to read.
+  const draftHydratedRef = useRef(false);
+  const hydratedDraftKeyRef = useRef<string | null>(null);
+  const draftQuotaWarnedRef = useRef(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    // Wait for the signed-in profile so a draft is always filed under a stable
+    // per-user key instead of briefly under an anonymous one.
+    if (!profile?.uid) return;
+    draftHydratedRef.current = false;
+
+    let draft: PresenceDraft | null = null;
+    let draftRows: unknown[] | null = null;
+    try {
+      const raw = window.localStorage.getItem(draftStorageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw) as PresenceDraft;
+        const savedAt = Number(parsed?.savedAt || 0);
+        const isFresh = savedAt > 0 && Date.now() - savedAt <= PRESENCE_DRAFT_MAX_AGE_MS;
+        const rows = parsed?.uploadedData;
+        if (isFresh && Array.isArray(rows) && rows.length > 0) {
+          draft = parsed;
+          draftRows = rows;
+        } else {
+          // An expired draft is dropped rather than restored: after this long
+          // the saved record is likelier to be current than local scratch work.
+          window.localStorage.removeItem(draftStorageKey);
+        }
+      }
+    } catch (err) {
+      console.error('Gagal membaca draf presensi Loyalis:', err);
+    }
+
+    if (draft && draftRows) {
+      // localStorage is client-only, so the restore cannot happen during
+      // render; seeding the table from it here is the whole point of the
+      // effect, and it runs once per period rather than on every render.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setUploadedData(draftRows);
+      if (draft.workingDays === '' || typeof draft.workingDays === 'number') {
+        setWorkingDays(draft.workingDays);
+      }
+      if (typeof draft.expectedHours === 'number') setExpectedHours(draft.expectedHours);
+      if (draft.calcMode === 'worked' || draft.calcMode === 'absent') setCalcMode(draft.calcMode);
+      if (draft.pendingResolutionUpdates) setPendingResolutionUpdates(draft.pendingResolutionUpdates);
+      if (draft.bulkFillSnapshots) setBulkFillSnapshots(draft.bulkFillSnapshots);
+      // Deliberately not phrased as "unsaved changes": the draft is kept in
+      // sync with the table even after a save, so it may well match what is
+      // already stored. This wording is true either way.
+      setMessage({
+        type: 'success',
+        text: `Tabel kerja terakhir Anda (${new Date(Number(draft.savedAt)).toLocaleString('id-ID')}) dipulihkan dari browser ini. Klik Simpan Data Presensi bila masih ada perubahan yang belum disimpan, atau Batal untuk kembali ke data tersimpan.`,
+      });
+    } else if (
+      hydratedDraftKeyRef.current &&
+      hydratedDraftKeyRef.current !== draftStorageKey
+    ) {
+      // Switched period (or user) and the new one has no draft — drop the
+      // previous period's table instead of letting it linger and be saved
+      // under the wrong period.
+      setUploadedData(null);
+      setBulkFillSnapshots({});
+      setPendingResolutionUpdates({});
+    }
+
+    hydratedDraftKeyRef.current = draftStorageKey;
+    draftHydratedRef.current = true;
+  }, [draftStorageKey, profile?.uid]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!draftHydratedRef.current) return;
+    if (!uploadedData) return;
+    // Debounced so typing a scan time does not stringify the whole table on
+    // every keystroke.
+    const timer = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(
+          draftStorageKey,
+          JSON.stringify({
+            savedAt: Date.now(),
+            uploadedData,
+            workingDays,
+            expectedHours,
+            calcMode,
+            pendingResolutionUpdates,
+            bulkFillSnapshots,
+          }),
+        );
+      } catch (err) {
+        console.error('Gagal menyimpan draf presensi Loyalis:', err);
+        // Told once per session: silently failing here would leave the admin
+        // believing their work is protected when it is not.
+        if (!draftQuotaWarnedRef.current) {
+          draftQuotaWarnedRef.current = true;
+          setMessage({
+            type: 'error',
+            text: 'Penyimpanan draf otomatis di browser gagal (kemungkinan penyimpanan penuh). Simpan Data Presensi secara berkala agar perubahan tidak hilang.',
+          });
+        }
+      }
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [
+    draftStorageKey,
+    uploadedData,
+    workingDays,
+    expectedHours,
+    calcMode,
+    pendingResolutionUpdates,
+    bulkFillSnapshots,
+  ]);
+
+  const clearPresenceDraft = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.removeItem(draftStorageKey);
+    } catch (err) {
+      console.error('Gagal menghapus draf presensi Loyalis:', err);
+    }
+  }, [draftStorageKey]);
+
   const matchExcelName = useCallback((excelName: string, employees: any[]) => {
     if (!excelName) return null;
     const cleanExcel = normalizeName(excelName);
@@ -737,6 +910,7 @@ export default function PresensiLoyalisRawPage() {
       dailyLogs: entry.dailyLogs || [],
     }));
     setUploadedData(entriesList);
+    setBulkFillSnapshots({});
     setMessage({ type: 'success', text: 'Mode edit diaktifkan. Anda sekarang dapat mengubah data logs presensi dan menghubungkan pegawai.' });
   }, [existingPresence]);
 
@@ -1000,6 +1174,7 @@ export default function PresensiLoyalisRawPage() {
         }
 
         setUploadedData(parsedData);
+        setBulkFillSnapshots({});
         setMessage({
           type: 'success',
           text: `Berhasil mengunggah ${parsedData.length} data pegawai dari ${parsedWorkbook.rows.length} baris logs presensi. Jumlah hari kerja otomatis diatur menjadi ${deducedDays} hari.${warningParts.length > 0 ? ` ${warningParts.join(' ')}` : ''}`
@@ -1090,6 +1265,7 @@ export default function PresensiLoyalisRawPage() {
           return;
         }
         setUploadedData(parsedData);
+        setBulkFillSnapshots({});
         const unmatchedCount = parsedData.filter((row) => !row.employeeId).length;
         setMessage({
           type: 'success',
@@ -1155,12 +1331,14 @@ export default function PresensiLoyalisRawPage() {
 
   /**
    * Stamps one scan masuk and/or scan pulang value across every date this
-   * employee has a log for, replacing whatever was there — a shortcut for
-   * when the raw scans for the whole month are wrong or missing and a
-   * fixed schedule should be applied instead of editing each date by hand.
-   * "Tidak Hadir" days are left untouched unless includeAbsentDays is set,
-   * since setting a scan time is otherwise meaningless for a day recorded
-   * as absent — opting in also flips that day to MASUK.
+   * employee is missing a complete scan for — a shortcut for patching up
+   * blank/incomplete days across the whole month instead of editing each
+   * date by hand. A date that already carries both a scan masuk and a scan
+   * pulang is left untouched, so this never overwrites real presence data
+   * that was already recorded — it only fills gaps. "Tidak Hadir" days are
+   * likewise left untouched unless includeAbsentDays is set, since setting a
+   * scan time is otherwise meaningless for a day recorded as absent —
+   * opting in also flips that day to MASUK.
    */
   const handleBulkFillScans = useCallback((
     excelName: string,
@@ -1176,6 +1354,12 @@ export default function PresensiLoyalisRawPage() {
         const updatedLogs = (emp.dailyLogs || []).map((log: any) => {
           const isAbsent = String(log['Jam kerja'] || '').trim().toUpperCase() === 'TIDAK HADIR';
           if (isAbsent && !includeAbsentDays) return log;
+
+          const hasCompleteScan =
+            String(log['Scan masuk'] || '').trim().length > 0 &&
+            String(log['Scan pulang'] || '').trim().length > 0;
+          if (hasCompleteScan) return log;
+
           const updatedItem = { ...log };
           if (scanMasukValue) {
             updatedItem['Scan masuk'] = scanMasukValue;
@@ -1220,6 +1404,23 @@ export default function PresensiLoyalisRawPage() {
       setMessage({ type: 'error', text: 'Scan pulang harus lebih lambat dari scan masuk.' });
       return;
     }
+
+    const targetExcelName = bulkFillTarget.excelName;
+    // Only the first Isi Massal Scan Sebulan in this edit session snapshots —
+    // a second run on the same employee must not overwrite the true original
+    // with an already-filled state, or Undo would stop being able to reach it.
+    setBulkFillSnapshots(prev => {
+      if (prev[targetExcelName]) return prev;
+      const currentEmp = uploadedData?.find(r => r.excelName === targetExcelName);
+      if (!currentEmp) return prev;
+      return {
+        ...prev,
+        [targetExcelName]: (currentEmp.dailyLogs || []).map(
+          (log: LoyalisDailyLogRow) => ({ ...log }),
+        ),
+      };
+    });
+
     handleBulkFillScans(
       bulkFillTarget.excelName,
       bulkScanMasuk,
@@ -1228,12 +1429,43 @@ export default function PresensiLoyalisRawPage() {
     );
     setMessage({
       type: 'success',
-      text: `Scan ${bulkFillTarget.employeeName} berhasil diisi untuk seluruh tanggal${
+      text: `Scan ${bulkFillTarget.employeeName} berhasil diisi untuk tanggal yang datanya kosong/tidak lengkap${
         bulkIncludeAbsent ? ' termasuk hari Tidak Hadir' : ''
-      }. Silakan simpan untuk menerapkan perubahan.`,
+      } — tanggal yang sudah punya scan masuk & pulang dilewati. Silakan simpan untuk menerapkan perubahan.`,
     });
     setBulkFillTarget(null);
-  }, [bulkFillTarget, bulkScanMasuk, bulkScanPulang, bulkIncludeAbsent, handleBulkFillScans]);
+  }, [bulkFillTarget, bulkScanMasuk, bulkScanPulang, bulkIncludeAbsent, handleBulkFillScans, uploadedData]);
+
+  /**
+   * Reverts one employee's dailyLogs to how they stood right before their
+   * first Isi Massal Scan Sebulan in this edit session, undoing every bulk
+   * fill applied to them since — not just the most recent one.
+   */
+  const handleUndoBulkFill = useCallback((excelName: string, employeeName: string) => {
+    const snapshot = bulkFillSnapshots[excelName];
+    if (!snapshot) return;
+    setUploadedData(prev => {
+      if (!prev) return null;
+      return prev.map(emp => {
+        if (emp.excelName !== excelName) return emp;
+        const summary = recalculateSummary(
+          snapshot.map((log) => ({ ...log })),
+          expectedHours,
+        );
+        return { ...emp, ...summary };
+      });
+    });
+    setBulkFillSnapshots(prev => {
+      if (!prev[excelName]) return prev;
+      const next = { ...prev };
+      delete next[excelName];
+      return next;
+    });
+    setMessage({
+      type: 'success',
+      text: `Perubahan Isi Massal Scan untuk ${employeeName} dibatalkan — data presensi asli pegawai ini dikembalikan.`,
+    });
+  }, [bulkFillSnapshots, expectedHours]);
 
   const handleSaveWorkingDaysConfig = async () => {
     setSavingPresence(true);
@@ -1373,9 +1605,15 @@ export default function PresensiLoyalisRawPage() {
 
       setMessage({
         type: 'success',
-        text: `Data bonus presensi berhasil disimpan.${propagationNote}`,
+        text: `Data bonus presensi berhasil disimpan.${propagationNote} Tabel tetap dapat diubah — klik Simpan Data Presensi lagi untuk memperbarui data tersimpan.`,
       });
-      setUploadedData(null);
+      // The working table stays open after a save so the admin can keep
+      // correcting rows without re-entering edit mode; every subsequent save
+      // overwrites the stored document with whatever the table holds now.
+      // "Batal" is what leaves edit mode and returns to the saved view.
+      // A save commits the current rows as the new baseline, so bulk-fill
+      // Undo should no longer reach back past it — clear the snapshots.
+      setBulkFillSnapshots({});
       fetchExistingPresence();
     } catch (err) {
       console.error(err);
@@ -2235,17 +2473,32 @@ export default function PresensiLoyalisRawPage() {
                                   row.excelName !== '-' &&
                                   row.dailyLogs &&
                                   row.dailyLogs.length > 0 && (
-                                    <Button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        openBulkFill(row.excelName, row.employeeName || row.excelName);
-                                      }}
-                                      className="h-8 rounded-lg bg-indigo-50 px-3 text-[11px] font-bold text-indigo-700 hover:bg-indigo-100 flex items-center gap-1.5 shadow-none"
-                                    >
-                                      <Wand2 className="w-3.5 h-3.5" />
-                                      Isi Massal Scan Sebulan
-                                    </Button>
+                                    <div className="flex items-center gap-2">
+                                      <Button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          openBulkFill(row.excelName, row.employeeName || row.excelName);
+                                        }}
+                                        className="h-8 rounded-lg bg-indigo-50 px-3 text-[11px] font-bold text-indigo-700 hover:bg-indigo-100 flex items-center gap-1.5 shadow-none"
+                                      >
+                                        <Wand2 className="w-3.5 h-3.5" />
+                                        Isi Massal Scan Sebulan
+                                      </Button>
+                                      {!!bulkFillSnapshots[row.excelName] && (
+                                        <Button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleUndoBulkFill(row.excelName, row.employeeName || row.excelName);
+                                          }}
+                                          className="h-8 rounded-lg bg-rose-50 px-3 text-[11px] font-bold text-rose-700 hover:bg-rose-100 flex items-center gap-1.5 shadow-none"
+                                        >
+                                          <Undo2 className="w-3.5 h-3.5" />
+                                          Undo Isi Massal
+                                        </Button>
+                                      )}
+                                    </div>
                                   )}
                               </div>
                               {row.dailyLogs && row.dailyLogs.length > 0 ? (
@@ -2396,7 +2649,13 @@ export default function PresensiLoyalisRawPage() {
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => setUploadedData(null)}
+                      onClick={() => {
+                        setUploadedData(null);
+                        setBulkFillSnapshots({});
+                        // An explicitly discarded session must not come back
+                        // on the next visit.
+                        clearPresenceDraft();
+                      }}
                       className="rounded-xl border-slate-200 text-slate-600 text-xs font-bold"
                     >
                       Batal
@@ -2426,10 +2685,11 @@ export default function PresensiLoyalisRawPage() {
           <DialogHeader>
             <DialogTitle>Isi Massal Scan Sebulan</DialogTitle>
             <DialogDescription>
-              Nilai yang diisi akan menggantikan scan masuk dan/atau scan
-              pulang pada setiap tanggal untuk pegawai ini. Perubahan hanya
-              berlaku pada data yang sedang diedit — klik Simpan Data Presensi
-              untuk menerapkannya secara permanen.
+              Nilai yang diisi akan diterapkan pada tanggal yang datanya
+              kosong atau tidak lengkap untuk pegawai ini. Tanggal yang sudah
+              memiliki scan masuk dan scan pulang tidak akan diubah. Perubahan
+              hanya berlaku pada data yang sedang diedit — klik Simpan Data
+              Presensi untuk menerapkannya secara permanen.
             </DialogDescription>
           </DialogHeader>
           {bulkFillTarget && (
@@ -2471,6 +2731,14 @@ export default function PresensiLoyalisRawPage() {
                 Kosongkan salah satu kolom untuk hanya mengganti sisi yang
                 diisi — sisi yang kosong pada tiap tanggal tidak akan diubah.
               </p>
+              <div className="rounded-xl border border-sky-200 bg-sky-50 p-3">
+                <p className="text-[11px] font-semibold text-sky-800">
+                  Tanggal yang sudah memiliki scan masuk &amp; scan pulang akan
+                  dilewati — fitur ini hanya mengisi tanggal yang datanya
+                  kosong atau tidak lengkap, tidak menimpa data presensi yang
+                  sudah tercatat.
+                </p>
+              </div>
               <label className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3 cursor-pointer">
                 <input
                   type="checkbox"
