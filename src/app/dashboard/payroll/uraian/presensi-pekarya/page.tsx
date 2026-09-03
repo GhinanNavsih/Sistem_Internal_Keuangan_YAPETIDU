@@ -925,6 +925,7 @@ export default function PekaryaAttendancePage() {
                       setLinkTarget(row);
                       setLinkEmployeeId('');
                       setLinkSearch(row.sourceName || '');
+                      setError('');
                     }}
                   >
                     Hubungkan Pegawai
@@ -1575,6 +1576,7 @@ export default function PekaryaAttendancePage() {
                                 setLinkTarget(unlinked!);
                                 setLinkEmployeeId('');
                                 setLinkSearch(unlinked!.sourceName || '');
+                                setError('');
                               }}
                               className="text-left px-2 py-1 rounded-lg border transition-all text-[9px] font-bold flex items-center gap-1 cursor-pointer bg-rose-50 border-rose-200/80 text-rose-700 hover:bg-rose-100/60"
                             >
@@ -1989,6 +1991,7 @@ export default function PekaryaAttendancePage() {
             setLinkTarget(null);
             setLinkEmployeeId('');
             setLinkSearch('');
+            setError('');
           }
         }}
       >
@@ -2027,28 +2030,45 @@ export default function PekaryaAttendancePage() {
                     Pegawai tidak ditemukan.
                   </p>
                 ) : (
-                  linkCandidates.map((candidate) => (
-                    <button
-                      key={candidate.employeeId}
-                      type="button"
-                      onClick={() => setLinkEmployeeId(candidate.employeeId)}
-                      className={`flex min-h-14 w-full flex-col items-start justify-center px-4 py-2 text-left ${
-                        linkEmployeeId === candidate.employeeId
-                          ? 'bg-indigo-50'
-                          : 'hover:bg-slate-50'
-                      }`}
-                    >
-                      <span className="font-semibold text-slate-900">
-                        {candidate.name}
-                      </span>
-                      <span className="text-sm text-slate-500">
-                        {categoryLabel(candidate.category)} · NIPY{' '}
-                        {candidate.nipy || 'belum diisi'}
-                      </span>
-                    </button>
-                  ))
+                  linkCandidates.map((candidate) => {
+                    // A candidate without a NIPY can still be linked — the row
+                    // joins on a stable per-employee token instead — but that
+                    // employee's pay stays unpublishable until a real NIPY
+                    // exists, the same rule already applied elsewhere on this
+                    // page. Surfaced here so the choice is informed, not blocked.
+                    const missingNipy = !candidate.nipy;
+                    return (
+                      <button
+                        key={candidate.employeeId}
+                        type="button"
+                        onClick={() => setLinkEmployeeId(candidate.employeeId)}
+                        className={`flex min-h-14 w-full flex-col items-start justify-center px-4 py-2 text-left ${
+                          linkEmployeeId === candidate.employeeId
+                            ? 'bg-indigo-50'
+                            : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className="font-semibold text-slate-900">
+                          {candidate.name}
+                        </span>
+                        <span
+                          className={`text-sm ${missingNipy ? 'font-semibold text-amber-600' : 'text-slate-500'}`}
+                        >
+                          {categoryLabel(candidate.category)} · NIPY{' '}
+                          {candidate.nipy || 'belum diisi'}
+                          {missingNipy &&
+                            ' — publikasi upah tertunda hingga NIPY dilengkapi'}
+                        </span>
+                      </button>
+                    );
+                  })
                 )}
               </div>
+              {error && (
+                <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+                  {error}
+                </p>
+              )}
             </div>
           )}
           <DialogFooter>

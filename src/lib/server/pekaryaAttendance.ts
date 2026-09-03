@@ -10,7 +10,9 @@ import {
 } from '@/lib/payroll/attendance';
 import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
 import {
+  attendanceJoinNipy,
   attendanceManualLinkKey,
+  isAttendanceSyntheticNipy,
   loadAttendanceEmployeeIdentities,
   loadEffectiveAttendanceDays,
   loadPeriodPremiumDates,
@@ -100,6 +102,10 @@ function collectDepartmentUnmatched(
       continue;
     }
     if (classifyAttendanceDepartment(row.department) !== 'pekarya') continue;
+    // A synthetic join token means this row was already resolved — by a
+    // manual link or a name match — onto an employee with no real NIPY yet.
+    // It is not waiting on anything further.
+    if (isAttendanceSyntheticNipy(row.nipy)) continue;
     const matches = (byNipy.get(row.nipy) || []).filter(activeBlueCollar);
     if (matches.length === 1) continue;
     const sourceKey = attendanceManualLinkKey(row.nipy, row.name);
@@ -206,17 +212,17 @@ export async function buildPekaryaAttendanceView(
       const warnings: string[] = [];
       if (!employee.nipy) warnings.push('NIPY_MISSING');
       if (duplicateIdentity) warnings.push('NIPY_DUPLICATE');
-      const summary = summarizePekaryaAttendance(
-        employee.nipy,
-        days,
-        premiumDates,
-      );
+      // An employee with no NIPY yet can still be reviewed: their rows join
+      // on a synthetic per-employee token instead. They stay blocked from
+      // publishing until a real NIPY exists — see publishBlocked below.
+      const joinNipy = attendanceJoinNipy(employee);
+      const summary = summarizePekaryaAttendance(joinNipy, days, premiumDates);
       const summarizedDays = summary.days.map((day) => ({
         ...day,
         correctionRevision:
-          correctionRevisions.get(attendanceDayKey(employee.nipy, day.date)) || 0,
+          correctionRevisions.get(attendanceDayKey(joinNipy, day.date)) || 0,
         rawValue: (rawRowsByDay.get(
-          attendanceDayKey(employee.nipy, day.date),
+          attendanceDayKey(joinNipy, day.date),
         ) || []).map((row) => ({
           rowNumber: row.rowNumber,
           workStatus: row.workStatus,
@@ -228,10 +234,7 @@ export async function buildPekaryaAttendanceView(
       if (summary.payableDays === 0) warnings.push('MISSING_ATTENDANCE');
       if (summary.incompletePunchCount > 0) warnings.push('INCOMPLETE_PUNCH');
       if (summary.correctedDayCount > 0) warnings.push('CORRECTED_ATTENDANCE');
-      if (
-        employee.nipy &&
-        !days.some((day) => day.nipy === employee.nipy)
-      ) {
+      if (!days.some((day) => day.nipy === joinNipy)) {
         warnings.push('NO_IMPORTED_ROWS');
       }
       return {
@@ -241,17 +244,23 @@ export async function buildPekaryaAttendanceView(
         publishBlocked: !employee.nipy || duplicateIdentity,
         warnings,
         ...summary,
+        // `summary.nipy` is the join token above, not necessarily a real NIPY
+        // — restore the employee's actual (possibly empty) one for display.
+        nipy: employee.nipy,
         days: summarizedDays,
       };
     },
   );
   const knownNipys = new Set(
-    activeEmployees.map((employee) => employee.nipy).filter(Boolean),
+    activeEmployees.map((employee) => attendanceJoinNipy(employee)),
   );
   const unmatchedNipys = Array.from(
     new Set(
       days
-        .filter((day) => day.nipy && !byNipy.has(day.nipy))
+        .filter(
+          (day) =>
+            day.nipy && !byNipy.has(day.nipy) && !isAttendanceSyntheticNipy(day.nipy),
+        )
         .map((day) => day.nipy),
     ),
   ).sort();

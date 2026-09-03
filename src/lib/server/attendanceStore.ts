@@ -153,6 +153,28 @@ export function isActiveBlueCollar(identity: AttendanceEmployeeIdentity) {
   return identity.employeeCollection === 'Employees_BlueCollar' && identity.active;
 }
 
+const ATTENDANCE_SYNTHETIC_NIPY_PREFIX = 'LINKED:';
+
+/**
+ * The value a resolved employee's attendance rows join on. A real NIPY is
+ * used when they have one; otherwise a stable per-employee token stands in,
+ * so their attendance can still be reviewed even before HR assigns a real
+ * NIPY. The prefix can never collide with a real NIPY (always digits), and
+ * is never shown to a user — callers must restore the employee's real
+ * (possibly empty) NIPY before returning data that reaches the UI.
+ */
+export function attendanceJoinNipy(identity: {
+  employeeId: string;
+  nipy: string;
+}): string {
+  return identity.nipy || `${ATTENDANCE_SYNTHETIC_NIPY_PREFIX}${identity.employeeId}`;
+}
+
+/** True when a nipy value is a join token from {@link attendanceJoinNipy}, not a real NIPY. */
+export function isAttendanceSyntheticNipy(nipy: string): boolean {
+  return nipy.startsWith(ATTENDANCE_SYNTHETIC_NIPY_PREFIX);
+}
+
 /**
  * Resolves the person a source row names, for rows whose identifier the file
  * got wrong. Mirrors the Loyalis matcher — exact name, then the hand-kept
@@ -362,7 +384,11 @@ export async function loadEffectiveAttendanceDays(
           const link = manualLinks.get(
             attendanceManualLinkKey(row.nipy, row.name),
           );
-          const resolvedNipy = link?.nipy || resolveByName(row)?.nipy || '';
+          // A manual link's stored `nipy` is already a real-or-synthetic join
+          // value (resolved once, at link time). A name match is resolved
+          // fresh here, so it needs the same treatment.
+          const matched = link ? null : resolveByName(row);
+          const resolvedNipy = link?.nipy || (matched ? attendanceJoinNipy(matched) : '');
           if (!resolvedNipy || resolvedNipy === row.nipy) return row;
           return {
             ...row,

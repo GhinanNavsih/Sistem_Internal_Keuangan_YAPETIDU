@@ -7,6 +7,7 @@ import {
 } from '@/lib/payroll/attendance';
 import { assertRequestId } from '@/lib/payroll/domain';
 import {
+  attendanceJoinNipy,
   ATTENDANCE_MANUAL_LINKS_COLLECTION,
   attendanceManualLinkId,
   PEKARYA_PUBLICATIONS_COLLECTION,
@@ -67,14 +68,19 @@ async function resolveLinkTarget(
   if (permittedCategories && !permittedCategories.includes(category)) {
     throw new HttpError(403, 'Kategori pegawai ini tidak diizinkan untuk Anda.');
   }
+  // A real NIPY is preferred, but its absence no longer blocks the link: the
+  // row joins on a synthetic per-employee token instead (attendanceJoinNipy),
+  // so the reviewer isn't stuck waiting on a separate NIPY-assignment process
+  // just to see attendance they can already identify by name. Publishing that
+  // employee's pay still requires a real NIPY — see publishBlocked in
+  // buildPekaryaAttendanceView, which this link does not bypass.
   const nipy = resolveEmployeeAttendanceNipy(employee || {});
-  if (!nipy) {
-    throw new HttpError(
-      409,
-      'NIPY pegawai wajib dilengkapi sebelum baris presensi dapat dihubungkan.',
-    );
-  }
-  return { category, nipy, name: String(employee?.name || '') };
+  return {
+    category,
+    nipy,
+    joinNipy: attendanceJoinNipy({ employeeId, nipy }),
+    name: String(employee?.name || ''),
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -161,7 +167,10 @@ export async function POST(request: NextRequest) {
         employeeId,
         employeeCollection: 'Employees_BlueCollar',
         employeeName: target.name,
-        nipy: target.nipy,
+        // The join value the attendance pipeline actually matches on — a real
+        // NIPY when the employee has one, otherwise the synthetic token.
+        nipy: target.joinNipy,
+        hasRealNipy: Boolean(target.nipy),
         jobCategory: target.category,
         linkedBy: actor.uid,
         linkedByRole: actor.role,
@@ -201,6 +210,7 @@ export async function POST(request: NextRequest) {
             department: sourceRow.department,
             employeeId,
             nipy: target.nipy,
+            joinNipy: target.joinNipy,
             dates: sourceRow.dates,
           },
         }),

@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  attendanceJoinNipy,
   AttendanceEmployeeIdentity,
   AttendanceIdentityIndex,
   isActiveBlueCollar,
+  isAttendanceSyntheticNipy,
   resolveIdentityByName,
 } from './attendanceStore';
 import { normalizeName } from '@/lib/payroll/employeeNames';
@@ -82,5 +84,26 @@ test('an unknown or empty name resolves to nobody', () => {
   assert.equal(
     resolveIdentityByName(index, 'Orang Tidak Dikenal', isActiveBlueCollar),
     null,
+  );
+});
+
+test('an employee with a real NIPY joins attendance on it directly', () => {
+  assert.equal(
+    attendanceJoinNipy({ employeeId: 'BC_1', nipy: '13010721001' }),
+    '13010721001',
+  );
+  assert.equal(isAttendanceSyntheticNipy('13010721001'), false);
+});
+
+test('an employee with no NIPY yet still gets a stable, unmistakable join token', () => {
+  const token = attendanceJoinNipy({ employeeId: 'BC_52', nipy: '' });
+  assert.equal(token, 'LINKED:BC_52');
+  assert.equal(isAttendanceSyntheticNipy(token), true);
+  // Same employee, same token every time — attendance keeps landing in one place.
+  assert.equal(attendanceJoinNipy({ employeeId: 'BC_52', nipy: '' }), token);
+  // Different employees never collide.
+  assert.notEqual(
+    attendanceJoinNipy({ employeeId: 'BC_53', nipy: '' }),
+    token,
   );
 });
