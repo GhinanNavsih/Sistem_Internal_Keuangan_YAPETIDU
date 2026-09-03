@@ -12,6 +12,11 @@ export interface KebersihanyEmployee {
   counts?: Record<string, number>;
 }
 
+export interface RekapPresensiKebersihanySignature {
+  name: string;
+  title: string;
+}
+
 export interface RekapPresensiKebersihanyData {
   /** e.g. "Mei 2026" */
   period: string;
@@ -20,10 +25,8 @@ export interface RekapPresensiKebersihanyData {
   employees: KebersihanyEmployee[];
   isEmptyTemplate?: boolean;
   customColumns?: RekapColumn[];
-  signature?: {
-    name: string;
-    title: string;
-  };
+  /** Up to 3 signature spots. Falls back to a per-category default when omitted/empty. */
+  signatures?: RekapPresensiKebersihanySignature[];
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -340,30 +343,42 @@ export async function generateRekapPresensiKebersihanyPdf(
   const now = new Date();
   const dateStr = `Jombang, ${now.getDate()} ${monthsId[now.getMonth()]} ${now.getFullYear()}`;
 
-  const sigX = pageW - marginR - 55;
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text(dateStr, sigX, tableEnd, { align: 'center' });
-  doc.text('Mengetahui,', sigX, tableEnd + 5, { align: 'center' });
-
-  // signature space
-  const sigLineY = tableEnd + 30;
-  doc.setLineWidth(0.4);
-  doc.line(sigX - 28, sigLineY, sigX + 28, sigLineY);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-
   const isSatpam = data.category === 'SATPAM';
-  const defaultSigName = isSatpam ? 'H. Rohmatul Akbar, ST' : 'Harun Arrosyid, S. Pd. I';
-  const defaultSigTitle = isSatpam ? 'Majlis Kamtib' : 'KA. Biro Administrasi Umum';
+  const defaultSignatures: RekapPresensiKebersihanySignature[] = [
+    {
+      name: isSatpam ? 'H. Rohmatul Akbar, ST' : 'Harun Arrosyid, S. Pd. I',
+      title: isSatpam ? 'Majlis Kamtib' : 'KA. Biro Administrasi Umum',
+    },
+  ];
+  const signatures = data.signatures && data.signatures.length > 0 ? data.signatures : defaultSignatures;
 
-  const sigName = data.signature?.name || defaultSigName;
-  const sigTitle = data.signature?.title || defaultSigTitle;
-
-  doc.text(sigName, sigX, sigLineY + 5, { align: 'center' });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.text(sigTitle, sigX, sigLineY + 10, { align: 'center' });
+  doc.text(dateStr, pageW - marginR, tableEnd, { align: 'right' });
+
+  const jabatanY = tableEnd + 6;
+  const sigLineY = jabatanY + 24;
+  doc.setLineWidth(0.4);
+
+  const drawSig = (sig: RekapPresensiKebersihanySignature, x: number) => {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(sig.title, x, jabatanY, { align: 'center' });
+    doc.line(x - 28, sigLineY, x + 28, sigLineY);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text(sig.name, x, sigLineY + 5, { align: 'center' });
+  };
+
+  if (signatures.length <= 1) {
+    const sigX = pageW - marginR - 55;
+    drawSig(signatures[0], sigX);
+  } else {
+    const blockL = marginL + 25;
+    const blockR = pageW - marginR - 25;
+    const step = (blockR - blockL) / (signatures.length - 1);
+    signatures.forEach((sig, i) => drawSig(sig, blockL + step * i));
+  }
 
   // ── Save ───────────────────────────────────────────────────────────────────
   const safePeriod = data.period.replace(/\s+/g, '_');

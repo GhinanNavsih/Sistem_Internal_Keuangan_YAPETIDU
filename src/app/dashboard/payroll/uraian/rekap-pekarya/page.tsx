@@ -268,12 +268,13 @@ export default function RekapPekaryaPage() {
   const [newColMultiplier, setNewColMultiplier] = useState<number | ''>('');
 
   // ── Custom Signature Dialog States ──
-  const [signatureConfig, setSignatureConfig] = useState<Record<string, { name: string, title: string }>>({});
+  const [signatureConfig, setSignatureConfig] = useState<Record<string, { name: string, title: string }[]>>({});
   const [showSignatureModal, setShowSignatureModal] = useState(false);
-  const [sigModalName, setSigModalName] = useState('');
-  const [sigModalTitle, setSigModalTitle] = useState('');
-  const [sigModalSearch, setSigModalSearch] = useState('');
-  const [selectedSigEmpId, setSelectedSigEmpId] = useState('');
+  const [sigModalSlots, setSigModalSlots] = useState<{ name: string, title: string, searchText: string, showDropdown: boolean }[]>([
+    { name: '', title: '', searchText: '', showDropdown: false },
+    { name: '', title: '', searchText: '', showDropdown: false },
+    { name: '', title: '', searchText: '', showDropdown: false },
+  ]);
   const [employeesForSignature, setEmployeesForSignature] = useState<{ id: string, name: string, role: string, collection: string }[]>([]);
   const [loadingSigEmployees, setLoadingSigEmployees] = useState(false);
 
@@ -287,7 +288,17 @@ export default function RekapPekaryaPage() {
         const docRef = doc(db, 'Settings', 'signatures');
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
-          setSignatureConfig(docSnap.data());
+          const raw = docSnap.data();
+          // Normalize legacy single-signature shape ({name,title}) into an array on read.
+          const normalized: Record<string, { name: string, title: string }[]> = {};
+          Object.entries(raw).forEach(([cat, val]) => {
+            if (Array.isArray(val)) {
+              normalized[cat] = val;
+            } else if (val && typeof val === 'object' && ((val as any).name || (val as any).title)) {
+              normalized[cat] = [val as { name: string, title: string }];
+            }
+          });
+          setSignatureConfig(normalized);
         }
       } catch (err) {
         console.error('Error fetching signature settings:', err);
@@ -333,37 +344,37 @@ export default function RekapPekaryaPage() {
     }
   };
 
-  const handleSelectEmployeeForSignature = (emp: { id: string, name: string, role: string }) => {
-    setSelectedSigEmpId(emp.id);
-    setSigModalName(emp.name);
-    setSigModalTitle(emp.role);
-    setSigModalSearch('');
-  };
-
   const handleOpenSignatureModal = () => {
     fetchEmployeesForSignature();
-    const currentSig = signatureConfig[category];
-    if (currentSig) {
-      setSigModalName(currentSig.name);
-      setSigModalTitle(currentSig.title);
+    const currentSigs = signatureConfig[category];
+    if (currentSigs && currentSigs.length > 0) {
+      setSigModalSlots(Array.from({ length: 3 }, (_, i) => ({
+        name: currentSigs[i]?.name || '',
+        title: currentSigs[i]?.title || '',
+        searchText: currentSigs[i]?.name || '',
+        showDropdown: false,
+      })));
     } else {
       const isSatpam = category === 'SATPAM';
-      setSigModalName(isSatpam ? 'H. Rohmatul Akbar, ST' : 'Harun Arrosyid, S. Pd. I');
-      setSigModalTitle(isSatpam ? 'Majlis Kamtib' : 'KA. Biro Administrasi Umum');
+      const defaultName = isSatpam ? 'H. Rohmatul Akbar, ST' : 'Harun Arrosyid, S. Pd. I';
+      const defaultTitle = isSatpam ? 'Majlis Kamtib' : 'KA. Biro Administrasi Umum';
+      setSigModalSlots([
+        { name: defaultName, title: defaultTitle, searchText: defaultName, showDropdown: false },
+        { name: '', title: '', searchText: '', showDropdown: false },
+        { name: '', title: '', searchText: '', showDropdown: false },
+      ]);
     }
-    setSigModalSearch('');
-    setSelectedSigEmpId('');
     setShowSignatureModal(true);
   };
 
   const handleSaveSignature = async () => {
     try {
+      const sigsToSave = sigModalSlots
+        .filter(s => s.name.trim() && s.title.trim())
+        .map(s => ({ name: s.name.trim(), title: s.title.trim() }));
       const updatedConfig = {
         ...signatureConfig,
-        [category]: {
-          name: sigModalName,
-          title: sigModalTitle
-        }
+        [category]: sigsToSave,
       };
       await setDoc(doc(db, 'Settings', 'signatures'), updatedConfig, { merge: true });
       setSignatureConfig(updatedConfig);
@@ -1356,7 +1367,7 @@ export default function RekapPekaryaPage() {
       category,
       employees: empRows,
       customColumns,
-      signature: signatureConfig[category],
+      signatures: signatureConfig[category],
     });
   };
 
@@ -1378,7 +1389,7 @@ export default function RekapPekaryaPage() {
       employees: empRows,
       isEmptyTemplate: true,
       customColumns,
-      signature: signatureConfig[category],
+      signatures: signatureConfig[category],
     });
   };
 
@@ -1943,44 +1954,102 @@ export default function RekapPekaryaPage() {
 
       {/* Signature Dialog */}
       <Dialog open={showSignatureModal} onOpenChange={setShowSignatureModal}>
-        <DialogContent className="sm:max-w-md max-w-full overflow-hidden flex flex-col p-0 border-none bg-white shadow-2xl rounded-3xl animate-in fade-in duration-300">
+        <DialogContent className="sm:max-w-2xl max-w-full overflow-hidden flex flex-col p-0 border-none bg-white shadow-2xl rounded-3xl animate-in fade-in duration-300">
           <DialogHeader className="p-6 pb-4 bg-gradient-to-r from-indigo-50/80 to-purple-50/60 border-b border-slate-100 shrink-0">
             <DialogTitle className="text-slate-800 flex items-center gap-3 font-bold text-lg"><FileText className="w-5 h-5 text-indigo-500" />Tanda Tangan Laporan PDF</DialogTitle>
-            <p className="text-slate-500 text-xs mt-1">Pilih pegawai dan jabatan yang akan menandatangani laporan PDF untuk Kategori: <span className="font-bold text-indigo-600">{category}</span>.</p>
+            <p className="text-slate-500 text-xs mt-1">Pilih hingga 3 pegawai dan jabatan yang akan menandatangani laporan PDF untuk Kategori: <span className="font-bold text-indigo-600">{category}</span>.</p>
           </DialogHeader>
-          <div className="p-6 space-y-4 bg-white overflow-y-auto max-h-[50vh]">
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Cari Pegawai</label>
-              <Input type="text" placeholder="Masukkan nama pegawai untuk mencari..." value={sigModalSearch} onChange={(e) => setSigModalSearch(e.target.value)} className="rounded-xl border-slate-200 font-semibold text-slate-800 text-sm" />
-            </div>
-            {sigModalSearch.trim().length > 0 && (
-              <div className="border border-slate-100 rounded-xl overflow-hidden shadow-inner max-h-40 overflow-y-auto divide-y divide-slate-100">
-                {loadingSigEmployees ? (
-                  <div className="p-4 text-xs text-slate-500 text-center flex items-center justify-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Memuat data...</div>
-                ) : (() => {
-                  const filtered = employeesForSignature.filter(emp => emp.name.toLowerCase().includes(sigModalSearch.toLowerCase()));
-                  if (filtered.length === 0) return <div className="p-4 text-xs text-slate-500 text-center">Tidak ditemukan pegawai dengan nama tersebut.</div>;
-                  return filtered.map(emp => (
-                    <button key={emp.id} type="button" onClick={() => handleSelectEmployeeForSignature(emp)} className={`w-full text-left p-3 text-xs font-semibold hover:bg-slate-50 flex justify-between items-center ${selectedSigEmpId === emp.id ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700'}`}>
-                      <span>{emp.name}</span>
-                      <span className="text-[10px] text-slate-400 font-normal uppercase">{emp.role} ({emp.collection === 'Employees_Loyalis' ? 'Loyalis' : 'Pekarya'})</span>
-                    </button>
-                  ));
-                })()}
-              </div>
-            )}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Nama Penandatangan</label>
-              <Input type="text" placeholder="Nama Lengkap beserta gelar..." value={sigModalName} onChange={(e) => { setSigModalName(e.target.value); setSelectedSigEmpId(''); }} className="rounded-xl font-semibold text-slate-800 text-sm border-slate-200" />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Jabatan Penandatangan</label>
-              <Input type="text" placeholder="Jabatan..." value={sigModalTitle} onChange={(e) => { setSigModalTitle(e.target.value); setSelectedSigEmpId(''); }} className="rounded-xl font-semibold text-slate-800 text-sm border-slate-200" />
+          <div className="p-6 space-y-4 bg-white overflow-y-auto max-h-[60vh]">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {sigModalSlots.map((slot, sIdx) => {
+                const updateSlot = (field: 'name' | 'title', val: string) => {
+                  setSigModalSlots(prev => {
+                    const next = [...prev];
+                    next[sIdx] = { ...next[sIdx], [field]: val };
+                    return next;
+                  });
+                };
+                const filtered = slot.searchText.trim().length > 0
+                  ? employeesForSignature.filter(emp => emp.name.toLowerCase().includes(slot.searchText.toLowerCase()))
+                  : [];
+                return (
+                  <div key={sIdx} className="p-4 rounded-2xl border border-slate-150 bg-slate-50/30 space-y-2.5">
+                    <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">Penandatangan {sIdx + 1}{sIdx === 0 ? '' : ' (opsional)'}</span>
+                    <div className="space-y-1.5 relative">
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Cari Pegawai</label>
+                      <Input
+                        type="text"
+                        placeholder="Masukkan nama pegawai untuk mencari..."
+                        value={slot.searchText}
+                        onChange={(e) => {
+                          const text = e.target.value;
+                          setSigModalSlots(prev => {
+                            const next = [...prev];
+                            next[sIdx] = { ...next[sIdx], searchText: text, showDropdown: true };
+                            return next;
+                          });
+                        }}
+                        onFocus={() => {
+                          setSigModalSlots(prev => {
+                            const next = [...prev];
+                            next[sIdx] = { ...next[sIdx], showDropdown: true };
+                            return next;
+                          });
+                        }}
+                        onBlur={() => {
+                          setTimeout(() => {
+                            setSigModalSlots(prev => {
+                              const next = [...prev];
+                              if (next[sIdx]) next[sIdx] = { ...next[sIdx], showDropdown: false };
+                              return next;
+                            });
+                          }, 200);
+                        }}
+                        className="rounded-xl border-slate-200 font-semibold text-slate-800 text-sm"
+                      />
+                      {slot.showDropdown && slot.searchText.trim().length > 0 && (
+                        <div className="absolute left-0 right-0 mt-1 border border-slate-100 rounded-xl overflow-hidden shadow-2xl max-h-40 overflow-y-auto divide-y divide-slate-100 bg-white z-[999]">
+                          {loadingSigEmployees ? (
+                            <div className="p-4 text-xs text-slate-500 text-center flex items-center justify-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Memuat data...</div>
+                          ) : filtered.length === 0 ? (
+                            <div className="p-4 text-xs text-slate-500 text-center">Tidak ditemukan pegawai dengan nama tersebut.</div>
+                          ) : filtered.map(emp => (
+                            <button
+                              key={emp.id}
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => {
+                                setSigModalSlots(prev => {
+                                  const next = [...prev];
+                                  next[sIdx] = { ...next[sIdx], name: emp.name, title: emp.role, searchText: emp.name, showDropdown: false };
+                                  return next;
+                                });
+                              }}
+                              className="w-full text-left p-3 text-xs font-semibold hover:bg-slate-50 flex justify-between items-center text-slate-700"
+                            >
+                              <span>{emp.name}</span>
+                              <span className="text-[10px] text-slate-400 font-normal uppercase">{emp.role} ({emp.collection === 'Employees_Loyalis' ? 'Loyalis' : 'Pekarya'})</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Nama Penandatangan</label>
+                      <Input type="text" placeholder="Nama Lengkap beserta gelar..." value={slot.name} onChange={(e) => updateSlot('name', e.target.value)} className="rounded-xl font-semibold text-slate-800 text-sm border-slate-200" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Jabatan Penandatangan</label>
+                      <Input type="text" placeholder="Jabatan..." value={slot.title} onChange={(e) => updateSlot('title', e.target.value)} className="rounded-xl font-semibold text-slate-800 text-sm border-slate-200" />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
           <div className="p-5 bg-slate-50 border-t border-slate-100 flex justify-end gap-2.5 shrink-0 rounded-b-3xl">
             <Button variant="ghost" onClick={() => setShowSignatureModal(false)} className="rounded-xl text-slate-500 hover:bg-slate-100">Batal</Button>
-            <Button onClick={handleSaveSignature} disabled={!sigModalName.trim() || !sigModalTitle.trim()} className="rounded-xl px-6 bg-indigo-600 text-white font-bold shadow-lg hover:bg-indigo-700">Simpan</Button>
+            <Button onClick={handleSaveSignature} disabled={!sigModalSlots[0]?.name.trim() || !sigModalSlots[0]?.title.trim()} className="rounded-xl px-6 bg-indigo-600 text-white font-bold shadow-lg hover:bg-indigo-700">Simpan</Button>
           </div>
         </DialogContent>
       </Dialog>
