@@ -1,5 +1,8 @@
 import { adminDb } from '@/lib/firebase-admin';
-import { summarizePekaryaAttendance } from '@/lib/payroll/attendance';
+import {
+  attendanceWorkedSeconds,
+  summarizePekaryaAttendance,
+} from '@/lib/payroll/attendance';
 import { periodCalendarFromData } from '@/lib/payroll/calendar';
 import { DriverPiketSchedule } from '@/lib/payroll/driverPiket';
 import {
@@ -12,6 +15,7 @@ import {
 import {
   buildPekaryaSlipPreview,
   PekaryaAttendanceGate,
+  PekaryaAttendanceLog,
   PekaryaPreviewEmployee,
   PekaryaSlipPreview,
 } from '@/lib/payroll/pekaryaSlipPreview';
@@ -229,6 +233,14 @@ export interface PekaryaPreviewLoadResult {
   period: string;
   matrixVersion: string;
   previews: Record<string, PekaryaSlipPreview>;
+  /**
+   * Active scanner rows keyed by employee. This is intentionally scoped to
+   * the employees included in this request (one employee for an employee
+   * payslip, all employees for Finance), so the payslip cannot read another
+   * employee's attendance log.
+   */
+  attendanceLogs?: Record<string, PekaryaAttendanceLog[]>;
+  attendanceImportRevisionId: string | null;
 }
 
 /**
@@ -347,6 +359,8 @@ export async function loadPekaryaSlipPreviews(
       .map((identity) => [identity.employeeId, identity] as const),
   );
   const uploadedAttendanceEntries: Record<string, UraianEntry> = {};
+  const attendanceLogs: Record<string, PekaryaAttendanceLog[]> = {};
+  const shouldReturnAttendanceLogs = Boolean(employeeIds);
   if (activeImportRevisionId && effectiveAttendance) {
     for (const employee of employees) {
       const identity = attendanceIdentityByEmployeeId.get(employee.id);
@@ -363,6 +377,22 @@ export async function loadPekaryaSlipPreviews(
         effectiveAttendance.days,
         premiumDates,
       );
+      if (shouldReturnAttendanceLogs) {
+        attendanceLogs[employee.id] = summary.days.map((day) => ({
+          date: day.date,
+          workStatus: day.workStatus,
+          scanIn: day.scanIn,
+          scanOut: day.scanOut,
+          scanInAuto: day.scanInAuto,
+          scanOutAuto: day.scanOutAuto,
+          present: day.present,
+          completePunch: day.completePunch,
+          corrected: day.corrected,
+          payType: day.payType,
+          amount: day.amount,
+          durationSeconds: attendanceWorkedSeconds(day.scanIn, day.scanOut),
+        }));
+      }
       uploadedAttendanceEntries[employee.id] = {
         employeeId: employee.id,
         name: identity.name,
@@ -437,5 +467,13 @@ export async function loadPekaryaSlipPreviews(
     });
   }
 
-  return { period, matrixVersion, previews };
+  return {
+    period,
+    matrixVersion,
+    previews,
+    ...(activeImportRevisionId && shouldReturnAttendanceLogs
+      ? { attendanceLogs }
+      : {}),
+    attendanceImportRevisionId: activeImportRevisionId || null,
+  };
 }

@@ -115,6 +115,170 @@ export function activityDurationMinutes(
   return duration;
 }
 
+export const BUANG_SAMPAH_FLAT_FEE = 5_000;
+
+/**
+ * Time-based SPJ rates, held as rupiah per hour rather than per minute: the
+ * per-minute figures (Rp83,33… and Rp116,66…) do not terminate, so storing the
+ * hourly figure and dividing at the end is what keeps a whole hour landing on a
+ * round Rp5.000 / Rp7.000 instead of a cent above or below it.
+ */
+export const PEKARYA_SPJ_HOURLY_RATES = {
+  piketStandby: 5_000,
+  lainnya: 7_000,
+} as const;
+
+/** Anything shorter than an hour is still paid as a full hour. */
+export const PEKARYA_SPJ_MINIMUM_BILLABLE_MINUTES = 60;
+
+/**
+ * Superseded 30-minute-block rates. Retained rather than deleted because an
+ * activity dated before the cutoff must still price at what it was submitted
+ * under, including one still sitting unapproved in the Satker's queue.
+ */
+export const PEKARYA_SPJ_LEGACY_HALF_HOUR_RATES = {
+  piketStandby: 2_000,
+  lainnya: 2_500,
+} as const;
+
+/**
+ * First activity date priced per minute. Activities before it keep the legacy
+ * half-hour blocks, so raising the rate never reprices existing SPJ.
+ */
+export const PEKARYA_SPJ_PER_MINUTE_RATE_START_DATE = '2026-09-04';
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * An unparseable or absent date falls back to the legacy regime on purpose: the
+ * only records without a usable activityDate are old ones, and under-quoting a
+ * new submission is recoverable at review while repricing a settled one is not.
+ */
+export function usesPerMinuteSpjRate(activityDate?: string): boolean {
+  return (
+    typeof activityDate === 'string' &&
+    ISO_DATE_RE.test(activityDate) &&
+    activityDate >= PEKARYA_SPJ_PER_MINUTE_RATE_START_DATE
+  );
+}
+
+/**
+ * Resolves the rate bracket for an activity, falling back to the free-text
+ * activity name when no explicit type was recorded (older submissions).
+ */
+export function resolvePekaryaActivityRateType(
+  activityType?: string,
+  activityName?: string,
+): PekaryaActivityType {
+  if (activityType === 'Buang Sampah' || activityName === 'Buang Sampah') {
+    return 'Buang Sampah';
+  }
+  if (
+    activityType &&
+    (PEKARYA_ACTIVITY_TYPES as readonly string[]).includes(activityType)
+  ) {
+    return activityType as PekaryaActivityType;
+  }
+
+  const nameLower = (activityName ?? '').toLowerCase();
+  if (nameLower === 'piket' || nameLower.startsWith('piket ')) return 'Piket';
+  if (nameLower === 'standby' || nameLower.startsWith('standby ')) {
+    return 'Standby';
+  }
+  if (
+    nameLower === "ro'an" ||
+    nameLower === 'roan' ||
+    nameLower.startsWith("ro'an ") ||
+    nameLower.startsWith('roan ')
+  ) {
+    return "Ro'an";
+  }
+  return 'Lainnya';
+}
+
+export function pekaryaSpjHourlyRate(activityRateType: PekaryaActivityType): number {
+  return activityRateType === 'Piket' || activityRateType === 'Standby'
+    ? PEKARYA_SPJ_HOURLY_RATES.piketStandby
+    : PEKARYA_SPJ_HOURLY_RATES.lainnya;
+}
+
+export function pekaryaSpjLegacyHalfHourRate(
+  activityRateType: PekaryaActivityType,
+): number {
+  return activityRateType === 'Piket' || activityRateType === 'Standby'
+    ? PEKARYA_SPJ_LEGACY_HALF_HOUR_RATES.piketStandby
+    : PEKARYA_SPJ_LEGACY_HALF_HOUR_RATES.lainnya;
+}
+
+/** Applies the one-hour floor. Only the per-minute regime has one. */
+export function pekaryaSpjBillableMinutes(durationMinutes: number): number {
+  return Math.max(durationMinutes, PEKARYA_SPJ_MINIMUM_BILLABLE_MINUTES);
+}
+
+export interface PekaryaSpjRateBasis {
+  rateType: PekaryaActivityType;
+  /** true = per-minute regime, false = legacy 30-minute blocks. */
+  perMinute: boolean;
+  /** Rupiah per hour when perMinute, per 30-minute block otherwise. */
+  rate: number;
+  /** Minutes actually billed (per-minute regime only). */
+  billableMinutes: number;
+  /** Whether the one-hour floor lifted this submission. */
+  minimumApplied: boolean;
+  amount: number;
+}
+
+/**
+ * Resolves which rate regime an activity falls under and what it pays, so the
+ * employee card, the Satker review screen and the API cannot drift apart.
+ *
+ * Per-minute pay is rounded up to the whole rupiah. Integer arithmetic
+ * (multiply before dividing, then a ceiling division) keeps an exact hour off
+ * floating-point drift, which a literal Rp83,333333/minute constant would
+ * otherwise push a rupiah past the round figure.
+ */
+export function pekaryaSpjRateBasis(
+  durationMinutes: number,
+  activityType?: string,
+  activityName?: string,
+  activityDate?: string,
+): PekaryaSpjRateBasis {
+  const rateType = resolvePekaryaActivityRateType(activityType, activityName);
+  if (rateType === 'Buang Sampah') {
+    return {
+      rateType,
+      perMinute: false,
+      rate: BUANG_SAMPAH_FLAT_FEE,
+      billableMinutes: 0,
+      minimumApplied: false,
+      amount: BUANG_SAMPAH_FLAT_FEE,
+    };
+  }
+
+  if (!usesPerMinuteSpjRate(activityDate)) {
+    const rate = pekaryaSpjLegacyHalfHourRate(rateType);
+    return {
+      rateType,
+      perMinute: false,
+      rate,
+      billableMinutes: durationMinutes,
+      minimumApplied: false,
+      amount: Math.round(durationMinutes / 30) * rate,
+    };
+  }
+
+  const rate = pekaryaSpjHourlyRate(rateType);
+  const billableMinutes = pekaryaSpjBillableMinutes(durationMinutes);
+  return {
+    rateType,
+    perMinute: true,
+    rate,
+    billableMinutes,
+    minimumApplied: billableMinutes > durationMinutes,
+    amount: Math.floor((billableMinutes * rate + 59) / 60),
+  };
+}
+
 /**
  * Calculates the employee-submitted estimate for a non-driver activity.
  *
@@ -127,35 +291,20 @@ export function calculateActivitySpjEstimate(
   timeEnd: string,
   activityType?: string,
   activityName?: string,
+  activityDate?: string,
 ): number {
-  if (activityType === 'Buang Sampah' || activityName === 'Buang Sampah') {
-    return 5_000;
+  if (
+    resolvePekaryaActivityRateType(activityType, activityName) === 'Buang Sampah'
+  ) {
+    return BUANG_SAMPAH_FLAT_FEE;
   }
 
-  const durationMinutes = activityDurationMinutes(timeStart, timeEnd);
-  const halfHours = Math.round(durationMinutes / 30);
-
-  let type = activityType;
-  if (!type && activityName) {
-    const nameLower = activityName.toLowerCase();
-    if (nameLower === 'piket' || nameLower.startsWith('piket ')) {
-      type = 'Piket';
-    } else if (nameLower === 'standby' || nameLower.startsWith('standby ')) {
-      type = 'Standby';
-    } else if (
-      nameLower === "ro'an" ||
-      nameLower === 'roan' ||
-      nameLower.startsWith("ro'an ") ||
-      nameLower.startsWith('roan ')
-    ) {
-      type = "Ro'an";
-    } else {
-      type = 'Lainnya';
-    }
-  }
-
-  const rate = type === 'Piket' || type === 'Standby' ? 2_000 : 2_500;
-  return halfHours * rate;
+  return pekaryaSpjRateBasis(
+    activityDurationMinutes(timeStart, timeEnd),
+    activityType,
+    activityName,
+    activityDate,
+  ).amount;
 }
 
 /**

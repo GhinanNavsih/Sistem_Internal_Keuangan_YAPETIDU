@@ -423,7 +423,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                                     </span>
                                   ) : (
                                     (() => {
-                                      const breakdown = getActivityFeeBreakdown(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName);
+                                      const breakdown = getActivityFeeBreakdown(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName, activity.activityDate);
                                       return breakdown && (
                                         <span className="text-xs text-emerald-600/70 font-medium">
                                           ({breakdown}{activity.hasUangMakan ? ' + Rp7.500 Uang Makan' : ''})
@@ -458,6 +458,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                                                     activity.timeEnd,
                                                     activity.activityType,
                                                     activity.activityName,
+                                                    activity.activityDate,
                                                   ))
                                                 : activity.fee,
                                             )}`}
@@ -502,7 +503,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                                 })()
                               ) : (
                                 (() => {
-                                  const baseFee = calculateDefaultFee(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName);
+                                  const baseFee = calculateDefaultFee(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName, activity.activityDate);
 
                                   // Calculate if it qualifies for Uang Makan
                                   const [sh, sm] = activity.timeStart.split(':').map(Number);
@@ -513,7 +514,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                                   const qualifies = halfHours > 4 && activity.activityType !== 'Buang Sampah' && activity.activityName !== 'Buang Sampah';
 
                                   const totalEstimated = qualifies ? baseFee + 7500 : baseFee;
-                                  const breakdown = getActivityFeeBreakdown(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName);
+                                  const breakdown = getActivityFeeBreakdown(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName, activity.activityDate);
 
                                   // Format breakdown with asterisk if qualifies
                                   const breakdownStr = breakdown

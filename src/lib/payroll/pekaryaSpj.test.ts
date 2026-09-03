@@ -7,6 +7,11 @@ import {
   assertSatpamFoundItemPhotoCount,
   buildPekaryaActivityIdentity,
   calculateActivitySpjEstimate,
+  pekaryaSpjBillableMinutes,
+  pekaryaSpjRateBasis,
+  usesPerMinuteSpjRate,
+  pekaryaSpjHourlyRate,
+  resolvePekaryaActivityRateType,
   pekaryaPayrollPeriodForDate,
   pekaryaPayrollWindow,
   satpamFoundItemFeeNeedsAdjustmentReason,
@@ -73,20 +78,104 @@ test('validates normal and cross-midnight activity duration', () => {
   assert.throws(() => activityDurationMinutes('08:99', '10:00'));
 });
 
+const ON = '2026-09-04';
+const BEFORE = '2026-09-03';
+
 test('calculates the shared non-driver activity SPJ estimate', () => {
+  // Whole hours stay on round rupiah figures: Rp7.000/jam and Rp5.000/jam.
   assert.equal(
-    calculateActivitySpjEstimate('08:00', '13:00', 'Lainnya'),
-    25_000,
+    calculateActivitySpjEstimate('08:00', '13:00', 'Lainnya', undefined, ON),
+    35_000,
   );
   assert.equal(
-    calculateActivitySpjEstimate('08:00', '10:00', 'Piket'),
-    8_000,
+    calculateActivitySpjEstimate('08:00', '10:00', 'Piket', undefined, ON),
+    10_000,
   );
   assert.equal(
-    calculateActivitySpjEstimate('22:00', '02:00', undefined, 'Piket malam'),
-    16_000,
+    calculateActivitySpjEstimate('22:00', '02:00', undefined, 'Piket malam', ON),
+    20_000,
   );
   assert.equal(calculateActivitySpjEstimate('', '', 'Buang Sampah'), 5_000);
+});
+
+test('time-based SPJ accrues per minute and rounds the rupiah up', () => {
+  // 61 min × Rp5.000/jam = Rp5.083,33… -> Rp5.084.
+  assert.equal(calculateActivitySpjEstimate('08:00', '09:01', 'Piket', undefined, ON), 5_084);
+  // 61 min × Rp7.000/jam = Rp7.116,66… -> Rp7.117.
+  assert.equal(calculateActivitySpjEstimate('08:00', '09:01', "Ro'an", undefined, ON), 7_117);
+  // Whole hours stay on round rupiah figures.
+  assert.equal(calculateActivitySpjEstimate('08:00', '09:30', 'Standby', undefined, ON), 7_500);
+  assert.equal(calculateActivitySpjEstimate('08:00', '09:30', 'Lainnya', undefined, ON), 10_500);
+  assert.equal(calculateActivitySpjEstimate('08:00', '13:00', 'Lainnya', undefined, ON), 35_000);
+});
+
+test('time-based SPJ below one hour is paid as a full hour', () => {
+  // Abdul Rouf's 13-minute Piket is billed at the 60-minute floor, not 13 × rate.
+  assert.equal(calculateActivitySpjEstimate('08:00', '08:13', 'Piket', undefined, ON), 5_000);
+  assert.equal(calculateActivitySpjEstimate('08:00', '08:01', 'Standby', undefined, ON), 5_000);
+  assert.equal(calculateActivitySpjEstimate('08:00', '08:59', "Ro'an", undefined, ON), 7_000);
+  assert.equal(calculateActivitySpjEstimate('08:00', '09:00', 'Lainnya', undefined, ON), 7_000);
+  // The floor never reduces an over-an-hour submission.
+  assert.equal(pekaryaSpjBillableMinutes(13), 60);
+  assert.equal(pekaryaSpjBillableMinutes(240), 240);
+});
+
+test('the per-minute regime starts on its cutoff date and never before', () => {
+  assert.equal(usesPerMinuteSpjRate(ON), true);
+  assert.equal(usesPerMinuteSpjRate('2026-12-31'), true);
+  assert.equal(usesPerMinuteSpjRate(BEFORE), false);
+  assert.equal(usesPerMinuteSpjRate('2026-08-31'), false);
+  // No date, or an unparseable one, must not reprice a legacy record.
+  assert.equal(usesPerMinuteSpjRate(undefined), false);
+  assert.equal(usesPerMinuteSpjRate(''), false);
+  assert.equal(usesPerMinuteSpjRate('04/09/2026'), false);
+});
+
+test('pre-cutoff SPJ keeps the 30-minute block rates it was filed under', () => {
+  // Same 2-hour Piket: Rp2.000/30m before, Rp5.000/jam on and after.
+  assert.equal(calculateActivitySpjEstimate('08:00', '10:00', 'Piket', undefined, BEFORE), 8_000);
+  assert.equal(calculateActivitySpjEstimate('08:00', '10:00', 'Piket', undefined, ON), 10_000);
+  assert.equal(calculateActivitySpjEstimate('08:00', '13:00', 'Lainnya', undefined, BEFORE), 25_000);
+  // The one-hour floor is a per-minute-regime rule only.
+  assert.equal(calculateActivitySpjEstimate('08:00', '08:13', 'Piket', undefined, BEFORE), 0);
+  // An undated record prices as legacy rather than being lifted to the new rate.
+  assert.equal(calculateActivitySpjEstimate('08:00', '10:00', 'Piket'), 8_000);
+});
+
+test('Buang Sampah stays flat across both rate regimes', () => {
+  assert.equal(calculateActivitySpjEstimate('', '', 'Buang Sampah', undefined, BEFORE), 5_000);
+  assert.equal(calculateActivitySpjEstimate('', '', 'Buang Sampah', undefined, ON), 5_000);
+  assert.equal(pekaryaSpjRateBasis(600, 'Buang Sampah', undefined, ON).amount, 5_000);
+});
+
+test('rate basis reports the regime the UI must render', () => {
+  const modern = pekaryaSpjRateBasis(13, 'Piket', undefined, ON);
+  assert.equal(modern.perMinute, true);
+  assert.equal(modern.rate, 5_000);
+  assert.equal(modern.billableMinutes, 60);
+  assert.equal(modern.minimumApplied, true);
+
+  const legacy = pekaryaSpjRateBasis(120, 'Piket', undefined, BEFORE);
+  assert.equal(legacy.perMinute, false);
+  assert.equal(legacy.rate, 2_000);
+  assert.equal(legacy.minimumApplied, false);
+  assert.equal(legacy.amount, 8_000);
+});
+
+test('activity rate bracket resolves from explicit type then free-text name', () => {
+  assert.equal(resolvePekaryaActivityRateType('Piket'), 'Piket');
+  assert.equal(resolvePekaryaActivityRateType(undefined, 'Standby pagi'), 'Standby');
+  assert.equal(resolvePekaryaActivityRateType(undefined, "Ro'an masjid"), "Ro'an");
+  assert.equal(resolvePekaryaActivityRateType(undefined, 'Bersih taman'), 'Lainnya');
+  assert.equal(resolvePekaryaActivityRateType(undefined, undefined), 'Lainnya');
+  assert.equal(
+    resolvePekaryaActivityRateType(undefined, 'Buang Sampah'),
+    'Buang Sampah',
+  );
+  assert.equal(pekaryaSpjHourlyRate('Piket'), 5_000);
+  assert.equal(pekaryaSpjHourlyRate('Standby'), 5_000);
+  assert.equal(pekaryaSpjHourlyRate("Ro'an"), 7_000);
+  assert.equal(pekaryaSpjHourlyRate('Lainnya'), 7_000);
 });
 
 test('counts approved non-Satpam activity once and does not double driver wage', () => {

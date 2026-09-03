@@ -80,7 +80,10 @@ import {
 } from '@/utils/payrollLogic';
 import { isTransferEligibleStatus } from '@/lib/payroll/domain';
 import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
-import { overlayPekaryaAttendanceEarnings } from '@/lib/payroll/pekaryaSlipPreview';
+import {
+  overlayPekaryaAttendanceEarnings,
+  type PekaryaAttendanceLog,
+} from '@/lib/payroll/pekaryaSlipPreview';
 
 interface PekaryaDocItem {
   id: string;
@@ -148,6 +151,124 @@ function terbilang(n: number): string {
 function money(value: unknown): number {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? Math.round(numeric) : 0;
+}
+
+type DailyPresenceLogSource = 'loyalis' | 'pekarya-upload' | 'activity' | null;
+
+function dailyPresenceLogValue(log: unknown): Record<string, unknown> {
+  return log && typeof log === 'object' && !Array.isArray(log)
+    ? (log as Record<string, unknown>)
+    : {};
+}
+
+function dailyPresenceDate(value: unknown): string {
+  if (typeof value === 'string' && value.trim()) return value;
+  const date = dateFromFirestoreValue(value);
+  return date
+    ? date.toLocaleDateString('id-ID')
+    : '-';
+}
+
+function DailyPresenceLogDetails({
+  logs,
+  source,
+  expanded,
+  onToggle,
+}: {
+  logs: readonly unknown[];
+  source: DailyPresenceLogSource;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const isPekaryaUpload = source === 'pekarya-upload';
+
+  return (
+    <div style={{ gridColumn: '1 / -1' }} className="mt-3 pt-3 border-t border-slate-200">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center justify-between py-2 text-xs font-bold text-black hover:text-indigo-600 transition-colors cursor-pointer"
+      >
+        <div className="flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-indigo-500" />
+          <span>Detail Presensi Harian</span>
+        </div>
+        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-indigo-600">
+          <span>{expanded ? 'Sembunyikan' : 'Tampilkan Detail'}</span>
+          {expanded ? (
+            <ChevronUp className="w-4 h-4 text-indigo-500" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-indigo-500" />
+          )}
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="mt-2.5 overflow-x-auto border border-slate-200/80 rounded-xl bg-white text-xs animate-in fade-in duration-200 shadow-sm">
+          {logs.length > 0 ? (
+            <table className="w-full table-fixed border-collapse text-[10px] sm:text-[11px]">
+              <thead className="bg-slate-50 border-b border-slate-200 font-bold text-black">
+                <tr>
+                  <th className="pl-3 sm:pl-4 pr-1 py-2 text-left w-[22%]">TANGGAL</th>
+                  <th className="px-1 py-2 text-center w-[35%]">JAM SCAN (MASUK / PULANG)</th>
+                  <th className="px-1 py-2 text-center w-[15%]">DURASI</th>
+                  <th className="pr-3 sm:pr-4 pl-1 py-2 text-right w-[28%]">PENDAPATAN</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium">
+                {logs.map((rawLog, logIdx) => {
+                  const log = dailyPresenceLogValue(rawLog);
+                  const scanIn = log.scanIn ?? log['Scan masuk'] ?? log.scanMasuk ?? '-';
+                  const scanOut = log.scanOut ?? log['Scan pulang'] ?? log.scanPulang ?? '-';
+                  const rawDuration = log.duration;
+                  const duration = typeof rawDuration === 'number'
+                    ? rawDuration
+                    : Math.round(money(log.durationSeconds) / 60);
+                  const earningsVal = isPekaryaUpload
+                    ? money(log.amount)
+                    : duration > 0
+                      ? duration * 27.5
+                      : 0;
+                  const payType = typeof log.payType === 'string' ? log.payType : '';
+
+                  return (
+                    <tr key={logIdx} className="hover:bg-slate-50/50">
+                      <td className="pl-3 sm:pl-4 pr-1 py-2 font-bold text-black font-mono text-[10px] sm:text-[11px] truncate">
+                        <div>{dailyPresenceDate(log.date ?? log.Tanggal ?? log.tanggal)}</div>
+                        {isPekaryaUpload && payType && (
+                          <div className="mt-0.5 text-[9px] font-semibold text-indigo-600">{payType}</div>
+                        )}
+                      </td>
+                      <td className="px-1 py-1.5 text-center font-mono text-[10px] sm:text-[11px]">
+                        <div className="flex flex-col items-center leading-tight gap-0.5">
+                          <span className="text-black font-medium">
+                            Masuk: {String(scanIn || '-')}
+                          </span>
+                          <span className="text-black font-medium">
+                            Pulang: {String(scanOut || '-')}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-1 py-2 text-center font-mono text-[10px] sm:text-[11px]">
+                        {duration > 0 ? `${duration}m` : '-'}
+                      </td>
+                      <td className="pr-3 sm:pr-4 pl-1 py-2 text-right font-bold font-mono text-black text-[10px] sm:text-[11px]">
+                        {earningsVal > 0 ? formatIDR(earningsVal) : '-'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          ) : (
+            <div className="p-4 text-center text-slate-500 text-xs italic">
+              Data presensi harian belum tersedia untuk periode ini.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function dateFromFirestoreValue(value: unknown): Date | null {
@@ -594,6 +715,7 @@ export default function EmployeePayslipPage() {
   const [vakasiEvents, setVakasiEvents] = useState<{ eventName: string; payGiven: number }[]>([]);
   const [kepangkatanDesignations, setKepangkatanDesignations] = useState<Record<number, string>>({});
   const [dailyPresenceLogs, setDailyPresenceLogs] = useState<any[]>([]);
+  const [dailyPresenceLogSource, setDailyPresenceLogSource] = useState<DailyPresenceLogSource>(null);
   const [showDailyLogs, setShowDailyLogs] = useState<boolean>(false);
 
   // Dynamic calculations states
@@ -662,9 +784,10 @@ export default function EmployeePayslipPage() {
         table: {
           headers: ['Durasi Kerja Tercatat', 'Nilai Presensi', 'Keterangan'],
           rows: [
-            ['1 jam', 'Rp 1.924', 'Pembulatan ke atas dari Rp 1.923,08'],
-            ['6,5 jam', 'Rp 12.500', 'Setara satu hari kerja penuh'],
-            ['13 jam', 'Rp 25.000', 'Dua kali hari kerja penuh'],
+            ['Rp/Jam Harian', 'Rp 1.924', 'Pembulatan ke atas dari Rp 1.923,08'],
+            ['Rp/Jam Jumat & Libur', 'Rp 3.847', 'Pembulatan ke atas dari Rp 3.846,15'],
+            ['Harian (6.5 jam)', 'Rp 12.500', 'Setara satu hari kerja penuh'],
+            ['Jumat & Libur (6.5 jam)', 'Rp 25.000', 'Dua kali hari kerja penuh'],
           ],
         },
       };
@@ -795,6 +918,7 @@ export default function EmployeePayslipPage() {
         setCalculatedTaxes([]);
         setPekaryaPreviewError(null);
         setDailyPresenceLogs([]);
+        setDailyPresenceLogSource(null);
         setShowDailyLogs(false);
 
         const empId = profile.linkedEmployeeId as string;
@@ -928,6 +1052,7 @@ export default function EmployeePayslipPage() {
         };
         let loadedVakasiEvents: { eventName: string; payGiven: number }[] = [];
         let hasCurrentPekaryaAttendance = false;
+        let loadedPekaryaAttendanceLogs: PekaryaAttendanceLog[] | null = null;
 
         if (!isLoyalis) {
           // Earnings come from /api/payroll/slip-preview — the very same
@@ -950,9 +1075,24 @@ export default function EmployeePayslipPage() {
                   meta?: { attendanceSource?: unknown };
                 }
               >;
+              attendanceLogs?: Record<string, PekaryaAttendanceLog[]>;
+              attendanceImportRevisionId?: string | null;
             }>(`/api/payroll/slip-preview?${previewParams.toString()}`);
             if (cancelled) return;
             const employeePreview = previewResult.previews?.[empId];
+            const employeeCategory = String(
+              employee.employment?.jobCategory || '',
+            ).trim().toUpperCase();
+            if (
+              previewResult.attendanceImportRevisionId &&
+              employeeCategory !== 'SATPAM'
+            ) {
+              loadedPekaryaAttendanceLogs = Array.isArray(
+                previewResult.attendanceLogs?.[empId],
+              )
+                ? previewResult.attendanceLogs![empId]
+                : [];
+            }
             fallbackEarnings = normalizeSlipFields(
               employeePreview?.earnings,
             );
@@ -1076,13 +1216,22 @@ export default function EmployeePayslipPage() {
           }
         }
 
-        // Non-Loyalis employees do not use LoyalisPresence. Their authentic
-        // daily activity records come from approved ActivityReports in the
-        // selected payroll window instead.
+        // Non-Loyalis employees do not use LoyalisPresence. Once an active
+        // unified scanner import exists, its day rows are authoritative; an
+        // older approved ActivityReports list remains the pre-import fallback.
         const periodActivityReports = activityReports.filter((report: any) =>
           report.status === 'approved' && activityBelongsToPayrollPeriod(report, periodToken),
         );
-        if (!isLoyalis && foundLogs.length === 0 && periodActivityReports.length > 0) {
+        let loadedDailyPresenceLogSource: DailyPresenceLogSource = isLoyalis
+          ? 'loyalis'
+          : null;
+        if (!isLoyalis && loadedPekaryaAttendanceLogs !== null) {
+          // An active unified import is the source of truth for this log. Keep
+          // an empty array as an intentional empty state instead of falling
+          // back to older ActivityReports rows.
+          foundLogs = loadedPekaryaAttendanceLogs;
+          loadedDailyPresenceLogSource = 'pekarya-upload';
+        } else if (!isLoyalis && foundLogs.length === 0 && periodActivityReports.length > 0) {
           foundLogs = periodActivityReports.map((act: any) => {
             let dateStr = '-';
             if (act.date) {
@@ -1099,9 +1248,11 @@ export default function EmployeePayslipPage() {
               earningsVal: act.wageAmount || act.nominal || 0,
             };
           });
+          loadedDailyPresenceLogSource = 'activity';
         }
 
         setDailyPresenceLogs(foundLogs);
+        setDailyPresenceLogSource(loadedDailyPresenceLogSource);
 
         if (slipSnap.exists() && isTransferEligibleStatus(slipSnap.data()?.status)) {
           const slipData = slipSnap.data();
@@ -2051,80 +2202,12 @@ export default function EmployeePayslipPage() {
                                             </div>
                                           </div>
 
-                                          {/* Dropdown Section for Daily Attendance Logs */}
-                                          <div style={{ gridColumn: '1 / -1' }} className="mt-3 pt-3 border-t border-slate-200">
-                                            <button
-                                              type="button"
-                                              onClick={() => setShowDailyLogs(!showDailyLogs)}
-                                              className="w-full flex items-center justify-between py-2 text-xs font-bold text-black hover:text-indigo-600 transition-colors cursor-pointer"
-                                            >
-                                              <div className="flex items-center gap-2">
-                                                <Calendar className="w-4 h-4 text-indigo-500" />
-                                                <span>Detail Presensi Harian</span>
-                                              </div>
-                                              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-indigo-600">
-                                                <span>{showDailyLogs ? 'Sembunyikan' : 'Tampilkan Detail'}</span>
-                                                {showDailyLogs ? (
-                                                  <ChevronUp className="w-4 h-4 text-indigo-500" />
-                                                ) : (
-                                                  <ChevronDown className="w-4 h-4 text-indigo-500" />
-                                                )}
-                                              </div>
-                                            </button>
-
-                                            {showDailyLogs && (
-                                              <div className="mt-2.5 overflow-x-auto border border-slate-200/80 rounded-xl bg-white text-xs animate-in fade-in duration-200 shadow-sm">
-                                                {dailyPresenceLogs && dailyPresenceLogs.length > 0 ? (
-                                                  <table className="w-full table-fixed border-collapse text-[10px] sm:text-[11px]">
-                                                    <thead className="bg-slate-50 border-b border-slate-200 font-bold text-black">
-                                                      <tr>
-                                                        <th className="pl-3 sm:pl-4 pr-1 py-2 text-left w-[22%]">TANGGAL</th>
-                                                        <th className="px-1 py-2 text-center w-[35%]">JAM SCAN (MASUK / PULANG)</th>
-                                                        <th className="px-1 py-2 text-center w-[15%]">DURASI</th>
-                                                        <th className="pr-3 sm:pr-4 pl-1 py-2 text-right w-[28%]">PENDAPATAN</th>
-                                                      </tr>
-                                                    </thead>
-                                                    <tbody className="divide-y divide-slate-100 font-medium">
-                                                      {dailyPresenceLogs.map((log: any, logIdx: number) => {
-                                                        const scanIn = log['Scan masuk'] || log.scanMasuk || '-';
-                                                        const scanOut = log['Scan pulang'] || log.scanPulang || '-';
-                                                        const duration = typeof log.duration === 'number' ? log.duration : 0;
-                                                        const earningsVal = duration > 0 ? duration * 27.5 : 0;
-
-                                                        return (
-                                                          <tr key={logIdx} className="hover:bg-slate-50/50">
-                                                            <td className="pl-3 sm:pl-4 pr-1 py-2 font-bold text-black font-mono text-[10px] sm:text-[11px] truncate">
-                                                              {log.Tanggal || log.tanggal}
-                                                            </td>
-                                                            <td className="px-1 py-1.5 text-center font-mono text-[10px] sm:text-[11px]">
-                                                              <div className="flex flex-col items-center leading-tight gap-0.5">
-                                                                <span className="text-black font-medium">
-                                                                  Masuk: {scanIn}
-                                                                </span>
-                                                                <span className="text-black font-medium">
-                                                                  Pulang: {scanOut}
-                                                                </span>
-                                                              </div>
-                                                            </td>
-                                                            <td className="px-1 py-2 text-center font-mono text-[10px] sm:text-[11px]">
-                                                              {duration > 0 ? `${duration}m` : '-'}
-                                                            </td>
-                                                            <td className="pr-3 sm:pr-4 pl-1 py-2 text-right font-bold font-mono text-black text-[10px] sm:text-[11px]">
-                                                              {earningsVal > 0 ? formatIDR(earningsVal) : '-'}
-                                                            </td>
-                                                          </tr>
-                                                        );
-                                                      })}
-                                                    </tbody>
-                                                  </table>
-                                                ) : (
-                                                  <div className="p-4 text-center text-slate-500 text-xs italic">
-                                                    Data presensi harian belum tersedia untuk periode ini.
-                                                  </div>
-                                                )}
-                                              </div>
-                                            )}
-                                          </div>
+                                          <DailyPresenceLogDetails
+                                            logs={dailyPresenceLogs}
+                                            source={dailyPresenceLogSource}
+                                            expanded={showDailyLogs}
+                                            onToggle={() => setShowDailyLogs(!showDailyLogs)}
+                                          />
                                         </>
                                       );
                                     })()}
@@ -2188,10 +2271,18 @@ export default function EmployeePayslipPage() {
                                     const piketVal = getEarningAmount(['PIKET']);
                                     const praktekVal = getEarningAmount(['PRAKTEK']);
                                     if (isSatpam) return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Vakasi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Lembur Sendiri" value={formatIDR(lemburSendiriVal)} /><DocRow label="Lembur Cover" value={formatIDR(lemburCoverVal)} /><DocRow label="Total Insentif Shift" value={formatIDR(harianVal + jumatVal + lemburSendiriVal + lemburCoverVal)} highlight /></div>);
-                                    if (isKebersihan) return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Presensi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Total Upah Presensi" value={formatIDR(harianVal + jumatVal)} highlight /></div>);
-                                    if (isTeknisi) return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Presensi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Lembur" value={formatIDR(lemburVal)} /><DocRow label="Total Presensi & Lembur" value={formatIDR(harianVal + jumatVal + lemburVal)} highlight /></div>);
-                                    if (isSopir) return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Presensi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Piket" value={formatIDR(piketVal)} /><DocRow label="Praktek" value={formatIDR(praktekVal)} /><DocRow label="Total Presensi & Tugas" value={formatIDR(harianVal + jumatVal + piketVal + praktekVal)} highlight /></div>);
-                                    return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Presensi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Total Upah Presensi" value={formatIDR(harianVal + jumatVal)} highlight /></div>);
+                                    const dailyLogDetails = (
+                                      <DailyPresenceLogDetails
+                                        logs={dailyPresenceLogs}
+                                        source={dailyPresenceLogSource}
+                                        expanded={showDailyLogs}
+                                        onToggle={() => setShowDailyLogs(!showDailyLogs)}
+                                      />
+                                    );
+                                    if (isKebersihan) return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Presensi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Total Upah Presensi" value={formatIDR(harianVal + jumatVal)} highlight />{dailyLogDetails}</div>);
+                                    if (isTeknisi) return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Presensi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Lembur" value={formatIDR(lemburVal)} /><DocRow label="Total Presensi & Lembur" value={formatIDR(harianVal + jumatVal + lemburVal)} highlight />{dailyLogDetails}</div>);
+                                    if (isSopir) return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Presensi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Piket" value={formatIDR(piketVal)} /><DocRow label="Praktek" value={formatIDR(praktekVal)} /><DocRow label="Total Presensi & Tugas" value={formatIDR(harianVal + jumatVal + piketVal + praktekVal)} highlight />{dailyLogDetails}</div>);
+                                    return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Presensi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Total Upah Presensi" value={formatIDR(harianVal + jumatVal)} highlight />{dailyLogDetails}</div>);
                                   }
                                   if (item.id === 'bonus_presensi_pekarya') {
                                     const userJobCategory = (employeeData?.employment?.jobCategory || 'PEKARYA').toUpperCase();

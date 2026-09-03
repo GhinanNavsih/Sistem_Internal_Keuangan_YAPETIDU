@@ -100,6 +100,7 @@ import {
 import {
   pekaryaPayrollPeriodForDate,
   pekaryaPayrollWindow,
+  pekaryaSpjRateBasis,
 } from '@/lib/payroll/pekaryaSpj';
 import {
   calculateDriverNetWage,
@@ -359,31 +360,9 @@ function calculateDefaultFee(
   let minutes = (eh * 60 + em) - (sh * 60 + sm);
   if (minutes < 0) minutes += 24 * 60;
 
-  const halfHours = Math.round(minutes / 30);
-
-  // Determine activity type
-  let type = activityType;
-  if (!type && activityName) {
-    const nameLower = activityName.toLowerCase();
-    if (nameLower === 'piket' || nameLower.startsWith('piket ')) {
-      type = 'Piket';
-    } else if (nameLower === 'standby' || nameLower.startsWith('standby ')) {
-      type = 'Standby';
-    } else if (nameLower === 'ro\'an' || nameLower === 'roan' || nameLower.startsWith('ro\'an ') || nameLower.startsWith('roan ')) {
-      type = 'Ro\'an';
-    } else {
-      type = 'Lainnya';
-    }
-  }
-
-  if (!type) {
-    type = 'Lainnya';
-  }
-
-  const isPiketOrStandby = type === 'Piket' || type === 'Standby';
-  const rate = isPiketOrStandby ? 2000 : 2500;
-
-  return halfHours * rate;
+  // Rate policy lives in the payroll library; activityDate picks the regime so a
+  // pre-cutoff submission still prefills at the rate it was filed under.
+  return pekaryaSpjRateBasis(minutes, activityType, activityName, activityDate).amount;
 }
 
 function getStatusConfig(status: string) {
@@ -1270,13 +1249,14 @@ export default function ActivityReviewPage() {
     timeStart: string,
     timeEnd: string,
     activityType?: string,
-    activityName?: string
+    activityName?: string,
+    activityDate?: string
   ) => {
     const isCurrentlyAdded = !!rowUangMakan[activityId];
     const nextAdded = !isCurrentlyAdded;
 
     // Calculate default base fee (without the 7500)
-    const baseFee = calculateDefaultFee(timeStart, timeEnd, activityType, activityName);
+    const baseFee = calculateDefaultFee(timeStart, timeEnd, activityType, activityName, undefined, undefined, undefined, undefined, activityDate);
 
     // Update state
     setRowUangMakan(prev => ({ ...prev, [activityId]: nextAdded }));
@@ -3021,7 +3001,7 @@ export default function ActivityReviewPage() {
                                       size="sm"
                                       type="button"
                                       disabled={actionLoading}
-                                      onClick={() => handleToggleUangMakan(activity.id, activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName)}
+                                      onClick={() => handleToggleUangMakan(activity.id, activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName, activity.activityDate)}
                                       className={`h-7 px-2.5 rounded-lg font-bold text-[10px] cursor-pointer transition-colors ${isAdded
                                           ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300'
                                           : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-300'

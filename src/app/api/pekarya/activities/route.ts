@@ -1029,6 +1029,7 @@ export async function POST(request: NextRequest) {
               command.timeEnd || '',
               command.activityType,
               command.activityName,
+              command.activityDate,
             )
           : typeof driverData.upahBersih === 'number'
             ? driverData.upahBersih

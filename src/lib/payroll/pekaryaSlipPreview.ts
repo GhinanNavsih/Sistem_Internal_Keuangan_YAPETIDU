@@ -113,6 +113,27 @@ export interface PekaryaPreviewMeta {
   warnings: PekaryaPreviewWarning[];
 }
 
+/**
+ * One day from the active Pekarya attendance import as it is shown on an
+ * employee payslip. The server deliberately sends only the fields needed for
+ * this read-only log, while keeping the values produced by the same summary
+ * used for the earnings rows.
+ */
+export interface PekaryaAttendanceLog {
+  date: string;
+  workStatus: string;
+  scanIn: string | null;
+  scanOut: string | null;
+  scanInAuto: boolean;
+  scanOutAuto: boolean;
+  present: boolean;
+  completePunch: boolean;
+  corrected: boolean;
+  payType: 'Harian' | 'Jumat & Libur' | null;
+  amount: number;
+  durationSeconds: number;
+}
+
 export interface PekaryaSlipPreview {
   earnings: SlipField[];
   gapok: number;
