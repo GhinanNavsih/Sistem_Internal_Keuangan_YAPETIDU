@@ -61,6 +61,7 @@ import { collection, getDocs, doc, getDoc, setDoc, query, where, writeBatch } fr
 import { db, secondaryDb } from '@/lib/firebase';
 import { useAuth } from '@/lib/AuthContext';
 import { useDashboardData } from '@/lib/DashboardDataContext';
+import { usePayrollCacheInvalidation } from '@/lib/queries/hooks';
 import { useBulkEmail, ESTIMATED_SECONDS_PER_EMAIL, type QueueItem } from '@/lib/BulkEmailContext';
 import { Employee, SalaryMatrix, BlueCollarEmployee, UraianGajiDocument, UraianEntry } from '@/types';
 import PaySlipDialog, { SlipState, buildInitialEarnings, buildInitialDeductions } from '@/components/PaySlipDialog';
@@ -266,6 +267,7 @@ export default function PayrollValidationDashboard() {
     koperasiUsers,
     loading: contextLoading
   } = useDashboardData();
+  const { invalidatePayrollPeriod } = usePayrollCacheInvalidation();
 
   const getLoyalisPresenceBonus = (empId: string): number => {
     if (loyalisPresenceData?.entries && Object.keys(loyalisPresenceData.entries).length > 0) {
@@ -607,6 +609,9 @@ export default function PayrollValidationDashboard() {
         body: JSON.stringify({ period, attendanceStatus: 'closed' }),
       });
       setAttendancePeriodStatus('closed');
+      // Proposal Kegiatan reads this period doc from cache to decide whether
+      // edits are still allowed, so a close has to drop it immediately.
+      void invalidatePayrollPeriod(period);
       const responseWarnings = Array.isArray(result.warnings)
         ? result.warnings.filter(Boolean).join(' ')
         : '';
@@ -733,6 +738,7 @@ export default function PayrollValidationDashboard() {
         }),
       });
       setAttendancePeriodStatus('open');
+      void invalidatePayrollPeriod(period);
       setShowOpenPeriodModal(false);
       setNotification({
         show: true,

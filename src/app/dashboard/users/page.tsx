@@ -59,6 +59,7 @@ import {
   KeyRound,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
+import { usePayrollCacheInvalidation } from '@/lib/queries/hooks';
 import { collection, getDocsFromServer } from 'firebase/firestore';
 import { SUPPORTED_CATEGORIES } from '@/utils/rekapConfig';
 import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
@@ -101,6 +102,7 @@ export default function UserManagementPage() {
     startCustomTokenImpersonation,
     isCustomTokenImpersonating,
   } = useAuth();
+  const { invalidateReference } = usePayrollCacheInvalidation();
 
   const [impersonatingUid, setImpersonatingUid] = useState<string | null>(null);
   const [previewingUid, setPreviewingUid] = useState<string | null>(null);
@@ -413,6 +415,8 @@ export default function UserManagementPage() {
             `${teamError.error || 'Konfigurasi regu gagal.'} Akun sudah dibuat; perbaiki konfigurasi regu lalu simpan ulang.`,
           );
         }
+        // The rekap page reads shift teams from the reference cache.
+        void invalidateReference();
       }
 
       setSuccessMsg(`Akun ${newEmail} berhasil dibuat!`);
@@ -528,6 +532,8 @@ export default function UserManagementPage() {
           const teamError = await teamResponse.json();
           throw new Error(teamError.error || 'Gagal menyimpan konfigurasi regu.');
         }
+        // The rekap page reads shift teams from the reference cache.
+        void invalidateReference();
       }
 
       const updatedCategories = (editRole === 'honorer' || editRole === 'loyalis' || editRole === 'ketua_shift_satpam')

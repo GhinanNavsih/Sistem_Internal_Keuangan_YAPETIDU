@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { useAuth } from '@/lib/AuthContext';
 import { db } from '@/lib/firebase';
+import { usePayrollCacheInvalidation } from '@/lib/queries/hooks';
 import { uploadProofFile } from '@/lib/uploads';
 import {
   collection,
@@ -60,6 +61,7 @@ function isValidClockTime(value: string): boolean {
 export default function PresensiCorrectionPage() {
   const { profile: rawProfile, activeProfile } = useAuth();
   const profile = activeProfile || rawProfile;
+  const { invalidateLoyalisPresenceCorrections } = usePayrollCacheInvalidation();
   const [loading, setLoading] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [requests, setRequests] = useState<PresenceCorrectionRequest[]>([]);
@@ -412,7 +414,12 @@ export default function PresensiCorrectionPage() {
       // Reset form
       handleCancelEdit();
 
+      // Refresh this page's own per-employee view, and drop the admin-side
+      // whole-collection cache so reviewers see the submission without a
+      // reload. The two reads stay separate — an employee must never pull
+      // everyone else's correction requests.
       await fetchRequests(false);
+      void invalidateLoyalisPresenceCorrections();
     } catch (err: unknown) {
       console.error(err);
       setMessage({

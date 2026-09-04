@@ -1,5 +1,6 @@
 import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
 import { db, secondaryDb } from '@/lib/firebase';
+import { timestampToMillis } from '@/lib/payroll/presenceCorrections';
 import type { SalaryMatrixCollection } from './keys';
 
 /**
@@ -111,4 +112,85 @@ export async function fetchDepartments(): Promise<string[]> {
     console.error('Failed to initialize departments in Firestore:', e);
   }
   return DEFAULT_DEPARTMENTS;
+}
+
+export interface SignatureSlot {
+  name: string;
+  title: string;
+}
+
+/**
+ * Reads `Settings/signatures`, normalizing the legacy single-signature shape
+ * (`{name, title}`) into an array so callers never have to special-case it.
+ * That normalization previously lived inline in the rekap page.
+ */
+export async function fetchSettingsSignatures(): Promise<Record<string, SignatureSlot[]>> {
+  const docSnap = await getDoc(doc(db, 'Settings', 'signatures'));
+  if (!docSnap.exists()) return {};
+
+  const raw = docSnap.data();
+  const normalized: Record<string, SignatureSlot[]> = {};
+  Object.entries(raw).forEach(([cat, val]) => {
+    if (Array.isArray(val)) {
+      normalized[cat] = val;
+    } else if (val && typeof val === 'object' && ((val as any).name || (val as any).title)) {
+      normalized[cat] = [val as SignatureSlot];
+    }
+  });
+  return normalized;
+}
+
+/**
+ * Reads one `PayrollPeriods/{period}` doc. Returns the raw document because
+ * consumers derive different things from it — the proposal page reads
+ * `attendanceStatus` as an edit gate, the rekap page reads duty-plan and
+ * calendar fields.
+ */
+export async function fetchPayrollPeriod(period: string): Promise<any | null> {
+  const snap = await getDoc(doc(db, 'PayrollPeriods', period));
+  return snap.exists() ? snap.data() : null;
+}
+
+export async function fetchSatpamShiftTeams(): Promise<any[]> {
+  const snap = await getDocs(collection(db, 'SatpamShiftTeams'));
+  return withId(snap.docs);
+}
+
+/**
+ * Reads the whole `LoyalisPresenceCorrections` collection, newest first.
+ *
+ * Deliberately unfiltered: callers scope it to a period client-side using the
+ * `date` field, which is what every existing read path treats as authoritative.
+ * The `date`-based filter must not be swapped for the doc's `period` field —
+ * that one is optional and only written as a by-product of processing a
+ * correction, so filtering on it would silently drop records.
+ *
+ * Sorted client-side rather than with `orderBy('createdAt')` for the same
+ * reason: a Firestore sort would drop any document missing the field, whereas
+ * `timestampToMillis` degrades to 0 and keeps it in the queue.
+ */
+export async function fetchLoyalisPresenceCorrections(): Promise<any[]> {
+  const snap = await getDocs(collection(db, 'LoyalisPresenceCorrections'));
+  return withId<any>(snap.docs).sort(
+    (a, b) => timestampToMillis(b.createdAt) - timestampToMillis(a.createdAt),
+  );
+}
+
+/**
+ * Every proposal and LPJ ever filed, for the "clone from historical baseline"
+ * dialog. Unbounded by period by design — the dialog offers past periods as
+ * templates.
+ */
+export async function fetchKegiatanHistoricalBaselines(): Promise<any[]> {
+  const [snapProp, snapLpj] = await Promise.all([
+    getDocs(collection(db, 'ProposalKegiatan')),
+    getDocs(collection(db, 'PelaporanKegiatan')),
+  ]);
+
+  const listProp = snapProp.docs.map(d => ({ id: d.id, sourceType: 'PROPOSAL', ...d.data() }));
+  const listLpj = snapLpj.docs.map(d => ({ id: d.id, sourceType: 'LPJ', ...d.data() }));
+
+  const combined = [...listProp, ...listLpj].filter((e: any) => (e.reportName || '').trim() !== '');
+  combined.sort((a: any, b: any) => (b.period || '').localeCompare(a.period || ''));
+  return combined;
 }

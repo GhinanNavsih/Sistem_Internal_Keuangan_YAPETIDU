@@ -27,9 +27,14 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import {
-  collection, getDocs, doc, setDoc, getDoc, serverTimestamp, query, where, deleteDoc, onSnapshot
+  collection, doc, setDoc, serverTimestamp, query, where, onSnapshot
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import {
+  useDepartments,
+  useEmployeesBlueCollar,
+  useEmployeesLoyalis,
+} from '@/lib/queries/hooks';
 import { uploadProofFile } from '@/lib/uploads';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import CetakKegiatanLoyalisDialog from '@/components/CetakKegiatanLoyalisDialog';
@@ -93,8 +98,6 @@ export default function VakasiLoyalisPage() {
   const periodToken = `${year}-${String(month).padStart(2, '0')}`;
 
   // ── States ──
-  const [employees, setEmployees] = useState<VakasiDirectoryEmployee[]>([]);
-  const [loadingEmployees, setLoadingEmployees] = useState(false);
   const [existingEvents, setExistingEvents] = useState<any[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
   const [filterDept, setFilterDept] = useState<string>('');
@@ -125,7 +128,6 @@ export default function VakasiLoyalisPage() {
     selectedDeptRef.current = value;
     _setSelectedDept(value);
   };
-  const [departments, setDepartments] = useState<string[]>([]);
   const [workerRows, _setWorkerRows] = useState<WorkerRow[]>([createEmptyWorkerRow()]);
   const workerRowsRef = useRef<WorkerRow[]>([createEmptyWorkerRow()]);
   const setWorkerRows = (rows: WorkerRow[]) => {
@@ -178,92 +180,44 @@ export default function VakasiLoyalisPage() {
   const autosaveWritePromiseRef = useRef<Promise<void> | null>(null);
   const mutationRequestRef = useRef<{ key: string; id: string } | null>(null);
 
-  // ── Fetch Signature Configurations ──
-  const [signatureConfig, setSignatureConfig] = useState<Record<string, { name: string, title: string }>>({});
-  useEffect(() => {
-    const fetchSignatures = async () => {
-      try {
-        const docRef = doc(db, 'Settings', 'signatures');
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setSignatureConfig(docSnap.data());
-        }
-      } catch (err) {
-        console.error('Error fetching signatures:', err);
-      }
-    };
-    fetchSignatures();
-  }, []);
+  // ── The mixed Loyalis + Pekarya recipient directory ──
+  // Both rosters come from the shared cache; the `AKTIF`/`active` predicates
+  // that used to be Firestore `where` clauses are applied here instead.
+  const loyalisQuery = useEmployeesLoyalis();
+  const blueCollarQuery = useEmployeesBlueCollar();
+  const loadingEmployees = loyalisQuery.isLoading || blueCollarQuery.isLoading;
 
-  // ── Fetch the mixed Loyalis + Pekarya recipient directory ──
-  useEffect(() => {
-    const fetchEmployees = async () => {
-      setLoadingEmployees(true);
-      try {
-        const [loyalisSnap, pekaryaSnap] = await Promise.all([
-          getDocs(query(
-            collection(db, 'Employees_Loyalis'),
-            where('personal_info.status', '==', 'AKTIF'),
-          )),
-          getDocs(query(
-            collection(db, 'Employees_BlueCollar'),
-            where('employment.status', '==', 'active'),
-          )),
-        ]);
-        const loyalis = loyalisSnap.docs.map(d => {
-          const data = d.data();
-          return {
-            id: d.id,
-            name: data.personal_info?.name || '',
-            role: data.employment_profile?.job_role || '',
-            department: data.employment_profile?.department_unit || '',
-            employeeCollection: 'Employees_Loyalis' as const,
-          };
-        });
-        const pekarya = pekaryaSnap.docs.map(d => {
-          const data = d.data();
-          const jobCategory = String(data.employment?.jobCategory || '').trim();
-          return {
-            id: d.id,
-            name: data.name || '',
-            role: jobCategory,
-            department: 'UPT & LEMBAGA',
-            employeeCollection: 'Employees_BlueCollar' as const,
-            jobCategory,
-          };
-        }).filter(employee => employee.jobCategory);
-        setEmployees([...loyalis, ...pekarya].sort((a, b) =>
-          a.name.localeCompare(b.name, 'id'),
-        ));
-      } catch (err) {
-        console.error('Error fetching Vakasi recipient directory:', err);
-        setMessage({ type: 'error', text: 'Gagal memuat daftar penerima Loyalis dan Pekarya.' });
-      } finally {
-        setLoadingEmployees(false);
-      }
-    };
-    fetchEmployees();
-  }, []);
+  const employees = useMemo<VakasiDirectoryEmployee[]>(() => {
+    const loyalis = (loyalisQuery.data || [])
+      .filter((d: any) => d.personal_info?.status === 'AKTIF')
+      .map((d: any) => ({
+        id: d.id,
+        name: d.personal_info?.name || '',
+        role: d.employment_profile?.job_role || '',
+        department: d.employment_profile?.department_unit || '',
+        employeeCollection: 'Employees_Loyalis' as const,
+      }));
 
-  // ── Fetch Departments ──
-  useEffect(() => {
-    const fetchDepartments = async () => {
-      try {
-        const deptDoc = await getDoc(doc(db, 'Settings', 'departments'));
-        if (deptDoc.exists() && deptDoc.data().list) {
-          setDepartments(deptDoc.data().list);
-        } else {
-          const defaultList = [
-            'BAK', 'FEB', 'FBS', 'FIK', 'FIP', 'FKI', 'FSP', 'FT', 'Rektorat', 'Satpam', 'Yayasan'
-          ].sort();
-          setDepartments(defaultList);
-        }
-      } catch (err) {
-        console.error('Error fetching departments:', err);
-      }
-    };
-    fetchDepartments();
-  }, []);
+    const pekarya = (blueCollarQuery.data || [])
+      .filter((d: any) => d.employment?.status === 'active')
+      .map((d: any) => {
+        const jobCategory = String(d.employment?.jobCategory || '').trim();
+        return {
+          id: d.id,
+          name: d.name || '',
+          role: jobCategory,
+          department: 'UPT & LEMBAGA',
+          employeeCollection: 'Employees_BlueCollar' as const,
+          jobCategory,
+        };
+      })
+      .filter((employee: any) => employee.jobCategory);
+
+    return [...loyalis, ...pekarya].sort((a, b) => a.name.localeCompare(b.name, 'id'));
+  }, [loyalisQuery.data, blueCollarQuery.data]);
+
+  // ── Departments ──
+  const { data: departments = [] } = useDepartments();
 
   // ── Live Sync Vakasi Tambahan Events ──
   useEffect(() => {

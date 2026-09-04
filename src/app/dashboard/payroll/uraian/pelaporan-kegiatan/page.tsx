@@ -19,9 +19,10 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import {
-  collection, getDocs, doc, setDoc, deleteDoc, getDoc, serverTimestamp, query, where, onSnapshot
+  collection, doc, setDoc, serverTimestamp, query, where, onSnapshot
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { useDepartments, useEmployeesLoyalis } from '@/lib/queries/hooks';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import { generatePelaporanKegiatanPdf } from '@/utils/generatePelaporanKegiatanPdf';
 
@@ -133,49 +134,29 @@ export default function PelaporanKegiatanPage() {
   // Auto-save state
   const [autoSaveStatus, setAutoSaveStatus] = useState<'saved' | 'saving' | 'error' | 'idle'>('idle');
 
-  // Load employee suggestions
-  const [loyalisEmployees, setLoyalisEmployees] = useState<any[]>([]);
-  const [departments, setDepartments] = useState<string[]>([]);
-
   // Keyboard navigation target
   const [focusTarget, setFocusTarget] = useState<{ table: string; row: number; col: number } | null>(null);
   const [activeInsertMenuIdx, setActiveInsertMenuIdx] = useState<number | null>(null);
 
-  // Fetch departments on mount
-  useEffect(() => {
-    const fetchDept = async () => {
-      try {
-        const deptDoc = await getDoc(doc(db, 'Settings', 'departments'));
-        if (deptDoc.exists() && deptDoc.data().list) {
-          setDepartments(deptDoc.data().list);
-        } else {
-          setDepartments(['BAK', 'FEB', 'FBS', 'FIK', 'FIP', 'FKI', 'FSP', 'FT', 'Rektorat', 'Satpam', 'Yayasan'].sort());
-        }
-      } catch (err) {
-        console.error(err);
-      }
-    };
-    fetchDept();
-  }, []);
+  // Lookup data, served from the shared cache instead of a per-mount read.
+  const { data: departments = [] } = useDepartments();
+  const loyalisQuery = useEmployeesLoyalis();
 
-  // Fetch Loyalis employees for suggestions
-  useEffect(() => {
-    const fetchLoyalis = async () => {
-      try {
-        const snap = await getDocs(query(collection(db, 'Employees_Loyalis'), where('personal_info.status', '==', 'AKTIF')));
-        const list = snap.docs.map(d => ({
+  // Employee suggestions — the `AKTIF` predicate that used to be a Firestore
+  // `where` clause is applied here over the shared roster.
+  const loyalisEmployees = useMemo(
+    () =>
+      (loyalisQuery.data || [])
+        .filter((d: any) => d.personal_info?.status === 'AKTIF')
+        .map((d: any) => ({
           id: d.id,
-          name: d.data().personal_info?.name || '',
-          role: d.data().employment_profile?.job_role || 'Pegawai',
-          department: d.data().employment_profile?.department_unit || '',
-        })).sort((a, b) => a.name.localeCompare(b.name));
-        setLoyalisEmployees(list);
-      } catch (err) {
-        console.error(err);
-      }
-    };
-    fetchLoyalis();
-  }, []);
+          name: d.personal_info?.name || '',
+          role: d.employment_profile?.job_role || 'Pegawai',
+          department: d.employment_profile?.department_unit || '',
+        }))
+        .sort((a: any, b: any) => a.name.localeCompare(b.name)),
+    [loyalisQuery.data],
+  );
 
   // Live Sync Pelaporan Kegiatan reports
   useEffect(() => {

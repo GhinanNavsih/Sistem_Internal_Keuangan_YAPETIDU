@@ -23,6 +23,7 @@ import {
   collection, getDocs, query, where
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { useEmployeesBlueCollar } from '@/lib/queries/hooks';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 import { syncActivityToPayslip } from '@/utils/payslipSync';
@@ -46,7 +47,6 @@ export default function SpjPekaryaPage() {
 
   // ── States ──
   const [blueCollarEmployees, setBlueCollarEmployees] = useState<any[]>([]);
-  const [loadingBlueCollar, setLoadingBlueCollar] = useState(false);
   const [spjEvents, setSpjEvents] = useState<any[]>([]);
   const [loadingSpjEvents, setLoadingSpjEvents] = useState(false);
   const [approvedActivityReports, setApprovedActivityReports] = useState<any[]>([]);
@@ -77,38 +77,34 @@ export default function SpjPekaryaPage() {
   const isVakasiProjection =
     selectedSpjEvent?.sourceKind === VAKASI_PEKARYA_PROJECTION_SOURCE_KIND;
 
-  // ── Fetch Blue Collar Employees for SPJ ──
+  // ── Blue Collar Employees for SPJ ──
+  // Served from the shared roster cache rather than a per-mount query; the
+  // `active` + category predicates that used to be Firestore `where` clauses
+  // are applied here instead.
+  const blueCollarQuery = useEmployeesBlueCollar();
+  const loadingBlueCollar = blueCollarQuery.isLoading;
+
+  const categoryRoster = useMemo(() => {
+    if (!category) return [];
+    return (blueCollarQuery.data || [])
+      .filter(
+        (d: any) =>
+          d.employment?.status === 'active' && d.employment?.jobCategory === category,
+      )
+      .map((d: any) => ({
+        id: d.id,
+        name: d.name || '',
+        category: d.employment?.jobCategory || '',
+      }))
+      .sort((a: any, b: any) => a.name.localeCompare(b.name));
+  }, [blueCollarQuery.data, category]);
+
+  // Kept as an effect writing into state because `fetchSpjEvents` below also
+  // overwrites `blueCollarEmployees` from its API response — that pre-existing
+  // two-source arrangement is left exactly as it was.
   useEffect(() => {
-    const fetchBlueCollar = async () => {
-      setLoadingBlueCollar(true);
-      try {
-        if (!category) {
-          setBlueCollarEmployees([]);
-          return;
-        }
-        const q = query(
-          collection(db, 'Employees_BlueCollar'),
-          where('employment.status', '==', 'active'),
-          where('employment.jobCategory', '==', category),
-        );
-        const snap = await getDocs(q);
-        const list = snap.docs.map(d => {
-          const data = d.data();
-          return {
-            id: d.id,
-            name: data.name || '',
-            category: data.employment?.jobCategory || '',
-          };
-        }).sort((a, b) => a.name.localeCompare(b.name));
-        setBlueCollarEmployees(list);
-      } catch (err) {
-        console.error('Error fetching Blue Collar employees for SPJ:', err);
-      } finally {
-        setLoadingBlueCollar(false);
-      }
-    };
-    fetchBlueCollar();
-  }, [category]);
+    setBlueCollarEmployees(categoryRoster);
+  }, [categoryRoster]);
 
   // ── Fetch Kegiatan SPJ Events & ActivityReports ──
   const fetchSpjEvents = useCallback(async () => {

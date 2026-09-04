@@ -4,7 +4,10 @@ import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   employeeKeys,
+  kegiatanHistoryKeys,
   koperasiKeys,
+  loyalisPresenceCorrectionsKeys,
+  payrollPeriodKeys,
   referenceKeys,
   salaryMatrixKeys,
   STALE_TIME,
@@ -15,11 +18,16 @@ import {
   fetchEmployeesBlueCollar,
   fetchEmployeesLoyalis,
   fetchJabatanStruktural,
+  fetchKegiatanHistoricalBaselines,
   fetchKoperasiLoans,
   fetchKoperasiUsers,
+  fetchLoyalisPresenceCorrections,
   fetchMatrixActiveVersion,
   fetchMatrixGradeCodes,
   fetchMatrixRows,
+  fetchPayrollPeriod,
+  fetchSatpamShiftTeams,
+  fetchSettingsSignatures,
 } from './firestore';
 
 /**
@@ -123,6 +131,58 @@ export function useDepartments(enabled = true) {
   });
 }
 
+export function useSettingsSignatures(enabled = true) {
+  return useQuery({
+    queryKey: referenceKeys.signatures(),
+    queryFn: fetchSettingsSignatures,
+    staleTime: STALE_TIME.reference,
+    enabled,
+  });
+}
+
+export function useSatpamShiftTeams(enabled = true) {
+  return useQuery({
+    queryKey: referenceKeys.satpamShiftTeams(),
+    queryFn: fetchSatpamShiftTeams,
+    staleTime: STALE_TIME.reference,
+    enabled,
+  });
+}
+
+/** Period open/closed status — a workflow gate, hence the shorter tier. */
+export function usePayrollPeriod(period: string, enabled = true) {
+  return useQuery({
+    queryKey: payrollPeriodKeys.doc(period),
+    queryFn: () => fetchPayrollPeriod(period),
+    staleTime: STALE_TIME.workflow,
+    enabled: enabled && Boolean(period),
+  });
+}
+
+export function useLoyalisPresenceCorrections(enabled = true) {
+  return useQuery({
+    queryKey: loyalisPresenceCorrectionsKeys.all,
+    queryFn: fetchLoyalisPresenceCorrections,
+    staleTime: STALE_TIME.workflow,
+    enabled,
+  });
+}
+
+/**
+ * Historical proposals/LPJs for the clone dialog. `staleTime: Infinity` because
+ * these are closed periods that do not change — fetched at most once per
+ * session, bounded by the shared `gcTime` once the dialog unmounts. Gate
+ * `enabled` on the dialog being open so it never fires until first needed.
+ */
+export function useKegiatanHistoricalBaselines(enabled: boolean) {
+  return useQuery({
+    queryKey: kegiatanHistoryKeys.all,
+    queryFn: fetchKegiatanHistoricalBaselines,
+    staleTime: Infinity,
+    enabled,
+  });
+}
+
 /**
  * Invalidation helpers for write paths.
  *
@@ -159,10 +219,25 @@ export function usePayrollCacheInvalidation() {
     [queryClient],
   );
 
+  const invalidatePayrollPeriod = useCallback(
+    (period?: string) =>
+      queryClient.invalidateQueries({
+        queryKey: period ? payrollPeriodKeys.doc(period) : payrollPeriodKeys.all,
+      }),
+    [queryClient],
+  );
+
+  const invalidateLoyalisPresenceCorrections = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: loyalisPresenceCorrectionsKeys.all }),
+    [queryClient],
+  );
+
   return {
     invalidateEmployees,
     invalidateSalaryMatrix,
     invalidateKoperasi,
     invalidateReference,
+    invalidatePayrollPeriod,
+    invalidateLoyalisPresenceCorrections,
   };
 }

@@ -29,6 +29,18 @@ import {
   collection, getDocs, doc, setDoc, getDoc, serverTimestamp, query, where, runTransaction
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  useEmployeesBlueCollar,
+  useEmployeesLoyalis,
+  useSatpamShiftTeams,
+  useSettingsSignatures,
+} from '@/lib/queries/hooks';
+import { referenceKeys } from '@/lib/queries/keys';
+import type { SignatureSlot } from '@/lib/queries/firestore';
+
+/** Stable empty config so an absent signatures read is referentially steady. */
+const EMPTY_SIGNATURE_CONFIG: Record<string, SignatureSlot[]> = {};
 import {
   getRekapColumns,
   isAttendanceDerivedRekapColumn,
@@ -121,7 +133,6 @@ export default function RekapPekaryaPage() {
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [showSavePreview, setShowSavePreview] = useState(false);
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
-  const [employees, setEmployees] = useState<BlueCollarEmployee[]>([]);
   const [tableData, setTableData] = useState<Record<string, Record<string, number>>>({});
   const [initialSpjValues, setInitialSpjValues] = useState<Record<string, number>>({});
   const [satpamDutySources, setSatpamDutySources] = useState<
@@ -281,84 +292,65 @@ export default function RekapPekaryaPage() {
   const [newColMultiplier, setNewColMultiplier] = useState<number | ''>('');
 
   // ── Custom Signature Dialog States ──
-  const [signatureConfig, setSignatureConfig] = useState<Record<string, { name: string, title: string }[]>>({});
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [sigModalSlots, setSigModalSlots] = useState<{ name: string, title: string, searchText: string, showDropdown: boolean }[]>([
     { name: '', title: '', searchText: '', showDropdown: false },
     { name: '', title: '', searchText: '', showDropdown: false },
     { name: '', title: '', searchText: '', showDropdown: false },
   ]);
-  const [employeesForSignature, setEmployeesForSignature] = useState<{ id: string, name: string, role: string, collection: string }[]>([]);
-  const [loadingSigEmployees, setLoadingSigEmployees] = useState(false);
-
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isLongPressRef = useRef(false);
 
-  // ── Fetch Signature Configurations ──
-  useEffect(() => {
-    const fetchSignatures = async () => {
-      try {
-        const docRef = doc(db, 'Settings', 'signatures');
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const raw = docSnap.data();
-          // Normalize legacy single-signature shape ({name,title}) into an array on read.
-          const normalized: Record<string, { name: string, title: string }[]> = {};
-          Object.entries(raw).forEach(([cat, val]) => {
-            if (Array.isArray(val)) {
-              normalized[cat] = val;
-            } else if (val && typeof val === 'object' && ((val as any).name || (val as any).title)) {
-              normalized[cat] = [val as { name: string, title: string }];
-            }
-          });
-          setSignatureConfig(normalized);
-        }
-      } catch (err) {
-        console.error('Error fetching signature settings:', err);
-      }
-    };
-    fetchSignatures();
-  }, []);
+  // ── Cached reference reads ──
+  // Shift teams are only meaningful for SATPAM, so this read is gated on the
+  // category instead of firing on every category/period change as it used to.
+  const satpamShiftTeamsQuery = useSatpamShiftTeams(category === 'SATPAM');
+  const ketuaShiftIds = useMemo(
+    () =>
+      new Set<string>(
+        (satpamShiftTeamsQuery.data || [])
+          .map((d: any) => String(d.ketuaShiftId || '').trim())
+          .filter(Boolean),
+      ),
+    [satpamShiftTeamsQuery.data],
+  );
 
-  const fetchEmployeesForSignature = async () => {
-    setLoadingSigEmployees(true);
-    try {
-      const [loyalisSnap, blueCollarSnap] = await Promise.all([
-        getDocs(query(collection(db, 'Employees_Loyalis'), where('personal_info.status', '==', 'AKTIF'))),
-        getDocs(query(collection(db, 'Employees_BlueCollar'), where('employment.status', '==', 'active')))
-      ]);
+  // Rosters come from the shared cache; the `active`/category predicates that
+  // were Firestore `where` clauses are applied client-side below.
+  const blueCollarQuery = useEmployeesBlueCollar();
+  const loyalisQuery = useEmployeesLoyalis();
+  const signaturesQuery = useSettingsSignatures();
+  const signatureConfig = signaturesQuery.data ?? EMPTY_SIGNATURE_CONFIG;
+  const loadingSigEmployees = loyalisQuery.isLoading || blueCollarQuery.isLoading;
+  const queryClient = useQueryClient();
 
-      const loyalisList = loyalisSnap.docs.map(d => {
-        const data = d.data();
-        return {
-          id: d.id,
-          name: data.personal_info?.name || '',
-          role: data.employment_profile?.job_role || 'Pegawai Loyalis',
-          collection: 'Employees_Loyalis'
-        };
-      });
+  // Guards the editable table against a cache-driven reload discarding edits.
+  const hasUnsavedEdits = useRef(false);
+  const lastLoadedDocIdRef = useRef<string | null>(null);
 
-      const blueCollarList = blueCollarSnap.docs.map(d => {
-        const data = d.data();
-        return {
-          id: d.id,
-          name: data.name || '',
-          role: data.employment?.jobCategory || 'Pekarya',
-          collection: 'Employees_BlueCollar'
-        };
-      });
+  const employeesForSignature = useMemo(() => {
+    const loyalisList = (loyalisQuery.data || [])
+      .filter((d: any) => d.personal_info?.status === 'AKTIF')
+      .map((d: any) => ({
+        id: d.id,
+        name: d.personal_info?.name || '',
+        role: d.employment_profile?.job_role || 'Pegawai Loyalis',
+        collection: 'Employees_Loyalis',
+      }));
 
-      const combined = [...loyalisList, ...blueCollarList].sort((a, b) => a.name.localeCompare(b.name));
-      setEmployeesForSignature(combined);
-    } catch (err) {
-      console.error('Error loading signature employees:', err);
-    } finally {
-      setLoadingSigEmployees(false);
-    }
-  };
+    const blueCollarList = (blueCollarQuery.data || [])
+      .filter((d: any) => d.employment?.status === 'active')
+      .map((d: any) => ({
+        id: d.id,
+        name: d.name || '',
+        role: d.employment?.jobCategory || 'Pekarya',
+        collection: 'Employees_BlueCollar',
+      }));
+
+    return [...loyalisList, ...blueCollarList].sort((a, b) => a.name.localeCompare(b.name));
+  }, [loyalisQuery.data, blueCollarQuery.data]);
 
   const handleOpenSignatureModal = () => {
-    fetchEmployeesForSignature();
     const currentSigs = signatureConfig[category];
     if (currentSigs && currentSigs.length > 0) {
       setSigModalSlots(Array.from({ length: 3 }, (_, i) => ({
@@ -390,7 +382,9 @@ export default function RekapPekaryaPage() {
         [category]: sigsToSave,
       };
       await setDoc(doc(db, 'Settings', 'signatures'), updatedConfig, { merge: true });
-      setSignatureConfig(updatedConfig);
+      // Seed the shared cache so every other reader of Settings/signatures sees
+      // the change without a refetch.
+      queryClient.setQueryData(referenceKeys.signatures(), updatedConfig);
       setMessage({ type: 'success', text: `Tanda tangan untuk kategori ${category} berhasil diperbarui.` });
       setShowSignatureModal(false);
     } catch (err) {
@@ -402,7 +396,20 @@ export default function RekapPekaryaPage() {
   // ── SPJ Integration States (to compute SPJ discrepancies) ──
   const [spjEvents, setSpjEvents] = useState<any[]>([]);
   const [approvedActivityReports, setApprovedActivityReports] = useState<any[]>([]);
-  const [ketuaShiftIds, setKetuaShiftIds] = useState<Set<string>>(new Set());
+
+  const employees = useMemo<BlueCollarEmployee[]>(
+    () =>
+      (blueCollarQuery.data || [])
+        .filter(
+          (d: any) =>
+            d.employment?.status === 'active' && d.employment?.jobCategory === category,
+        )
+        .map((d: any) => ({ employeeId: d.id, ...d }) as BlueCollarEmployee)
+        .sort((a: BlueCollarEmployee, b: BlueCollarEmployee) =>
+          a.employeeId.localeCompare(b.employeeId),
+        ),
+    [blueCollarQuery.data, category],
+  );
 
   // ── Fetch Kegiatan SPJ Events & ActivityReports ──
   const fetchSpjEvents = useCallback(async () => {
@@ -652,6 +659,17 @@ export default function RekapPekaryaPage() {
     if (profile && profile.role !== 'super_admin' && !profile.permittedCategories?.includes(category)) {
       return;
     }
+    // A genuine category/period change always reloads; only a cache-driven
+    // re-run of this effect has to respect edits already in the table.
+    if (docId !== lastLoadedDocIdRef.current) {
+      lastLoadedDocIdRef.current = docId;
+      hasUnsavedEdits.current = false;
+    } else if (hasUnsavedEdits.current) {
+      // Reloading now would discard unsaved cell edits. The rows on screen are
+      // still the ones the user is working on, so leave everything alone.
+      return;
+    }
+
     setDetectedColumnOrder(null);
     setMessage(null);
     setSaved(false);
@@ -662,39 +680,7 @@ export default function RekapPekaryaPage() {
     const fetchData = async () => {
       setLoadingEmps(true);
       try {
-        let loadedKetuaShiftIds = new Set<string>();
-        try {
-          const teamsSnap = await getDocs(collection(db, 'SatpamShiftTeams'));
-          loadedKetuaShiftIds = new Set(
-            teamsSnap.docs
-              .map(d => String(d.data().ketuaShiftId || '').trim())
-              .filter(Boolean),
-          );
-          setKetuaShiftIds(loadedKetuaShiftIds);
-        } catch (err) {
-          console.error('Error fetching Satpam shift teams:', err);
-        }
-
-        if (category === 'SOPIR') {
-          try {
-            const piketPeriod = `${year}-${String(month).padStart(2, '0')}`;
-            const piketQ = query(
-              collection(db, 'DriverPiketSchedules'),
-              where('period', '==', piketPeriod)
-            );
-            const piketSnap = await getDocs(piketQ);
-            const piketList = piketSnap.docs.map(d => ({ id: d.id, ...d.data() } as DriverPiketSchedule));
-            setDriverPiketSchedules(piketList);
-          } catch (err) {
-            console.error('Error fetching driver piket schedules:', err);
-          }
-        }
-
-        const q2 = query(collection(db, 'Employees_BlueCollar'), where('employment.status', '==', 'active'), where('employment.jobCategory', '==', category));
-        const empSnap = await getDocs(q2);
-        const empList = empSnap.docs.map(d => ({ employeeId: d.id, ...d.data() } as BlueCollarEmployee));
-        const sortedEmps = empList.sort((a, b) => a.employeeId.localeCompare(b.employeeId));
-        setEmployees(sortedEmps);
+        const loadedKetuaShiftIds = ketuaShiftIds;
 
         const initialTable: Record<string, Record<string, number>> = {};
         const loadedSpjValues: Record<string, number> = {};
@@ -702,22 +688,50 @@ export default function RekapPekaryaPage() {
           string,
           UraianEntry['satpamDutySource']
         > = {};
-        let uploadedAttendance: PekaryaAttendanceMoneyResponse | null = null;
-        if (period >= '2026-08' && category !== 'SATPAM') {
-          try {
-            uploadedAttendance = await authenticatedJson<PekaryaAttendanceMoneyResponse>(
-              `/api/attendance/pekarya?period=${encodeURIComponent(period)}&category=${encodeURIComponent(category)}`,
-            );
-          } catch (err) {
-            console.error('Error fetching uploaded Pekarya attendance money:', err);
-            setAttendanceMoneyLoadFailed(true);
-            setMessage({
-              type: 'error',
-              text: 'Nominal Presensi Pekarya dari unggahan aktif gagal dimuat. Muat ulang halaman sebelum menyimpan rekap.',
-            });
-          }
+
+        // These three reads do not depend on each other, so they run
+        // concurrently rather than stacking three round trips.
+        const [piketList, uploadedAttendance, uraianSnap] = await Promise.all([
+          category === 'SOPIR'
+            ? (async () => {
+                try {
+                  const piketPeriod = `${year}-${String(month).padStart(2, '0')}`;
+                  const piketQ = query(
+                    collection(db, 'DriverPiketSchedules'),
+                    where('period', '==', piketPeriod)
+                  );
+                  const piketSnap = await getDocs(piketQ);
+                  return piketSnap.docs.map(d => ({ id: d.id, ...d.data() } as DriverPiketSchedule));
+                } catch (err) {
+                  console.error('Error fetching driver piket schedules:', err);
+                  return null;
+                }
+              })()
+            : Promise.resolve(null),
+          period >= '2026-08' && category !== 'SATPAM'
+            ? (async () => {
+                try {
+                  return await authenticatedJson<PekaryaAttendanceMoneyResponse>(
+                    `/api/attendance/pekarya?period=${encodeURIComponent(period)}&category=${encodeURIComponent(category)}`,
+                  );
+                } catch (err) {
+                  console.error('Error fetching uploaded Pekarya attendance money:', err);
+                  setAttendanceMoneyLoadFailed(true);
+                  setMessage({
+                    type: 'error',
+                    text: 'Nominal Presensi Pekarya dari unggahan aktif gagal dimuat. Muat ulang halaman sebelum menyimpan rekap.',
+                  });
+                  return null;
+                }
+              })()
+            : Promise.resolve(null),
+          getDoc(doc(db, 'UraianGaji', docId)),
+        ]);
+
+        if (piketList) {
+          setDriverPiketSchedules(piketList);
         }
-        const uraianSnap = await getDoc(doc(db, 'UraianGaji', docId));
+
         if (uraianSnap.exists()) {
           setSaved(true);
           const docData = uraianSnap.data() as any;
@@ -786,7 +800,10 @@ export default function RekapPekaryaPage() {
       }
     };
     fetchData();
-  }, [category, month, year, period, docId, profile]);
+    // `ketuaShiftIds` and the roster are cache-backed now, so the effect has to
+    // re-run when they arrive — the guard above is what keeps that re-run from
+    // wiping in-progress edits.
+  }, [category, month, year, period, docId, profile, ketuaShiftIds, employees]);
 
   const handleFileUpload = useCallback(async (newFile: File, rot: number = rotation) => {
     setFile(newFile); setDetectedColumnOrder(null);
@@ -936,6 +953,7 @@ export default function RekapPekaryaPage() {
             if (entry.y_top !== undefined && entry.y_bottom !== undefined) newRowBounds[match.employeeId] = { top: entry.y_top, bottom: entry.y_bottom };
           }
         }
+        hasUnsavedEdits.current = true;
         setTableData(newTableData); setRowBounds(newRowBounds);
         if (Array.isArray(aiDetectedOrder) && aiDetectedOrder.length > 0) setDetectedColumnOrder(aiDetectedOrder);
         if (data.img_w && data.img_h) setScanImgDims({ w: data.img_w, h: data.img_h });
@@ -962,6 +980,7 @@ export default function RekapPekaryaPage() {
     }
     if (key === 'spj' && value.trim() === '') {
       if (!isHistoricalSpjCell && !manualSpjEnabled) return;
+      hasUnsavedEdits.current = true;
       setTableData(prev => {
         const copy = { ...prev };
         if (copy[employeeId]) {
@@ -980,6 +999,7 @@ export default function RekapPekaryaPage() {
         ? Math.min(1, Math.max(0, parsed))
         : parsed;
     if (key === 'spj' && !isHistoricalSpjCell && !manualSpjEnabled) return;
+    hasUnsavedEdits.current = true;
     setTableData(prev => ({ ...prev, [employeeId]: { ...prev[employeeId], [key]: num } }));
     setSaved(false);
   };
@@ -1176,6 +1196,8 @@ export default function RekapPekaryaPage() {
       });
       setSaved(true);
       setIsLocked(true);
+      // Edits are committed, so a later cache-driven reload may reseed freely.
+      hasUnsavedEdits.current = false;
     } catch (err) {
       setMessage({ type: 'error', text: 'Gagal menyimpan.' });
     } finally {
@@ -1275,6 +1297,7 @@ export default function RekapPekaryaPage() {
 
   const handleRemoveCustomColumn = (key: string) => {
     if (window.confirm('Apakah Anda yakin ingin menghapus kolom kustom ini beserta semua data di dalamnya?')) {
+      hasUnsavedEdits.current = true;
       setCustomColumns(prev => prev.filter(c => c.key !== key));
       setTableData(prev => {
         const copy = { ...prev };

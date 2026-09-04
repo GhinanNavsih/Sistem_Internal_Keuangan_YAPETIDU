@@ -27,9 +27,15 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import {
-  collection, getDocs, doc, setDoc, deleteDoc, getDoc, serverTimestamp, query, where, onSnapshot
+  collection, doc, setDoc, deleteDoc, serverTimestamp, query, where, onSnapshot
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import {
+  useDepartments,
+  useEmployeesLoyalis,
+  useKegiatanHistoricalBaselines,
+  usePayrollPeriod,
+} from '@/lib/queries/hooks';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import { generateProposalKegiatanPdf } from '@/utils/generateProposalKegiatanPdf';
 import { generateLpjPdf } from '@/utils/generateLpjPdf';
@@ -158,7 +164,6 @@ export default function ProposalKegiatanPage() {
   const [activeInsertMenuIdx, setActiveInsertMenuIdx] = useState<number | null>(null);
   const [activePelaporanSuggestionIndex, setActivePelaporanSuggestionIndex] = useState<number>(0);
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  const [periodClosed, setPeriodClosed] = useState(false);
 
   // Proposal Status & Review States
   const [currentProposalStatus, setCurrentProposalStatus] = useState<string | null>(null);
@@ -283,13 +288,7 @@ export default function ProposalKegiatanPage() {
 
   // Historical Baseline Clone Dialog States
   const [showCloneModal, setShowCloneModal] = useState(false);
-  const [historicalItems, setHistoricalItems] = useState<any[]>([]);
-  const [loadingHistorical, setLoadingHistorical] = useState(false);
   const [cloneSearchQuery, setCloneSearchQuery] = useState('');
-
-  // Employees & Departments Data
-  const [loyalisEmployees, setLoyalisEmployees] = useState<any[]>([]);
-  const [departments, setDepartments] = useState<string[]>([]);
 
   // Qty Parser Utility
   const parseQty = parseProposalQty;
@@ -299,58 +298,29 @@ export default function ProposalKegiatanPage() {
   );
   const isLoyalisSandbox = profile?.role === 'satker_head_loyalis';
 
-  useEffect(() => {
-    if (!profile) return;
-    let cancelled = false;
-    getDoc(doc(db, 'PayrollPeriods', periodToken))
-      .then((snapshot) => {
-        if (!cancelled) setPeriodClosed(snapshot.data()?.attendanceStatus === 'closed');
-      })
-      .catch(() => {
-        // The rules treat a missing/unreadable period as open by default. The
-        // server-side rule remains authoritative for the eventual write.
-        if (!cancelled) setPeriodClosed(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [periodToken, profile]);
+  // Period open/closed gate. A missing or unreadable period counts as open,
+  // matching the previous behaviour; the server-side rule remains authoritative
+  // for the eventual write.
+  const periodQuery = usePayrollPeriod(periodToken, Boolean(profile));
+  const periodClosed = periodQuery.data?.attendanceStatus === 'closed';
 
-  // Fetch departments
-  useEffect(() => {
-    const fetchDept = async () => {
-      try {
-        const deptDoc = await getDoc(doc(db, 'Settings', 'departments'));
-        if (deptDoc.exists() && deptDoc.data().list) {
-          setDepartments(deptDoc.data().list);
-        } else {
-          setDepartments(['BAK', 'FEB', 'FBS', 'FIK', 'FIP', 'FKI', 'FSP', 'FT', 'Rektorat', 'Satpam', 'Yayasan'].sort());
-        }
-      } catch (err) {
-        console.error(err);
-      }
-    };
-    fetchDept();
-  }, []);
+  // Lookup data, served from the shared cache instead of a per-mount read.
+  const { data: departments = [] } = useDepartments();
+  const loyalisQuery = useEmployeesLoyalis();
 
-  // Fetch Loyalis employees
-  useEffect(() => {
-    const fetchLoyalis = async () => {
-      try {
-        const snap = await getDocs(query(collection(db, 'Employees_Loyalis'), where('personal_info.status', '==', 'AKTIF')));
-        const list = snap.docs.map(d => ({
+  const loyalisEmployees = useMemo(
+    () =>
+      (loyalisQuery.data || [])
+        .filter((d: any) => d.personal_info?.status === 'AKTIF')
+        .map((d: any) => ({
           id: d.id,
-          name: d.data().personal_info?.name || '',
-          role: d.data().employment_profile?.job_role || 'Pegawai',
-          department: d.data().employment_profile?.department_unit || '',
-        })).sort((a, b) => a.name.localeCompare(b.name));
-        setLoyalisEmployees(list);
-      } catch (err) {
-        console.error(err);
-      }
-    };
-    fetchLoyalis();
-  }, []);
+          name: d.personal_info?.name || '',
+          role: d.employment_profile?.job_role || 'Pegawai',
+          department: d.employment_profile?.department_unit || '',
+        }))
+        .sort((a: any, b: any) => a.name.localeCompare(b.name)),
+    [loyalisQuery.data],
+  );
 
   // Live Sync ProposalKegiatan collection
   useEffect(() => {
@@ -669,27 +639,12 @@ export default function ProposalKegiatanPage() {
     periodClosed,
   ]);
 
-  // ── Historical Baseline Clone Handler ──
-  const fetchHistoricalBaselines = async () => {
-    if (!canManageProposal) return;
-    setLoadingHistorical(true);
-    try {
-      const snapProp = await getDocs(collection(db, 'ProposalKegiatan'));
-      const snapLpj = await getDocs(collection(db, 'PelaporanKegiatan'));
-
-      const listProp = snapProp.docs.map(d => ({ id: d.id, sourceType: 'PROPOSAL', ...d.data() }));
-      const listLpj = snapLpj.docs.map(d => ({ id: d.id, sourceType: 'LPJ', ...d.data() }));
-
-      const combined = [...listProp, ...listLpj].filter((e: any) => (e.reportName || '').trim() !== '');
-      combined.sort((a: any, b: any) => (b.period || '').localeCompare(a.period || ''));
-
-      setHistoricalItems(combined);
-    } catch (err) {
-      console.error('Error fetching historical baselines:', err);
-    } finally {
-      setLoadingHistorical(false);
-    }
-  };
+  // ── Historical Baselines for the Clone dialog ──
+  // Closed periods that no longer change, so this is fetched at most once per
+  // session and only once the dialog has actually been opened.
+  const historicalQuery = useKegiatanHistoricalBaselines(showCloneModal && canManageProposal);
+  const historicalItems = historicalQuery.data ?? [];
+  const loadingHistorical = historicalQuery.isLoading;
 
   const handleOpenCloneModal = () => {
     if (!canManageProposal) {
@@ -697,7 +652,6 @@ export default function ProposalKegiatanPage() {
       return;
     }
     setShowCloneModal(true);
-    fetchHistoricalBaselines();
   };
 
   const handleCloneTemplate = (pastItem: any) => {

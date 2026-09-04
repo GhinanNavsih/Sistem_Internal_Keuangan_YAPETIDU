@@ -5,14 +5,18 @@ import { useSearchParams } from 'next/navigation';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { useAuth } from '@/lib/AuthContext';
 import { db } from '@/lib/firebase';
+import { useQueryClient } from '@tanstack/react-query';
 import {
-  collection,
-  getDocs,
   getDoc,
   doc,
   writeBatch,
   serverTimestamp
 } from 'firebase/firestore';
+import {
+  useLoyalisPresenceCorrections,
+  usePayrollCacheInvalidation,
+} from '@/lib/queries/hooks';
+import { loyalisPresenceCorrectionsKeys } from '@/lib/queries/keys';
 import {
   Card,
   CardContent,
@@ -67,7 +71,6 @@ import {
   parseDateKey,
   parseDateOnly,
   parseDateToDDMMYYYY,
-  timestampToMillis,
   type LoyalisRawLog,
   type PresenceCorrectionRequest,
   type PresenceCorrectionStatus,
@@ -262,9 +265,28 @@ export default function PresenceCorrectionsAdminPage() {
     monthParam && yearParam && /^\d{1,2}$/.test(monthParam) && /^\d{4}$/.test(yearParam)
       ? `${yearParam}-${monthParam.padStart(2, '0')}`
       : '';
-  const [loading, setLoading] = useState(false);
-  const [allRequests, setAllRequests] = useState<PresenceCorrectionRequest[]>([]);
+  // Tracks the blue-collar (API-backed) half only; `loading` below folds in the
+  // cached Loyalis half so the spinner still covers both.
+  const [blueCollarLoading, setLoading] = useState(false);
   const [blueCollarRequests, setBlueCollarRequests] = useState<BlueCollarReviewItem[]>([]);
+  const queryClient = useQueryClient();
+  const { invalidateLoyalisPresenceCorrections } = usePayrollCacheInvalidation();
+
+  /**
+   * Optimistic patch of one cached correction, so an approve/reject shows
+   * immediately while the invalidation-driven refetch reconciles server-derived
+   * fields behind it.
+   */
+  const patchCachedCorrection = useCallback(
+    (requestId: string, patch: Partial<PresenceCorrectionRequest>) => {
+      queryClient.setQueryData(
+        loyalisPresenceCorrectionsKeys.all,
+        (current: any[] | undefined) =>
+          current?.map((row) => (row.id === requestId ? { ...row, ...patch } : row)),
+      );
+    },
+    [queryClient],
+  );
   const [selectedStatus, setSelectedStatus] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
   const [selectedPeriod, setSelectedPeriod] = useState(() => periodFromUrl || (() => {
     const now = new Date();
@@ -362,28 +384,28 @@ export default function PresenceCorrectionsAdminPage() {
     setSelectedLoyalisRequestIds(new Set());
   }, [selectedPeriod, selectedSource, selectedStatus]);
 
+  // Loyalis corrections come from the shared cache — the same entry the raw
+  // presence page reads, so the two pages no longer pull this collection twice.
+  const loyalisCorrectionsQuery = useLoyalisPresenceCorrections(canAuditLoyalis);
+  const allRequests = useMemo<PresenceCorrectionRequest[]>(
+    () =>
+      (loyalisCorrectionsQuery.data || []).map((row: any) =>
+        asPresenceCorrectionRequest(row.id, row),
+      ),
+    [loyalisCorrectionsQuery.data],
+  );
+
+  const loading = blueCollarLoading || loyalisCorrectionsQuery.isFetching;
+
   const fetchRequests = useCallback(async (showError = true) => {
     const sequence = ++fetchSequence.current;
     if (!canAuditLoyalis && !canAuditBlueCollar) {
-      setAllRequests([]);
       setBlueCollarRequests([]);
       setLoading(false);
       return;
     }
     setLoading(true);
     const errors: string[] = [];
-
-    const loyalisTask = canAuditLoyalis
-      ? getDocs(collection(db, 'LoyalisPresenceCorrections'))
-          .then((snap) => snap.docs
-            .map((snapshot) => asPresenceCorrectionRequest(snapshot.id, snapshot.data()))
-            .sort((a, b) => timestampToMillis(b.createdAt) - timestampToMillis(a.createdAt)))
-          .catch((err) => {
-            console.error('Error fetching Loyalis correction requests:', err);
-            errors.push('koreksi Loyalis');
-            return null;
-          })
-      : Promise.resolve(null);
 
     const blueCollarTask = canAuditBlueCollar
       ? Promise.allSettled([
@@ -419,10 +441,8 @@ export default function PresenceCorrectionsAdminPage() {
         })
       : Promise.resolve([] as BlueCollarReviewItem[]);
 
-    const [loyalisResult, blueCollarResult] = await Promise.all([loyalisTask, blueCollarTask]);
+    const blueCollarResult = await blueCollarTask;
     if (sequence !== fetchSequence.current) return;
-    if (loyalisResult) setAllRequests(loyalisResult);
-    if (canAuditLoyalis && !loyalisResult) setAllRequests([]);
     setBlueCollarRequests(blueCollarResult);
     if (showError && errors.length > 0) {
       setMessage({
@@ -434,6 +454,16 @@ export default function PresenceCorrectionsAdminPage() {
       setLoading(false);
     }
   }, [canAuditBlueCollar, canAuditLoyalis, selectedPeriod]);
+
+  // The Loyalis half now fails independently of the blue-collar fetch above.
+  useEffect(() => {
+    if (!loyalisCorrectionsQuery.isError) return;
+    console.error('Error fetching Loyalis correction requests:', loyalisCorrectionsQuery.error);
+    setMessage({
+      type: 'error',
+      text: 'Gagal memuat koreksi Loyalis. Coba segarkan kembali.',
+    });
+  }, [loyalisCorrectionsQuery.isError, loyalisCorrectionsQuery.error]);
 
   useEffect(() => {
     // This effect intentionally starts an async data load; the loader updates
@@ -804,9 +834,10 @@ export default function PresenceCorrectionsAdminPage() {
     });
     await batch.commit();
 
-    setAllRequests((current) => current.map((request) => request.id === req.id
-      ? { ...request, status: 'approved', resolvedBy: profile?.email || 'Admin' }
-      : request));
+    patchCachedCorrection(req.id, {
+      status: 'approved',
+      resolvedBy: profile?.email || 'Admin',
+    });
     return {
       dateKey,
       successText: `Koreksi presensi ${req.employeeName || req.employeeId} untuk tanggal ${dateKey} berhasil disetujui dan diterapkan.`,
@@ -832,7 +863,7 @@ export default function PresenceCorrectionsAdminPage() {
     });
     try {
       const result = await applyLoyalisApproval(req);
-      await fetchRequests(false);
+      await invalidateLoyalisPresenceCorrections();
       setMessage({ type: 'success', text: result.successText });
       setReviewProgress({
         status: 'success',
@@ -927,7 +958,7 @@ export default function PresenceCorrectionsAdminPage() {
       }
 
       setSelectedLoyalisRequestIds(new Set());
-      await fetchRequests(false);
+      await invalidateLoyalisPresenceCorrections();
       const failed = errors.length;
       const summaryMessage = failed === 0
         ? `${succeeded} pengajuan Loyalis berhasil disetujui dan disimpan.`
@@ -992,13 +1023,15 @@ export default function PresenceCorrectionsAdminPage() {
       });
       await batch.commit();
 
-      setAllRequests((current) => current.map((request) => request.id === rejectingReqId
-        ? { ...request, status: 'rejected', rejectionReason: rejectionReason.trim(), resolvedBy: profile?.email || 'Admin' }
-        : request));
+      patchCachedCorrection(rejectingReqId, {
+        status: 'rejected',
+        rejectionReason: rejectionReason.trim(),
+        resolvedBy: profile?.email || 'Admin',
+      });
       setMessage({ type: 'success', text: 'Pengajuan koreksi presensi berhasil ditolak.' });
       setRejectingReqId(null);
       setRejectionReason('');
-      await fetchRequests(false);
+      await invalidateLoyalisPresenceCorrections();
     } catch (err: unknown) {
       console.error(err);
       setMessage({
@@ -1401,7 +1434,10 @@ export default function PresenceCorrectionsAdminPage() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => void fetchRequests()}
+                onClick={() => {
+                  void fetchRequests();
+                  void invalidateLoyalisPresenceCorrections();
+                }}
                 disabled={loading}
                 className="h-12 rounded-xl border-slate-200 bg-white text-slate-600 hover:bg-slate-50 shadow-sm"
               >

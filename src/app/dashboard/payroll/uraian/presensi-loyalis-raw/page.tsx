@@ -29,9 +29,15 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import {
-  collection, getDocs, doc, setDoc, deleteDoc, getDoc, serverTimestamp, query, where, orderBy
+  doc, setDoc, getDoc, serverTimestamp
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import {
+  useEmployeesBlueCollar,
+  useEmployeesLoyalis,
+  useLoyalisPresenceCorrections,
+  usePayrollCacheInvalidation,
+} from '@/lib/queries/hooks';
 import { MONTHS_ID, REKAP_COLUMNS, SUPPORTED_CATEGORIES } from '@/utils/rekapConfig';
 import { normalizeName, MANUAL_OVERRIDES } from '@/utils/payrollLogic';
 import { isFridayDate, normalizeNipy } from '@/lib/payroll/attendance';
@@ -245,8 +251,6 @@ export default function PresensiLoyalisRawPage() {
   const usesSharedImport = canonicalPeriod >= '2026-08';
 
   // ── States ──
-  const [loyalisEmployees, setLoyalisEmployees] = useState<any[]>([]);
-  const [loadingLoyalis, setLoadingLoyalis] = useState(false);
   const [uploadedData, setUploadedData] = useState<any[] | null>(null);
   const [calcMode, setCalcMode] = useState<'worked' | 'absent'>('worked');
   const [workingDays, setWorkingDays] = useState<number | ''>(25);
@@ -294,7 +298,6 @@ export default function PresensiLoyalisRawPage() {
   const [pekaryaWorkingDays, setPekaryaWorkingDays] = useState<number>(25);
   const [pekaryaHolidays, setPekaryaHolidays] = useState<number>(0);
   const [selectedPekaryaCategory, setSelectedPekaryaCategory] = useState<string>('SATPAM');
-  const [dynamicCategories, setDynamicCategories] = useState<string[]>(SUPPORTED_CATEGORIES);
 
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -302,55 +305,38 @@ export default function PresensiLoyalisRawPage() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [strataFilter, setStrataFilter] = useState<'all' | '1' | '2' | '3' | '4' | '5'>('all');
 
-  // Sync Categories from DB Blue Collar
-  useEffect(() => {
-    const fetchCats = async () => {
-      try {
-        const allEmpSnap = await getDocs(collection(db, 'Employees_BlueCollar'));
-        const cats = new Set<string>(SUPPORTED_CATEGORIES);
-        allEmpSnap.docs.forEach(d => {
-          const cat = d.data()?.employment?.jobCategory;
-          if (cat) cats.add(cat);
-        });
-        setDynamicCategories(Array.from(cats).sort());
-      } catch (err) {
-        console.error(err);
-      }
-    };
-    fetchCats();
-  }, []);
+  // ── Employee rosters, from the shared cache ──
+  // Both were previously read per-mount. The `AKTIF` predicate that used to be
+  // a Firestore `where` clause is applied client-side here instead.
+  const blueCollarQuery = useEmployeesBlueCollar();
+  const loyalisQuery = useEmployeesLoyalis();
+  const loadingLoyalis = loyalisQuery.isLoading;
+  const { invalidateLoyalisPresenceCorrections } = usePayrollCacheInvalidation();
 
-  // ── Fetch Loyalis Employees ──
-  useEffect(() => {
-    const fetchLoyalis = async () => {
-      setLoadingLoyalis(true);
-      try {
-        const q = query(
-          collection(db, 'Employees_Loyalis'),
-          where('personal_info.status', '==', 'AKTIF')
-        );
-        const snap = await getDocs(q);
-        const list = snap.docs.map(d => {
-          const data = d.data();
-          return {
-            id: d.id,
-            nipy: normalizeNipy(
-              data.nipy || data.personal_info?.employee_id_niy || '',
-            ),
-            name: data.personal_info?.name || '',
-            role: data.employment_profile?.job_role || '',
-            department: data.employment_profile?.department_unit || '',
-          };
-        }).sort((a, b) => a.name.localeCompare(b.name));
-        setLoyalisEmployees(list);
-      } catch (err) {
-        console.error('Error fetching Loyalis employees:', err);
-      } finally {
-        setLoadingLoyalis(false);
-      }
-    };
-    fetchLoyalis();
-  }, []);
+  // Categories present on blue-collar staff, unioned with the fixed set.
+  const dynamicCategories = useMemo(() => {
+    const cats = new Set<string>(SUPPORTED_CATEGORIES);
+    (blueCollarQuery.data || []).forEach((d: any) => {
+      const cat = d.employment?.jobCategory;
+      if (cat) cats.add(cat);
+    });
+    return Array.from(cats).sort();
+  }, [blueCollarQuery.data]);
+
+  const loyalisEmployees = useMemo<any[]>(
+    () =>
+      (loyalisQuery.data || [])
+        .filter((d: any) => d.personal_info?.status === 'AKTIF')
+        .map((d: any) => ({
+          id: d.id,
+          nipy: normalizeNipy(d.nipy || d.personal_info?.employee_id_niy || ''),
+          name: d.personal_info?.name || '',
+          role: d.employment_profile?.job_role || '',
+          department: d.employment_profile?.department_unit || '',
+        }))
+        .sort((a: any, b: any) => a.name.localeCompare(b.name)),
+    [loyalisQuery.data],
+  );
 
   // ── Period work calendar (Jumat + Tanggal Merah) ──────────────────────────
   // Loyalis are not expected in on these dates, so the table flags them and
@@ -573,37 +559,23 @@ export default function PresensiLoyalisRawPage() {
     fetchActiveImportLoyalisRows,
   ]);
 
-  // ── Fetch Correction Requests for Active Month ──
-  const [corrections, setCorrections] = useState<any[]>([]);
-  const [loadingCorrections, setLoadingCorrections] = useState(false);
+  // ── Correction Requests for Active Month ──
+  // The whole collection comes from the shared cache (the corrections review
+  // page reads the same entry); scoping to the active month stays client-side
+  // on `date`, which is the field this app treats as authoritative.
   const [pendingResolutionUpdates, setPendingResolutionUpdates] = useState<Record<string, { status: 'approved' | 'rejected'; rejectionReason?: string }>>({});
   const [activeDeclineId, setActiveDeclineId] = useState<string | null>(null);
   const [declineReasonInput, setDeclineReasonInput] = useState<Record<string, string>>({});
 
-  const fetchCorrections = useCallback(async () => {
-    setLoadingCorrections(true);
-    try {
-      const q = query(
-        collection(db, 'LoyalisPresenceCorrections'),
-        orderBy('createdAt', 'desc')
-      );
-      const snap = await getDocs(q);
-      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  const correctionsQuery = useLoyalisPresenceCorrections();
+  const loadingCorrections = correctionsQuery.isLoading;
 
-      const periodPrefix = `${year}-${String(month).padStart(2, '0')}`;
-      const filtered = list.filter((req: any) => req.date && req.date.startsWith(periodPrefix));
-
-      setCorrections(filtered);
-    } catch (err) {
-      console.error('Error fetching corrections:', err);
-    } finally {
-      setLoadingCorrections(false);
-    }
-  }, [month, year]);
-
-  useEffect(() => {
-    fetchCorrections();
-  }, [fetchCorrections]);
+  const corrections = useMemo<any[]>(() => {
+    const periodPrefix = `${year}-${String(month).padStart(2, '0')}`;
+    return (correctionsQuery.data || []).filter(
+      (req: any) => req.date && req.date.startsWith(periodPrefix),
+    );
+  }, [correctionsQuery.data, month, year]);
 
   // ── Local Draft Persistence ───────────────────────────────────────────────
   // Everything in the working table is in-memory until "Simpan Data Presensi"
@@ -1707,7 +1679,7 @@ export default function PresensiLoyalisRawPage() {
         });
         await Promise.all(updateCorrectionPromises);
         setPendingResolutionUpdates({});
-        fetchCorrections();
+        void invalidateLoyalisPresenceCorrections();
       } catch (err) {
         console.error("Gagal memperbarui status pengajuan koreksi presensi:", err);
       }
@@ -1742,13 +1714,14 @@ export default function PresensiLoyalisRawPage() {
   const handleApplyPekaryaPresence = async () => {
     setSavingPresence(true);
     try {
-      const q = query(
-        collection(db, 'Employees_BlueCollar'),
-        where('employment.status', '==', 'active'),
-        where('employment.jobCategory', '==', selectedPekaryaCategory)
-      );
-      const snap = await getDocs(q);
-      const empsList = snap.docs.map(d => ({ employeeId: d.id, name: d.data().name || '' }));
+      // Filtered from the roster already in cache rather than re-querying.
+      const empsList = (blueCollarQuery.data || [])
+        .filter(
+          (d: any) =>
+            d.employment?.status === 'active' &&
+            d.employment?.jobCategory === selectedPekaryaCategory,
+        )
+        .map((d: any) => ({ employeeId: d.id, name: d.name || '' }));
       if (empsList.length === 0) {
         setMessage({ type: 'error', text: 'Tidak ada data pegawai yang ditemukan untuk kategori ini.' });
         return;
