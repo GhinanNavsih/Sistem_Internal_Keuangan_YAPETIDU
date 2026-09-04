@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/lib/AuthContext";
+import QueryProvider from "@/lib/queries/QueryProvider";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
 import Script from "next/script";
 
@@ -41,10 +42,12 @@ export default function RootLayout({
   return (
     <html lang="id" className={`${inter.variable} antialiased`}>
       <body className="font-sans min-h-screen bg-slate-50">
-        <AuthProvider>
-          <ImpersonationBanner />
-          {children}
-        </AuthProvider>
+        <QueryProvider>
+          <AuthProvider>
+            <ImpersonationBanner />
+            {children}
+          </AuthProvider>
+        </QueryProvider>
         <Script id="register-sw" strategy="afterInteractive">
           {`
             if ('serviceWorker' in navigator) {

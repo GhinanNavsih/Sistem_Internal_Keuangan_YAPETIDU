@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import GlobalHeader from '@/components/GlobalHeader';
 import Link from 'next/link';
@@ -69,17 +69,23 @@ import {
 import * as XLSX from 'xlsx';
 import {
   collection,
-  getDocs,
   doc,
-  getDoc,
   setDoc,
   deleteDoc,
   addDoc,
   serverTimestamp,
   Timestamp,
 } from 'firebase/firestore';
+import { useQueryClient } from '@tanstack/react-query';
 import { db } from '@/lib/firebase';
 import { useDashboardData } from '@/lib/DashboardDataContext';
+import {
+  useDepartments,
+  useJabatanStruktural,
+  useMatrixActiveVersion,
+  useMatrixRows,
+} from '@/lib/queries/hooks';
+import { referenceKeys } from '@/lib/queries/keys';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 import { normalizeNipy } from '@/lib/payroll/attendance';
 import { MONTHS_ID } from '@/utils/rekapConfig';
@@ -462,18 +468,34 @@ export default function EmployeesPage() {
   const [pendingEdits, setPendingEdits] = useState<PendingEdit[]>([]);
   const [isLogOpen, setIsLogOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [eduLevels, setEduLevels] = useState<string[]>([]);
 
   // Loyalis Structural Position form states
   const [newPosName, setNewPosName] = useState('');
   const [newPosAllowance, setNewPosAllowance] = useState<number | ''>('');
   const [newPosSatker, setNewPosSatker] = useState('');
-  const [dbPositions, setDbPositions] = useState<{ id: string; name: string; satker: string; allowance: number }[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionRef = useRef<HTMLDivElement>(null);
-  const [departments, setDepartments] = useState<string[]>([]);
   const [isCustomDept, setIsCustomDept] = useState(false);
   const [customDeptValue, setCustomDeptValue] = useState('');
+
+  // Reference data served from the shared query cache. The functional matrix is
+  // the same cache entry the dashboard context already populates, so opening
+  // this page costs no extra Firestore reads for it.
+  const { data: functionalVersion } = useMatrixActiveVersion('SalaryMatrix_Functional');
+  const { data: functionalRows } = useMatrixRows<{ education_level?: string }>(
+    'SalaryMatrix_Functional',
+    functionalVersion,
+  );
+  const { data: dbPositions = [] } = useJabatanStruktural();
+  const { data: departments = [] } = useDepartments();
+  const queryClient = useQueryClient();
+
+  const eduLevels = useMemo(() => {
+    const levels = (functionalRows || [])
+      .map(row => row.education_level as string)
+      .filter(Boolean);
+    return Array.from(new Set(levels)).sort();
+  }, [functionalRows]);
 
   // Redirect if unauthorized
   useEffect(() => {
@@ -492,72 +514,6 @@ export default function EmployeesPage() {
         console.error('Failed to parse pending edits:', e);
       }
     }
-  }, []);
-
-  // Load unique education levels from functional salary matrix and fetch JabatanStruktural positions
-  useEffect(() => {
-    const fetchEduLevels = async () => {
-      try {
-        const funcConfigRef = doc(db, 'SalaryMatrix_Functional', '_config');
-        const funcConfigSnap = await getDoc(funcConfigRef);
-        let funcVersion = '2026_v1';
-        if (funcConfigSnap.exists() && funcConfigSnap.data().activeVersion) {
-          funcVersion = funcConfigSnap.data().activeVersion;
-        }
-        const funcRowsSnapshot = await getDocs(collection(db, 'SalaryMatrix_Functional', funcVersion, 'rows'));
-        const levels = funcRowsSnapshot.docs.map(docSnap => docSnap.data().education_level as string).filter(Boolean);
-        setEduLevels(Array.from(new Set(levels)).sort());
-      } catch (err) {
-        console.error('Error fetching education levels:', err);
-      }
-    };
-
-    const fetchDbPositions = async () => {
-      try {
-        const snap = await getDocs(collection(db, 'JabatanStruktural'));
-        const list = snap.docs.map(docSnap => ({
-          id: docSnap.id,
-          name: docSnap.data().name as string,
-          satker: docSnap.data().satker as string,
-          allowance: Number(docSnap.data().allowance) || 0
-        }));
-        list.sort((a, b) => a.name.localeCompare(b.name));
-        setDbPositions(list);
-      } catch (err) {
-        console.error('Error fetching JabatanStruktural:', err);
-      }
-    };
-
-    const fetchDepartments = async () => {
-      try {
-        const deptDoc = await getDoc(doc(db, 'Settings', 'departments'));
-        if (deptDoc.exists() && deptDoc.data().list) {
-          setDepartments(deptDoc.data().list);
-        } else {
-          const defaultList = [
-            'FAK. AGAMA ISLAM',
-            'FAK. BISNIS, BAHASA DAN PENDIDIKAN',
-            'FAK. ILMU KESEHATAN',
-            'FAK. SAINS DAN TEKNOLOGI',
-            'PASCASARJANA',
-            'REKTORAT',
-            'UPT & LEMBAGA'
-          ];
-          setDepartments(defaultList);
-          try {
-            await setDoc(doc(db, 'Settings', 'departments'), { list: defaultList });
-          } catch (e) {
-            console.error('Failed to initialize departments in Firestore:', e);
-          }
-        }
-      } catch (err) {
-        console.error('Error fetching departments:', err);
-      }
-    };
-
-    fetchEduLevels();
-    fetchDbPositions();
-    fetchDepartments();
   }, []);
 
   // Handle click outside of structural position suggestions
@@ -1101,9 +1057,11 @@ export default function EmployeesPage() {
         const newDept = customDeptValue.trim().toUpperCase();
         if (!departments.includes(newDept)) {
           const updatedList = [...departments, newDept].sort();
-          setDepartments(updatedList);
+          // Write first, then seed the cache, so a failed write does not leave a
+          // department in the cached list that does not exist in Firestore.
           try {
             await setDoc(doc(db, 'Settings', 'departments'), { list: updatedList });
+            queryClient.setQueryData(referenceKeys.departments(), updatedList);
           } catch (e) {
             console.error('Failed to update Settings/departments:', e);
           }

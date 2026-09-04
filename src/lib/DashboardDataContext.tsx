@@ -1,12 +1,21 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { collection, getDocs, doc, getDoc, query, where } from 'firebase/firestore';
-import { db, secondaryDb } from '@/lib/firebase';
+import React, { createContext, useContext, useCallback, useMemo } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { SalaryMatrix } from '@/types';
 import { matchFunctionalAllowance } from '@/utils/payrollLogic';
 import { buildKoperasiPayrollAmountMaps } from '@/lib/payroll/koperasiAmounts';
+import {
+  useEmployeesBlueCollar,
+  useEmployeesLoyalis,
+  useKoperasiLoans,
+  useKoperasiUsers,
+  useMatrixActiveVersion,
+  useMatrixGradeCodes,
+  useMatrixRows,
+  usePayrollCacheInvalidation,
+} from '@/lib/queries/hooks';
+import { isQuerySettled, isVersionedGroupSettled } from '@/lib/queries/status';
 
 interface DashboardDataContextType {
   employeesLoyalis: any[];
@@ -27,214 +36,179 @@ interface DashboardDataContextType {
 
 const DashboardDataContext = createContext<DashboardDataContextType | null>(null);
 
+/** Roles allowed to read the payroll-wide dataset this context exposes. */
+const DASHBOARD_DATA_ROLES = ['super_admin', 'finance_verifier'];
+
+/** Stable empty values so consumers never see `undefined` before data lands. */
+const EMPTY_LIST: any[] = [];
+const EMPTY_MAP: Record<string, number> = {};
+
+/**
+ * Builds a `{ grade: { tahun: amount } }` matrix from raw version rows.
+ */
+function buildSalaryMatrix(rows: any[] | undefined): SalaryMatrix {
+  const matrix: SalaryMatrix = {};
+  (rows || []).forEach(row => {
+    const tahun = row.tahun;
+    const grades = row.salaries || {};
+    Object.entries(grades).forEach(([grade, amount]) => {
+      if (!matrix[grade]) matrix[grade] = {};
+      matrix[grade][tahun] = amount as number;
+    });
+  });
+  return matrix;
+}
+
+/**
+ * Provides the payroll-wide reference dataset (employees, salary matrices,
+ * koperasi amounts) to the whole dashboard tree.
+ *
+ * Reads go through the shared query cache, so a full page reload reuses data
+ * already fetched in this session instead of re-pulling every collection. Call
+ * `refreshData()` after a write to drop the cached copies and refetch.
+ */
 export function DashboardDataProvider({ children }: { children: React.ReactNode }) {
   const { profile } = useAuth();
-  const [employeesLoyalis, setEmployeesLoyalis] = useState<any[]>([]);
-  const [employeesBlueCollar, setEmployeesBlueCollar] = useState<any[]>([]);
-  const [salaryMatrixBlue, setSalaryMatrixBlue] = useState<SalaryMatrix>({});
-  const [salaryMatrixWhite, setSalaryMatrixWhite] = useState<SalaryMatrix>({});
-  const [gradeCodesBlue, setGradeCodesBlue] = useState<string[]>([]);
-  const [gradeCodesWhite, setGradeCodesWhite] = useState<string[]>([]);
-  const [functionalAllowanceMap, setFunctionalAllowanceMap] = useState<Record<string, number>>({});
-  const [kepangkatanAllowanceMap, setKepangkatanAllowanceMap] = useState<Record<string, number>>({});
-  const [koperasiDeductions, setKoperasiDeductions] = useState<Record<string, number>>({});
-  const [koperasiSavings, setKoperasiSavings] = useState<Record<string, number>>({});
-  const [koperasiLoans, setKoperasiLoans] = useState<any[]>([]);
-  const [koperasiUsers, setKoperasiUsers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const enabled = Boolean(profile && DASHBOARD_DATA_ROLES.includes(profile.role));
 
-  const fetchData = useCallback(async () => {
-    if (!profile || !['super_admin', 'finance_verifier'].includes(profile.role)) {
-      setLoading(false);
-      return;
+  const { invalidateEmployees, invalidateSalaryMatrix, invalidateKoperasi } =
+    usePayrollCacheInvalidation();
+
+  const loyalisQuery = useEmployeesLoyalis(enabled);
+  const blueCollarQuery = useEmployeesBlueCollar(enabled);
+
+  // Each matrix resolves its active version first, then that version's rows.
+  const blueVersion = useMatrixActiveVersion('SalaryMatrix', enabled);
+  const whiteVersion = useMatrixActiveVersion('SalaryMatrix_WhiteCollar', enabled);
+  const functionalVersion = useMatrixActiveVersion('SalaryMatrix_Functional', enabled);
+  const kepangkatanVersion = useMatrixActiveVersion('SalaryMatrix_Kepangkatan', enabled);
+
+  const blueRows = useMatrixRows('SalaryMatrix', blueVersion.data, enabled);
+  const whiteRows = useMatrixRows('SalaryMatrix_WhiteCollar', whiteVersion.data, enabled);
+  const functionalRows = useMatrixRows('SalaryMatrix_Functional', functionalVersion.data, enabled);
+  const kepangkatanRows = useMatrixRows('SalaryMatrix_Kepangkatan', kepangkatanVersion.data, enabled);
+
+  const blueGrades = useMatrixGradeCodes('SalaryMatrix', blueVersion.data, enabled);
+  const whiteGrades = useMatrixGradeCodes('SalaryMatrix_WhiteCollar', whiteVersion.data, enabled);
+
+  const koperasiLoansQuery = useKoperasiLoans(enabled);
+  const koperasiUsersQuery = useKoperasiUsers(enabled);
+
+  const employeesLoyalis = loyalisQuery.data ?? EMPTY_LIST;
+  const employeesBlueCollar = blueCollarQuery.data ?? EMPTY_LIST;
+  const koperasiLoans = koperasiLoansQuery.data ?? EMPTY_LIST;
+  const koperasiUsers = koperasiUsersQuery.data ?? EMPTY_LIST;
+
+  const salaryMatrixBlue = useMemo(() => buildSalaryMatrix(blueRows.data), [blueRows.data]);
+  const salaryMatrixWhite = useMemo(() => buildSalaryMatrix(whiteRows.data), [whiteRows.data]);
+
+  const functionalAllowanceMap = useMemo(() => {
+    if (!functionalRows.data || employeesLoyalis.length === 0) return EMPTY_MAP;
+
+    const fMatrix: Record<string, { base_value: number; functional_tiers: Record<string, number> }> = {};
+    functionalRows.data.forEach((row: any) => {
+      fMatrix[row.id] = {
+        base_value: row.base_value || 0,
+        functional_tiers: row.functional_tiers || {},
+      };
+    });
+
+    const map: Record<string, number> = {};
+    employeesLoyalis.forEach((empData: any) => {
+      const edLevel = empData.academic_and_tier?.education_level;
+      const fTier = empData.academic_and_tier?.functional_tier;
+      map[empData.id] = matchFunctionalAllowance(edLevel, fTier, fMatrix);
+    });
+    return map;
+  }, [functionalRows.data, employeesLoyalis]);
+
+  const kepangkatanAllowanceMap = useMemo(() => {
+    if (!kepangkatanRows.data || employeesLoyalis.length === 0) return EMPTY_MAP;
+
+    const kepMatrix: Record<number, number> = {};
+    kepangkatanRows.data.forEach((row: any) => {
+      const credit = Number(row.credit_score) || 0;
+      kepMatrix[credit] = Number(row.allowance) || 0;
+    });
+
+    const map: Record<string, number> = {};
+    employeesLoyalis.forEach((empData: any) => {
+      const credit = Number(empData.kepangkatan?.cummulativeCredit) || 0;
+      map[empData.id] = kepMatrix[credit] || 0;
+    });
+    return map;
+  }, [kepangkatanRows.data, employeesLoyalis]);
+
+  const koperasiAmounts = useMemo(() => {
+    if (koperasiLoans.length === 0 && koperasiUsers.length === 0) {
+      return { deductions: EMPTY_MAP, savings: EMPTY_MAP };
     }
+    const now = new Date();
+    const currentPayrollPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    return buildKoperasiPayrollAmountMaps(
+      currentPayrollPeriod,
+      [...employeesLoyalis, ...employeesBlueCollar],
+      koperasiLoans,
+      koperasiUsers,
+    );
+  }, [employeesLoyalis, employeesBlueCollar, koperasiLoans, koperasiUsers]);
 
-    try {
-      setLoading(true);
+  // Mirrors the previous behaviour: unauthorized roles are never "loading", and
+  // a failed read ends the loading state rather than hanging the UI.
+  const loading =
+    enabled &&
+    !(
+      [loyalisQuery, blueCollarQuery, koperasiLoansQuery, koperasiUsersQuery].every(isQuerySettled) &&
+      isVersionedGroupSettled(blueVersion, blueRows, blueGrades) &&
+      isVersionedGroupSettled(whiteVersion, whiteRows, whiteGrades) &&
+      isVersionedGroupSettled(functionalVersion, functionalRows) &&
+      isVersionedGroupSettled(kepangkatanVersion, kepangkatanRows)
+    );
 
-      // Fetch root configs and cooperative collections in parallel
-      const [
-        loySnap,
-        bcSnap,
-        matrixBlueConfigSnap,
-        matrixWhiteConfigSnap,
-        fConfigSnap,
-        kepConfigSnap,
-        loanSnapshot,
-        userSnapshot
-      ] = await Promise.all([
-        getDocs(collection(db, 'Employees_Loyalis')),
-        getDocs(collection(db, 'Employees_BlueCollar')),
-        getDoc(doc(db, 'SalaryMatrix', '_config')),
-        getDoc(doc(db, 'SalaryMatrix_WhiteCollar', '_config')),
-        getDoc(doc(db, 'SalaryMatrix_Functional', '_config')),
-        getDoc(doc(db, 'SalaryMatrix_Kepangkatan', '_config')),
-        getDocs(collection(secondaryDb, 'simpanPinjam')),
-        getDocs(collection(secondaryDb, 'users'))
-      ]);
+  const refreshData = useCallback(async () => {
+    await Promise.all([
+      invalidateEmployees(),
+      invalidateSalaryMatrix(),
+      invalidateKoperasi(),
+    ]);
+  }, [invalidateEmployees, invalidateSalaryMatrix, invalidateKoperasi]);
 
-      const loyList = loySnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
-      const bcList = bcSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
-      setEmployeesLoyalis(loyList);
-      setEmployeesBlueCollar(bcList);
-
-      // Active versions
-      let activeBlueVersion = '2026_v1';
-      if (matrixBlueConfigSnap.exists() && matrixBlueConfigSnap.data().activeVersion) {
-        activeBlueVersion = matrixBlueConfigSnap.data().activeVersion;
-      }
-
-      let activeWhiteVersion = '2026_v1';
-      if (matrixWhiteConfigSnap.exists() && matrixWhiteConfigSnap.data().activeVersion) {
-        activeWhiteVersion = matrixWhiteConfigSnap.data().activeVersion;
-      }
-
-      let activeFunctionalVersion = '2026_v1';
-      if (fConfigSnap.exists() && fConfigSnap.data().activeVersion) {
-        activeFunctionalVersion = fConfigSnap.data().activeVersion;
-      }
-
-      let activeKepangkatanVersion = '2026_v1';
-      if (kepConfigSnap.exists() && kepConfigSnap.data().activeVersion) {
-        activeKepangkatanVersion = kepConfigSnap.data().activeVersion;
-      }
-
-      // Fetch versions data rows in parallel
-      const [
-        matrixBlueSnap,
-        matrixWhiteSnap,
-        fSnap,
-        kepSnap,
-        blueVersionSnap,
-        whiteVersionSnap
-      ] = await Promise.all([
-        getDocs(collection(db, 'SalaryMatrix', activeBlueVersion, 'rows')),
-        getDocs(collection(db, 'SalaryMatrix_WhiteCollar', activeWhiteVersion, 'rows')),
-        getDocs(collection(db, 'SalaryMatrix_Functional', activeFunctionalVersion, 'rows')),
-        getDocs(collection(db, 'SalaryMatrix_Kepangkatan', activeKepangkatanVersion, 'rows')),
-        getDoc(doc(db, 'SalaryMatrix', activeBlueVersion)),
-        getDoc(doc(db, 'SalaryMatrix_WhiteCollar', activeWhiteVersion))
-      ]);
-
-      const gCodesBlue = blueVersionSnap.exists() ? (blueVersionSnap.data()?.metadata?.gradeCodes || []) : [];
-      const gCodesWhite = whiteVersionSnap.exists() ? (whiteVersionSnap.data()?.metadata?.gradeCodes || []) : [];
-      setGradeCodesBlue(gCodesBlue);
-      setGradeCodesWhite(gCodesWhite);
-
-      // Process blue matrix
-      const matrixBlue: SalaryMatrix = {};
-      matrixBlueSnap.docs.forEach(d => {
-        const data = d.data();
-        const tahun = data.tahun;
-        const grades = data.salaries || {};
-        Object.entries(grades).forEach(([grade, amount]) => {
-          if (!matrixBlue[grade]) matrixBlue[grade] = {};
-          matrixBlue[grade][tahun] = amount as number;
-        });
-      });
-      setSalaryMatrixBlue(matrixBlue);
-
-      // Process white matrix
-      const matrixWhite: SalaryMatrix = {};
-      matrixWhiteSnap.docs.forEach(d => {
-        const data = d.data();
-        const tahun = data.tahun;
-        const grades = data.salaries || {};
-        Object.entries(grades).forEach(([grade, amount]) => {
-          if (!matrixWhite[grade]) matrixWhite[grade] = {};
-          matrixWhite[grade][tahun] = amount as number;
-        });
-      });
-      setSalaryMatrixWhite(matrixWhite);
-
-      // Process functional allowance
-      const fMatrix: Record<string, { base_value: number; functional_tiers: Record<string, number> }> = {};
-      fSnap.docs.forEach(fDoc => {
-        const data = fDoc.data();
-        fMatrix[fDoc.id] = {
-          base_value: data.base_value || 0,
-          functional_tiers: data.functional_tiers || {},
-        };
-      });
-
-      const fAllowanceMap: Record<string, number> = {};
-      loyList.forEach((empData: any) => {
-        const edLevel = empData.academic_and_tier?.education_level;
-        const fTier = empData.academic_and_tier?.functional_tier;
-        fAllowanceMap[empData.id] = matchFunctionalAllowance(edLevel, fTier, fMatrix);
-      });
-      setFunctionalAllowanceMap(fAllowanceMap);
-
-      // Process Kepangkatan matrix
-      const kepMatrix: Record<number, number> = {};
-      kepSnap.docs.forEach(d => {
-        const data = d.data();
-        const credit = Number(data.credit_score) || 0;
-        const allowance = Number(data.allowance) || 0;
-        kepMatrix[credit] = allowance;
-      });
-
-      const kepAllowanceMap: Record<string, number> = {};
-      loyList.forEach((empData: any) => {
-        const credit = Number(empData.kepangkatan?.cummulativeCredit) || 0;
-        kepAllowanceMap[empData.id] = kepMatrix[credit] || 0;
-      });
-      setKepangkatanAllowanceMap(kepAllowanceMap);
-
-      // Process cooperative loan deductions & cooperative savings
-      const now = new Date();
-      const currentPayrollPeriod = `${now.getFullYear()}-${String(
-        now.getMonth() + 1,
-      ).padStart(2, '0')}`;
-
-      const koperasiLoanRecords = loanSnapshot.docs
-        .map(docSnap => ({ id: docSnap.id, ...docSnap.data() as any }));
-      const koperasiUserRecords = userSnapshot.docs
-        .map(docSnap => ({ id: docSnap.id, ...docSnap.data() as any }));
-      setKoperasiLoans(koperasiLoanRecords);
-      setKoperasiUsers(koperasiUserRecords);
-
-      const koperasiAmounts = buildKoperasiPayrollAmountMaps(
-        currentPayrollPeriod,
-        [...loyList, ...bcList],
-        koperasiLoanRecords,
-        koperasiUserRecords,
-      );
-      setKoperasiDeductions(koperasiAmounts.deductions);
-      setKoperasiSavings(koperasiAmounts.savings);
-
-    } catch (err) {
-      console.error('Error fetching global dashboard data context:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [profile]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  const value = useMemo<DashboardDataContextType>(
+    () => ({
+      employeesLoyalis,
+      employeesBlueCollar,
+      salaryMatrixBlue,
+      salaryMatrixWhite,
+      gradeCodesBlue: blueGrades.data ?? EMPTY_LIST,
+      gradeCodesWhite: whiteGrades.data ?? EMPTY_LIST,
+      functionalAllowanceMap,
+      kepangkatanAllowanceMap,
+      koperasiDeductions: koperasiAmounts.deductions,
+      koperasiSavings: koperasiAmounts.savings,
+      koperasiLoans,
+      koperasiUsers,
+      loading,
+      refreshData,
+    }),
+    [
+      employeesLoyalis,
+      employeesBlueCollar,
+      salaryMatrixBlue,
+      salaryMatrixWhite,
+      blueGrades.data,
+      whiteGrades.data,
+      functionalAllowanceMap,
+      kepangkatanAllowanceMap,
+      koperasiAmounts,
+      koperasiLoans,
+      koperasiUsers,
+      loading,
+      refreshData,
+    ],
+  );
 
   return (
-    <DashboardDataContext.Provider
-      value={{
-        employeesLoyalis,
-        employeesBlueCollar,
-        salaryMatrixBlue,
-        salaryMatrixWhite,
-        gradeCodesBlue,
-        gradeCodesWhite,
-        functionalAllowanceMap,
-        kepangkatanAllowanceMap,
-        koperasiDeductions,
-        koperasiSavings,
-        koperasiLoans,
-        koperasiUsers,
-        loading,
-        refreshData: fetchData
-      }}
-    >
-      {children}
-    </DashboardDataContext.Provider>
+    <DashboardDataContext.Provider value={value}>{children}</DashboardDataContext.Provider>
   );
 }
 

@@ -24,8 +24,26 @@ import {
   FileSpreadsheet,
   Users,
 } from 'lucide-react';
-import { collection, getDocs, doc, getDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { doc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import {
+  useMatrixActiveVersion,
+  useMatrixGradeCodes,
+  useMatrixRows,
+  usePayrollCacheInvalidation,
+} from '@/lib/queries/hooks';
+import { isVersionedGroupSettled } from '@/lib/queries/status';
+
+/** Stable empty array so an absent grade-code read does not remount the table. */
+const EMPTY_GRADES: string[] = [];
+
+/** Which matrix collection each tab saves into, for post-save invalidation. */
+const MATRIX_COLLECTION_BY_TAB = {
+  blue_collar: 'SalaryMatrix',
+  white_collar: 'SalaryMatrix_WhiteCollar',
+  functional: 'SalaryMatrix_Functional',
+  kepangkatan: 'SalaryMatrix_Kepangkatan',
+} as const;
 
 interface SalaryRow {
   id: string;
@@ -49,118 +67,84 @@ interface KepangkatanRow {
 }
 
 export default function SalaryMasterPage() {
-  const [rows, setRows] = useState<SalaryRow[]>([]);
-  const [gradeCodes, setGradeCodes] = useState<string[]>([]);
-  const [activeVersion, setActiveVersion] = useState<string>('');
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const isSavingRef = useRef(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  
+
   const [selectedTab, setSelectedTab] = useState<'blue_collar' | 'white_collar' | 'functional' | 'kepangkatan'>('blue_collar');
+
+  // Server state comes from the shared query cache; each matrix resolves its
+  // active version first, then that version's grade codes and rows. These are
+  // the same cache entries the dashboard context uses, so revisiting this page
+  // within the reference-data window costs no Firestore reads.
+  const blueVersionQuery = useMatrixActiveVersion('SalaryMatrix');
+  const whiteVersionQuery = useMatrixActiveVersion('SalaryMatrix_WhiteCollar');
+  const functionalVersionQuery = useMatrixActiveVersion('SalaryMatrix_Functional');
+  const kepangkatanVersionQuery = useMatrixActiveVersion('SalaryMatrix_Kepangkatan');
+
+  const activeVersion = blueVersionQuery.data ?? '';
+  const whiteCollarVersion = whiteVersionQuery.data ?? '';
+  const functionalVersion = functionalVersionQuery.data ?? '';
+  const kepangkatanVersion = kepangkatanVersionQuery.data ?? '';
+
+  const blueRowsQuery = useMatrixRows<SalaryRow>('SalaryMatrix', blueVersionQuery.data);
+  const whiteRowsQuery = useMatrixRows<SalaryRow>('SalaryMatrix_WhiteCollar', whiteVersionQuery.data);
+  const functionalRowsQuery = useMatrixRows<FunctionalRow>('SalaryMatrix_Functional', functionalVersionQuery.data);
+  const kepangkatanRowsQuery = useMatrixRows<KepangkatanRow>('SalaryMatrix_Kepangkatan', kepangkatanVersionQuery.data);
+
+  const gradeCodesQuery = useMatrixGradeCodes('SalaryMatrix', blueVersionQuery.data);
+  const whiteGradeCodesQuery = useMatrixGradeCodes('SalaryMatrix_WhiteCollar', whiteVersionQuery.data);
+
+  const gradeCodes = gradeCodesQuery.data ?? EMPTY_GRADES;
+  const whiteCollarGrades = whiteGradeCodesQuery.data ?? EMPTY_GRADES;
+
+  const { invalidateSalaryMatrix } = usePayrollCacheInvalidation();
+
+  // Rows are edited in place before being saved as a batch, so the cached
+  // server copy seeds a local working copy rather than being rendered directly.
+  const [rows, setRows] = useState<SalaryRow[]>([]);
   const [whiteCollarRows, setWhiteCollarRows] = useState<SalaryRow[]>([]);
-  const [whiteCollarGrades, setWhiteCollarGrades] = useState<string[]>([]);
-  const [whiteCollarVersion, setWhiteCollarVersion] = useState<string>('');
-
   const [functionalRows, setFunctionalRows] = useState<FunctionalRow[]>([]);
-  const [functionalVersion, setFunctionalVersion] = useState<string>('');
-
   const [kepangkatanRows, setKepangkatanRows] = useState<KepangkatanRow[]>([]);
-  const [kepangkatanVersion, setKepangkatanVersion] = useState<string>('');
+
+  // Once the user has typed into the grid, refetched server data must not
+  // overwrite the working copy — a background refetch mid-edit would otherwise
+  // silently discard unsaved salary changes. Cleared on a successful save so
+  // the post-save refetch re-seeds from Firestore.
+  const hasUnsavedEdits = useRef(false);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        
-        // 1. Get Active Version for Blue Collar
-        const rootRef = doc(db, 'SalaryMatrix', '_config');
-        const rootSnap = await getDoc(rootRef);
-        
-        let version = '2026_v1';
-        if (rootSnap.exists() && rootSnap.data().activeVersion) {
-          version = rootSnap.data().activeVersion;
-        }
-        setActiveVersion(version);
-        
-        // 2. Fetch Metadata for Grade Codes
-        const metaDoc = await getDoc(doc(db, 'SalaryMatrix', version));
-        if (metaDoc.exists()) {
-          setGradeCodes(metaDoc.data().metadata?.gradeCodes || []);
-        }
+    if (!blueRowsQuery.data || hasUnsavedEdits.current) return;
+    setRows([...blueRowsQuery.data].sort((a, b) => a.tahun - b.tahun));
+  }, [blueRowsQuery.data]);
 
-        // 3. Fetch Salary Rows for Blue Collar
-        const rowsSnapshot = await getDocs(collection(db, 'SalaryMatrix', version, 'rows'));
-        const rowsList = rowsSnapshot.docs.map(docSnapshot => ({
-          id: docSnapshot.id,
-          ...docSnapshot.data()
-        })) as SalaryRow[];
-        setRows(rowsList.sort((a, b) => a.tahun - b.tahun));
+  useEffect(() => {
+    if (!whiteRowsQuery.data || hasUnsavedEdits.current) return;
+    setWhiteCollarRows([...whiteRowsQuery.data].sort((a, b) => a.tahun - b.tahun));
+  }, [whiteRowsQuery.data]);
 
-        // 4. Fetch White Collar Salary Matrix from Firestore
-        const wcConfigRef = doc(db, 'SalaryMatrix_WhiteCollar', '_config');
-        const wcConfigSnap = await getDoc(wcConfigRef);
-        let wcVersion = '2026_v1';
-        if (wcConfigSnap.exists() && wcConfigSnap.data().activeVersion) {
-          wcVersion = wcConfigSnap.data().activeVersion;
-        }
-        setWhiteCollarVersion(wcVersion);
+  useEffect(() => {
+    if (!functionalRowsQuery.data || hasUnsavedEdits.current) return;
+    setFunctionalRows(
+      [...functionalRowsQuery.data].sort((a, b) => a.education_level.localeCompare(b.education_level)),
+    );
+  }, [functionalRowsQuery.data]);
 
-        const wcMetaDoc = await getDoc(doc(db, 'SalaryMatrix_WhiteCollar', wcVersion));
-        if (wcMetaDoc.exists()) {
-          setWhiteCollarGrades(wcMetaDoc.data().metadata?.gradeCodes || []);
-        }
+  useEffect(() => {
+    if (!kepangkatanRowsQuery.data || hasUnsavedEdits.current) return;
+    setKepangkatanRows([...kepangkatanRowsQuery.data].sort((a, b) => a.credit_score - b.credit_score));
+  }, [kepangkatanRowsQuery.data]);
 
-        const wcRowsSnapshot = await getDocs(collection(db, 'SalaryMatrix_WhiteCollar', wcVersion, 'rows'));
-        const wcRowsList = wcRowsSnapshot.docs.map(docSnapshot => ({
-          id: docSnapshot.id,
-          ...docSnapshot.data()
-        })) as SalaryRow[];
-        setWhiteCollarRows(wcRowsList.sort((a, b) => a.tahun - b.tahun));
-
-        // 5. Fetch Functional Salary Matrix from Firestore
-        const funcConfigRef = doc(db, 'SalaryMatrix_Functional', '_config');
-        const funcConfigSnap = await getDoc(funcConfigRef);
-        let funcVersion = '2026_v1';
-        if (funcConfigSnap.exists() && funcConfigSnap.data().activeVersion) {
-          funcVersion = funcConfigSnap.data().activeVersion;
-        }
-        setFunctionalVersion(funcVersion);
-
-        const funcRowsSnapshot = await getDocs(collection(db, 'SalaryMatrix_Functional', funcVersion, 'rows'));
-        const funcRowsList = funcRowsSnapshot.docs.map(docSnapshot => ({
-          id: docSnapshot.id,
-          ...docSnapshot.data()
-        })) as FunctionalRow[];
-        setFunctionalRows(funcRowsList.sort((a, b) => a.education_level.localeCompare(b.education_level)));
-
-        // 6. Fetch Kepangkatan Matrix from Firestore
-        const kepConfigRef = doc(db, 'SalaryMatrix_Kepangkatan', '_config');
-        const kepConfigSnap = await getDoc(kepConfigRef);
-        let kepVersion = '2026_v1';
-        if (kepConfigSnap.exists() && kepConfigSnap.data().activeVersion) {
-          kepVersion = kepConfigSnap.data().activeVersion;
-        }
-        setKepangkatanVersion(kepVersion);
-
-        const kepRowsSnapshot = await getDocs(collection(db, 'SalaryMatrix_Kepangkatan', kepVersion, 'rows'));
-        const kepRowsList = kepRowsSnapshot.docs.map(docSnapshot => ({
-          id: docSnapshot.id,
-          ...docSnapshot.data()
-        })) as KepangkatanRow[];
-        setKepangkatanRows(kepRowsList.sort((a, b) => a.credit_score - b.credit_score));
-      } catch (error) {
-        console.error("Error fetching salary matrix:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
+  const loading = !(
+    isVersionedGroupSettled(blueVersionQuery, blueRowsQuery, gradeCodesQuery) &&
+    isVersionedGroupSettled(whiteVersionQuery, whiteRowsQuery, whiteGradeCodesQuery) &&
+    isVersionedGroupSettled(functionalVersionQuery, functionalRowsQuery) &&
+    isVersionedGroupSettled(kepangkatanVersionQuery, kepangkatanRowsQuery)
+  );
 
   const handleSalaryChange = (tahun: number, grade: string, value: string) => {
     const numValue = parseInt(value.replace(/[^0-9]/g, '')) || 0;
+    hasUnsavedEdits.current = true;
     if (selectedTab === 'white_collar') {
       setWhiteCollarRows(prev => prev.map(row => {
         if (row.tahun === tahun) {
@@ -192,6 +176,7 @@ export default function SalaryMasterPage() {
 
   const handleFunctionalChange = (id: string, field: 'base' | string, value: string) => {
     const numValue = parseInt(value.replace(/[^0-9]/g, '')) || 0;
+    hasUnsavedEdits.current = true;
     setFunctionalRows(prev => prev.map(row => {
       if (row.id === id) {
         if (field === 'base') {
@@ -212,6 +197,7 @@ export default function SalaryMasterPage() {
 
   const handleKepangkatanChange = (id: string, value: string) => {
     const numValue = parseInt(value.replace(/[^0-9]/g, '')) || 0;
+    hasUnsavedEdits.current = true;
     setKepangkatanRows(prev => prev.map(row => {
       if (row.id === id) {
         return { ...row, allowance: numValue };
@@ -284,6 +270,16 @@ export default function SalaryMasterPage() {
       }
 
       await batch.commit();
+
+      // Edits are now in Firestore, so the refetch below is free to re-seed the
+      // working copy.
+      hasUnsavedEdits.current = false;
+
+      // These figures feed every payslip calculation, so drop the cached copy
+      // rather than letting the reference-data window serve the pre-edit
+      // matrix to the payroll pages.
+      await invalidateSalaryMatrix(MATRIX_COLLECTION_BY_TAB[selectedTab]);
+
       setMessage({ type: 'success', text: 'Perubahan berhasil disimpan!' });
     } catch (error) {
       console.error("Error saving changes:", error);
