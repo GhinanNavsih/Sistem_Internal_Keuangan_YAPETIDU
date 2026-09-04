@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, CheckCircle2, X } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle2, X } from "lucide-react";
 
 export type SnackbarMessage = {
-  type: "success" | "error";
+  type: "success" | "error" | "warning";
   text: string;
 };
 
@@ -52,6 +52,7 @@ export function FloatingSnackbar({ message, onDismiss, title, duration = DEFAULT
   if (!message || hidden || typeof document === "undefined") return null;
 
   const isError = message.type === "error";
+  const isWarning = message.type === "warning";
 
   return createPortal(
     <div
@@ -64,11 +65,15 @@ export function FloatingSnackbar({ message, onDismiss, title, duration = DEFAULT
         className={`pointer-events-auto flex w-full max-w-[640px] items-start gap-3 rounded-2xl border px-4 py-3.5 text-sm font-semibold shadow-2xl animate-in fade-in slide-in-from-top-4 duration-300 ${
           isError
             ? "border-rose-200 bg-rose-50 text-rose-900"
-            : "border-emerald-200 bg-emerald-50 text-emerald-900"
+            : isWarning
+              ? "border-amber-200 bg-amber-50 text-amber-900"
+              : "border-emerald-200 bg-emerald-50 text-emerald-900"
         }`}
       >
         {isError ? (
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" aria-hidden="true" />
+        ) : isWarning ? (
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" aria-hidden="true" />
         ) : (
           <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" aria-hidden="true" />
         )}

@@ -21,6 +21,7 @@ import {
   CalendarDays,
   Pencil,
   AlertCircle,
+  AlertTriangle,
   Globe,
   MessageCircle,
   Share2,
@@ -147,6 +148,14 @@ interface BulkPayrollProgress {
   phase: 'preparing' | 'sealing' | 'locking';
   completed: number;
   total: number;
+}
+
+type ClosePeriodDialogStatus = 'loading' | 'success' | 'warning' | 'error';
+
+interface ClosePeriodDialogState {
+  status: ClosePeriodDialogStatus;
+  period: string;
+  message: string;
 }
 
 interface BulkChange {
@@ -308,7 +317,7 @@ export default function PayrollValidationDashboard() {
   const defaultPeriodResolvedRef = useRef(false);
   const [notification, setNotification] = useState<{
     show: boolean;
-    type: 'success' | 'error';
+    type: 'success' | 'error' | 'warning';
     message: string;
   }>({ show: false, type: 'success', message: '' });
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
@@ -450,6 +459,8 @@ export default function PayrollValidationDashboard() {
   const [calendarEditReason, setCalendarEditReason] = useState('');
   const [selectedHolidays, setSelectedHolidays] = useState<Set<string>>(new Set());
   const [isSubmittingModal, setIsSubmittingModal] = useState(false);
+  const [closePeriodDialog, setClosePeriodDialog] =
+    useState<ClosePeriodDialogState | null>(null);
 
   const modalYear = targetDate.getFullYear();
   const modalMonth = targetDate.getMonth(); // 0-indexed
@@ -572,28 +583,49 @@ export default function PayrollValidationDashboard() {
   const handleSetAttendancePeriod = async (_attendanceStatus: 'closed') => {
     const period = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
     if (missingPayrollDraftCount > 0) {
-      alert(
-        `${missingPayrollDraftCount} pegawai payroll belum memiliki draf. Klik “Siapkan Semua Draf” dan selesaikan seluruh kegagalan sebelum menutup periode.`,
-      );
+      setClosePeriodDialog({
+        status: 'error',
+        period,
+        message: `${missingPayrollDraftCount} pegawai payroll belum memiliki draf. Klik “Siapkan Semua Draf” dan selesaikan seluruh kegagalan sebelum menutup periode.`,
+      });
       return;
     }
     if (!window.confirm(`Apakah Anda yakin ingin menutup periode ${period} secara permanen?`)) return;
 
+    setClosePeriodDialog({
+      status: 'loading',
+      period,
+      message: `Sedang memvalidasi draf dan menyegel periode ${period}.`,
+    });
     try {
-      await authenticatedJson('/api/payroll/periods', {
+      const result = await authenticatedJson<{
+        idempotent?: boolean;
+        rosterSealRepaired?: boolean;
+        warnings?: string[];
+      }>('/api/payroll/periods', {
         method: 'POST',
         body: JSON.stringify({ period, attendanceStatus: 'closed' }),
       });
       setAttendancePeriodStatus('closed');
-      setNotification({
-        show: true,
-        type: 'success',
-        message: `Periode ${period} ditutup permanen; verifikasi payroll kini dapat dimulai.`,
+      const responseWarnings = Array.isArray(result.warnings)
+        ? result.warnings.filter(Boolean).join(' ')
+        : '';
+      const warningMessage = responseWarnings || (
+        result.rosterSealRepaired
+          ? `Periode ${period} ditutup permanen, tetapi segel roster payroll diperbaiki dari data penutupan sebelumnya.`
+          : result.idempotent
+            ? `Periode ${period} sudah ditutup sebelumnya. Tidak ada perubahan baru yang diperlukan.`
+            : null
+      );
+      setClosePeriodDialog({
+        status: warningMessage ? 'warning' : 'success',
+        period,
+        message: warningMessage || `Periode ${period} ditutup permanen; verifikasi payroll kini dapat dimulai.`,
       });
     } catch (error: any) {
-      setNotification({
-        show: true,
-        type: 'error',
+      setClosePeriodDialog({
+        status: 'error',
+        period,
         message: error.message || 'Gagal menutup periode.',
       });
     }
@@ -741,6 +773,19 @@ export default function PayrollValidationDashboard() {
     items: QueueItem[];
     skipped: string[];
   }>({ items: [], skipped: [] });
+
+  // Bulk-operation failure report (replaces the native alert() popup)
+  const [failuresDialog, setFailuresDialog] = useState<{
+    title: string;
+    failures: Array<{ name: string; message: string }>;
+  } | null>(null);
+  // Non-blocking counterpart: these employees' drafts were created/locked
+  // successfully, just with a caveat (e.g. Gaji Pokok unresolved from the
+  // active matrix) worth a super admin's attention, not a redo.
+  const [warningsDialog, setWarningsDialog] = useState<{
+    title: string;
+    warnings: Array<{ name: string; message: string }>;
+  } | null>(null);
 
   // States for Bulk Refresh feature
   const [bulkRefreshDialogOpen, setBulkRefreshDialogOpen] = useState(false);
@@ -2089,6 +2134,7 @@ export default function PayrollValidationDashboard() {
         koperasiPlan?: { loanCount: number; expectedDeduction: number; matchType: string };
         taxes?: PaySlipField[];
         taxApplied?: boolean;
+        warnings?: string[];
       }>('/api/payroll/slips', {
         method: 'POST',
         body: JSON.stringify({
@@ -2113,16 +2159,22 @@ export default function PayrollValidationDashboard() {
       };
       setSlipStates(prev => ({ ...prev, [employeeId]: newState }));
 
+      // The save already succeeded — a warning here is informational, not a
+      // reason to show this as failed. It replaces the success text rather
+      // than stacking, since the auto-dismiss window only fits one message.
+      const gapokWarning = result.warnings?.[0];
       setNotification({
         show: true,
-        type: 'success',
-        message: result.koperasiPlan
-          ? `Draf berhasil disimpan. Rencana Koperasi: ${result.koperasiPlan.loanCount} pinjaman, Rp${result.koperasiPlan.expectedDeduction.toLocaleString('id-ID')}.`
-          : 'Draf slip gaji berhasil disimpan!'
+        type: gapokWarning ? 'warning' : 'success',
+        message: gapokWarning
+          ? `Draf tersimpan. ${gapokWarning}`
+          : result.koperasiPlan
+            ? `Draf berhasil disimpan. Rencana Koperasi: ${result.koperasiPlan.loanCount} pinjaman, Rp${result.koperasiPlan.expectedDeduction.toLocaleString('id-ID')}.`
+            : 'Draf slip gaji berhasil disimpan!'
       });
       setTimeout(() => {
         setNotification(prev => ({ ...prev, show: false }));
-      }, 3000);
+      }, gapokWarning ? 8000 : 3000);
     } catch (err: any) {
       console.error('Error saving draft payslip state to Firestore:', err);
       setNotification({
@@ -3014,12 +3066,17 @@ export default function PayrollValidationDashboard() {
   ): Promise<{
     states: Record<string, SlipState>;
     failures: Array<{ name: string; message: string }>;
+    warnings: Array<{ name: string; message: string }>;
   }> => {
     const missingTargets = allPayrollTargets.filter(
       (target) => !startingStates[target.id],
     );
     const nextStates = { ...startingStates };
     const failures: Array<{ name: string; message: string }> = [];
+    // Non-blocking: the draft for this employee was still created below. A
+    // server-side warning (currently: Gaji Pokok unresolved from the active
+    // matrix) is reported here so it can be reviewed, not to undo the save.
+    const warnings: Array<{ name: string; message: string }> = [];
     const period = `${targetDate.getFullYear()}_${String(
       targetDate.getMonth() + 1,
     ).padStart(2, '0')}`;
@@ -3060,6 +3117,7 @@ export default function PayrollValidationDashboard() {
           };
           taxes?: PaySlipField[];
           taxApplied?: boolean;
+          warnings?: string[];
         }>('/api/payroll/slips', {
           method: 'POST',
           body: JSON.stringify({
@@ -3090,6 +3148,9 @@ export default function PayrollValidationDashboard() {
           taxApplied: result.taxApplied,
           generatedAt: new Date().toISOString(),
         };
+        if (result.warnings?.[0]) {
+          warnings.push({ name: target.name, message: result.warnings[0] });
+        }
       } catch (error) {
         failures.push({
           name: target.name,
@@ -3106,17 +3167,22 @@ export default function PayrollValidationDashboard() {
     });
 
     setSlipStates(nextStates);
-    return { states: nextStates, failures };
+    return { states: nextStates, failures, warnings };
   };
 
   const showPayrollFailures = (
     title: string,
     failures: Array<{ name: string; message: string }>,
   ) => {
-    const visible = failures.slice(0, 20);
-    alert(
-      `${title}\n\n${visible.map((failure) => `• ${failure.name}: ${failure.message}`).join('\n')}${failures.length > visible.length ? `\n• …dan ${failures.length - visible.length} kegagalan lainnya.` : ''}`,
-    );
+    setFailuresDialog({ title, failures });
+  };
+
+  const showPayrollWarnings = (
+    title: string,
+    warnings: Array<{ name: string; message: string }>,
+  ) => {
+    if (warnings.length === 0) return;
+    setWarningsDialog({ title, warnings });
   };
 
   const handlePrepareAllDrafts = async () => {
@@ -3147,9 +3213,12 @@ export default function PayrollValidationDashboard() {
       }
       setNotification({
         show: true,
-        type: 'success',
-        message: `${missingPayrollDraftCount} draf berhasil disiapkan. Seluruh roster siap ditutup.`,
+        type: result.warnings.length > 0 ? 'warning' : 'success',
+        message: result.warnings.length > 0
+          ? `${missingPayrollDraftCount} draf berhasil disiapkan, ${result.warnings.length} dengan peringatan Gaji Pokok. Seluruh roster siap ditutup.`
+          : `${missingPayrollDraftCount} draf berhasil disiapkan. Seluruh roster siap ditutup.`,
       });
+      showPayrollWarnings('Draf tersimpan dengan peringatan Gaji Pokok:', result.warnings);
     } finally {
       setPreparingAllDrafts(false);
       setBulkPayrollProgress(null);
@@ -3189,6 +3258,13 @@ export default function PayrollValidationDashboard() {
           workingStates,
         );
         workingStates = repair.states;
+        // Non-blocking: these drafts were repaired and proceed to the lock
+        // loop below like any other. Shown now so the caveat isn't buried
+        // under whatever notification the lock loop ends with.
+        showPayrollWarnings(
+          'Draf diperbaiki dengan peringatan Gaji Pokok:',
+          repair.warnings,
+        );
         if (repair.failures.length > 0) {
           setNotification({
             show: true,
@@ -3422,7 +3498,11 @@ export default function PayrollValidationDashboard() {
                             variant="outline"
                             className="h-7 rounded-lg px-2 text-[11px]"
                             onClick={() => handleSetAttendancePeriod('closed')}
-                            disabled={preparingAllDrafts || missingPayrollDraftCount > 0}
+                            disabled={
+                              preparingAllDrafts ||
+                              missingPayrollDraftCount > 0 ||
+                              closePeriodDialog?.status === 'loading'
+                            }
                           >
                             Tutup Permanen
                           </Button>
@@ -4379,6 +4459,110 @@ export default function PayrollValidationDashboard() {
         message={notification.show ? { type: notification.type, text: notification.message } : null}
       />
 
+      {/* ─── Permanent period close progress/result ─────────────── */}
+      <Dialog
+        open={!!closePeriodDialog}
+        onOpenChange={(open) => {
+          if (!open && closePeriodDialog?.status !== 'loading') {
+            setClosePeriodDialog(null);
+          }
+        }}
+      >
+        <DialogContent
+          showCloseButton={closePeriodDialog?.status !== 'loading'}
+          className="sm:max-w-md rounded-2xl"
+        >
+          <DialogHeader>
+            <DialogTitle
+              className={`flex items-center gap-2 text-lg ${
+                closePeriodDialog?.status === 'success'
+                  ? 'text-emerald-700'
+                  : closePeriodDialog?.status === 'warning'
+                    ? 'text-amber-700'
+                    : closePeriodDialog?.status === 'error'
+                      ? 'text-rose-700'
+                      : 'text-indigo-700'
+              }`}
+            >
+              {closePeriodDialog?.status === 'loading' ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : closePeriodDialog?.status === 'success' ? (
+                <CheckCircle2 className="w-5 h-5" />
+              ) : closePeriodDialog?.status === 'warning' ? (
+                <AlertTriangle className="w-5 h-5" />
+              ) : (
+                <AlertCircle className="w-5 h-5" />
+              )}
+              {closePeriodDialog?.status === 'loading'
+                ? 'Menutup Periode Permanen'
+                : closePeriodDialog?.status === 'success'
+                  ? 'Periode Berhasil Ditutup'
+                  : closePeriodDialog?.status === 'warning'
+                    ? 'Periode Ditutup dengan Catatan'
+                    : 'Periode Belum Ditutup'}
+            </DialogTitle>
+            <DialogDescription className="text-slate-500 text-sm pt-2">
+              {closePeriodDialog?.message}
+            </DialogDescription>
+          </DialogHeader>
+
+          {closePeriodDialog?.status === 'loading' ? (
+            <div
+              role="status"
+              aria-live="polite"
+              aria-busy="true"
+              className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-4"
+            >
+              <div
+                role="progressbar"
+                aria-label="Kemajuan penutupan periode"
+                aria-valuetext="Sedang diproses"
+                className="h-2 w-full overflow-hidden rounded-full bg-indigo-100"
+              >
+                <div className="h-full w-2/3 rounded-full bg-indigo-600 animate-pulse" />
+              </div>
+              <div className="flex items-center gap-2 text-xs font-semibold text-indigo-700">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Memvalidasi draf, menyegel roster, dan menyimpan audit...
+              </div>
+              <p className="text-[11px] leading-relaxed text-indigo-600/80">
+                Jangan tutup halaman sampai proses selesai.
+              </p>
+            </div>
+          ) : (
+            <div
+              className={`rounded-xl border px-4 py-3 ${
+                closePeriodDialog?.status === 'success'
+                  ? 'border-emerald-100 bg-emerald-50/70 text-emerald-800'
+                  : closePeriodDialog?.status === 'warning'
+                    ? 'border-amber-100 bg-amber-50/70 text-amber-800'
+                    : 'border-rose-100 bg-rose-50/70 text-rose-800'
+              }`}
+            >
+              <p className="text-sm font-semibold">
+                {closePeriodDialog?.status === 'success'
+                  ? 'Penutupan periode selesai dan verifikasi payroll dapat dimulai.'
+                  : closePeriodDialog?.status === 'warning'
+                    ? 'Penutupan periode selesai. Tinjau catatan di atas sebelum melanjutkan.'
+                    : 'Penutupan periode dibatalkan oleh server. Perbaiki masalah di atas lalu coba lagi.'}
+              </p>
+            </div>
+          )}
+
+          {closePeriodDialog?.status !== 'loading' && (
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                onClick={() => setClosePeriodDialog(null)}
+                className="rounded-xl bg-indigo-600 text-white hover:bg-indigo-700"
+              >
+                {closePeriodDialog?.status === 'error' ? 'Tutup' : 'Selesai'}
+              </Button>
+            </DialogFooter>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* ─── Bulk Email Confirmation Dialog ─────────────────── */}
       <Dialog open={bulkConfirmDialogOpen} onOpenChange={setBulkConfirmDialogOpen}>
         <DialogContent className="sm:max-w-md rounded-2xl">
@@ -4561,6 +4745,82 @@ export default function PayrollValidationDashboard() {
                   Terapkan Perubahan ({selectedBulkRefreshEmployeeIds.size})
                 </>
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk-operation failure report */}
+      <Dialog
+        open={!!failuresDialog}
+        onOpenChange={(open) => !open && setFailuresDialog(null)}
+      >
+        <DialogContent className="sm:max-w-lg rounded-2xl max-h-[85vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="p-6 pb-2">
+            <DialogTitle className="flex items-center gap-2 text-lg text-rose-700">
+              <AlertCircle className="w-5 h-5" />
+              {failuresDialog?.title}
+            </DialogTitle>
+            <DialogDescription className="text-slate-500 text-sm">
+              {failuresDialog?.failures.length} pegawai gagal diproses. Rincian per pegawai:
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto px-6 py-2 space-y-2 max-h-[55vh]">
+            {failuresDialog?.failures.map((failure, idx) => (
+              <div
+                key={`${failure.name}-${idx}`}
+                className="border border-rose-100 bg-rose-50/50 rounded-xl p-3 text-sm"
+              >
+                <span className="font-semibold text-slate-800">{failure.name}</span>
+                <span className="text-slate-600">: {failure.message}</span>
+              </div>
+            ))}
+          </div>
+          <DialogFooter className="p-6 pt-4 border-t border-slate-100 bg-slate-50/50">
+            <Button
+              onClick={() => setFailuresDialog(null)}
+              className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+            >
+              OK
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk-operation warning report — non-blocking: these slips were
+          already saved/locked. Distinct styling from the failure dialog
+          above signals "review this" rather than "this didn't go through". */}
+      <Dialog
+        open={!!warningsDialog}
+        onOpenChange={(open) => !open && setWarningsDialog(null)}
+      >
+        <DialogContent className="sm:max-w-lg rounded-2xl max-h-[85vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="p-6 pb-2">
+            <DialogTitle className="flex items-center gap-2 text-lg text-amber-700">
+              <AlertTriangle className="w-5 h-5" />
+              {warningsDialog?.title}
+            </DialogTitle>
+            <DialogDescription className="text-slate-500 text-sm">
+              {warningsDialog?.warnings.length} pegawai berhasil diproses dengan peringatan. Rincian per pegawai:
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto px-6 py-2 space-y-2 max-h-[55vh]">
+            {warningsDialog?.warnings.map((warning, idx) => (
+              <div
+                key={`${warning.name}-${idx}`}
+                className="border border-amber-100 bg-amber-50/50 rounded-xl p-3 text-sm"
+              >
+                <span className="font-semibold text-slate-800">{warning.name}</span>
+                <span className="text-slate-600">: {warning.message}</span>
+              </div>
+            ))}
+          </div>
+          <DialogFooter className="p-6 pt-4 border-t border-slate-100 bg-slate-50/50">
+            <Button
+              onClick={() => setWarningsDialog(null)}
+              className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+            >
+              OK, Mengerti
             </Button>
           </DialogFooter>
         </DialogContent>

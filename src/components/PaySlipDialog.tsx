@@ -211,6 +211,11 @@ export default function PaySlipDialog({
   const blockingWarnings = (previewMeta?.warnings || []).filter(
     (warning) => warning.blocking,
   );
+  // e.g. a SATPAM Ketua's duty/bonus figures, entered by hand outside the
+  // automated 3-regu reconciliation — worth flagging, not worth refusing.
+  const nonBlockingWarnings = (previewMeta?.warnings || []).filter(
+    (warning) => !warning.blocking,
+  );
   // A draft that already exists keeps its normal workflow. What must not
   // happen is materializing a *new* slip out of a preview whose Gaji Pokok
   // could not be read from the matrix, or whose attendance is not published —
@@ -785,6 +790,19 @@ export default function PaySlipDialog({
                   <p className="font-semibold">
                     Slip baru tidak dapat dibuat atau dikunci sampai hal di atas selesai.
                   </p>
+                </div>
+              </div>
+            )}
+
+            {/* Non-blocking preview notes: figures entered by hand rather than
+                sourced from an automated reconciliation. Save proceeds either way. */}
+            {isPekaryaTab && !slipState && nonBlockingWarnings.length > 0 && (
+              <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 rounded-xl p-3 border border-amber-200">
+                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <div className="space-y-1">
+                  {nonBlockingWarnings.map((warning) => (
+                    <p key={warning.code}>{warning.message}</p>
+                  ))}
                 </div>
               </div>
             )}

@@ -483,7 +483,20 @@ export async function buildSatpamDutyReconciliation(
   if (!uraianSnapshot.exists) {
     blockers.push('Rekap Uraian Satpam belum dibuat untuk periode ini.');
   }
-  if (plans.some((plan) => plan.status !== 'published')) {
+  // 'pending_backfill_review' is legacy: no write path in duty-plans/route.ts
+  // still produces it (a full publish always writes 'published', and neither
+  // edit_day nor swap_libur_days touches status at all), and the Ketua Shift's
+  // own panel already treats it as a finished publish — hides the publish
+  // form (hasPublishedPlan) and labels it "Dipublikasikan (Backfill)", not
+  // pending. Since nothing in the app can ever move a plan out of this status
+  // again, holding the payroll gate to a stricter bar than the rest of the
+  // system would permanently strand any plan still carrying it.
+  if (
+    plans.some(
+      (plan) =>
+        plan.status !== 'published' && plan.status !== 'pending_backfill_review',
+    )
+  ) {
     blockers.push('Ada rencana dinas yang belum berstatus dipublikasikan.');
   }
   if (planViews.some((plan) => plan.missingOccurrenceDates.length > 0)) {

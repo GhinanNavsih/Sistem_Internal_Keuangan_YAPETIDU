@@ -27,6 +27,7 @@ import {
   toSlipEmployeeView,
 } from '@/lib/payroll/salaryMatrix';
 import {
+  forceGapokAmount,
   shouldValidateNewSlipSources,
   validateNewSlipGapok,
 } from '@/lib/payroll/pekaryaSlipPreview';
@@ -345,6 +346,16 @@ export async function POST(request: NextRequest) {
       let after: Record<string, unknown>;
       let reason = command.reason?.trim() || 'Operasi payroll terotorisasi';
       let auditAction = command.action.toUpperCase();
+      // Set only when a new slip's Gaji Pokok was written without matching
+      // the active matrix instead of being refused — either the matrix could
+      // not resolve one at all, or the row was removed from the slip
+      // outright. Surfaced to the caller as a non-blocking warning, never
+      // silent.
+      let gapokWarning: string | null = null;
+      // Set only when a new SATPAM slip's Harian/Jumat & Libur/bonus figures
+      // were written without an automated duty-plan source instead of being
+      // refused — see the SATPAM branch below for who this covers and why.
+      let satpamDutyWarning: string | null = null;
 
       let canonicalPekaryaSpj: number | null = null;
       let canonicalAttendance:
@@ -491,23 +502,45 @@ export async function POST(request: NextRequest) {
           );
           const entry =
             uraianSnapshot.data()?.entries?.[command.employeeId];
-          if (
-            !entry ||
-            !entry.satpamDutySource ||
-            uraianSnapshot.data()?.satpamDutyReconciliation?.blockerCount > 0
-          ) {
+          if (!entry) {
+            throw new HttpError(
+              409,
+              'Hasil kewajiban dinas & bonus Satpam pegawai belum tersedia di Rekap Uraian.',
+            );
+          }
+          const reconciliationBlockerCount = Number(
+            uraianSnapshot.data()?.satpamDutyReconciliation?.blockerCount || 0,
+          );
+          if (reconciliationBlockerCount > 0) {
             throw new HttpError(
               409,
               'Rekonsiliasi kewajiban dinas dan bonus Satpam belum final.',
             );
           }
-          canonicalSatpamDuty = {
-            harian: Number(entry.values?.harian || 0),
-            jumatLibur: Number(entry.values?.jumatLibur || 0),
-            bonusPresensiBulanan: Number(
-              entry.values?.bonusPresensiBulanan || 0,
-            ),
-          };
+          if (entry.satpamDutySource) {
+            // Reconciled through the automated 3-regu roster: the earnings
+            // submitted below must match this exactly (enforced further down).
+            canonicalSatpamDuty = {
+              harian: Number(entry.values?.harian || 0),
+              jumatLibur: Number(entry.values?.jumatLibur || 0),
+              bonusPresensiBulanan: Number(
+                entry.values?.bonusPresensiBulanan || 0,
+              ),
+            };
+          } else {
+            // No automated source — this covers a SATPAM employee the 3-regu
+            // duty-plan roster structurally never accounts for (e.g. the
+            // overall Ketua Satpam, who leads the regus rather than sitting
+            // on one), whose Harian/Jumat & Libur/bonus figures a super admin
+            // enters by hand in Rekap Uraian instead. The period-wide
+            // reconciliation above already has zero blockers, so there is
+            // nothing stale to refuse over — canonicalSatpamDuty is left
+            // unset, which means the earnings validation further down simply
+            // trusts whatever was submitted rather than comparing it to a
+            // figure that was never computed for this employee.
+            satpamDutyWarning =
+              'Kewajiban dinas & bonus Satpam pegawai ini diinput manual di Rekap Uraian, di luar rekonsiliasi rencana dinas otomatis.';
+          }
         }
       }
 
@@ -528,7 +561,7 @@ export async function POST(request: NextRequest) {
           const isSatpam =
             blueEmployeeSnapshot.exists &&
             blueEmployeeSnapshot.data()?.employment?.jobCategory === 'SATPAM';
-          const earnings = isSatpam
+          let earnings = isSatpam
             ? mergeSatpamLegacyBonusIntoTunjangan(validatedEarnings)
             : validatedEarnings;
           const deductions = validateMoneyFields(effectiveCommand.deductions, 'deductions');
@@ -551,12 +584,25 @@ export async function POST(request: NextRequest) {
               active.matrix,
               periodTargetDate(command.period),
             );
-            const gapokError = validateNewSlipGapok(
+            const gapokValidation = validateNewSlipGapok(
               earnings,
               resolution,
               active.version,
             );
-            if (gapokError) throw new HttpError(409, gapokError);
+            if (gapokValidation?.level === 'blocking') {
+              throw new HttpError(409, gapokValidation.message);
+            }
+            if (gapokValidation?.level === 'warning') {
+              gapokWarning = gapokValidation.message;
+              // Two different reasons reach this branch: the matrix could not
+              // resolve a figure (resolution.amount is 0; any Gaji Pokok row
+              // the client submitted anyway is untrustworthy, so it's forced
+              // to that 0), or the matrix resolved fine but the row was
+              // removed from the slip (no row exists to force, so this is a
+              // no-op and the slip is saved without one) — either way, never
+              // the client's own unverified figure.
+              earnings = forceGapokAmount(earnings, resolution.amount);
+            }
           }
           const plannedLoanIds = new Set(
             koperasiInstallmentPlan?.loans.map((loan) => loan.loanId) || [],
@@ -588,8 +634,12 @@ export async function POST(request: NextRequest) {
             }
           }
           if (canonicalAttendance) {
+            // Unlike the Satpam duty-plan branch below, this is the non-Satpam
+            // attendance path (see where canonicalAttendance is assigned) —
+            // those categories label this row "Presensi Harian", never
+            // Satpam's "Vakasi Harian".
             const submittedHarian = earnings.filter(
-              (field) => field.label.trim().toUpperCase() === 'VAKASI HARIAN',
+              (field) => field.label.trim().toUpperCase() === 'PRESENSI HARIAN',
             );
             const submittedPremium = earnings.filter(
               (field) => field.label.trim().toUpperCase() === 'JUMAT & LIBUR',
@@ -684,6 +734,19 @@ export async function POST(request: NextRequest) {
                     repairedKoperasiDeduction,
                   },
                 }
+              : {}),
+            // Trace of a save that went through on the Gaji Pokok warning
+            // above, not silence: this is either "the matrix had nothing to
+            // resolve" or "the row was removed from the slip", never Finance
+            // quietly entering zero. The full message (not just a boolean) is
+            // kept because those two reasons call for different follow-up.
+            ...(gapokWarning
+              ? { gapokWarningAtSave: gapokWarning }
+              : {}),
+            // Same idea for SATPAM duty/bonus figures entered by hand for an
+            // employee the automated roster reconciliation never covers.
+            ...(satpamDutyWarning
+              ? { satpamDutyWarningAtSave: satpamDutyWarning }
               : {}),
             schemaVersion: 2,
           };
@@ -849,6 +912,16 @@ export async function POST(request: NextRequest) {
         slipId,
         status: after.status,
         idempotent: false,
+        // Non-blocking: the save already went through. The caller shows these
+        // as warnings, distinct from the errors that abort the write above.
+        ...([gapokWarning, satpamDutyWarning].filter((warning): warning is string => Boolean(warning))
+          .length > 0
+          ? {
+              warnings: [gapokWarning, satpamDutyWarning].filter(
+                (warning): warning is string => Boolean(warning),
+              ),
+            }
+          : {}),
         // The tax rows the server actually derived, so the dashboard's local
         // slip state matches Firestore without a re-read.
         ...(isDraftWriteAction(command.action)

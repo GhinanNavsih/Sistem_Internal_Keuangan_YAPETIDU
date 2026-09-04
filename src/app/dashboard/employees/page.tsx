@@ -962,9 +962,14 @@ export default function EmployeesPage() {
           }
         };
       } else {
-        const { nipy: _nipy, nipyAssignment: _nipyAssignment, ...blueCollarForm } = formData;
+        // nipy/nipyAssignment are kept in `final` here — even though they must
+        // never reach the actual write payload below — so the diff/audit log
+        // compares against what this profile write will really do. Stripping
+        // them at this point instead made every save of an existing Pekarya
+        // employee's profile log a false "NIPY deleted" entry, since the diff
+        // (below) had nothing to compare their real value against.
         final = {
-          ...blueCollarForm,
+          ...formData,
           employeeId,
           collarType: 'blue_collar',
           bankAccount: {
@@ -1042,6 +1047,9 @@ export default function EmployeesPage() {
       // NIPY is protected from direct client writes by Firestore rules. Keep
       // the existing protected values in the normal profile write, then let
       // the audited identity endpoint update the NIPY and its index atomically.
+      // `final` above still carries the real nipy/nipyAssignment (needed for
+      // an accurate diff); only the write payload built here omits them, so
+      // the merge below leaves whatever is already in Firestore untouched.
       let employeeWritePayload = final;
       if (activeTab === 'loyalis') {
         const { nipy: _nipy, ...loyalisPayload } = final;
@@ -1054,6 +1062,9 @@ export default function EmployeesPage() {
               : null,
           },
         };
+      } else {
+        const { nipy: _nipy, nipyAssignment: _nipyAssignment, ...blueCollarPayload } = final;
+        employeeWritePayload = blueCollarPayload;
       }
 
       await setDoc(doc(db, currentTab.collection, employeeId), employeeWritePayload, { merge: true });

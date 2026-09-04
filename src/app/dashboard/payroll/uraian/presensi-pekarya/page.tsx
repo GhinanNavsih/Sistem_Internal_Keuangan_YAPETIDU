@@ -402,7 +402,7 @@ function satpamPlanStatusLabel(status: string): string {
       missing: 'Belum dibuat',
       draft: 'Draf',
       published: 'Diterbitkan',
-      pending_backfill_review: 'Menunggu pemeriksaan backfill',
+      pending_backfill_review: 'Diterbitkan (Backfill)',
       stale: 'Perlu diperbarui',
     }[status] || 'Status tidak diketahui'
   );

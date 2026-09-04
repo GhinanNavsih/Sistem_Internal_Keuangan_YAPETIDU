@@ -438,7 +438,12 @@ test('a published period with the employee row can create a slip', () => {
   assert.deepEqual(preview.meta.warnings, []);
 });
 
-test('SATPAM preview keeps Rekap shift values while reconciliation is pending', () => {
+test('SATPAM preview accepts an employee row with no automated duty source, as a warning', () => {
+  // Covers the Ketua Satpam chief and anyone else the 3-regu duty-plan
+  // roster structurally never includes: their Rekap Uraian row is entered
+  // by hand, not stamped by syncSatpamDutyReconciliation, so it can never
+  // carry satpamDutySource even once the period-wide reconciliation is
+  // otherwise clean. That must not block slip creation.
   const preview = buildPekaryaSlipPreview(
     kholikInputs({
       employee: {
@@ -473,12 +478,13 @@ test('SATPAM preview keeps Rekap shift values while reconciliation is pending', 
   assert.equal(amountOf(preview.earnings, 'Lembur Cover'), 50_000);
   assert.equal(amountOf(preview.earnings, 'Bonus Presensi Bulanan'), 100_000);
   assert.equal(preview.meta.attendanceSource, 'uraian');
-  assert.equal(preview.meta.isProvisional, true);
-  assert.equal(preview.meta.canCreateSlip, false);
+  assert.equal(preview.meta.isProvisional, false);
+  assert.equal(preview.meta.canCreateSlip, true);
   assert.deepEqual(
     preview.meta.warnings.map((warning) => warning.code),
     ['satpam_duty_unreconciled'],
   );
+  assert.equal(preview.meta.warnings[0].blocking, false);
 });
 
 test('SATPAM shift values remain visible when the period reconciliation itself is pending', () => {
@@ -674,42 +680,49 @@ test('a new slip carrying the matrix Gaji Pokok is accepted', () => {
 });
 
 test('a new slip carrying the stale profile salary is refused', () => {
-  const error = validateNewSlipGapok(
+  const result = validateNewSlipGapok(
     [{ label: 'Gaji Pokok', amount: 264_750 }],
     OK_RESOLUTION,
     '2026_v1',
   );
 
-  assert.ok(error);
-  assert.match(error!, /269\.000/);
+  assert.ok(result);
+  assert.equal(result!.level, 'blocking');
+  assert.match(result!.message, /269\.000/);
 });
 
 test('a duplicated Gaji Pokok row is refused even when the sum matches', () => {
-  assert.ok(
-    validateNewSlipGapok(
-      [
-        { label: 'Gaji Pokok', amount: 134_500 },
-        { label: 'Gapok', amount: 134_500 },
-      ],
-      OK_RESOLUTION,
-      '2026_v1',
-    ),
+  const result = validateNewSlipGapok(
+    [
+      { label: 'Gaji Pokok', amount: 134_500 },
+      { label: 'Gapok', amount: 134_500 },
+    ],
+    OK_RESOLUTION,
+    '2026_v1',
   );
+  assert.ok(result);
+  assert.equal(result!.level, 'blocking');
 });
 
-test('a missing Gaji Pokok row is refused', () => {
-  assert.ok(
-    validateNewSlipGapok([{ label: 'SPJ', amount: 553_068 }], OK_RESOLUTION, '2026_v1'),
+test('a removed Gaji Pokok row warns instead of refusing the write', () => {
+  const result = validateNewSlipGapok(
+    [{ label: 'SPJ', amount: 553_068 }],
+    OK_RESOLUTION,
+    '2026_v1',
   );
+  assert.ok(result);
+  assert.equal(result!.level, 'warning');
+  assert.match(result!.message, /269\.000/);
 });
 
-test('an unreadable matrix refuses the write before comparing amounts', () => {
-  const error = validateNewSlipGapok(
+test('an unreadable matrix warns instead of refusing the write', () => {
+  const result = validateNewSlipGapok(
     [{ label: 'Gaji Pokok', amount: 0 }],
     { ...OK_RESOLUTION, amount: 0, status: 'grade_unknown', effectiveYear: null },
     '2026_v1',
   );
 
-  assert.ok(error);
-  assert.match(error!, /matriks gaji aktif \(2026_v1\)/);
+  assert.ok(result);
+  assert.equal(result!.level, 'warning');
+  assert.match(result!.message, /matriks gaji aktif \(2026_v1\)/);
 });

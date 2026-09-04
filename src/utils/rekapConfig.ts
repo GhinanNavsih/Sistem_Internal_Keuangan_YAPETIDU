@@ -113,12 +113,22 @@ const ATTENDANCE_PREMIUM_COLUMN: RekapColumn = {
 };
 
 /**
- * KEBERSIHAN_PONTI and PONTI never had `harian`/`jumatLibur` columns — they
- * are paid a manually-entered lump-sum "Presensi" figure, with no per-day
- * scan data in the unified attendance import. Every other Pekarya category
- * was built around real day-by-day scans.
+ * Whether the scanner import is the source of truth for a category's
+ * Harian/Jumat & Libur money.
+ *
+ * Two kinds of category answer no, for opposite reasons:
+ *
+ * - SATPAM has both columns, but they are paid from the Ketua Shift duty
+ *   reports and the duty plan. Its scan data exists only so Presensi Pekarya
+ *   can flag shifts whose attendance does not match the work reported — a
+ *   verification signal that must never reach the rekap or the slip.
+ * - KEBERSIHAN_PONTI and PONTI never had those columns at all; they are paid
+ *   a manually-entered lump-sum "Presensi" figure and have no per-day scans.
+ *
+ * Every other Pekarya category was built around real day-by-day scans.
  */
 export function categoryUsesAttendanceImport(category: string): boolean {
+  if (category === 'SATPAM') return false;
   const columns = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
   return columns.some(
     (column) => column.key === 'harian' || column.key === 'jumatLibur',

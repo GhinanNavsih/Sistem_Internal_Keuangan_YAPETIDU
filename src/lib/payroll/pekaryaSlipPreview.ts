@@ -289,24 +289,23 @@ export function buildPekaryaSlipPreview(
     (inputs.approvedActivitySpj || 0) + (inputs.approvedEventSpj || 0);
 
   // ─── Publication state ───────────────────────────────────────────────
-  // A period-wide SATPAM reconciliation is not enough: every employee row
-  // must also be stamped with the duty-plan source that produced it. This is
-  // the same employee-level condition /api/payroll/slips enforces on writes.
-  const configuredAttendanceGate: PekaryaAttendanceGate =
+  // A period-wide SATPAM reconciliation covers every employee row *except*
+  // one structural gap: the 3-regu duty-plan roster never includes an
+  // employee who leads the regus rather than sitting on one — the overall
+  // Ketua Satpam chief among them. Their Harian/Jumat & Libur/bonus figures
+  // are entered by hand in Rekap Uraian instead, by a super admin who is
+  // themselves vouching for the count. That is not a reason to refuse the
+  // slip — only an unfinished period-wide reconciliation (still required and
+  // not yet satisfied) is, so it stays a non-blocking warning below rather
+  // than folding into `attendanceGate` and forcing the row out of the
+  // preview like a genuinely unpublished one would.
+  const attendanceGate: PekaryaAttendanceGate =
     inputs.attendanceGate ?? { required: false, satisfied: true };
   const satpamDutySourceMissing =
     jobCategory === 'SATPAM' &&
-    configuredAttendanceGate.required &&
-    configuredAttendanceGate.satisfied &&
+    attendanceGate.required &&
+    attendanceGate.satisfied &&
     !uraianEntry?.satpamDutySource;
-  const attendanceGate: PekaryaAttendanceGate = satpamDutySourceMissing
-    ? {
-        required: true,
-        satisfied: false,
-        reason:
-          'Rekonsiliasi kewajiban dinas dan bonus Satpam pegawai ini belum final.',
-      }
-    : configuredAttendanceGate;
 
   // Never consume a non-Satpam Uraian row after its publication has become
   // stale or failed reconciliation. It may still contain perfectly plausible
@@ -316,8 +315,9 @@ export function buildPekaryaSlipPreview(
   // shift counts, Tunjangan Jabatan, the attendance bonuses — is entered and
   // locked on the same row while the duty plan is still being reviewed. Keep
   // the whole entry visible as provisional values in the draft preview so
-  // Finance sees the same numbers as the table. The warning above remains
-  // blocking, so this does not make an unreconciled Satpam slip writable.
+  // Finance sees the same numbers as the table. The warning below remains
+  // blocking for this case, so this does not make an unreconciled Satpam
+  // slip writable.
   const effectiveUraianEntry =
     attendanceGate.required && !attendanceGate.satisfied
       ? undefined
@@ -329,13 +329,19 @@ export function buildPekaryaSlipPreview(
 
   if (attendanceGate.required && !attendanceGate.satisfied) {
     warnings.push({
-      code: satpamDutySourceMissing
-        ? 'satpam_duty_unreconciled'
-        : 'attendance_unpublished',
+      code: 'attendance_unpublished',
       message:
         attendanceGate.reason ||
         `Presensi ${jobCategory} belum dipublikasikan pada revisi import dan kalender terbaru.`,
       blocking: true,
+    });
+  }
+  if (satpamDutySourceMissing) {
+    warnings.push({
+      code: 'satpam_duty_unreconciled',
+      message:
+        'Kewajiban dinas & bonus Satpam pegawai ini diinput manual di Rekap Uraian, di luar rekonsiliasi rencana dinas otomatis.',
+      blocking: false,
     });
   }
   if (
@@ -553,11 +559,34 @@ export function shouldValidateNewSlipSources(
   return existingSlip === null || existingSlip === undefined;
 }
 
+export interface NewSlipGapokValidation {
+  /**
+   * 'blocking' stops the write outright — a Gaji Pokok figure *was* submitted
+   * and it disagrees with a matrix the server can actually read (wrong
+   * amount, or more than one row), which is always fixable by reloading the
+   * draft, so there is never a good reason to save through it.
+   * 'warning' covers the two cases where nothing to reconcile was even
+   * submitted: the matrix has nothing to offer this employee at all (no
+   * golongan on record, a golongan the matrix doesn't have, or an empty
+   * grade row), or the matrix resolves fine but the Gaji Pokok row itself was
+   * removed from the slip. Both are states a super admin can deliberately
+   * leave in place for a period (the employee's rank is being resolved, or
+   * they are deliberately owed no Gaji Pokok this period), so the slip is
+   * still written — with Gaji Pokok forced to Rp0 in the unresolved case
+   * rather than trusting whatever figure the client happened to submit, and
+   * simply absent in the removed-row case.
+   */
+  level: 'blocking' | 'warning';
+  message: string;
+}
+
 /**
  * The rule a slip must satisfy the first time it is written: exactly one Gaji
- * Pokok row, holding exactly the active matrix's figure.
+ * Pokok row, holding exactly the active matrix's figure — unless the matrix
+ * cannot resolve one at all, or the row was removed outright, either of
+ * which only downgrades to a warning.
  *
- * Returns the refusal message, or `null` when the earnings are acceptable.
+ * Returns the outcome, or `null` when the earnings are acceptable as-is.
  * Existing drafts are not passed through here — they keep any manual edit
  * until the next Refresh recalculates them.
  */
@@ -565,17 +594,56 @@ export function validateNewSlipGapok(
   earnings: readonly SlipField[],
   resolution: GapokResolution,
   matrixVersion: string,
-): string | null {
+): NewSlipGapokValidation | null {
   if (resolution.status !== 'ok') {
-    return `Gaji Pokok tidak dapat dihitung dari matriks gaji aktif (${matrixVersion}); periksa golongan pegawai sebelum membuat slip.`;
+    return {
+      level: 'warning',
+      message: `Gaji Pokok tidak dapat dihitung dari matriks gaji aktif (${matrixVersion}); periksa golongan pegawai. Slip tetap disimpan dengan Gaji Pokok Rp0 sampai golongan diperbaiki.`,
+    };
   }
 
   const gapokFields = earnings.filter((field) =>
     GAPOK_LABELS.includes(field.label.trim().toUpperCase()),
   );
-  if (gapokFields.length !== 1 || gapokFields[0].amount !== resolution.amount) {
-    return `Gaji Pokok tidak sinkron dengan matriks gaji aktif. Nilai resmi adalah Rp${resolution.amount.toLocaleString('id-ID')}; muat ulang draf.`;
+
+  // A deliberately removed row (super admin decided this employee gets no
+  // Gaji Pokok this period) reads identically to a row nobody ever added —
+  // there is no way to tell "removed on purpose" from "never had one" from
+  // the earnings array alone, so both take the same non-blocking path. What
+  // distinguishes this from the mismatched-amount case below is that there
+  // is nothing here to be *out of sync* with: no figure was submitted at all.
+  if (gapokFields.length === 0) {
+    return {
+      level: 'warning',
+      message: `Baris Gaji Pokok tidak ada pada slip ini. Nilai resmi dari matriks gaji aktif adalah Rp${resolution.amount.toLocaleString('id-ID')}; slip tetap disimpan tanpa Gaji Pokok.`,
+    };
+  }
+
+  if (gapokFields.length > 1 || gapokFields[0].amount !== resolution.amount) {
+    return {
+      level: 'blocking',
+      message: `Gaji Pokok tidak sinkron dengan matriks gaji aktif. Nilai resmi adalah Rp${resolution.amount.toLocaleString('id-ID')}; muat ulang draf.`,
+    };
   }
 
   return null;
+}
+
+/**
+ * Rewrites any Gaji Pokok row(s) in `earnings` to `amount`, leaving every
+ * other row untouched. Used when a new slip's Gaji Pokok cannot be resolved
+ * from the matrix: at that point the client cannot have submitted a
+ * matrix-backed figure either, so its number is never trusted — the row is
+ * forced to the matrix's own (zero) result instead. A no-op when there is no
+ * Gaji Pokok row to begin with.
+ */
+export function forceGapokAmount(
+  earnings: readonly SlipField[],
+  amount: number,
+): SlipField[] {
+  return earnings.map((field) =>
+    GAPOK_LABELS.includes(field.label.trim().toUpperCase())
+      ? { ...field, amount }
+      : field,
+  );
 }
