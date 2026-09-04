@@ -20,7 +20,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['satker_head']);
+    requireRole(actor, ['satker_head', 'super_admin']);
     const body = (await request.json()) as Record<string, unknown>;
     const period = String(body.period || '');
     const category = String(body.category || '').trim().toUpperCase();
@@ -39,18 +39,23 @@ export async function POST(request: NextRequest) {
     let publishCategories: string[] = [];
     if (category === ALL_BLUE_COLLAR_CATEGORY) {
       const activeCategories = await listActivePekaryaAttendanceCategories();
-      const permittedCategories = new Set(
-        actor.permittedCategories.map((item) => item.trim().toUpperCase()),
-      );
-      publishCategories = activeCategories.filter((item) =>
-        permittedCategories.has(item),
-      );
+      if (actor.role === 'super_admin') {
+        publishCategories = activeCategories;
+      } else {
+        const permittedCategories = new Set(
+          actor.permittedCategories.map((item) => item.trim().toUpperCase()),
+        );
+        publishCategories = activeCategories.filter((item) =>
+          permittedCategories.has(item),
+        );
+      }
     } else if (
       category &&
       category !== 'SATPAM' &&
-      actor.permittedCategories
-        .map((item) => item.trim().toUpperCase())
-        .includes(category)
+      (actor.role === 'super_admin' ||
+        actor.permittedCategories
+          .map((item) => item.trim().toUpperCase())
+          .includes(category))
     ) {
       publishCategories = [category];
     }

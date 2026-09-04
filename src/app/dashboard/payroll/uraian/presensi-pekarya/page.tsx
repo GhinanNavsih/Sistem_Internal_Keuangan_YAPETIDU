@@ -481,7 +481,8 @@ export default function PekaryaAttendancePage() {
   const [linkTarget, setLinkTarget] = useState<DepartmentUnmatchedRow | null>(null);
   const [linkEmployeeId, setLinkEmployeeId] = useState('');
   const [linkSearch, setLinkSearch] = useState('');
-  const canEdit = profile?.role === 'satker_head';
+  const canEdit =
+    profile?.role === 'satker_head' || profile?.role === 'super_admin';
   // The manual-link endpoint accepts super_admin as well as satker_head (it
   // follows this app's usual write-permission pattern), so the button that
   // triggers it must be visible to both, not just to canEdit's satker_head.
