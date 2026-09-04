@@ -59,14 +59,14 @@ export const REKAP_COLUMNS: Record<string, RekapColumn[]> = {
   TEKNISI: [
     { key: 'harian',             label: 'Presensi Harian',        type: 'count',    multiplier: RATE_HARIAN,         slipLabel: 'Presensi Harian' },
     { key: 'jumatLibur',         label: 'Jumat & Libur',          type: 'count',    multiplier: RATE_JUMAT,          slipLabel: 'Jumat & Libur' },
-    { key: 'bonusMutlak',        label: 'Bonus Mutlak',           type: 'count',    multiplier: RATE_BONUS_MUTLAK,   slipLabel: 'Bonus Mutlak' },
+    { key: 'bonusMutlak',        label: 'Bonus Presensi Bulanan', type: 'currency',                                  slipLabel: 'Bonus Presensi Bulanan' },
     { key: 'lembur',             label: 'Lembur',                 type: 'currency',                                  slipLabel: 'Lembur' },
     { key: 'spj',                label: 'SPJ',                    type: 'currency',                                  slipLabel: 'SPJ' },
   ],
   SOPIR: [
     { key: 'harian',             label: 'Presensi Harian',        type: 'count',    multiplier: RATE_HARIAN,         slipLabel: 'Presensi Harian' },
     { key: 'jumatLibur',         label: 'Jumat & Libur',          type: 'count',    multiplier: RATE_JUMAT,          slipLabel: 'Jumat & Libur' },
-    { key: 'bonusMutlak',        label: 'Bonus Mutlak',           type: 'count',    multiplier: RATE_BONUS_MUTLAK,   slipLabel: 'Bonus Mutlak' },
+    { key: 'bonusMutlak',        label: 'Bonus Presensi Bulanan', type: 'currency',                                  slipLabel: 'Bonus Presensi Bulanan' },
     { key: 'piket',              label: 'Piket',                  type: 'count',    multiplier: RATE_PIKET,          slipLabel: 'Piket' },
     { key: 'praktek',            label: 'Praktek',                type: 'currency',                                  slipLabel: 'Praktek' },
     { key: 'spj',                label: 'SPJ',                    type: 'currency',                                  slipLabel: 'SPJ' },
@@ -113,6 +113,19 @@ const ATTENDANCE_PREMIUM_COLUMN: RekapColumn = {
 };
 
 /**
+ * KEBERSIHAN_PONTI and PONTI never had `harian`/`jumatLibur` columns — they
+ * are paid a manually-entered lump-sum "Presensi" figure, with no per-day
+ * scan data in the unified attendance import. Every other Pekarya category
+ * was built around real day-by-day scans.
+ */
+export function categoryUsesAttendanceImport(category: string): boolean {
+  const columns = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
+  return columns.some(
+    (column) => column.key === 'harian' || column.key === 'jumatLibur',
+  );
+}
+
+/**
  * From the unified scanner import onward, non-Satpam attendance is calculated
  * from worked seconds. Its rekap cells therefore store/display direct rupiah;
  * day counts remain separate publication metadata and are never multiplied
@@ -124,7 +137,12 @@ export function getRekapColumns(
 ): RekapColumn[] {
   const base = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
   const normalizedPeriod = normalizeRekapPeriod(period);
-  if (!normalizedPeriod || normalizedPeriod < '2026-08' || category === 'SATPAM') {
+  if (
+    !normalizedPeriod ||
+    normalizedPeriod < '2026-08' ||
+    category === 'SATPAM' ||
+    !categoryUsesAttendanceImport(category)
+  ) {
     return base;
   }
   const withoutLegacyPresence = base.filter(
@@ -163,6 +181,7 @@ export function isAttendanceDerivedRekapColumn(
   return (
     normalizeRekapPeriod(period) >= '2026-08' &&
     category !== 'SATPAM' &&
+    categoryUsesAttendanceImport(category) &&
     (key === 'harian' || key === 'jumatLibur')
   );
 }

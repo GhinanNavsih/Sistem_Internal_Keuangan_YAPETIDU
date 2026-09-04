@@ -200,7 +200,21 @@ export function buildInitialEarnings(
         if (col.slipLabel) {
           let amount = 0;
           if (effectiveUraian) {
+            // `values[col.key]` is always the final Rupiah figure the rekap
+            // was saved with, for both plain and count-derived columns.
+            // `counts[col.key]` is auxiliary unit-count metadata that only
+            // reconstructs that same money when the entry was an exact
+            // multiple of the rate — a flat, non-multiple amount (e.g. a
+            // Rp10.000 bonus against a Rp50.000 rate) produces a rounded
+            // count (often 0) that would otherwise silently replace the real
+            // saved amount. Trust the money first; fall back to the count
+            // only when no value was ever saved for this column.
             if (
+              effectiveUraian.values &&
+              effectiveUraian.values[col.key] !== undefined
+            ) {
+              amount = effectiveUraian.values[col.key] ?? 0;
+            } else if (
               col.type === 'count' &&
               effectiveUraian.counts &&
               effectiveUraian.counts[col.key] !== undefined
@@ -209,11 +223,6 @@ export function buildInitialEarnings(
                 col,
                 effectiveUraian.counts[col.key],
               );
-            } else if (
-              effectiveUraian.values &&
-              effectiveUraian.values[col.key] !== undefined
-            ) {
-              amount = effectiveUraian.values[col.key] ?? 0;
             }
           }
           // VakasiTambahan is a Loyalis earning, never Pekarya SPJ. Keep the

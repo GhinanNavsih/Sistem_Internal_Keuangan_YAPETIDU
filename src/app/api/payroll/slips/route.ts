@@ -15,6 +15,7 @@ import {
   sumApprovedEventSpj,
 } from '@/lib/payroll/pekaryaSpj';
 import { isSatpamDutyPlanRequired } from '@/lib/payroll/satpamDutyPlan';
+import { categoryUsesAttendanceImport } from '@/utils/rekapConfig';
 import {
   calculateTaxBase,
   describeTaxIneligibility,
@@ -428,7 +429,11 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        if (periodToken >= '2026-08' && jobCategory !== 'SATPAM') {
+        if (
+          periodToken >= '2026-08' &&
+          jobCategory !== 'SATPAM' &&
+          categoryUsesAttendanceImport(jobCategory)
+        ) {
           const publicationRef = adminDb
             .collection(PEKARYA_PUBLICATIONS_COLLECTION)
             .doc(pekaryaPublicationId(periodToken, jobCategory));

@@ -1405,7 +1405,14 @@ export default function RekapPekaryaPage() {
         const isDualMap = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover', 'bonusMutlak', 'bonusBulanan', 'bonusLainnya', 'bonusPresensiBulanan', 'bonusPresensiTriwulanan', 'piket'].includes(col.key);
         if (isDualMap && col.multiplier) {
           if (rawVal > 31) {
-            computedCounts[col.key] = Math.round(rawVal / col.multiplier);
+            // A flat amount that isn't an exact multiple of the rate (e.g. a
+            // Rp10.000 bonus at a Rp50.000 rate) has no faithful unit count —
+            // recording a rounded one (often 0) would make the PDF display a
+            // count instead of the real money and silently hide the value.
+            const derivedCount = Math.round(rawVal / col.multiplier);
+            if (derivedCount * col.multiplier === rawVal) {
+              computedCounts[col.key] = derivedCount;
+            }
             computedValues[col.key] = rawVal;
           } else {
             computedCounts[col.key] = rawVal;

@@ -32,6 +32,7 @@ import {
   isSatpamLegacyBonusColumn,
   normalizeSatpamUraianEntry,
 } from '@/lib/payroll/satpamCompensation';
+import { categoryUsesAttendanceImport } from '@/utils/rekapConfig';
 import { RekapColumn, SalaryMatrix, UraianEntry } from '@/types';
 
 /**
@@ -172,7 +173,11 @@ async function loadCategoryAttendanceState(
     );
   }
 
-  if (period >= '2026-08' && category !== 'SATPAM') {
+  if (
+    period >= '2026-08' &&
+    category !== 'SATPAM' &&
+    categoryUsesAttendanceImport(category)
+  ) {
     const publicationSnapshot = await adminDb
       .collection(PEKARYA_PUBLICATIONS_COLLECTION)
       .doc(pekaryaPublicationId(period, category))

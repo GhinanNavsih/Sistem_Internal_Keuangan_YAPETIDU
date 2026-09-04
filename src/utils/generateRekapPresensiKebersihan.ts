@@ -180,9 +180,15 @@ export async function generateRekapPresensiKebersihanyPdf(
           const monetary = emp.counts ? raw : (raw > 31 ? raw : raw * rate);
           totals[col.key] += monetary;
           rowTotal += monetary;
+          // A count only faithfully represents the money when multiplying it
+          // back by the rate reproduces the same figure. A flat, non-multiple
+          // amount (e.g. a Rp10.000 bonus against a Rp50.000 rate) rounds to
+          // a count of 0, which would otherwise render as a blank "-" and
+          // hide a real, nonzero value that the total row still counts.
+          const countMatchesMoney = count * rate === monetary;
           cells.push({
-            content: fmtCount(count),
-            styles: { halign: 'center' as const },
+            content: countMatchesMoney ? fmtCount(count) : fmtRp(monetary),
+            styles: { halign: countMatchesMoney ? ('center' as const) : ('right' as const) },
           });
         } else {
           totals[col.key] += raw;
