@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
+import Image from 'next/image';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { useAuth } from '@/lib/AuthContext';
 import EmployeeNavigationMenu from '@/components/EmployeeNavigationMenu';
@@ -1730,21 +1731,34 @@ export default function EmployeePayslipPage() {
                 >
                   <MenuIcon className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-indigo-500" />
                 </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  <DropdownMenuItem render={<Link href="/employee/presensi-correction" />}>
+                <DropdownMenuContent className="min-w-[220px] p-2.5">
+                  <DropdownMenuItem
+                    className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+                    render={<Link href="/employee/presensi-correction" />}
+                  >
                     <CalendarCheck className="text-indigo-500" />
                     Ajukan Presensi
                   </DropdownMenuItem>
-                  <DropdownMenuItem render={<Link href="/employee/facility-reports" />}>
+                  <DropdownMenuItem
+                    className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+                    render={<Link href="/employee/facility-reports" />}
+                  >
                     <Wrench className="text-amber-500" />
                     Lapor Fasilitas
                   </DropdownMenuItem>
-                  <DropdownMenuItem render={<Link href="/employee/simpan-pinjam" />}>
+                  <DropdownMenuItem
+                    className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+                    render={<Link href="/employee/simpan-pinjam" />}
+                  >
                     <Banknote className="text-emerald-500" />
                     Simpan Pinjam
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handlePasswordReset} disabled={resetLoading}>
+                  <DropdownMenuItem
+                    className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+                    onClick={handlePasswordReset}
+                    disabled={resetLoading}
+                  >
                     {resetLoading ? (
                       <Loader2 className="text-indigo-500 animate-spin" />
                     ) : (
@@ -1874,15 +1888,21 @@ export default function EmployeePayslipPage() {
                 </div>
 
                 <div className="flex gap-4 items-center justify-center filter drop-shadow-sm mb-4 mt-2">
-                  <img
+                  <Image
                     src="/Logo YAPETIDU (Transparent bg).png"
                     alt="Logo YAPETIDU"
+                    width={512}
+                    height={474}
+                    priority
                     className="h-14 w-auto object-contain shrink-0"
                   />
                   <div className="w-px h-8 bg-slate-200" />
-                  <img
+                  <Image
                     src="/Logo UNIPDU.png"
                     alt="Logo UNIPDU"
+                    width={300}
+                    height={304}
+                    priority
                     className="h-14 w-auto object-contain shrink-0"
                   />
                 </div>

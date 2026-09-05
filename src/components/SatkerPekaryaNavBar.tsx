@@ -1,6 +1,7 @@
 "use client";
 
 import React from 'react';
+import Image from 'next/image';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { ClipboardCheck, ScanLine, LogOut, Compass, BarChart3, Banknote, FileText, UsersRound, Wrench } from 'lucide-react';
@@ -89,9 +90,12 @@ export default function SatkerPekaryaNavBar() {
           onClick={() => router.push(defaultBrandRedirect)}
           className="flex items-center gap-2.5 cursor-pointer shrink-0"
         >
-          <img
+          <Image
             src="/Logo YAPETIDU (Transparent bg).png"
             alt="Logo"
+            width={512}
+            height={474}
+            priority
             className="w-8 h-8 object-contain"
           />
           <div className="flex flex-col">

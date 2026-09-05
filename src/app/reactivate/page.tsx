@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, Suspense } from 'react';
+import Image from 'next/image';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -103,15 +104,21 @@ function ReactivateContent() {
         {/* Header Logo section */}
         <div className="flex flex-col items-center text-center mb-8">
           <div className="flex gap-3 items-center justify-center filter drop-shadow-[0_4px_6px_rgba(0,0,0,0.05)] mb-6">
-            <img
+            <Image
               src="/Logo YAPETIDU (Transparent bg).png"
               alt="Logo YAPETIDU"
+              width={512}
+              height={474}
+              priority
               className="h-12 w-auto object-contain"
             />
             <div className="w-px h-6 bg-slate-300/60 dark:bg-slate-700/60" />
-            <img
+            <Image
               src="/Logo UNIPDU.png"
               alt="Logo UNIPDU"
+              width={300}
+              height={304}
+              priority
               className="h-12 w-auto object-contain"
             />
           </div>

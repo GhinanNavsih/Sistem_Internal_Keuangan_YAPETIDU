@@ -1,13 +1,17 @@
 import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/AuthContext";
 import QueryProvider from "@/lib/queries/QueryProvider";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
 import Script from "next/script";
 
-const inter = {
-  variable: "font-sans",
-};
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-inter",
+  fallback: ["system-ui", "-apple-system", "sans-serif"],
+});
 
 const isProduction = process.env.NODE_ENV === "production";
 

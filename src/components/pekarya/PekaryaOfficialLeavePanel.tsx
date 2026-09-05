@@ -88,7 +88,7 @@ export function PekaryaOfficialLeavePanel(props: {
     [openPeriods],
   );
   const [date, setDate] = useState('');
-  const [reportType, setReportType] = useState<PekaryaAttendanceReportType>('scan');
+  const [reportType, setReportType] = useState<PekaryaAttendanceReportType>('izin_resmi');
   const [scanIn, setScanIn] = useState(DEFAULT_SCAN_IN);
   const [scanOut, setScanOut] = useState(DEFAULT_SCAN_OUT);
   const [requests, setRequests] = useState<PekaryaOfficialLeaveRequest[]>([]);
@@ -397,7 +397,7 @@ export function PekaryaOfficialLeavePanel(props: {
               placeholder={
                 reportType === 'scan'
                   ? 'Contoh: Scan masuk dan scan keluar tidak terbaca pada rekap presensi.'
-                  : 'Contoh: Mendapat tugas resmi dari unit kerja dan telah melapor kepada atasan.'
+                  : 'Contoh: Sakit dengan Surat Dokter'
               }
             />
           </div>

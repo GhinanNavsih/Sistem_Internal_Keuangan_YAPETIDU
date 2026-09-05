@@ -157,6 +157,10 @@ export async function compressProofImageToLimit(file: File, maxBytes: number): P
   if (!file.type.startsWith('image/')) {
     throw new Error('Bukti harus berupa gambar.');
   }
+  // Preserve images that already meet the facility-report cap. Larger images
+  // are converted to JPEG below before quality and dimensions are reduced.
+  if (file.size <= maxBytes) return file;
+
   let canvas = await drawScaledCanvas(file);
 
   let quality = PROOF_IMAGE_JPEG_QUALITY;

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import GlobalHeader from '@/components/GlobalHeader';
 import Link from 'next/link';
+import Image from 'next/image';
 import { calculateYearsOfService, calculateGapok, matchFunctionalAllowance } from '@/utils/payrollLogic';
 import {
   Table,
@@ -3438,15 +3439,21 @@ export default function PayrollValidationDashboard() {
               <div>
                 <div className="flex items-center gap-3 mb-4">
                   <div className="flex items-center gap-3 filter drop-shadow-sm">
-                    <img
+                    <Image
                       src="/Logo YAPETIDU (Transparent bg).png"
                       alt="Logo YAPETIDU"
+                      width={512}
+                      height={474}
+                      priority
                       className="h-10 w-auto object-contain hover:scale-105 transition-transform duration-300 cursor-pointer"
                     />
                     <div className="w-px h-6 bg-slate-200" />
-                    <img
+                    <Image
                       src="/Logo UNIPDU.png"
                       alt="Logo UNIPDU"
+                      width={300}
+                      height={304}
+                      priority
                       className="h-10 w-auto object-contain hover:scale-105 transition-transform duration-300 cursor-pointer"
                     />
                   </div>

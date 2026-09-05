@@ -75,7 +75,7 @@ export default function PresensiCorrectionPage() {
     const d = String(today.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
   });
-  const [type, setType] = useState<'tap_in' | 'tap_out' | 'both' | 'izin_resmi'>('both');
+  const [type, setType] = useState<'tap_in' | 'tap_out' | 'both' | 'izin_resmi'>('izin_resmi');
   const [checkInTime, setCheckInTime] = useState('');
   const [checkOutTime, setCheckOutTime] = useState('');
   const [reason, setReason] = useState('');
@@ -171,7 +171,7 @@ export default function PresensiCorrectionPage() {
     setActiveMenuId(null);
     setEditingRequestId(req.id);
     setDate(req.date);
-    setType(isPresenceCorrectionType(req.type) ? req.type : 'both');
+    setType(isPresenceCorrectionType(req.type) ? req.type : 'izin_resmi');
     setCheckInTime(req.checkInTime || '');
     setCheckOutTime(req.checkOutTime || '');
     setReason(req.reason || '');
@@ -189,7 +189,7 @@ export default function PresensiCorrectionPage() {
     const m = String(today.getMonth() + 1).padStart(2, '0');
     const d = String(today.getDate()).padStart(2, '0');
     setDate(`${y}-${m}-${d}`);
-    setType('both');
+    setType('izin_resmi');
     setReason('');
     setCheckInTime('');
     setCheckOutTime('');
@@ -560,7 +560,11 @@ export default function PresensiCorrectionPage() {
                     rows={3}
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
-                    placeholder="Contoh: Terburu-buru karena rapat yayasan pukul 08:00 WIB..."
+                    placeholder={
+                      type === 'izin_resmi'
+                        ? 'Contoh: Sakit dengan Surat Dokter'
+                        : 'Contoh: Terburu-buru karena rapat yayasan pukul 08:00 WIB...'
+                    }
                     className="w-full p-3 rounded-xl border border-slate-200 bg-white shadow-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 placeholder:text-slate-350"
                   />
                 </div>

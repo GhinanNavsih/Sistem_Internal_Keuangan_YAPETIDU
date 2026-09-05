@@ -1242,7 +1242,7 @@ export function SatpamAbsencePanel(props: {
   const [scheduledDuties, setScheduledDuties] = useState<ScheduledDuty[]>([]);
   const [dutyDate, setDutyDate] = useState('');
   const [reportType, setReportType] =
-    useState<SatpamAttendanceReportType>('scan');
+    useState<SatpamAttendanceReportType>('izin_resmi');
   const [scanIn, setScanIn] = useState('08:00');
   const [scanOut, setScanOut] = useState('14:00');
   const [absenceType, setAbsenceType] = useState('sakit');
@@ -1526,7 +1526,7 @@ export function SatpamAbsencePanel(props: {
                 placeholder={
                   reportType === 'scan'
                     ? 'Contoh: Lupa melakukan finger scan saat mulai dan selesai dinas.'
-                    : 'Contoh: Sakit demam dan sudah memberi kabar kepada Ketua Shift.'
+                    : 'Contoh: Sakit dengan Surat Dokter'
                 }
               />
             </div>

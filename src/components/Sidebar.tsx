@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -211,17 +212,23 @@ export default function Sidebar() {
           {/* Brand Header */}
           {isCollapsed ? (
             <div className="flex items-center justify-center pt-1">
-              <img
+              <Image
                 src="/Logo YAPETIDU (Transparent bg).png"
                 alt="Logo YAPETIDU"
+                width={512}
+                height={474}
+                priority
                 className="w-9 h-9 object-contain"
               />
             </div>
           ) : (
             <div className="flex items-center gap-3 px-2">
-              <img
+              <Image
                 src="/Logo YAPETIDU (Transparent bg).png"
                 alt="Logo YAPETIDU"
+                width={512}
+                height={474}
+                priority
                 className="w-10 h-10 object-contain"
               />
               <div>
@@ -311,9 +318,12 @@ export default function Sidebar() {
       {/* ======================================================== */}
       <div className="md:hidden sticky top-0 z-30 flex items-center justify-between px-6 py-4 bg-white/80 backdrop-blur-md border-b border-slate-200/80 w-full">
         <div className="flex items-center gap-2">
-          <img
+          <Image
             src="/Logo YAPETIDU (Transparent bg).png"
             alt="Logo YAPETIDU"
+            width={512}
+            height={474}
+            priority
             className="w-8 h-8 object-contain"
           />
           <div>
@@ -348,9 +358,11 @@ export default function Sidebar() {
               {/* Drawer Brand Header & Close Button */}
               <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                 <div className="flex items-center gap-2">
-                  <img
+                  <Image
                     src="/Logo YAPETIDU (Transparent bg).png"
                     alt="Logo YAPETIDU"
+                    width={512}
+                    height={474}
                     className="w-8 h-8 object-contain"
                   />
                   <div>

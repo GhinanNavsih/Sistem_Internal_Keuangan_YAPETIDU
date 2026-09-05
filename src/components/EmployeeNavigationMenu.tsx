@@ -93,29 +93,44 @@ export default function EmployeeNavigationMenu() {
         >
           <MenuIcon className="w-4.5 h-4.5 text-indigo-500" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent>
-          <DropdownMenuItem render={<Link href={activitiesHref} />}>
+        <DropdownMenuContent className="min-w-[220px] p-2.5">
+          <DropdownMenuItem
+            className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+            render={<Link href={activitiesHref} />}
+          >
             <ClipboardList className="text-indigo-500" />
             Laporan Kegiatan
           </DropdownMenuItem>
-          <DropdownMenuItem render={<Link href="/employee/payslip" />}>
+          <DropdownMenuItem
+            className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+            render={<Link href="/employee/payslip" />}
+          >
             <Banknote className="text-emerald-500" />
             Slip Gaji
           </DropdownMenuItem>
           {isSopir && (
-            <DropdownMenuItem render={<Link href="/employee/driver-history" />}>
+            <DropdownMenuItem
+              className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+              render={<Link href="/employee/driver-history" />}
+            >
               <Compass className="text-indigo-500" />
               Riwayat Perjalanan
             </DropdownMenuItem>
           )}
           {currentProfile.role === 'ketua_shift_satpam' && (
-            <DropdownMenuItem render={<Link href="/employee/satpam-duty-plan" />}>
+            <DropdownMenuItem
+              className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+              render={<Link href="/employee/satpam-duty-plan" />}
+            >
               <CalendarDays className="text-indigo-500" />
               Jadwal Regu
             </DropdownMenuItem>
           )}
           <DropdownMenuSeparator />
-          <DropdownMenuItem render={<Link href={leaveHref} />}>
+          <DropdownMenuItem
+            className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+            render={<Link href={leaveHref} />}
+          >
             {isSatpam ? (
               <ShieldCheck className="text-amber-500" />
             ) : (
@@ -125,6 +140,7 @@ export default function EmployeeNavigationMenu() {
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
+            className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
             onClick={() => void handlePasswordReset()}
             disabled={passwordResetLoading}
           >

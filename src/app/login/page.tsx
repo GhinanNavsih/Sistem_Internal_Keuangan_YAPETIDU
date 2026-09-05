@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { auth } from '@/lib/firebase';
@@ -260,15 +261,21 @@ export default function LoginPage() {
           {/* Logo */}
           <div className="flex justify-center mb-12">
             <div className="flex gap-6 items-center filter drop-shadow-[0_10px_15px_rgba(0,0,0,0.18)]">
-              <img
+              <Image
                 src="/Logo YAPETIDU (Transparent bg).png"
                 alt="Logo YAPETIDU"
+                width={512}
+                height={474}
+                priority
                 className="h-32 w-auto object-contain hover:scale-105 transition-transform duration-300 cursor-pointer"
               />
               <div className="w-px h-10 bg-white/30" />
-              <img
+              <Image
                 src="/Logo UNIPDU.png"
                 alt="Logo UNIPDU"
+                width={300}
+                height={304}
+                priority
                 className="h-32 w-auto object-contain hover:scale-105 transition-transform duration-300 cursor-pointer"
               />
             </div>
@@ -308,15 +315,21 @@ export default function LoginPage() {
           {/* Mobile logo */}
           <div className="flex lg:hidden items-center gap-3 mb-10">
             <div className="flex items-center gap-3 filter drop-shadow-sm">
-              <img
+              <Image
                 src="/Logo YAPETIDU (Transparent bg).png"
                 alt="Logo YAPETIDU"
+                width={512}
+                height={474}
+                priority
                 className="h-10 w-auto object-contain"
               />
               <div className="w-px h-6 bg-slate-200" />
-              <img
+              <Image
                 src="/Logo UNIPDU.png"
                 alt="Logo UNIPDU"
+                width={300}
+                height={304}
+                priority
                 className="h-10 w-auto object-contain"
               />
             </div>

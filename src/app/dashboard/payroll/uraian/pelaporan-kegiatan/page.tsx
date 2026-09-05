@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import Image from 'next/image';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -730,7 +731,7 @@ export default function PelaporanKegiatanPage() {
         {/* Letterhead Preview */}
         <div className="border border-slate-200/80 rounded-2xl p-4 bg-slate-50/40 relative overflow-hidden flex items-center gap-4">
           <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50/30 rounded-full blur-2xl pointer-events-none" />
-          <img src="/Logo UNIPDU.png" alt="UNIPDU" className="w-12 h-12 shrink-0 object-contain" />
+          <Image src="/Logo UNIPDU.png" alt="UNIPDU" width={300} height={304} className="w-12 h-12 shrink-0 object-contain" />
           <div className="space-y-0.5">
             <h4 className="text-xs font-black text-slate-800 tracking-wide uppercase">UNIVERSITAS PESANTREN TINGGI DARUL 'ULUM</h4>
             <p className="text-[10px] text-slate-500 font-medium">Pusat Pengisian Gaji & Administrasi Keuangan Kepegawaian</p>
