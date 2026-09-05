@@ -394,17 +394,17 @@ export default function FacilityReportsPage() {
 
               {photos.length < MAX_FACILITY_PHOTOS && (
                 <>
+                  {/* Keep this single-select input like the driver receipt uploader so Android shows its camera/gallery source chooser. */}
                   <input
                     ref={photoInputRef}
                     type="file"
                     accept="image/*"
-                    multiple
                     className="hidden"
                     disabled={uploadingPhoto}
                     onChange={(e) => {
-                      const files = Array.from(e.target.files || []);
+                      const file = e.target.files?.[0];
                       e.target.value = '';
-                      if (files.length > 0) void handlePhotos(files);
+                      if (file) void handlePhotos([file]);
                     }}
                   />
                   <Button
