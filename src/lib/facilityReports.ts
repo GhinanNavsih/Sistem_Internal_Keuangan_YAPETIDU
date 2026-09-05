@@ -14,6 +14,7 @@ export const FACILITY_AREAS = [
   'Gedung FIK & Auditorium',
   'Graha Pascasarjana',
   "Gelora Abi As'ad",
+  "Islamic Center",
   'Apartemen Mahasiswa',
   'Lainnya',
 ] as const;

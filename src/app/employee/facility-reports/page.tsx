@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
-  ChevronLeft,
   ChevronDown,
+  ChevronLeft,
   Image as ImageIcon,
   Loader2,
   MapPin,
@@ -77,6 +77,7 @@ export default function FacilityReportsPage() {
   const [customPlace, setCustomPlace] = useState('');
   const [description, setDescription] = useState('');
   const [photos, setPhotos] = useState<PhotoEvidence[]>([]);
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
@@ -325,7 +326,7 @@ export default function FacilityReportsPage() {
                   <Input
                     value={customPlace}
                     onChange={(e) => setCustomPlace(e.target.value.slice(0, MAX_FACILITY_PLACE_LENGTH))}
-                    placeholder="Sebutkan lokasinya, contoh: Parkiran belakang Gedung B"
+                    placeholder="Contoh: Parkiran IC"
                     className="rounded-xl border-slate-200 text-sm"
                     autoFocus
                   />
@@ -346,7 +347,7 @@ export default function FacilityReportsPage() {
                   setDescription(e.target.value.slice(0, MAX_FACILITY_DESCRIPTION_LENGTH))
                 }
                 rows={4}
-                placeholder="Jelaskan masalah atau kondisinya sedetail mungkin, misalnya: keran wastafel patah, lantai kotor, atau lampu lorong mati."
+                placeholder="Keran rusak, lampu perlu diganti, dll."
                 className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 resize-y"
               />
               <p className="text-[10px] font-semibold text-slate-400">
@@ -392,20 +393,9 @@ export default function FacilityReportsPage() {
               )}
 
               {photos.length < MAX_FACILITY_PHOTOS && (
-                <label className="flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/60 py-6 cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/40 transition-colors">
-                  {uploadingPhoto ? (
-                    <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
-                  ) : (
-                    <ImageIcon className="w-5 h-5 text-slate-400" />
-                  )}
-                  <span className="text-[11px] font-bold text-slate-500">
-                    {uploadingPhoto
-                      ? 'Mengunggah…'
-                      : photos.length === 0
-                        ? 'Ketuk untuk menambah foto'
-                        : 'Tambah foto lagi'}
-                  </span>
+                <>
                   <input
+                    ref={photoInputRef}
                     type="file"
                     accept="image/*"
                     multiple
@@ -417,7 +407,27 @@ export default function FacilityReportsPage() {
                       if (files.length > 0) void handlePhotos(files);
                     }}
                   />
-                </label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={uploadingPhoto}
+                    onClick={() => photoInputRef.current?.click()}
+                    className="flex min-h-[92px] w-full flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/60 py-6 text-slate-500 transition-colors hover:border-indigo-300 hover:bg-indigo-50/40"
+                  >
+                    {uploadingPhoto ? (
+                      <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
+                    ) : (
+                      <ImageIcon className="w-5 h-5 text-slate-400" />
+                    )}
+                    <span className="text-[11px] font-bold text-slate-500">
+                      {uploadingPhoto
+                        ? 'Mengunggah…'
+                        : photos.length === 0
+                          ? 'Ketuk untuk menambah foto'
+                          : 'Tambah foto lagi'}
+                    </span>
+                  </Button>
+                </>
               )}
             </div>
 
