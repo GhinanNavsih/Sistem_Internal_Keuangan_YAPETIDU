@@ -145,7 +145,7 @@ export default function SatkerPekaryaNavBar() {
                   className={navBtnClass(isFacility)}
                 >
                   <Wrench className="w-4 h-4" />
-                  <span>Fasilitas Rusak</span>
+                  <span>Kondisi Fasilitas</span>
                 </button>
               )}
               {canSeeJourneys && (

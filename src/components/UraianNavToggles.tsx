@@ -198,7 +198,7 @@ export default function UraianNavToggles() {
                 className={btnCls(activeTab === 'facility_reports')}
               >
                 <Wrench className="w-4 h-4" />
-                Fasilitas Rusak
+                Kondisi Fasilitas
               </button>
             )}
           </div>

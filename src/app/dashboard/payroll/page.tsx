@@ -352,6 +352,10 @@ export default function PayrollValidationDashboard() {
   // emailSent, etc). Earnings/deductions are always recalculated from current
   // employee data to ensure they stay in sync with profile changes.
   const [slipStates, setSlipStates] = useState<Record<string, SlipState>>({});
+  // The preview request must wait until the period's saved slip states have
+  // landed. Without this marker, the first render sees an empty slip map and
+  // starts a full preview request even when every slip in the period is locked.
+  const [periodDataLoadedFor, setPeriodDataLoadedFor] = useState<string | null>(null);
 
   // Ketua Shift Satpam roster, keyed by employeeId. SatpamShiftTeams is a
   // stable roster (not period-scoped), so this is fetched once rather than
@@ -398,12 +402,12 @@ export default function PayrollValidationDashboard() {
   const koperasiSavings = selectedKoperasiAmounts.savings;
   const [loyalisPresenceData, setLoyalisPresenceData] = useState<any | null>(null);
 
-  // ─── Shared Pekarya earnings preview for the period ─────────────
+  // ─── Shared Pekarya earnings preview for unlocked rows ──────────
   // One server-side calculation feeds the table, the Tinjau Slip Gaji modal,
-  // every export, and every newly prepared draft — and is the same one
-  // /employee/payslip renders, so the two can never disagree.
+  // every export, and every newly prepared draft that still needs a preview.
+  // Locked rows use their persisted final snapshot instead.
   const [pekaryaPreviews, setPekaryaPreviews] = useState<Record<string, PekaryaSlipPreview>>({});
-  const [pekaryaPreviewsLoading, setPekaryaPreviewsLoading] = useState(true);
+  const [pekaryaPreviewsLoading, setPekaryaPreviewsLoading] = useState(false);
   const [pekaryaPreviewsError, setPekaryaPreviewsError] = useState<string | null>(null);
   const [pekaryaPreviewsPeriod, setPekaryaPreviewsPeriod] = useState<string | null>(null);
   const [pekaryaPreviewReloadToken, setPekaryaPreviewReloadToken] = useState(0);
@@ -1270,11 +1274,22 @@ export default function PayrollValidationDashboard() {
   // Deliberately independent of the selected tab: "Siapkan Semua Draf" and
   // the bulk lock cover both collars, so a Loyalis tab is no reason to let a
   // Pekarya draft be built before its preview has arrived.
-  const missingPekaryaPreviewTargets = allPayrollTargets.filter(
-    (target) =>
-      target.collar === 'pekarya' && !effectivePekaryaPreviews[target.id],
+  const payrollPeriodDataReady =
+    periodDataLoadedFor === currentPekaryaPreviewPeriod;
+  const pekaryaPreviewTargets = payrollPeriodDataReady
+    ? allPayrollTargets.filter(
+        (target) =>
+          target.collar === 'pekarya' &&
+          !isTransferEligibleStatus(slipStates[target.id]?.status),
+      )
+    : [];
+  const pekaryaPreviewsRequired = pekaryaPreviewTargets.length > 0;
+  const missingPekaryaPreviewTargets = pekaryaPreviewTargets.filter(
+    (target) => !effectivePekaryaPreviews[target.id],
   );
   const pekaryaPreviewCoverageError =
+    pekaryaPreviewsRequired &&
+    pekaryaPreviewsPeriod === currentPekaryaPreviewPeriod &&
     !pekaryaPreviewsLoading &&
     !pekaryaPreviewsError &&
     missingPekaryaPreviewTargets.length > 0
@@ -1283,7 +1298,9 @@ export default function PayrollValidationDashboard() {
   const pekaryaPreviewProblem =
     pekaryaPreviewsError || pekaryaPreviewCoverageError;
   const pekaryaPreviewsReady =
-    !pekaryaPreviewsLoading && !pekaryaPreviewProblem;
+    payrollPeriodDataReady &&
+    (!pekaryaPreviewsRequired ||
+      (!pekaryaPreviewsLoading && !pekaryaPreviewProblem));
 
   /**
    * Refuses to produce a document while the previews are still in flight.
@@ -1294,7 +1311,9 @@ export default function PayrollValidationDashboard() {
     setNotification({
       show: true,
       type: 'error',
-      message: pekaryaPreviewsLoading
+      message: !payrollPeriodDataReady
+        ? 'Data slip payroll periode masih dimuat. Tunggu sesaat lalu ulangi.'
+        : pekaryaPreviewsLoading
         ? 'Pratinjau perhitungan Pekarya masih dimuat. Tunggu sesaat lalu ulangi.'
         : pekaryaPreviewProblem ||
           'Pratinjau perhitungan Pekarya tidak tersedia. Muat ulang lalu coba lagi.',
@@ -1535,6 +1554,13 @@ export default function PayrollValidationDashboard() {
   };
 
   const displayEmployees = getFilteredAndSortedEmployees();
+  const displayedPekaryaPreviewsRequired =
+    payrollCollar !== 'loyalis' &&
+    payrollPeriodDataReady &&
+    displayEmployees.some(
+      (employee) =>
+        !isTransferEligibleStatus(slipStates[employee.id]?.status),
+    );
   const pekaryaTotalsUnavailable =
     payrollCollar !== 'loyalis' &&
     displayEmployees.some(
@@ -1651,7 +1677,12 @@ export default function PayrollValidationDashboard() {
       setLocalLoading(true);
       setUraianMap({});
       setSlipStates({});
+      setPeriodDataLoadedFor(null);
       setLoyalisPresenceData(null);
+      setPekaryaPreviewsLoading(false);
+      setPekaryaPreviewsError(null);
+      setPekaryaPreviewsPeriod(null);
+      setPekaryaPreviews({});
       try {
         const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
 
@@ -1699,6 +1730,7 @@ export default function PayrollValidationDashboard() {
         } else {
           setLoyalisPresenceData(null);
         }
+        setPeriodDataLoadedFor(period.replace('_', '-'));
       } catch (err) {
         console.error('Error fetching period data:', err);
       } finally {
@@ -1726,6 +1758,10 @@ export default function PayrollValidationDashboard() {
 
   useEffect(() => {
     if (!profile || !['super_admin', 'finance_verifier'].includes(profile.role)) return;
+    // Locked payroll periods already have their final snapshot in
+    // PayrollSlipStates. The period-data effect resets preview state before
+    // loading a new period, so there is nothing to fetch or clear here.
+    if (!payrollPeriodDataReady || !pekaryaPreviewsRequired) return;
     let cancelled = false;
     const loadPreviews = async () => {
       setPekaryaPreviewsLoading(true);
@@ -1762,6 +1798,9 @@ export default function PayrollValidationDashboard() {
   }, [
     currentPekaryaPreviewPeriod,
     fetchPekaryaPreviews,
+    periodDataLoadedFor,
+    payrollPeriodDataReady,
+    pekaryaPreviewsRequired,
     pekaryaPreviewReloadToken,
     profile,
   ]);
@@ -3692,7 +3731,7 @@ export default function PayrollValidationDashboard() {
                 </button>
               </div>
             </div>
-            {payrollCollar !== 'loyalis' &&
+            {displayedPekaryaPreviewsRequired &&
               (pekaryaPreviewsLoading || pekaryaPreviewProblem) && (
                 <div className="mx-8 mt-5 flex items-start justify-between gap-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
                   <div className="flex items-start gap-2">
@@ -3704,7 +3743,7 @@ export default function PayrollValidationDashboard() {
                     <div>
                       <p className="font-semibold">
                         {pekaryaPreviewsLoading
-                          ? 'Pratinjau perhitungan Pekarya sedang dimuat.'
+                          ? 'Memuat pratinjau untuk slip Pekarya yang belum dikunci.'
                           : pekaryaPreviewProblem}
                       </p>
                       {!pekaryaPreviewsLoading && (

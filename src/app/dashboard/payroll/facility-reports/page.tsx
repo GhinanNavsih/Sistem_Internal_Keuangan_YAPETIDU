@@ -221,10 +221,10 @@ function FacilityReportReviewContent() {
             </div>
             <div>
               <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight">
-                Review Fasilitas Rusak
+                Review Kondisi Fasilitas
               </h1>
               <p className="text-slate-500 text-sm">
-                Tinjau dan tindak lanjuti laporan kerusakan fasilitas dari pegawai Loyalis.
+                Tinjau laporan fasilitas yang rusak, kotor, tidak terawat, atau membutuhkan perbaikan dari pegawai Loyalis.
               </p>
             </div>
           </div>
@@ -314,7 +314,7 @@ function FacilityReportReviewContent() {
                     Pelapor
                   </TableHead>
                   <TableHead className="text-[11px] font-black uppercase text-slate-400 tracking-wider">
-                    Lokasi &amp; Kerusakan
+                    Lokasi &amp; Kondisi
                   </TableHead>
                   <TableHead className="text-[11px] font-black uppercase text-slate-400 tracking-wider whitespace-nowrap">
                     Tanggal
@@ -340,7 +340,7 @@ function FacilityReportReviewContent() {
                       <Wrench className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                       <p className="text-sm font-bold text-slate-500">Tidak ada laporan</p>
                       <p className="text-xs text-slate-400 mt-0.5">
-                        Belum ada laporan kerusakan pada filter ini.
+                        Belum ada laporan kondisi fasilitas pada filter ini.
                       </p>
                     </TableCell>
                   </TableRow>
@@ -443,7 +443,7 @@ function FacilityReportReviewContent() {
                                   </div>
                                   <div>
                                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                                      Deskripsi Kerusakan
+                                      Deskripsi Masalah atau Kondisi
                                     </p>
                                     <p className="text-sm text-slate-700 mt-0.5 whitespace-pre-wrap leading-relaxed">
                                       {report.description}
@@ -473,7 +473,7 @@ function FacilityReportReviewContent() {
                                         <img
                                           key={photo.url}
                                           src={photo.url}
-                                          alt={`Kerusakan di ${report.place} — foto ${index + 1}`}
+                                          alt={`Kondisi fasilitas di ${report.place} — foto ${index + 1}`}
                                           onClick={() => setZoomPhoto({ report, photo })}
                                           className="aspect-square w-full object-cover rounded-xl border border-slate-200 cursor-zoom-in bg-white"
                                         />

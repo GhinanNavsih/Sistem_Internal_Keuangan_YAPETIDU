@@ -34,7 +34,7 @@ function textField(raw: unknown, label: string, max: number, min = 1): string {
   return value;
 }
 
-/** Reviewers see every report; a reporter only ever sees their own. */
+/** Reviewers can view and process every facility report. */
 function isFacilityReviewer(actor: AuthenticatedProfile): boolean {
   return actor.role === 'super_admin' || actor.role === 'satker_head';
 }
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
 
     if (action === 'submit') {
       if (actor.role !== 'loyalis') {
-        throw new HttpError(403, 'Hanya pegawai Loyalis yang dapat melaporkan kerusakan fasilitas.');
+        throw new HttpError(403, 'Hanya pegawai Loyalis yang dapat melaporkan kondisi fasilitas.');
       }
       if (!actor.linkedEmployeeId) {
         throw new HttpError(409, 'Akun Anda belum terhubung ke data Pegawai.');
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
       const place = textField(body?.place, 'Lokasi fasilitas', MAX_FACILITY_PLACE_LENGTH);
       const description = textField(
         body?.description,
-        'Deskripsi kerusakan',
+        'Deskripsi masalah atau kondisi',
         MAX_FACILITY_DESCRIPTION_LENGTH,
         MIN_FACILITY_DESCRIPTION_LENGTH,
       );
@@ -202,11 +202,8 @@ export async function GET(request: NextRequest) {
     const statusFilter = searchParams.get('status');
 
     let query: FirebaseFirestore.Query = adminDb.collection(FACILITY_REPORTS_COLLECTION);
-    if (!isFacilityReviewer(actor)) {
-      if (!actor.linkedEmployeeId) {
-        throw new HttpError(409, 'Akun Anda belum terhubung ke data Pegawai.');
-      }
-      query = query.where('employeeId', '==', actor.linkedEmployeeId);
+    if (!isFacilityReviewer(actor) && actor.role !== 'loyalis') {
+      throw new HttpError(403, 'Anda tidak memiliki akses ke riwayat laporan fasilitas.');
     }
     if (statusFilter && isFacilityReportStatus(statusFilter)) {
       query = query.where('status', '==', statusFilter);
@@ -227,8 +224,14 @@ export async function GET(request: NextRequest) {
         };
       })
       .sort(
-        (a, b) =>
-          Number(b.reportedAtMillis || 0) - Number(a.reportedAtMillis || 0),
+        (a, b) => {
+          const timestampA = Number(a.reportedAtMillis || 0);
+          const timestampB = Number(b.reportedAtMillis || 0);
+          if (timestampA !== timestampB) return timestampB - timestampA;
+          return String((b as Record<string, unknown>).reportedDate || '').localeCompare(
+            String((a as Record<string, unknown>).reportedDate || ''),
+          );
+        },
       );
 
     return NextResponse.json({
