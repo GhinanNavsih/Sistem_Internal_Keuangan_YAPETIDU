@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   ChevronDown,
@@ -77,7 +77,6 @@ export default function FacilityReportsPage() {
   const [customPlace, setCustomPlace] = useState('');
   const [description, setDescription] = useState('');
   const [photos, setPhotos] = useState<PhotoEvidence[]>([]);
-  const photoInputRef = useRef<HTMLInputElement>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
@@ -393,41 +392,38 @@ export default function FacilityReportsPage() {
               )}
 
               {photos.length < MAX_FACILITY_PHOTOS && (
-                <>
-                  {/* Keep this single-select input like the driver receipt uploader so Android shows its camera/gallery source chooser. */}
+                <div className="relative flex min-h-[92px] w-full flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/60 py-6 text-slate-500 transition-colors hover:border-indigo-300 hover:bg-indigo-50/40">
+                  {/* Match Ajukan Presensi's source chooser on Android; only images are accepted by the handler below. */}
                   <input
-                    ref={photoInputRef}
                     type="file"
-                    accept="image/*"
-                    className="hidden"
+                    accept=".jpeg,.jpg,.png,.pdf,image/jpeg,image/png,application/pdf"
+                    aria-label="Tambah foto kondisi fasilitas"
+                    className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
                     disabled={uploadingPhoto}
                     onChange={(e) => {
                       const file = e.target.files?.[0];
                       e.target.value = '';
-                      if (file) void handlePhotos([file]);
+                      if (!file) return;
+                      if (!file.type.startsWith('image/')) {
+                        setMessage({ type: 'error', text: 'Berkas fasilitas harus berupa foto.' });
+                        return;
+                      }
+                      void handlePhotos([file]);
                     }}
                   />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={uploadingPhoto}
-                    onClick={() => photoInputRef.current?.click()}
-                    className="flex min-h-[92px] w-full flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/60 py-6 text-slate-500 transition-colors hover:border-indigo-300 hover:bg-indigo-50/40"
-                  >
-                    {uploadingPhoto ? (
-                      <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
-                    ) : (
-                      <ImageIcon className="w-5 h-5 text-slate-400" />
-                    )}
-                    <span className="text-[11px] font-bold text-slate-500">
-                      {uploadingPhoto
-                        ? 'Mengunggah…'
-                        : photos.length === 0
-                          ? 'Ketuk untuk menambah foto'
-                          : 'Tambah foto lagi'}
-                    </span>
-                  </Button>
-                </>
+                  {uploadingPhoto ? (
+                    <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
+                  ) : (
+                    <ImageIcon className="w-5 h-5 text-slate-400" />
+                  )}
+                  <span className="text-[11px] font-bold text-slate-500">
+                    {uploadingPhoto
+                      ? 'Mengunggah…'
+                      : photos.length === 0
+                        ? 'Ketuk untuk menambah foto'
+                        : 'Tambah foto lagi'}
+                  </span>
+                </div>
               )}
             </div>
 
