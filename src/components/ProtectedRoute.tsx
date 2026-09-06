@@ -20,7 +20,14 @@ const LOYALIS_ROUTES = [
   '/employee/simpan-pinjam',
 ];
 
-export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
+export default function ProtectedRoute({
+  children,
+  fallback,
+}: {
+  children: React.ReactNode;
+  /** Shown instead of the generic spinner while the session is being checked. */
+  fallback?: React.ReactNode;
+}) {
   const { user, profile, activeProfile, loading, uiPreviewHydrated } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -104,6 +111,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   }, [user, profile, currentProfile, loading, uiPreviewHydrated, router, pathname]);
 
   if (loading || !uiPreviewHydrated) {
+    if (fallback) return <>{fallback}</>;
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
@@ -113,7 +121,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
           <div className="flex flex-col items-center gap-2">
             <p className="text-sm text-slate-500 font-medium animate-pulse">Memeriksa sesi...</p>
             <div className="w-48 h-1.5 bg-slate-200/80 rounded-full overflow-hidden shadow-inner">
-              <div 
+              <div
                 className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-300 ease-out"
                 style={{ width: `${progress}%` }}
               />

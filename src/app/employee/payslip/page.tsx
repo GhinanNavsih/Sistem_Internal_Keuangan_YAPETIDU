@@ -85,6 +85,10 @@ import {
   overlayPekaryaAttendanceEarnings,
   type PekaryaAttendanceLog,
 } from '@/lib/payroll/pekaryaSlipPreview';
+import {
+  PayslipHeaderShell,
+  PayslipBodySkeleton,
+} from '@/components/PayslipSkeleton';
 
 interface PekaryaDocItem {
   id: string;
@@ -1668,8 +1672,12 @@ export default function EmployeePayslipPage() {
 
   if (!profile) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 flex items-center justify-center relative overflow-hidden">
-        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin relative z-10" />
+      <div className="min-h-screen bg-white font-sans selection:bg-indigo-100 relative text-black pb-16">
+        <PayslipHeaderShell />
+        <div className="max-w-4xl mx-auto px-6 sm:px-8 md:px-12 mt-8 space-y-6 relative z-10">
+          <div className="py-3.5 px-5 h-[60px] bg-slate-50/80 rounded-2xl border border-slate-100 animate-pulse" />
+          <PayslipBodySkeleton />
+        </div>
       </div>
     );
   }
@@ -1737,7 +1745,7 @@ export default function EmployeePayslipPage() {
                     render={<Link href="/employee/presensi-correction" />}
                   >
                     <CalendarCheck className="text-indigo-500" />
-                    Ajukan Presensi
+                    Ajukan Izin Presensi
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
@@ -1831,12 +1839,9 @@ export default function EmployeePayslipPage() {
           </div>
         </div>
 
-        {/* ── Loading Spinner ── */}
+        {/* ── Skeleton Loader ── */}
         {loading ? (
-          <div className="py-24 flex flex-col items-center justify-center text-black">
-            <Loader2 className="w-10 h-10 animate-spin text-indigo-500 mb-4" />
-            <p className="text-sm font-semibold animate-pulse">Memuat rincian slip gaji...</p>
-          </div>
+          <PayslipBodySkeleton />
         ) : !employeeData ? (
           <div className="py-16 text-center text-black bg-slate-50/50 rounded-2xl border border-slate-100">
             <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-4" />

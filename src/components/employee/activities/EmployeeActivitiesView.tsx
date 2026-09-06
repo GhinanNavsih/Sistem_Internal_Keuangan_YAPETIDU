@@ -12,13 +12,13 @@ import {
   Button,
 } from '@/components/ui/button';
 import {
-  Loader2,
   LogOut,
   AlertCircle,
   ClipboardList,
   Compass,
 } from 'lucide-react';
 import EmployeeNavigationMenu from '@/components/EmployeeNavigationMenu';
+import { ActivitiesPageSkeleton } from '@/components/EmployeeActivitiesSkeleton';
 import type { EmployeeActivitiesModel } from './activityModel';
 import ActivityPeriodSelector from './ActivityPeriodSelector';
 import PekaryaActivitiesView from './PekaryaActivitiesView';
@@ -34,14 +34,7 @@ export default function EmployeeActivitiesView({ model }: EmployeeActivitiesView
   const { workflow, logout, profile, isSopir, message, setMessage } = model;
 
   if (!profile) {
-      return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 flex items-center justify-center relative overflow-hidden">
-          {/* Subtle decorative blobs */}
-          <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
-          <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
-          <Loader2 className="w-8 h-8 text-indigo-500 animate-spin relative z-10" />
-        </div>
-      );
+      return <ActivitiesPageSkeleton />;
     }
   
   if (!profile.linkedEmployeeId) {
