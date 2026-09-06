@@ -18,7 +18,7 @@ import {
   Compass,
 } from 'lucide-react';
 import EmployeeNavigationMenu from '@/components/EmployeeNavigationMenu';
-import { ActivitiesPageSkeleton } from '@/components/EmployeeActivitiesSkeleton';
+import { ActivitiesWorkflowSkeleton } from '@/components/EmployeeActivitiesSkeleton';
 import type { EmployeeActivitiesModel } from './activityModel';
 import ActivityPeriodSelector from './ActivityPeriodSelector';
 import PekaryaActivitiesView from './PekaryaActivitiesView';
@@ -34,7 +34,7 @@ export default function EmployeeActivitiesView({ model }: EmployeeActivitiesView
   const { workflow, logout, profile, isSopir, message, setMessage } = model;
 
   if (!profile) {
-      return <ActivitiesPageSkeleton />;
+      return <ActivitiesWorkflowSkeleton workflow={workflow} />;
     }
   
   if (!profile.linkedEmployeeId) {

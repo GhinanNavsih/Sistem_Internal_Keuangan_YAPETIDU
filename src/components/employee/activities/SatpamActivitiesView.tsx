@@ -67,6 +67,7 @@ import type { EmployeeActivitiesModel } from './activityModel';
 import ActivityHistoryPanel from './ActivityHistoryPanel';
 import EmployeeActivityFab from './EmployeeActivityFab';
 import ActivityFormDialog from './ActivityFormDialog';
+import { SatpamRosterFieldsSkeleton } from '@/components/EmployeeActivitiesSkeleton';
 
 interface SatpamActivitiesViewProps {
   model: EmployeeActivitiesModel;
@@ -187,10 +188,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
             </CardHeader>
             <CardContent className="p-5 space-y-4">
               {loadingSatpamConfig ? (
-                <div className="py-8 flex flex-col items-center justify-center text-slate-400">
-                  <Loader2 className="w-6 h-6 animate-spin text-purple-600 mb-2" />
-                  <span className="text-base font-semibold">Memuat data regu Satpam...</span>
-                </div>
+                <SatpamRosterFieldsSkeleton />
               ) : (
                 <form onSubmit={handleSubmitSatpamShift} className="space-y-4">
                   {/* Date selection & Shift Display */}

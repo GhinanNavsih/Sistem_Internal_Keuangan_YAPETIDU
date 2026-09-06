@@ -2,7 +2,7 @@
 
 import { Suspense } from 'react';
 import type { EmployeeActivityWorkflow } from '@/lib/employeeActivities';
-import { ActivitiesPageSkeleton } from '@/components/EmployeeActivitiesSkeleton';
+import { ActivitiesWorkflowSkeleton } from '@/components/EmployeeActivitiesSkeleton';
 import EmployeeActivitiesView from './EmployeeActivitiesView';
 import { useEmployeeActivitiesModel } from './activityModel';
 
@@ -19,7 +19,7 @@ export default function EmployeeActivitiesWorkspace({
   workflow,
 }: EmployeeActivitiesWorkspaceProps) {
   return (
-    <Suspense fallback={<ActivitiesPageSkeleton />}>
+    <Suspense fallback={<ActivitiesWorkflowSkeleton workflow={workflow} />}>
       <ActivitiesContent workflow={workflow} />
     </Suspense>
   );
