@@ -39,6 +39,11 @@ function isFacilityReviewer(actor: AuthenticatedProfile): boolean {
   return actor.role === 'super_admin' || actor.role === 'satker_head';
 }
 
+/** Loyalis and blue-collar (Pekarya/Satpam/Sopir) employees can report and browse facility conditions. */
+function canReportFacilityIssues(actor: AuthenticatedProfile): boolean {
+  return actor.role === 'loyalis' || actor.role === 'honorer' || actor.role === 'ketua_shift_satpam';
+}
+
 function todayJakartaISO(): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Jakarta',
@@ -55,8 +60,8 @@ export async function POST(request: NextRequest) {
     const action = typeof body?.action === 'string' ? body.action : '';
 
     if (action === 'submit') {
-      if (actor.role !== 'loyalis') {
-        throw new HttpError(403, 'Hanya pegawai Loyalis yang dapat melaporkan kondisi fasilitas.');
+      if (!canReportFacilityIssues(actor)) {
+        throw new HttpError(403, 'Anda tidak memiliki akses untuk melaporkan kondisi fasilitas.');
       }
       if (!actor.linkedEmployeeId) {
         throw new HttpError(409, 'Akun Anda belum terhubung ke data Pegawai.');
@@ -202,7 +207,7 @@ export async function GET(request: NextRequest) {
     const statusFilter = searchParams.get('status');
 
     let query: FirebaseFirestore.Query = adminDb.collection(FACILITY_REPORTS_COLLECTION);
-    if (!isFacilityReviewer(actor) && actor.role !== 'loyalis') {
+    if (!isFacilityReviewer(actor) && !canReportFacilityIssues(actor)) {
       throw new HttpError(403, 'Anda tidak memiliki akses ke riwayat laporan fasilitas.');
     }
     if (statusFilter && isFacilityReportStatus(statusFilter)) {

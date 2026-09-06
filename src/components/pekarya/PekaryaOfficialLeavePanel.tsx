@@ -402,7 +402,7 @@ export function PekaryaOfficialLeavePanel(props: {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="official-leave-evidence">Foto bukti (opsional)</Label>
+            <Label htmlFor="official-leave-evidence">Foto bukti</Label>
             <input
               ref={evidenceInputRef}
               id="official-leave-evidence"

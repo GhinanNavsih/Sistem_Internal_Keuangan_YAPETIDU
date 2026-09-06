@@ -566,8 +566,7 @@ function FacilityReportReviewContent() {
       <ImageExifViewer
         imageUrl={zoomPhoto?.photo.url || ''}
         title={zoomPhoto ? `${zoomPhoto.report.place} — ${zoomPhoto.report.employeeName}` : undefined}
-        activityDate={zoomPhoto?.report.reportedDate}
-        auditMetadata={zoomPhoto?.photo.auditMetadata}
+        showMetadata={false}
         isOpen={Boolean(zoomPhoto?.photo.url)}
         onClose={() => setZoomPhoto(null)}
       />

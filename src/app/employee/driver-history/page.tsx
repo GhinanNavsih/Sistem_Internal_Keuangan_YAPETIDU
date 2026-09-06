@@ -18,7 +18,6 @@ import {
   CheckCircle2,
   XCircle,
   ClipboardList,
-  Banknote,
   Compass,
   MapPin,
   CalendarDays,
@@ -26,6 +25,7 @@ import {
   Pencil,
   Trash2,
 } from 'lucide-react';
+import EmployeeNavigationMenu from '@/components/EmployeeNavigationMenu';
 import {
   Dialog,
   DialogContent,
@@ -415,16 +415,7 @@ function DriverHistoryContent() {
             </div>
           </div>
           <div className="flex items-center gap-1.5 sm:gap-2">
-            <Link href="/employee/payslip">
-              <Button
-                variant="outline"
-                size="icon"
-                className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
-                title="Slip Gaji"
-              >
-                <Banknote className="w-4.5 h-4.5 text-emerald-600" />
-              </Button>
-            </Link>
+            <EmployeeNavigationMenu />
 
             <Button
               onClick={() => logout()}

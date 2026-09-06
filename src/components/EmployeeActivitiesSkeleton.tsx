@@ -1,4 +1,4 @@
-import { ClipboardList, CalendarDays } from 'lucide-react';
+import { ClipboardList, CalendarDays, Compass } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { POSTS_CONFIG } from '@/components/employee/activities/activityShared';
 import type { EmployeeActivityWorkflow } from '@/lib/employeeActivities';
@@ -183,6 +183,51 @@ export function SatpamActivitiesPageSkeleton() {
 }
 
 /**
+ * Pre-profile skeleton for /employee/activities/sopir. Unlike Satpam's 9
+ * posts, there's no fixed list of content here — the piket/SPJ banner text
+ * depends on whether the driver's piket schedule is active today (two
+ * entirely different messages), and the assigned/claimed/pool journey
+ * sections depend on live journey data. What IS fixed regardless of data:
+ * the period selector never shows for Sopir (ActivityPeriodSelector hides
+ * it via `!isSopir`, so the generic skeleton's period bar would be
+ * actively wrong here — this omits it), and the "Pemesanan Perjalanan
+ * Terbuka (Pool)" section with its Compass icon always renders (it's the
+ * only bucket not gated behind a non-empty array). Everything else stays a
+ * neutral placeholder shape rather than guessed banner copy.
+ */
+export function SopirActivitiesPageSkeleton() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 font-sans text-slate-800">
+      <ActivitiesHeaderShell />
+      <div className="max-w-2xl mx-auto px-4 py-5 space-y-4 relative z-10">
+        <div className="bg-slate-100 border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-3">
+          <div className="flex items-start gap-2">
+            <CalendarDays className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+            <div className="flex-1 space-y-2">
+              <div className="h-3.5 w-44 rounded-full bg-slate-200 animate-pulse" />
+              <div className="h-2.5 w-full max-w-sm rounded-full bg-slate-200/70 animate-pulse" />
+            </div>
+          </div>
+          <div className="h-9 w-40 rounded-xl bg-slate-200 animate-pulse ml-auto" />
+        </div>
+
+        <div className="space-y-2">
+          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider pl-1 flex items-center gap-1.5">
+            <Compass className="w-4.5 h-4.5 text-slate-400" />
+            Pemesanan Perjalanan Terbuka (Pool)
+          </h3>
+          <div className="space-y-2.5">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <div key={i} className="h-24 w-full rounded-2xl bg-white border border-slate-100 animate-pulse" />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Picks the pre-profile skeleton by workflow — known statically from the
  * page file (satpam/sopir/pekarya each pass their own literal `workflow`
  * prop) rather than derived from the still-loading profile. Used both as
@@ -191,5 +236,6 @@ export function SatpamActivitiesPageSkeleton() {
  */
 export function ActivitiesWorkflowSkeleton({ workflow }: { workflow: EmployeeActivityWorkflow }) {
   if (workflow === 'satpam') return <SatpamActivitiesPageSkeleton />;
+  if (workflow === 'sopir') return <SopirActivitiesPageSkeleton />;
   return <ActivitiesPageSkeleton />;
 }

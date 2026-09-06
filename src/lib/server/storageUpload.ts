@@ -34,6 +34,7 @@ export async function saveUploadedFile(
   storagePath: string,
   file: File,
   uploadedBy: string,
+  { cacheControl }: { cacheControl?: string } = {},
 ): Promise<string> {
   const buffer = Buffer.from(await file.arrayBuffer());
   const token = randomUUID();
@@ -44,6 +45,7 @@ export async function saveUploadedFile(
     validation: 'crc32c',
     metadata: {
       contentType: file.type || 'application/octet-stream',
+      ...(cacheControl ? { cacheControl } : {}),
       metadata: {
         firebaseStorageDownloadTokens: token,
         uploadedBy,

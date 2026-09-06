@@ -3,7 +3,6 @@
 import {
   FloatingSnackbar,
 } from '@/components/ui/floating-snackbar';
-import Link from 'next/link';
 import {
   Card,
   CardContent,
@@ -15,7 +14,6 @@ import {
   LogOut,
   AlertCircle,
   ClipboardList,
-  Compass,
 } from 'lucide-react';
 import EmployeeNavigationMenu from '@/components/EmployeeNavigationMenu';
 import { ActivitiesWorkflowSkeleton } from '@/components/EmployeeActivitiesSkeleton';
@@ -31,7 +29,7 @@ interface EmployeeActivitiesViewProps {
 }
 
 export default function EmployeeActivitiesView({ model }: EmployeeActivitiesViewProps) {
-  const { workflow, logout, profile, isSopir, message, setMessage } = model;
+  const { workflow, logout, profile, message, setMessage } = model;
 
   if (!profile) {
       return <ActivitiesWorkflowSkeleton workflow={workflow} />;
@@ -84,18 +82,6 @@ export default function EmployeeActivitiesView({ model }: EmployeeActivitiesView
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 sm:gap-2">
-                  {isSopir && (
-                    <Link href="/employee/driver-history">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
-                        title="Riwayat Perjalanan"
-                      >
-                        <Compass className="w-4.5 h-4.5 text-indigo-500" />
-                      </Button>
-                    </Link>
-                  )}
                   <EmployeeNavigationMenu />
       
                   <Button

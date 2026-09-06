@@ -4,6 +4,10 @@ import { MAX_FACILITY_PHOTO_BYTES } from '@/lib/facilityReports';
 import { errorResponse, HttpError, requireAuthenticatedProfile } from '@/lib/server/auth';
 import { assertValidProofFile, saveUploadedFile } from '@/lib/server/storageUpload';
 
+// Facility report paths include a timestamp and random suffix, so each URL is
+// immutable after upload. Keep it in the employee's browser for repeat visits.
+const FACILITY_PHOTO_CACHE_CONTROL = 'private, max-age=31536000, immutable';
+
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
@@ -25,7 +29,9 @@ export async function POST(request: NextRequest) {
     // A short random suffix (not just Date.now()) keeps concurrent uploads of
     // multiple photos for the same report from colliding on the same path.
     const storagePath = `facility_reports/${employeeId}/${Date.now()}_${randomUUID().slice(0, 8)}.jpg`;
-    const url = await saveUploadedFile(storagePath, file, actor.uid);
+    const url = await saveUploadedFile(storagePath, file, actor.uid, {
+      cacheControl: FACILITY_PHOTO_CACHE_CONTROL,
+    });
     return NextResponse.json({ url });
   } catch (error) {
     return errorResponse(error);

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   ChevronDown,
@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/lib/AuthContext';
+import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
 import {
   DEFAULT_FACILITY_AREA,
   FACILITY_AREA_OTHER,
@@ -41,6 +42,7 @@ import {
 import { authenticatedJson } from '@/lib/payroll/client';
 import { prepareProofImageWithLimit, type PhotoEvidence } from '@/lib/photoEvidence';
 import { uploadProofFile } from '@/lib/uploads';
+import { FacilityReportRowsSkeleton } from '@/components/FacilityReportsSkeleton';
 
 interface FacilityReportRow {
   id: string;
@@ -81,25 +83,49 @@ export default function FacilityReportsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
   const [zoomPhoto, setZoomPhoto] = useState<{ report: FacilityReportRow; photo: PhotoEvidence } | null>(null);
+  const prefetchedPhotoUrlsRef = useRef(new Set<string>());
+
+  const prefetchReportImages = useCallback((nextReports: FacilityReportRow[]) => {
+    if (typeof window === 'undefined') return;
+
+    // The newest reports are the most likely to be opened. Preload a bounded
+    // number so expanding a recent report can reuse a warm browser cache
+    // without downloading an unbounded history in the background.
+    const urls = nextReports
+      .flatMap((report) => report.photos || [])
+      .map((photo) => photo.url)
+      .filter(Boolean)
+      .slice(0, 12);
+
+    window.setTimeout(() => {
+      urls.forEach((url) => {
+        if (prefetchedPhotoUrlsRef.current.has(url)) return;
+        prefetchedPhotoUrlsRef.current.add(url);
+        const image = new window.Image();
+        image.decoding = 'async';
+        image.src = url;
+      });
+    }, 0);
+  }, []);
 
   const loadReports = useCallback(async () => {
     try {
       const result = await authenticatedJson<{ reports: FacilityReportRow[] }>(
         '/api/facility-reports',
       );
-      setReports(
-        (result.reports || [])
-          .map((report) => ({
-            ...report,
-            status: isFacilityReportStatus(report.status) ? report.status : 'pending',
-          }))
-          .sort((a, b) => {
-            const timestampA = Number(a.reportedAtMillis || 0);
-            const timestampB = Number(b.reportedAtMillis || 0);
-            if (timestampA !== timestampB) return timestampB - timestampA;
-            return String(b.reportedDate || '').localeCompare(String(a.reportedDate || ''));
-          }),
-      );
+      const nextReports = (result.reports || [])
+        .map((report) => ({
+          ...report,
+          status: isFacilityReportStatus(report.status) ? report.status : 'pending',
+        }))
+        .sort((a, b) => {
+          const timestampA = Number(a.reportedAtMillis || 0);
+          const timestampB = Number(b.reportedAtMillis || 0);
+          if (timestampA !== timestampB) return timestampB - timestampA;
+          return String(b.reportedDate || '').localeCompare(String(a.reportedDate || ''));
+        });
+      setReports(nextReports);
+      prefetchReportImages(nextReports);
     } catch (error) {
       console.error('Error loading facility reports:', error);
       setMessage({
@@ -109,10 +135,11 @@ export default function FacilityReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [prefetchReportImages]);
 
   useEffect(() => {
-    void loadReports();
+    const timer = window.setTimeout(() => void loadReports(), 0);
+    return () => window.clearTimeout(timer);
   }, [loadReports]);
 
   const resetForm = () => {
@@ -247,11 +274,15 @@ export default function FacilityReportsPage() {
     });
   };
 
+  const homeHref = profile?.role === 'loyalis'
+    ? '/employee/payslip'
+    : getEmployeeActivitiesPath(profile || {});
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/70 to-slate-100 font-sans text-slate-800">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-5">
         <div className="flex items-center justify-between gap-3">
-          <Link href="/employee/payslip">
+          <Link href={homeHref}>
             <Button
               variant="outline"
               className="rounded-xl h-9 px-3 border-slate-200 bg-white shadow-sm cursor-pointer flex items-center gap-1.5 text-slate-600 font-bold text-xs"
@@ -376,6 +407,9 @@ export default function FacilityReportsPage() {
                       <img
                         src={photo.url}
                         alt={`Bukti kondisi fasilitas ${index + 1}`}
+                        loading="eager"
+                        decoding="async"
+                        fetchPriority={index === 0 ? 'high' : 'auto'}
                         className="h-full w-full object-cover"
                       />
                       <button
@@ -444,9 +478,7 @@ export default function FacilityReportsPage() {
           </h2>
 
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" />
-            </div>
+            <FacilityReportRowsSkeleton />
           ) : reports.length === 0 ? (
             <Card className="rounded-2xl border-dashed border-slate-200 bg-white/70 p-8 text-center">
               <Wrench className="w-8 h-8 text-slate-300 mx-auto mb-2" />
@@ -523,6 +555,9 @@ export default function FacilityReportsPage() {
                             src={photo.url}
                             alt={`Bukti kondisi fasilitas ${index + 1}`}
                             onClick={() => setZoomPhoto({ report, photo })}
+                            loading="eager"
+                            decoding="async"
+                            fetchPriority={index === 0 ? 'high' : 'auto'}
                             className="aspect-square w-full object-cover rounded-xl border border-slate-200 cursor-zoom-in"
                           />
                         ))}
@@ -552,6 +587,7 @@ export default function FacilityReportsPage() {
       <ImageExifViewer
         imageUrl={zoomPhoto?.photo.url || ''}
         title={zoomPhoto?.report.place}
+        showMetadata={false}
         activityDate={zoomPhoto?.report.reportedDate}
         auditMetadata={zoomPhoto?.photo.auditMetadata}
         isOpen={Boolean(zoomPhoto?.photo.url)}

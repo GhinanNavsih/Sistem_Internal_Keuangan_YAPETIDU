@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useAuth, type UserProfile } from '@/lib/AuthContext';
 import { auth } from '@/lib/firebase';
 import { sendPasswordResetEmail } from 'firebase/auth';
@@ -20,7 +21,9 @@ import {
   KeyRound,
   Loader2,
   Menu as MenuIcon,
+  PiggyBank,
   ShieldCheck,
+  Wrench,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -31,13 +34,14 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 function supportsEmployeeNavigation(profile: UserProfile): boolean {
-  if (profile.role === 'ketua_shift_satpam') return true;
+  if (profile.role === 'ketua_shift_satpam' || profile.role === 'loyalis') return true;
   return profile.role === 'honorer';
 }
 
 export default function EmployeeNavigationMenu() {
   const { profile, activeProfile } = useAuth();
   const currentProfile = activeProfile || profile;
+  const pathname = usePathname();
   const [passwordResetLoading, setPasswordResetLoading] = useState(false);
   const [passwordResetMessage, setPasswordResetMessage] =
     useState<SnackbarMessage | null>(null);
@@ -69,8 +73,14 @@ export default function EmployeeNavigationMenu() {
     return null;
   }
 
+  const isLoyalis = currentProfile.role === 'loyalis';
+  const isBlueCollarHonorer =
+    currentProfile.role === 'honorer' || currentProfile.role === 'ketua_shift_satpam';
+
   // Resolve through the shared workflow rule so the menu only ever offers links
-  // the route guard will actually honour (Satpam wins over Sopir).
+  // the route guard will actually honour (Satpam wins over Sopir). Meaningless
+  // for a Loyalis profile (no permittedCategories), so those items are gated
+  // off separately below rather than trusted here.
   const workflow = getEmployeeActivityWorkflow(currentProfile);
   const isSatpam = workflow === 'satpam';
   const isSopir = workflow === 'sopir';
@@ -94,21 +104,25 @@ export default function EmployeeNavigationMenu() {
           <MenuIcon className="w-4.5 h-4.5 text-indigo-500" />
         </DropdownMenuTrigger>
         <DropdownMenuContent className="min-w-[220px] p-2.5">
-          <DropdownMenuItem
-            className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
-            render={<Link href={activitiesHref} />}
-          >
-            <ClipboardList className="text-indigo-500" />
-            Laporan Kegiatan
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
-            render={<Link href="/employee/payslip" />}
-          >
-            <Banknote className="text-emerald-500" />
-            Slip Gaji
-          </DropdownMenuItem>
-          {isSopir && (
+          {!isLoyalis && pathname !== activitiesHref && (
+            <DropdownMenuItem
+              className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+              render={<Link href={activitiesHref} />}
+            >
+              <ClipboardList className="text-indigo-500" />
+              Laporan Kegiatan
+            </DropdownMenuItem>
+          )}
+          {pathname !== '/employee/payslip' && (
+            <DropdownMenuItem
+              className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+              render={<Link href="/employee/payslip" />}
+            >
+              <Banknote className="text-emerald-500" />
+              Slip Gaji
+            </DropdownMenuItem>
+          )}
+          {isSopir && pathname !== '/employee/driver-history' && (
             <DropdownMenuItem
               className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
               render={<Link href="/employee/driver-history" />}
@@ -117,7 +131,7 @@ export default function EmployeeNavigationMenu() {
               Riwayat Perjalanan
             </DropdownMenuItem>
           )}
-          {currentProfile.role === 'ketua_shift_satpam' && (
+          {currentProfile.role === 'ketua_shift_satpam' && pathname !== '/employee/satpam-duty-plan' && (
             <DropdownMenuItem
               className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
               render={<Link href="/employee/satpam-duty-plan" />}
@@ -126,18 +140,49 @@ export default function EmployeeNavigationMenu() {
               Jadwal Regu
             </DropdownMenuItem>
           )}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
-            render={<Link href={leaveHref} />}
-          >
-            {isSatpam ? (
-              <ShieldCheck className="text-amber-500" />
-            ) : (
+          {isLoyalis && pathname !== '/employee/presensi-correction' && (
+            <DropdownMenuItem
+              className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+              render={<Link href="/employee/presensi-correction" />}
+            >
               <CalendarCheck className="text-indigo-500" />
-            )}
-            Ajukan Izin
-          </DropdownMenuItem>
+              Ajukan Izin Presensi
+            </DropdownMenuItem>
+          )}
+          {(isLoyalis || isBlueCollarHonorer) && pathname !== '/employee/facility-reports' && (
+            <DropdownMenuItem
+              className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+              render={<Link href="/employee/facility-reports" />}
+            >
+              <Wrench className="text-amber-500" />
+              Lapor Fasilitas
+            </DropdownMenuItem>
+          )}
+          {(isLoyalis || isBlueCollarHonorer) && pathname !== '/employee/simpan-pinjam' && (
+            <DropdownMenuItem
+              className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+              render={<Link href="/employee/simpan-pinjam" />}
+            >
+              <PiggyBank className="text-emerald-500" />
+              Simpan Pinjam
+            </DropdownMenuItem>
+          )}
+          {!isLoyalis && pathname !== leaveHref && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+                render={<Link href={leaveHref} />}
+              >
+                {isSatpam ? (
+                  <ShieldCheck className="text-amber-500" />
+                ) : (
+                  <CalendarCheck className="text-indigo-500" />
+                )}
+                Ajukan Izin
+              </DropdownMenuItem>
+            </>
+          )}
           <DropdownMenuSeparator />
           <DropdownMenuItem
             className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"

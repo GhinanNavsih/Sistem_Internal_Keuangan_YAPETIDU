@@ -385,9 +385,10 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                 Pemesanan Perjalanan Terbuka (Pool)
               </h3>
               {loadingJourneys ? (
-                <div className="p-6 text-center text-slate-400 bg-white border border-slate-100 rounded-2xl flex items-center justify-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
-                  <span className="text-xs font-medium">Memuat perjalanan terbuka...</span>
+                <div className="space-y-2.5">
+                  {Array.from({ length: 2 }).map((_, i) => (
+                    <div key={i} className="h-24 w-full rounded-2xl bg-white border border-slate-100 animate-pulse" />
+                  ))}
                 </div>
               ) : unassignedJourneys.length === 0 ? (
                 <div className="p-6 text-center text-slate-400 bg-white/50 border border-dashed border-slate-200 rounded-2xl">

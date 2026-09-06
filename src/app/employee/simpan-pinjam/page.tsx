@@ -18,6 +18,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
+import { SimpanPinjamPageSkeleton } from '@/components/SimpanPinjamSkeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -33,6 +34,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FloatingSnackbar, type SnackbarMessage } from '@/components/ui/floating-snackbar';
 import { useAuth } from '@/lib/AuthContext';
+import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
 import { authenticatedJson } from '@/lib/payroll/client';
 import {
   composeKoperasiLoanHistoryTrail,
@@ -91,6 +93,11 @@ interface LoansResponse {
   loans: LoanRow[];
   membership: Membership;
   canApply: boolean;
+}
+
+/** Loyalis and blue-collar (Pekarya/Satpam/Sopir) employees can be Koperasi UNIPDU members. */
+function isKoperasiEligibleRole(role: unknown): boolean {
+  return role === 'loyalis' || role === 'honorer' || role === 'ketua_shift_satpam';
 }
 
 const TENOR_OPTIONS = Array.from(
@@ -217,11 +224,6 @@ function LoanTerms() {
         <ul className="list-disc pl-5 space-y-1.5 text-xs text-slate-600 leading-relaxed">
           <li>Lama cicilan maksimum {KOPERASI_MAX_TENOR} bulan.</li>
           <li>
-            Setiap anggota maksimal boleh meminjam sebesar cicilan per bulannya 40% dari take home
-            pay / pendapatan rata-rata dalam 1 tahun.
-          </li>
-          <li>Waktu pencairan pinjaman tiap hari Selasa (kecuali hari libur).</li>
-          <li>
             Nominal pinjaman antara {rupiah(KOPERASI_MIN_LOAN)} sampai {rupiah(KOPERASI_MAX_LOAN)}.
           </li>
         </ul>
@@ -307,9 +309,9 @@ export default function EmployeeSimpanPinjamPage() {
   }, []);
 
   useEffect(() => {
-    // Non-Loyalis roles never fetch; the render guard below short-circuits
+    // Ineligible roles never fetch; the render guard below short-circuits
     // before `loading` is ever consulted for them.
-    if (profile?.role !== 'loyalis') return;
+    if (!isKoperasiEligibleRole(profile?.role)) return;
     void loadLoans();
   }, [profile?.role, loadLoans]);
 
@@ -479,10 +481,14 @@ export default function EmployeeSimpanPinjamPage() {
     </div>
   );
 
+  const homeHref = profile?.role === 'loyalis'
+    ? '/employee/payslip'
+    : getEmployeeActivitiesPath(profile || {});
+
   const header = (
     <>
       <div className="flex items-center justify-between gap-3">
-        <Link href="/employee/payslip">
+        <Link href={homeHref}>
           <Button
             variant="outline"
             className="rounded-xl h-9 px-3 border-slate-200 bg-white shadow-sm cursor-pointer flex items-center gap-1.5 text-slate-600 font-bold text-xs"
@@ -518,18 +524,13 @@ export default function EmployeeSimpanPinjamPage() {
     </>
   );
 
-  const spinner = shell(
-    <div className="py-24 flex flex-col items-center gap-3">
-      <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-      <p className="text-slate-500 font-medium text-sm">Memuat data simpan pinjam...</p>
-    </div>,
-  );
+  const skeleton = <SimpanPinjamPageSkeleton />;
 
   // While the session is still resolving, an unknown role must not be mistaken
   // for a forbidden one.
-  if (!profile) return spinner;
+  if (!profile) return skeleton;
 
-  if (profile.role !== 'loyalis') {
+  if (!isKoperasiEligibleRole(profile.role)) {
     return shell(
       <>
         {header}
@@ -537,14 +538,14 @@ export default function EmployeeSimpanPinjamPage() {
           <AlertCircle className="w-10 h-10 text-rose-500 mx-auto" />
           <h2 className="text-base font-bold text-slate-800">Akses Ditolak</h2>
           <p className="text-sm text-slate-500">
-            Halaman Simpan Pinjam hanya tersedia untuk pegawai Loyalis.
+            Halaman Simpan Pinjam tidak tersedia untuk peran akun Anda.
           </p>
         </Card>
       </>,
     );
   }
 
-  if (loading) return spinner;
+  if (loading) return skeleton;
 
   if (loadError) {
     return shell(

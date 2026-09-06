@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertCircle, Loader2, LogOut, ShieldCheck } from 'lucide-react';
+import { AlertCircle, LogOut, ShieldCheck } from 'lucide-react';
 import EmployeeNavigationMenu from '@/components/EmployeeNavigationMenu';
 import { PekaryaOfficialLeavePanel } from '@/components/pekarya/PekaryaOfficialLeavePanel';
 import { SatpamAbsencePanel } from '@/components/satpam/SatpamDutyAndAbsencePanels';
@@ -12,6 +12,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { authenticatedJson } from '@/lib/payroll/client';
 import { isPekaryaOfficialLeaveCategory } from '@/lib/payroll/pekaryaOfficialLeave';
 import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
+import { LeavePageSkeleton, LeaveCardSkeleton } from '@/components/LeaveSkeleton';
 
 type OpenPeriod = {
   period: string;
@@ -75,11 +76,7 @@ export default function EmployeeLeavePage() {
   }, [loadOpenPeriods]);
 
   if (authLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100">
-        <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
-      </div>
-    );
+    return <LeavePageSkeleton variant="unknown" />;
   }
 
   if (!profile || !profile.linkedEmployeeId || !isSupportedEmployee) {
@@ -139,12 +136,7 @@ export default function EmployeeLeavePage() {
 
       <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
         {loadingPeriods ? (
-          <Card className="rounded-3xl border-none bg-white shadow-lg">
-            <CardContent className="flex min-h-44 items-center justify-center gap-2 text-slate-500">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              Memuat periode pengajuan…
-            </CardContent>
-          </Card>
+          <LeaveCardSkeleton variant={isSatpam ? 'satpam' : 'pekarya'} />
         ) : periodError ? (
           <Card className="rounded-3xl border-rose-200 bg-rose-50 shadow-sm">
             <CardContent className="space-y-4 p-5 text-rose-800">

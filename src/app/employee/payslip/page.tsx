@@ -2,11 +2,9 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import Image from 'next/image';
-import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { useAuth } from '@/lib/AuthContext';
 import EmployeeNavigationMenu from '@/components/EmployeeNavigationMenu';
-import { auth, db, secondaryDb } from '@/lib/firebase';
-import { sendPasswordResetEmail } from 'firebase/auth';
+import { db, secondaryDb } from '@/lib/firebase';
 import {
   doc,
   getDocFromServer,
@@ -19,13 +17,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -33,10 +24,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  Loader2,
   LogOut,
   Download,
-  Banknote,
   CalendarDays,
   CheckCircle2,
   AlertCircle,
@@ -45,20 +34,15 @@ import {
   TrendingDown,
   Landmark,
   Coins,
-  KeyRound,
   Lock,
   ChevronDown,
   ChevronUp,
   CreditCard,
   History,
   BookOpen,
-  CalendarCheck,
-  Wrench,
   Calendar,
-  Menu as MenuIcon,
   RefreshCw,
 } from 'lucide-react';
-import Link from 'next/link';
 import { generatePaySlipPdf, PaySlipField, PaySlipData } from '@/utils/generatePaySlipPdf';
 import {
   PAYROLL_TAX_THRESHOLD,
@@ -375,41 +359,6 @@ export default function EmployeePayslipPage() {
     uiPreviewRevision,
   } = useAuth();
   const profile = activeProfile || rawProfile;
-
-  const [resetLoading, setResetLoading] = useState(false);
-  const [resetSuccess, setResetSuccess] = useState<string | null>(null);
-  const [resetError, setResetError] = useState<string | null>(null);
-
-  // Auto-dismiss password reset notifications
-  useEffect(() => {
-    if (resetSuccess) {
-      const timer = setTimeout(() => setResetSuccess(null), 7000);
-      return () => clearTimeout(timer);
-    }
-  }, [resetSuccess]);
-
-  useEffect(() => {
-    if (resetError) {
-      const timer = setTimeout(() => setResetError(null), 7000);
-      return () => clearTimeout(timer);
-    }
-  }, [resetError]);
-
-  const handlePasswordReset = async () => {
-    if (!profile?.email) return;
-    setResetLoading(true);
-    setResetSuccess(null);
-    setResetError(null);
-    try {
-      await sendPasswordResetEmail(auth, profile.email);
-      setResetSuccess(`Tautan reset password telah berhasil dikirim ke email ${profile.email}. Silakan periksa inbox atau folder spam Anda.`);
-    } catch (err: any) {
-      console.error("Error sending password reset email:", err);
-      setResetError(err.message || "Gagal mengirim email reset password. Silakan hubungi administrator.");
-    } finally {
-      setResetLoading(false);
-    }
-  };
 
   // Period dropdown state (defaults to last month or June 2026 minimum)
   const [month, setMonth] = useState(() => {
@@ -1725,59 +1674,6 @@ export default function EmployeePayslipPage() {
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <EmployeeNavigationMenu />
 
-            {profile.role === 'loyalis' && (
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="text-black hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-8 w-8 sm:h-9 sm:w-9 flex items-center justify-center shadow-sm cursor-pointer shrink-0"
-                      title="Menu"
-                    />
-                  }
-                >
-                  <MenuIcon className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-indigo-500" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="min-w-[220px] p-2.5">
-                  <DropdownMenuItem
-                    className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
-                    render={<Link href="/employee/presensi-correction" />}
-                  >
-                    <CalendarCheck className="text-indigo-500" />
-                    Ajukan Izin Presensi
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
-                    render={<Link href="/employee/facility-reports" />}
-                  >
-                    <Wrench className="text-amber-500" />
-                    Lapor Fasilitas
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
-                    render={<Link href="/employee/simpan-pinjam" />}
-                  >
-                    <Banknote className="text-emerald-500" />
-                    Simpan Pinjam
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
-                    onClick={handlePasswordReset}
-                    disabled={resetLoading}
-                  >
-                    {resetLoading ? (
-                      <Loader2 className="text-indigo-500 animate-spin" />
-                    ) : (
-                      <KeyRound className="text-indigo-500" />
-                    )}
-                    Ubah Password
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-
             <Button
               onClick={() => logout()}
               variant="ghost"
@@ -1790,16 +1686,6 @@ export default function EmployeePayslipPage() {
           </div>
         </div>
       </div>
-
-      {/* Floating Action Notifications */}
-      <FloatingSnackbar
-        message={resetError
-          ? { type: 'error', text: resetError }
-          : resetSuccess
-            ? { type: 'success', text: resetSuccess }
-            : null}
-        title={resetError ? 'Gagal Mengirim Email' : resetSuccess ? 'Email Terkirim' : undefined}
-      />
 
       <div className="max-w-4xl mx-auto px-6 sm:px-8 md:px-12 mt-8 space-y-6 relative z-10">
 

@@ -26,6 +26,7 @@ export const dynamic = 'force-dynamic';
 
 const SAFE_LOAN_ID = /^[A-Za-z0-9_-]{1,180}$/;
 const LOYALIS_COLLECTION = 'Employees_Loyalis';
+const BLUE_COLLAR_COLLECTION = 'Employees_BlueCollar';
 
 type LoanDoc = Record<string, unknown> & { id: string };
 
@@ -46,15 +47,16 @@ interface KoperasiIdentity {
 async function resolveKoperasiIdentity(
   actor: AuthenticatedProfile,
 ): Promise<KoperasiIdentity> {
-  if (actor.role !== 'loyalis') {
-    throw new HttpError(403, 'Halaman Simpan Pinjam hanya tersedia untuk pegawai Loyalis.');
+  const isLoyalis = actor.role === 'loyalis';
+  if (!isLoyalis && actor.role !== 'honorer' && actor.role !== 'ketua_shift_satpam') {
+    throw new HttpError(403, 'Halaman Simpan Pinjam tidak tersedia untuk peran akun Anda.');
   }
   if (!actor.linkedEmployeeId) {
     throw new HttpError(409, 'Akun Anda belum terhubung ke data Pegawai. Hubungi Badan Administrasi Keuangan (BAK).');
   }
 
   const employeeSnapshot = await adminDb
-    .collection(LOYALIS_COLLECTION)
+    .collection(isLoyalis ? LOYALIS_COLLECTION : BLUE_COLLAR_COLLECTION)
     .doc(actor.linkedEmployeeId)
     .get();
   if (!employeeSnapshot.exists) {
