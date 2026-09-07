@@ -36,3 +36,5 @@ env:
     secret: gemini-api-key
   - variable: SMTP_PASS
     secret: smtp-pass
+  - variable: KOPERASI_SERVICE_ACCOUNT
+    secret: koperasi-service-account
