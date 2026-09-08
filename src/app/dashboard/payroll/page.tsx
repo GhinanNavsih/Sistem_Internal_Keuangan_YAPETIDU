@@ -2422,10 +2422,11 @@ export default function PayrollValidationDashboard() {
         });
       });
 
-      const freshFMatrix: Record<string, { base_value: number; functional_tiers: Record<string, number> }> = {};
+      const freshFMatrix: Record<string, { education_level?: string; base_value: number; functional_tiers: Record<string, number> }> = {};
       fSnap.docs.forEach(fDoc => {
         const data = fDoc.data();
         freshFMatrix[fDoc.id] = {
+          education_level: data.education_level,
           base_value: data.base_value || 0,
           functional_tiers: data.functional_tiers || {},
         };
@@ -2942,10 +2943,11 @@ export default function PayrollValidationDashboard() {
       });
     });
 
-    const freshFMatrix: Record<string, { base_value: number; functional_tiers: Record<string, number> }> = {};
+    const freshFMatrix: Record<string, { education_level?: string; base_value: number; functional_tiers: Record<string, number> }> = {};
     fSnap.docs.forEach(fDoc => {
       const data = fDoc.data();
       freshFMatrix[fDoc.id] = {
+        education_level: data.education_level,
         base_value: data.base_value || 0,
         functional_tiers: data.functional_tiers || {},
       };

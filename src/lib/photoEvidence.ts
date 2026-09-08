@@ -1,7 +1,11 @@
 import { parseImageExif } from '@/lib/exif';
 import type { PhotoAuditMetadata } from '@/lib/payroll/domain';
 
+// PDF proof receipts (e.g. SOPIR fuel/toll) aren't re-compressed, so they keep
+// this larger allowance. Images are compressed down to
+// MAX_PROOF_IMAGE_COMPRESSED_BYTES instead — see compressProofImage below.
 export const MAX_PROOF_IMAGE_BYTES = 5 * 1024 * 1024;
+export const MAX_PROOF_IMAGE_COMPRESSED_BYTES = 1 * 1024 * 1024;
 export const PROOF_IMAGE_MAX_DIMENSION = 1280;
 export const PROOF_IMAGE_JPEG_QUALITY = 0.75;
 
@@ -138,20 +142,14 @@ export async function compressProofImage(file: File): Promise<File> {
   if (!file.type.startsWith('image/')) {
     throw new Error('Bukti harus berupa gambar atau PDF.');
   }
-  const canvas = await drawScaledCanvas(file);
-  const blob = await canvasToJpeg(canvas, PROOF_IMAGE_JPEG_QUALITY);
-  if (blob.size > MAX_PROOF_IMAGE_BYTES) {
-    throw new Error('Foto masih lebih dari 5 MB setelah dikompresi. Pilih foto lain yang lebih kecil.');
-  }
-  return new File([blob], compressedFileName(file.name), { type: 'image/jpeg', lastModified: Date.now() });
+  return compressProofImageToLimit(file, MAX_PROOF_IMAGE_COMPRESSED_BYTES);
 }
 
 /**
- * Same pipeline as compressProofImage, but keeps degrading quality and then
- * dimensions until the result fits under maxBytes instead of failing after
- * one attempt at the default quality. Used where a hard cap well below the
- * general proof-image limit is required — e.g. facility report photos capped
- * at 1 MB each so a report with several photos stays cheap to store and load.
+ * Progressively degrades quality and then dimensions until the result fits
+ * under maxBytes, instead of failing after one attempt at the default
+ * quality. Backs compressProofImage's default cap and any caller needing a
+ * different one — e.g. facility report photos, capped the same way.
  */
 export async function compressProofImageToLimit(file: File, maxBytes: number): Promise<File> {
   if (!file.type.startsWith('image/')) {

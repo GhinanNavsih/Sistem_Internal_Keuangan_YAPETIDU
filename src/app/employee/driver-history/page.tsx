@@ -74,6 +74,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { DriverHistoryJourneyListSkeleton, DriverHistoryPageSkeleton } from '@/components/DriverHistorySkeleton';
 
 interface ActivityReport {
   id: string;
@@ -531,10 +532,7 @@ function DriverHistoryContent() {
 
         {/* ── Journey History List ────────────────────────────────────── */}
         {loading ? (
-          <div className="py-16 flex flex-col items-center text-slate-400">
-            <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-3" />
-            <span className="text-sm font-medium animate-pulse">Memuat riwayat perjalanan...</span>
-          </div>
+          <DriverHistoryJourneyListSkeleton />
         ) : filteredActivities.length === 0 ? (
           <Card className="bg-white rounded-2xl shadow-sm border border-slate-100">
             <CardContent className="py-16 flex flex-col items-center text-center">
@@ -829,11 +827,7 @@ function DriverHistoryContent() {
 
 export default function DriverHistoryPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-      </div>
-    }>
+    <Suspense fallback={<DriverHistoryPageSkeleton />}>
       <DriverHistoryContent />
     </Suspense>
   );

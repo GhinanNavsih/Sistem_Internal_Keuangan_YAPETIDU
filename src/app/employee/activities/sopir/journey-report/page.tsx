@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense } fr
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { useAuth } from '@/lib/AuthContext';
 import { ImageExifViewer } from '@/components/ImageExifViewer';
+import { JourneyReportPageSkeleton } from '@/components/JourneyReportSkeleton';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
@@ -1727,12 +1728,7 @@ function JourneyReportContent() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600 mb-2" />
-        <span className="text-sm font-medium text-slate-500 ml-2">Memuat Laporan Perjalanan...</span>
-      </div>
-    );
+    return <JourneyReportPageSkeleton />;
   }
 
   if (!activeReportingJourney) return null;
@@ -3155,13 +3151,7 @@ function JourneyReportContent() {
 
 export default function JourneyReportPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen flex items-center justify-center bg-slate-50">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-        </div>
-      }
-    >
+    <Suspense fallback={<JourneyReportPageSkeleton />}>
       <JourneyReportContent />
     </Suspense>
   );

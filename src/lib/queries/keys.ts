@@ -39,7 +39,8 @@ export type SalaryMatrixCollection =
   | 'SalaryMatrix'
   | 'SalaryMatrix_WhiteCollar'
   | 'SalaryMatrix_Functional'
-  | 'SalaryMatrix_Kepangkatan';
+  | 'SalaryMatrix_Kepangkatan'
+  | 'SalaryMatrix_ExcessAttendance';
 
 export const employeeKeys = {
   all: ['employees'] as const,

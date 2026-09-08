@@ -196,6 +196,17 @@ service cloud.firestore {
       }
     }
 
+    match /SalaryMatrix_ExcessAttendance/{version} {
+      allow read: if isFinanceRole() || isEmployeeAdmin() || roleIs('satker_head_loyalis');
+      allow create, update: if isSuperAdmin();
+      allow delete: if false;
+      match /rows/{rowId} {
+        allow read: if isFinanceRole() || isEmployeeAdmin() || roleIs('satker_head_loyalis');
+        allow create, update: if isSuperAdmin();
+        allow delete: if false;
+      }
+    }
+
     // Rekap inputs remain editable only before payslip verification. Final
     // payslips never inherit later changes because they contain a hashed snapshot.
     match /UraianGaji/{docId} {

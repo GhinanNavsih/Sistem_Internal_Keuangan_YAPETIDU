@@ -107,24 +107,36 @@ export function calculateGapok(
   return resolveGapokFromMatrix(employee, matrix, targetDate).amount;
 }
 
+export interface FunctionalAllowanceMatrixRow {
+  education_level?: string | null;
+  base_value: number;
+  functional_tiers: Record<string, number>;
+}
+
+function functionalEducationPrefix(value: unknown): string {
+  return String(value ?? '').trim().substring(0, 6).toUpperCase();
+}
+
 export function matchFunctionalAllowance(
   educationLevel: string | undefined | null,
   functionalTier: number | string | undefined | null,
-  functionalMatrix: Record<string, { base_value: number; functional_tiers: Record<string, number> }>
+  functionalMatrix: Record<string, FunctionalAllowanceMatrixRow>
 ): number {
   if (!educationLevel) return 0;
 
   // Clean educationLevel and take 6-char prefix
-  const cleanEmpPrefix = educationLevel.trim().substring(0, 6).toUpperCase();
+  const cleanEmpPrefix = functionalEducationPrefix(educationLevel);
 
-  // Find matching row in matrix
-  const matchedKey = Object.keys(functionalMatrix).find(key =>
-    key.trim().substring(0, 6).toUpperCase() === cleanEmpPrefix
+  // Prefer the editable education_level label, while retaining the document
+  // id as a legacy alias so existing employee values keep working after a row
+  // is renamed in the master matrix.
+  const matchedEntry = Object.entries(functionalMatrix).find(([key, row]) =>
+    [row.education_level, key].some(label => functionalEducationPrefix(label) === cleanEmpPrefix)
   );
 
-  if (!matchedKey) return 0;
+  if (!matchedEntry) return 0;
 
-  const row = functionalMatrix[matchedKey];
+  const row = matchedEntry[1];
   const tierStr = String(functionalTier !== undefined && functionalTier !== null ? functionalTier : '').trim();
 
   // If functionalTier is specifically '0', return 0

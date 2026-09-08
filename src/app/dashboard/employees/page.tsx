@@ -81,6 +81,8 @@ import { db } from '@/lib/firebase';
 import { useDashboardData } from '@/lib/DashboardDataContext';
 import {
   useDepartments,
+  useEmployeesBlueCollar,
+  useEmployeesLoyalis,
   useJabatanStruktural,
   useMatrixActiveVersion,
   useMatrixRows,
@@ -106,6 +108,10 @@ const COLLAR_TABS = [
   { key: 'blue', label: 'Pekarya', collection: 'Employees_BlueCollar', prefix: 'BC' },
   { key: 'loyalis', label: 'Loyalis', collection: 'Employees_Loyalis', prefix: 'Loyalis' },
 ];
+
+const LOYALIS_TYPE_OPTIONS = ['Keluarga', 'Dosen', 'Admin'] as const;
+type LoyalisType = (typeof LOYALIS_TYPE_OPTIONS)[number];
+const EMPTY_EMPLOYEE_LIST: Record<string, unknown>[] = [];
 
 type FormData = any;
 
@@ -147,6 +153,18 @@ const getEmpName = (emp: any) => emp.personal_info?.name || emp.name || '';
 const getEmpNikOrNiy = (emp: any) => emp.personal_info?.employee_id_niy || emp.nik || '';
 const getEmpNipy = (emp: any) =>
   normalizeNipy(emp.nipy || emp.personal_info?.employee_id_niy || '');
+const normalizeLoyalisType = (value: unknown): LoyalisType | '' => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return LOYALIS_TYPE_OPTIONS.find(option => option.toLowerCase() === normalized) || '';
+};
+const normalizeIsDosen = (value: unknown): boolean | null => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    if (value.trim().toLowerCase() === 'true') return true;
+    if (value.trim().toLowerCase() === 'false') return false;
+  }
+  return null;
+};
 const getEmpCategory = (emp: any) => emp.employment_profile?.job_role || emp.employment?.jobCategory || '';
 const getPekaryaNipyGroup = (category: unknown) => {
   const normalized = String(category || '').trim().toUpperCase();
@@ -432,12 +450,23 @@ export default function EmployeesPage() {
   const router = useRouter();
   const { user, profile, loading: authLoading, logout } = useAuth();
   const { employeesLoyalis, employeesBlueCollar, gradeCodesBlue, gradeCodesWhite, loading: contextLoading, refreshData, kepangkatanAllowanceMap } = useDashboardData();
+  const isEmployeeAdmin = profile?.role === 'employee_admin';
+  const employeeAdminLoyalisQuery = useEmployeesLoyalis(isEmployeeAdmin);
+  const employeeAdminBlueCollarQuery = useEmployeesBlueCollar(isEmployeeAdmin);
+  const pageEmployeesLoyalis = isEmployeeAdmin
+    ? employeeAdminLoyalisQuery.data ?? EMPTY_EMPLOYEE_LIST
+    : employeesLoyalis;
+  const pageEmployeesBlueCollar = isEmployeeAdmin
+    ? employeeAdminBlueCollarQuery.data ?? EMPTY_EMPLOYEE_LIST
+    : employeesBlueCollar;
 
   const [activeTab, setActiveTab] = useState('loyalis');
   const [tableViewMode, setTableViewMode] = useState<'default' | 'debug' | 'constant'>('default');
   const [employees, setEmployees] = useState<any[]>([]);
   const [localLoading, setLocalLoading] = useState(false);
-  const loading = contextLoading || localLoading;
+  const employeeAdminDataLoading = isEmployeeAdmin &&
+    (employeeAdminLoyalisQuery.isPending || employeeAdminBlueCollarQuery.isPending);
+  const loading = contextLoading || localLoading || employeeAdminDataLoading;
   const [searchQuery, setSearchQuery] = useState('');
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' | null }>({ key: '', direction: null });
 
@@ -455,6 +484,7 @@ export default function EmployeesPage() {
   const [editingEmployee, setEditingEmployee] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
   const isSavingRef = useRef(false);
+  const structuralPositionsEditedRef = useRef(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isNipyDialogOpen, setIsNipyDialogOpen] = useState(false);
   const [nipyPreview, setNipyPreview] = useState<PekaryaNipyPreview | null>(null);
@@ -540,6 +570,8 @@ export default function EmployeesPage() {
         banking_info: { bank_name: 'BSI', account_number: '' },
         employment_profile: { job_role: '', department_unit: '', date_of_hire: '', date_recognized: '', date_exit: '', structural_positions: [] },
         academic_and_tier: { education_level: '', education_code: '', functional_tier: '', level_code: '', base_salary_tier: '' },
+        loyalisType: '',
+        isDosen: null,
         family_allowance_metrics: { spouse_count: 0, children_sd: 0, children_sltp: 0, children_slta: 0, children_pt: 0 },
         ziz: { deductionAmount: 0 },
         savings: { deductionAmount: 0 },
@@ -579,33 +611,49 @@ export default function EmployeesPage() {
     }));
   };
 
+  const updateStructuralPositions = (positions: unknown[]) => {
+    structuralPositionsEditedRef.current = true;
+    updateNestedField('employment_profile', 'structural_positions', positions);
+  };
+
   // Sync default form data when active tab changes
   useEffect(() => {
+    structuralPositionsEditedRef.current = false;
     setFormData(resetForm(activeTab));
   }, [activeTab]);
 
   // Sync page employees when context data or active tab changes
   useEffect(() => {
-    const list = activeTab === 'loyalis' ? employeesLoyalis : employeesBlueCollar;
+    const list = activeTab === 'loyalis' ? pageEmployeesLoyalis : pageEmployeesBlueCollar;
     setEmployees([...list].sort((a, b) => getEmpId(a).localeCompare(getEmpId(b))));
-  }, [activeTab, employeesLoyalis, employeesBlueCollar]);
+  }, [activeTab, pageEmployeesLoyalis, pageEmployeesBlueCollar]);
 
-  // Automatically sync job_role with the highest paying structural position for Loyalis
+  // Sync job_role only after structural positions are explicitly edited. Existing
+  // Loyalis records may have a legacy/manual job_role without position entries;
+  // opening an edit dialog must not silently clear that value.
   useEffect(() => {
-    if (activeTab === 'loyalis' && isDialogOpen) {
-      const positions = formData.employment_profile?.structural_positions || [];
-      const sorted = [...positions].sort((a: any, b: any) => (Number(b.allowance) || 0) - (Number(a.allowance) || 0));
-      const highestPayingName = sorted[0]?.name || '';
+    if (
+      activeTab !== 'loyalis' ||
+      !isDialogOpen ||
+      !structuralPositionsEditedRef.current
+    ) {
+      return;
+    }
 
-      if (formData.employment_profile?.job_role !== highestPayingName) {
-        setFormData((prev: any) => ({
-          ...prev,
-          employment_profile: {
-            ...(prev.employment_profile || {}),
-            job_role: highestPayingName
-          }
-        }));
-      }
+    const positions = Array.isArray(formData.employment_profile?.structural_positions)
+      ? formData.employment_profile.structural_positions
+      : [];
+    const sorted = [...positions].sort((a: any, b: any) => (Number(b.allowance) || 0) - (Number(a.allowance) || 0));
+    const highestPayingName = sorted[0]?.name || '';
+
+    if (formData.employment_profile?.job_role !== highestPayingName) {
+      setFormData((prev: any) => ({
+        ...prev,
+        employment_profile: {
+          ...(prev.employment_profile || {}),
+          job_role: highestPayingName
+        }
+      }));
     }
   }, [formData.employment_profile?.structural_positions, activeTab, isDialogOpen, formData.employment_profile?.job_role]);
 
@@ -731,6 +779,7 @@ export default function EmployeesPage() {
 
   const handleOpenAdd = () => {
     setEditingEmployee(null);
+    structuralPositionsEditedRef.current = false;
     setFormData(resetForm(activeTab));
     setIsCustomDept(false);
     setCustomDeptValue('');
@@ -748,22 +797,25 @@ export default function EmployeesPage() {
 
   const handleOpenEdit = (emp: any) => {
     setEditingEmployee(emp);
+    structuralPositionsEditedRef.current = false;
     setIsCustomDept(false);
     setCustomDeptValue('');
 
-    // For Loyalis, make sure structural_positions is initialized as array
+    // Preserve the stored structural_positions value. The UI falls back to an
+    // empty array for display, while the save path only writes it when edited.
     if (activeTab === 'loyalis') {
       const normalizedLevelCode = emp.academic_and_tier?.level_code
         ? emp.academic_and_tier.level_code.replace(/^Gol\.\s*/i, '').trim()
         : '';
       setFormData({
         ...emp,
+        loyalisType: normalizeLoyalisType(emp.loyalisType),
+        isDosen: normalizeIsDosen(emp.isDosen),
         academic_and_tier: {
           ...emp.academic_and_tier,
           level_code: normalizedLevelCode,
         },
         employment_profile: {
-          structural_positions: [],
           ...emp.employment_profile,
           date_of_hire: formatTimestampForInput(emp.employment_profile?.date_of_hire),
           date_recognized: formatTimestampForInput(emp.employment_profile?.date_recognized),
@@ -783,7 +835,6 @@ export default function EmployeesPage() {
           cummulativeCredit: 0,
           ...emp.kepangkatan
         },
-        t_instruksional: emp.t_instruksional || 0,
       });
     } else {
       const normalizedGradeCode = emp.salaryProfile?.salaryGradeCode
@@ -836,12 +887,30 @@ export default function EmployeesPage() {
           return isNaN(d.getTime()) ? null : Timestamp.fromDate(d);
         };
 
+        const employmentProfile = formData.employment_profile || {};
+        const hasJobRole = Object.prototype.hasOwnProperty.call(employmentProfile, 'job_role');
+        const hasEmployeeIdNiy = Object.prototype.hasOwnProperty.call(
+          formData.personal_info || {},
+          'employee_id_niy',
+        );
+        const hasTInstruksional = Object.prototype.hasOwnProperty.call(formData, 't_instruksional');
+        const normalizedTInstruksional = formData.t_instruksional === undefined
+          ? undefined
+          : formData.t_instruksional === null
+            ? null
+            : Number(formData.t_instruksional) || 0;
+        const employeeIdNiy = editingEmployee && desiredNipy === previousNipy
+          ? formData.personal_info?.employee_id_niy
+          : desiredNipy || null;
+
         final = {
           ...formData,
+          loyalisType: normalizeLoyalisType(formData.loyalisType) || null,
+          isDosen: normalizeIsDosen(formData.isDosen),
           personal_info: {
             ...(formData.personal_info || {}),
             name: formData.personal_info?.name || '',
-            employee_id_niy: desiredNipy || null,
+            ...(hasEmployeeIdNiy ? { employee_id_niy: employeeIdNiy ?? null } : {}),
             nik: formData.personal_info?.nik || null,
             tax_id_npwp: formData.personal_info?.tax_id_npwp || null,
             status: formData.personal_info?.status || 'AKTIF',
@@ -854,13 +923,19 @@ export default function EmployeesPage() {
             account_number: formData.banking_info?.account_number || null,
           },
           employment_profile: {
-            ...(formData.employment_profile || {}),
-            job_role: formData.employment_profile?.job_role || null,
+            ...employmentProfile,
+            ...(hasJobRole ? { job_role: employmentProfile.job_role || null } : {}),
             department_unit: isCustomDept ? customDeptValue.trim().toUpperCase() : (formData.employment_profile?.department_unit || null),
             date_of_hire: toTimestamp(formData.employment_profile?.date_of_hire || ''),
             date_recognized: toTimestamp(formData.employment_profile?.date_recognized || ''),
             date_exit: toTimestamp(formData.employment_profile?.date_exit || ''),
-            structural_positions: formData.employment_profile?.structural_positions || [],
+            ...(structuralPositionsEditedRef.current
+              ? {
+                  structural_positions: Array.isArray(employmentProfile.structural_positions)
+                    ? employmentProfile.structural_positions
+                    : [],
+                }
+              : {}),
           },
           academic_and_tier: {
             ...(formData.academic_and_tier || {}),
@@ -908,7 +983,9 @@ export default function EmployeesPage() {
             ...(formData.kepangkatan || {}),
             cummulativeCredit: Number(formData.kepangkatan?.cummulativeCredit) || 0,
           },
-          t_instruksional: Number(formData.t_instruksional) || 0,
+          ...(hasTInstruksional && normalizedTInstruksional !== undefined
+            ? { t_instruksional: normalizedTInstruksional }
+            : {}),
           koperasiUserId: formData.koperasiUserId !== undefined ? formData.koperasiUserId : null,
           koperasiAuthUid: formData.koperasiAuthUid !== undefined ? formData.koperasiAuthUid : null,
           audit: {
@@ -2291,6 +2368,61 @@ export default function EmployeesPage() {
                           </SelectContent>
                         </Select>
                       </div>
+                      <div className="col-span-2 rounded-2xl border border-indigo-100 bg-indigo-50/50 p-3 space-y-3">
+                        <div>
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-900">Konfigurasi KJM</h4>
+                          <p className="mt-1 text-[11px] leading-relaxed text-indigo-700">
+                            Tipe Loyalis dan status dosen disimpan terpisah. Keluarga dapat memiliki isDosen = Ya.
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-2">
+                            <Label>Tipe Loyalis</Label>
+                            <Select
+                              value={normalizeLoyalisType(formData.loyalisType) || '__UNSET__'}
+                              onValueChange={(value) =>
+                                setFormData((prev: any) => ({
+                                  ...prev,
+                                  loyalisType: value === '__UNSET__' ? null : value,
+                                }))
+                              }
+                            >
+                              <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-10 w-full">
+                                <SelectValue placeholder="Pilih Tipe Loyalis" />
+                              </SelectTrigger>
+                              <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl z-[9999]">
+                                <SelectItem value="__UNSET__" className="text-xs">Belum ditentukan</SelectItem>
+                                {LOYALIS_TYPE_OPTIONS.map((type) => (
+                                  <SelectItem key={type} value={type} className="text-xs">
+                                    {type}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Dosen (isDosen)</Label>
+                            <Select
+                              value={normalizeIsDosen(formData.isDosen) === null ? '__UNSET__' : String(normalizeIsDosen(formData.isDosen))}
+                              onValueChange={(value) =>
+                                setFormData((prev: any) => ({
+                                  ...prev,
+                                  isDosen: value === '__UNSET__' ? null : value === 'true',
+                                }))
+                              }
+                            >
+                              <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-10 w-full">
+                                <SelectValue placeholder="Pilih Status Dosen" />
+                              </SelectTrigger>
+                              <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl z-[9999]">
+                                <SelectItem value="__UNSET__" className="text-xs">Belum ditentukan</SelectItem>
+                                <SelectItem value="true" className="text-xs">Ya — Dosen</SelectItem>
+                                <SelectItem value="false" className="text-xs">Tidak</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      </div>
                       <div className="space-y-2">
                         <Label>Golongan</Label>
                         <Select
@@ -2577,7 +2709,7 @@ export default function EmployeesPage() {
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => {
-                                  updateNestedField('employment_profile', 'structural_positions', positions.filter((_: any, idx: number) => idx !== pos.originalIndex));
+                                  updateStructuralPositions(positions.filter((_: any, idx: number) => idx !== pos.originalIndex));
                                 }}
                                 className="h-8 w-8 text-slate-400 hover:text-red-500 rounded-lg shrink-0"
                               >
@@ -2686,7 +2818,7 @@ export default function EmployeesPage() {
                         onClick={() => {
                           if (!newPosName.trim()) return;
                           const current = formData.employment_profile?.structural_positions || [];
-                          updateNestedField('employment_profile', 'structural_positions', [
+                          updateStructuralPositions([
                             ...current,
                             {
                               name: newPosName.trim(),

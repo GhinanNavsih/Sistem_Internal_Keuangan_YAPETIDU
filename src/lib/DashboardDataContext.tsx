@@ -105,9 +105,14 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
   const functionalAllowanceMap = useMemo(() => {
     if (!functionalRows.data || employeesLoyalis.length === 0) return EMPTY_MAP;
 
-    const fMatrix: Record<string, { base_value: number; functional_tiers: Record<string, number> }> = {};
+    const fMatrix: Record<string, {
+      education_level?: string;
+      base_value: number;
+      functional_tiers: Record<string, number>;
+    }> = {};
     functionalRows.data.forEach((row: any) => {
       fMatrix[row.id] = {
+        education_level: row.education_level,
         base_value: row.base_value || 0,
         functional_tiers: row.functional_tiers || {},
       };

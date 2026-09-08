@@ -43,6 +43,7 @@ const MATRIX_COLLECTION_BY_TAB = {
   white_collar: 'SalaryMatrix_WhiteCollar',
   functional: 'SalaryMatrix_Functional',
   kepangkatan: 'SalaryMatrix_Kepangkatan',
+  excess_attendance: 'SalaryMatrix_ExcessAttendance',
 } as const;
 
 interface SalaryRow {
@@ -59,6 +60,32 @@ interface FunctionalRow {
   functional_tiers: Record<string, number>;
 }
 
+function normalizeFunctionalEducationLevel(value: unknown): string {
+  return String(value ?? '').trim();
+}
+
+function prepareFunctionalRowsForSave(rows: FunctionalRow[]): FunctionalRow[] {
+  const normalizedRows = rows.map(row => ({
+    ...row,
+    education_level: normalizeFunctionalEducationLevel(row.education_level),
+  }));
+  const seenLabels = new Set<string>();
+
+  for (const row of normalizedRows) {
+    if (!row.education_level) {
+      throw new Error('Tingkat Pendidikan pada matriks fungsional wajib diisi.');
+    }
+
+    const labelKey = row.education_level.toLocaleLowerCase();
+    if (seenLabels.has(labelKey)) {
+      throw new Error(`Tingkat Pendidikan "${row.education_level}" tidak boleh duplikat.`);
+    }
+    seenLabels.add(labelKey);
+  }
+
+  return normalizedRows;
+}
+
 interface KepangkatanRow {
   id: string;
   credit_score: number;
@@ -66,12 +93,62 @@ interface KepangkatanRow {
   allowance: number;
 }
 
+const EXCESS_ATTENDANCE_DEGREES = ['D2', 'D3', 'D4', 'S1', 'S2', 'S3'] as const;
+const EXCESS_ATTENDANCE_FIELDS = ['Administrasi', 'Sosial', 'Eksakta', 'Kesehatan'] as const;
+type ExcessAttendanceField = (typeof EXCESS_ATTENDANCE_FIELDS)[number];
+
+interface ExcessAttendanceRateRow {
+  id: string;
+  education_level: string;
+  rates: Record<ExcessAttendanceField, number>;
+}
+
+const DEFAULT_EXCESS_ATTENDANCE_ROWS: ExcessAttendanceRateRow[] = [
+  {
+    id: 'D2',
+    education_level: 'D2',
+    rates: { Administrasi: 20000, Sosial: 20000, Eksakta: 20000, Kesehatan: 20000 },
+  },
+  {
+    id: 'D3',
+    education_level: 'D3',
+    rates: { Administrasi: 20000, Sosial: 20000, Eksakta: 20000, Kesehatan: 20000 },
+  },
+  {
+    id: 'D4',
+    education_level: 'D4',
+    rates: { Administrasi: 20000, Sosial: 20000, Eksakta: 20000, Kesehatan: 20000 },
+  },
+  {
+    id: 'S1',
+    education_level: 'S1',
+    rates: { Administrasi: 20000, Sosial: 20000, Eksakta: 20000, Kesehatan: 20000 },
+  },
+  {
+    id: 'S2',
+    education_level: 'S2',
+    rates: { Administrasi: 20000, Sosial: 20000, Eksakta: 35000, Kesehatan: 37500 },
+  },
+  {
+    id: 'S3',
+    education_level: 'S3',
+    rates: { Administrasi: 20000, Sosial: 35000, Eksakta: 50000, Kesehatan: 50000 },
+  },
+];
+
+function cloneDefaultExcessAttendanceRows(): ExcessAttendanceRateRow[] {
+  return DEFAULT_EXCESS_ATTENDANCE_ROWS.map(row => ({
+    ...row,
+    rates: { ...row.rates },
+  }));
+}
+
 export default function SalaryMasterPage() {
   const [saving, setSaving] = useState(false);
   const isSavingRef = useRef(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const [selectedTab, setSelectedTab] = useState<'blue_collar' | 'white_collar' | 'functional' | 'kepangkatan'>('blue_collar');
+  const [selectedTab, setSelectedTab] = useState<'blue_collar' | 'white_collar' | 'functional' | 'kepangkatan' | 'excess_attendance'>('blue_collar');
 
   // Server state comes from the shared query cache; each matrix resolves its
   // active version first, then that version's grade codes and rows. These are
@@ -81,16 +158,22 @@ export default function SalaryMasterPage() {
   const whiteVersionQuery = useMatrixActiveVersion('SalaryMatrix_WhiteCollar');
   const functionalVersionQuery = useMatrixActiveVersion('SalaryMatrix_Functional');
   const kepangkatanVersionQuery = useMatrixActiveVersion('SalaryMatrix_Kepangkatan');
+  const excessAttendanceVersionQuery = useMatrixActiveVersion('SalaryMatrix_ExcessAttendance');
 
   const activeVersion = blueVersionQuery.data ?? '';
   const whiteCollarVersion = whiteVersionQuery.data ?? '';
   const functionalVersion = functionalVersionQuery.data ?? '';
   const kepangkatanVersion = kepangkatanVersionQuery.data ?? '';
+  const excessAttendanceVersion = excessAttendanceVersionQuery.data ?? '2026_v1';
 
   const blueRowsQuery = useMatrixRows<SalaryRow>('SalaryMatrix', blueVersionQuery.data);
   const whiteRowsQuery = useMatrixRows<SalaryRow>('SalaryMatrix_WhiteCollar', whiteVersionQuery.data);
   const functionalRowsQuery = useMatrixRows<FunctionalRow>('SalaryMatrix_Functional', functionalVersionQuery.data);
   const kepangkatanRowsQuery = useMatrixRows<KepangkatanRow>('SalaryMatrix_Kepangkatan', kepangkatanVersionQuery.data);
+  const excessAttendanceRowsQuery = useMatrixRows<ExcessAttendanceRateRow>(
+    'SalaryMatrix_ExcessAttendance',
+    excessAttendanceVersionQuery.data,
+  );
 
   const gradeCodesQuery = useMatrixGradeCodes('SalaryMatrix', blueVersionQuery.data);
   const whiteGradeCodesQuery = useMatrixGradeCodes('SalaryMatrix_WhiteCollar', whiteVersionQuery.data);
@@ -106,6 +189,7 @@ export default function SalaryMasterPage() {
   const [whiteCollarRows, setWhiteCollarRows] = useState<SalaryRow[]>([]);
   const [functionalRows, setFunctionalRows] = useState<FunctionalRow[]>([]);
   const [kepangkatanRows, setKepangkatanRows] = useState<KepangkatanRow[]>([]);
+  const [excessAttendanceRows, setExcessAttendanceRows] = useState<ExcessAttendanceRateRow[]>([]);
 
   // Once the user has typed into the grid, refetched server data must not
   // overwrite the working copy — a background refetch mid-edit would otherwise
@@ -135,11 +219,24 @@ export default function SalaryMasterPage() {
     setKepangkatanRows([...kepangkatanRowsQuery.data].sort((a, b) => a.credit_score - b.credit_score));
   }, [kepangkatanRowsQuery.data]);
 
+  useEffect(() => {
+    if (excessAttendanceRowsQuery.data === undefined || hasUnsavedEdits.current) return;
+    const sourceRows = excessAttendanceRowsQuery.data.length > 0
+      ? excessAttendanceRowsQuery.data
+      : cloneDefaultExcessAttendanceRows();
+    setExcessAttendanceRows(
+      sourceRows
+        .map(row => ({ ...row, rates: { ...row.rates } }))
+        .sort((a, b) => EXCESS_ATTENDANCE_DEGREES.indexOf(a.education_level as typeof EXCESS_ATTENDANCE_DEGREES[number]) - EXCESS_ATTENDANCE_DEGREES.indexOf(b.education_level as typeof EXCESS_ATTENDANCE_DEGREES[number])),
+    );
+  }, [excessAttendanceRowsQuery.data]);
+
   const loading = !(
     isVersionedGroupSettled(blueVersionQuery, blueRowsQuery, gradeCodesQuery) &&
     isVersionedGroupSettled(whiteVersionQuery, whiteRowsQuery, whiteGradeCodesQuery) &&
     isVersionedGroupSettled(functionalVersionQuery, functionalRowsQuery) &&
-    isVersionedGroupSettled(kepangkatanVersionQuery, kepangkatanRowsQuery)
+    isVersionedGroupSettled(kepangkatanVersionQuery, kepangkatanRowsQuery) &&
+    isVersionedGroupSettled(excessAttendanceVersionQuery, excessAttendanceRowsQuery)
   );
 
   const handleSalaryChange = (tahun: number, grade: string, value: string) => {
@@ -195,12 +292,38 @@ export default function SalaryMasterPage() {
     }));
   };
 
+  const handleFunctionalEducationLevelChange = (id: string, value: string) => {
+    hasUnsavedEdits.current = true;
+    setFunctionalRows(prev => prev.map(row => (
+      row.id === id
+        ? { ...row, education_level: value }
+        : row
+    )));
+  };
+
   const handleKepangkatanChange = (id: string, value: string) => {
     const numValue = parseInt(value.replace(/[^0-9]/g, '')) || 0;
     hasUnsavedEdits.current = true;
     setKepangkatanRows(prev => prev.map(row => {
       if (row.id === id) {
         return { ...row, allowance: numValue };
+      }
+      return row;
+    }));
+  };
+
+  const handleExcessAttendanceChange = (id: string, field: ExcessAttendanceField, value: string) => {
+    const numValue = parseInt(value.replace(/[^0-9]/g, '')) || 0;
+    hasUnsavedEdits.current = true;
+    setExcessAttendanceRows(prev => prev.map(row => {
+      if (row.id === id) {
+        return {
+          ...row,
+          rates: {
+            ...row.rates,
+            [field]: numValue,
+          },
+        };
       }
       return row;
     }));
@@ -242,9 +365,11 @@ export default function SalaryMasterPage() {
         });
       } else if (selectedTab === 'functional') {
         // Save functional allowance rows
-        functionalRows.forEach(row => {
+        const rowsToSave = prepareFunctionalRowsForSave(functionalRows);
+        rowsToSave.forEach(row => {
           const rowRef = doc(db, 'SalaryMatrix_Functional', functionalVersion, 'rows', row.id);
           batch.update(rowRef, {
+            education_level: row.education_level,
             base_value: row.base_value,
             functional_tiers: row.functional_tiers,
             updatedAt: serverTimestamp()
@@ -267,6 +392,41 @@ export default function SalaryMasterPage() {
         batch.update(metaRef, {
           'metadata.updatedAt': serverTimestamp(),
         });
+      } else if (selectedTab === 'excess_attendance') {
+        // The first save also creates the new matrix collection/version when
+        // only the built-in defaults have been displayed so far.
+        const configRef = doc(db, 'SalaryMatrix_ExcessAttendance', '_config');
+        batch.set(configRef, {
+          activeVersion: excessAttendanceVersion,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+
+        const versionDocRef = doc(db, 'SalaryMatrix_ExcessAttendance', excessAttendanceVersion);
+        batch.set(versionDocRef, {
+          metadata: {
+            name: 'Excess Lecturing Attendance Rate Matrix',
+            description: 'Rate per recognized excess lecturing attendance based on education level and field.',
+            version: excessAttendanceVersion,
+            isActive: true,
+            updatedAt: serverTimestamp(),
+          },
+        }, { merge: true });
+
+        excessAttendanceRows.forEach(row => {
+          const rowRef = doc(
+            db,
+            'SalaryMatrix_ExcessAttendance',
+            excessAttendanceVersion,
+            'rows',
+            row.id,
+          );
+          batch.set(rowRef, {
+            education_level: row.education_level,
+            rates: row.rates,
+            isActive: true,
+            updatedAt: serverTimestamp(),
+          }, { merge: true });
+        });
       }
 
       await batch.commit();
@@ -283,7 +443,10 @@ export default function SalaryMasterPage() {
       setMessage({ type: 'success', text: 'Perubahan berhasil disimpan!' });
     } catch (error) {
       console.error("Error saving changes:", error);
-      setMessage({ type: 'error', text: 'Gagal menyimpan perubahan. Silakan coba lagi.' });
+      setMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Gagal menyimpan perubahan. Silakan coba lagi.',
+      });
     } finally {
       isSavingRef.current = false;
       setSaving(false);
@@ -309,7 +472,7 @@ export default function SalaryMasterPage() {
                 <FileSpreadsheet className="w-6 h-6 text-indigo-500" />
                 Master Data Gaji Pokok
               </h1>
-              <p className="text-slate-500 text-sm">Kelola matriks gaji berdasarkan golongan, masa kerja, dan tunjangan fungsional</p>
+              <p className="text-slate-500 text-sm">Kelola matriks gaji, tunjangan, dan rate Kelebihan Jam Mengajar</p>
             </div>
           </div>
 
@@ -330,11 +493,11 @@ export default function SalaryMasterPage() {
         </div>
 
         {/* Segment Tabs Control */}
-        <div className="flex flex-col xl:flex-row xl:justify-between xl:items-center gap-4 mb-6">
-          <div className="flex flex-wrap bg-slate-100 p-1 rounded-2xl border border-slate-200/40 shadow-inner w-fit gap-1">
+        <div className="flex items-center mb-6">
+          <div className="flex flex-nowrap max-w-full overflow-x-auto bg-slate-100 p-1 rounded-2xl border border-slate-200/40 shadow-inner gap-1">
             <button
               onClick={() => setSelectedTab('blue_collar')}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer ${
+              className={`flex shrink-0 items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer ${
                 selectedTab === 'blue_collar'
                   ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/20'
                   : 'text-slate-500 hover:text-slate-700'
@@ -345,7 +508,7 @@ export default function SalaryMasterPage() {
             </button>
             <button
               onClick={() => setSelectedTab('white_collar')}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer ${
+              className={`flex shrink-0 items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer ${
                 selectedTab === 'white_collar'
                   ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/20'
                   : 'text-slate-500 hover:text-slate-700'
@@ -356,7 +519,7 @@ export default function SalaryMasterPage() {
             </button>
             <button
               onClick={() => setSelectedTab('functional')}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer ${
+              className={`flex shrink-0 items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer ${
                 selectedTab === 'functional'
                   ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/20'
                   : 'text-slate-500 hover:text-slate-700'
@@ -367,7 +530,7 @@ export default function SalaryMasterPage() {
             </button>
             <button
               onClick={() => setSelectedTab('kepangkatan')}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer ${
+              className={`flex shrink-0 items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer ${
                 selectedTab === 'kepangkatan'
                   ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/20'
                   : 'text-slate-500 hover:text-slate-700'
@@ -376,16 +539,87 @@ export default function SalaryMasterPage() {
               <FileSpreadsheet className="w-4 h-4" />
               Tunjangan Kepangkatan
             </button>
-          </div>
-
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs sm:text-sm font-medium w-fit">
-            Versi Aktif: {selectedTab === 'blue_collar' ? activeVersion : selectedTab === 'white_collar' ? whiteCollarVersion : selectedTab === 'functional' ? functionalVersion : kepangkatanVersion}
+            <button
+              onClick={() => setSelectedTab('excess_attendance')}
+              className={`flex shrink-0 items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer ${
+                selectedTab === 'excess_attendance'
+                  ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/20'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              Rate Kelebihan Jam Mengajar
+            </button>
           </div>
         </div>
 
         {/* Main Content */}
         <Card className="bg-white rounded-[24px] shadow-[0_8px_40px_-12px_rgba(0,0,0,0.1)] border-none overflow-hidden border border-slate-100">
           {(() => {
+            if (selectedTab === 'excess_attendance') {
+              return (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader className="bg-slate-50/50 sticky top-0 z-10 backdrop-blur-sm">
+                      <TableRow className="border-slate-100">
+                        <TableHead className="w-56 font-semibold text-slate-900 bg-slate-50/80 pl-8 align-middle border-r border-slate-100 text-left min-w-[200px]">
+                          Tingkat Pendidikan
+                        </TableHead>
+                        <TableHead colSpan={EXCESS_ATTENDANCE_FIELDS.length} className="font-bold text-center text-indigo-900 bg-indigo-50 border-b border-slate-200 py-2.5 text-xs uppercase tracking-wider">
+                          Rate Kelebihan Jam Mengajar per Kehadiran Diakui (Rp)
+                        </TableHead>
+                      </TableRow>
+                      <TableRow className="border-slate-100">
+                        {EXCESS_ATTENDANCE_FIELDS.map(field => (
+                          <TableHead key={field} className="min-w-[150px] font-bold text-center text-slate-600 bg-slate-50/80 py-2 text-xs border-b border-slate-100">
+                            {field}
+                          </TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {loading ? (
+                        <TableRow>
+                          <TableCell colSpan={EXCESS_ATTENDANCE_FIELDS.length + 1} className="h-64 text-center">
+                            <div className="flex flex-col items-center gap-3 text-slate-400">
+                              <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+                              <p className="animate-pulse">Memuat rate Kelebihan Jam Mengajar...</p>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ) : excessAttendanceRows.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={EXCESS_ATTENDANCE_FIELDS.length + 1} className="h-64 text-center text-slate-400">
+                            <Users className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                            Tidak ada rate Kelebihan Jam Mengajar untuk ditampilkan.
+                          </TableCell>
+                        </TableRow>
+                      ) : excessAttendanceRows.map(row => (
+                        <TableRow key={row.id} className="hover:bg-slate-50/30 transition-colors border-slate-50">
+                          <TableCell className="font-bold text-slate-700 pl-8 text-left border-r border-slate-100 bg-slate-50/10 min-w-[200px]">
+                            {row.education_level}
+                          </TableCell>
+                          {EXCESS_ATTENDANCE_FIELDS.map(field => (
+                            <TableCell key={field} className="p-2 min-w-[150px]">
+                              <div className="flex items-center h-9 rounded-lg bg-white border border-slate-200 px-2.5 focus-within:border-indigo-400 focus-within:ring-1 focus-within:ring-indigo-200 transition-all">
+                                <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
+                                <Input
+                                  type="text"
+                                  value={row.rates[field]?.toLocaleString('id-ID') || '0'}
+                                  onChange={e => handleExcessAttendanceChange(row.id, field, e.target.value)}
+                                  className="text-right font-semibold border-none p-0 h-full outline-none focus:outline-none focus:ring-0 focus:border-none tabular-nums text-slate-900 font-sans"
+                                />
+                              </div>
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              );
+            }
+
             if (selectedTab === 'functional') {
               return (
                 <div className="overflow-x-auto">
@@ -429,8 +663,14 @@ export default function SalaryMasterPage() {
                         </TableRow>
                       ) : functionalRows.map((row) => (
                         <TableRow key={row.id} className="hover:bg-slate-50/30 transition-colors border-slate-50">
-                          <TableCell className="font-bold text-slate-700 pl-8 text-left border-r border-slate-100 bg-slate-50/10 min-w-[200px]" title={row.education_level}>
-                            {row.education_level}
+                          <TableCell className="p-2 pl-8 border-r border-slate-100 bg-slate-50/10 min-w-[240px]">
+                            <Input
+                              type="text"
+                              value={row.education_level || ''}
+                              onChange={(e) => handleFunctionalEducationLevelChange(row.id, e.target.value)}
+                              aria-label={`Tingkat Pendidikan ${row.education_level || ''}`}
+                              className="text-left font-bold text-slate-700 h-9 border-slate-100 focus:border-indigo-300 focus:ring-indigo-100 rounded-lg transition-all"
+                            />
                           </TableCell>
                           <TableCell className="p-2 border-r border-slate-100 min-w-[120px]">
                             <Input

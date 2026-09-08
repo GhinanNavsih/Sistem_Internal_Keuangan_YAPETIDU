@@ -3,7 +3,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   CalendarDays,
-  Loader2,
   LogOut,
   RefreshCw,
 } from 'lucide-react';
@@ -17,6 +16,7 @@ import {
   type OpenPeriod,
   type Team,
 } from '@/components/satpam/SatpamDutyAndAbsencePanels';
+import { SatpamDutyPlanBodySkeleton, SatpamDutyPlanPageSkeleton } from '@/components/SatpamDutyPlanSkeleton';
 
 function jakartaToday(): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -69,7 +69,7 @@ export default function SatpamDutyPlanPage() {
     void loadConfig();
   }, [loadConfig]);
 
-  if (!profile) return null;
+  if (!profile) return <SatpamDutyPlanPageSkeleton />;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 font-sans text-slate-800">
@@ -134,10 +134,7 @@ export default function SatpamDutyPlanPage() {
             </Button>
           </div>
         ) : loading ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-16 text-slate-400">
-            <Loader2 className="h-6 w-6 animate-spin text-indigo-600" />
-            <span className="text-base font-semibold">Memuat data regu...</span>
-          </div>
+          <SatpamDutyPlanBodySkeleton />
         ) : (
           <SatpamDutyPlanPanel
             team={team}

@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { db } from '@/lib/firebase';
 import { usePayrollCacheInvalidation } from '@/lib/queries/hooks';
 import { uploadProofFile } from '@/lib/uploads';
+import { compressProofImage } from '@/lib/photoEvidence';
 import {
   collection,
   getDocs,
@@ -51,6 +52,7 @@ import {
   timestampToMillis,
   type PresenceCorrectionRequest,
 } from '@/lib/payroll/presenceCorrections';
+import { PresensiCorrectionHistorySkeleton } from '@/components/PresensiCorrectionSkeleton';
 
 const CLOCK_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
@@ -348,7 +350,8 @@ export default function PresensiCorrectionPage() {
       if (file) {
         setUploadProgress(0);
         try {
-          proofUrl = await uploadProofFile('/api/uploads/presence-corrections', file, { employeeId: empId });
+          const uploadFile = await compressProofImage(file);
+          proofUrl = await uploadProofFile('/api/uploads/presence-corrections', uploadFile, { employeeId: empId });
           setUploadProgress(100);
         } catch (error) {
           console.error('File upload failed:', error);
@@ -675,10 +678,7 @@ export default function PresensiCorrectionPage() {
               </div>
 
               {loading ? (
-                <div className="py-12 flex flex-col items-center justify-center text-slate-400">
-                  <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-2" />
-                  <p className="text-xs font-semibold animate-pulse">Memuat riwayat...</p>
-                </div>
+                <PresensiCorrectionHistorySkeleton />
               ) : requests.length === 0 ? (
                 <div className="py-16 text-center border border-dashed border-slate-100 rounded-2xl text-slate-400">
                   <HelpCircle className="w-10 h-10 mx-auto mb-2 text-slate-300" />

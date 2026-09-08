@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import GlobalHeader from '@/components/GlobalHeader';
 import UraianNavToggles from '@/components/UraianNavToggles';
@@ -1817,6 +1817,35 @@ export default function ActivityReviewPage() {
   // ── Satpam Shift & Activity Audit Handlers ──
   const [expandedActivityIds, setExpandedActivityIds] = useState<Set<string>>(new Set());
 
+  // The proof photo isn't requested until a row expands, so opening a row
+  // always shows a spinner first. Starting the download when the reviewer's
+  // mouse lands on the row (they read it before deciding to click) gives it
+  // a head start without downloading photos for rows nobody opens.
+  const prefetchedActivityPhotoUrlsRef = useRef(new Set<string>());
+  const prefetchActivityPhotos = useCallback((activity: ActivityReport) => {
+    if (typeof window === 'undefined') return;
+    const isPhotoOnlyReport =
+      activity.reportKind === 'satpam_found_item' || activity.reportKind === 'satpam_reprimand';
+    const urls = (
+      isPhotoOnlyReport && activity.proofPhotos?.length
+        ? activity.proofPhotos.map((photo) => photo.url)
+        : activity.photoUrl
+          ? [activity.photoUrl]
+          : []
+    ).filter(Boolean);
+    if (urls.length === 0) return;
+
+    window.setTimeout(() => {
+      urls.forEach((url) => {
+        if (prefetchedActivityPhotoUrlsRef.current.has(url)) return;
+        prefetchedActivityPhotoUrlsRef.current.add(url);
+        const image = new window.Image();
+        image.decoding = 'async';
+        image.src = url;
+      });
+    }, 0);
+  }, []);
+
   const loadActivityRevisionHistory = async (activity: ActivityReport) => {
     if (activityRevisionHistory[activity.id]) return;
     setLoadingActivityRevisionId(activity.id);
@@ -2836,6 +2865,9 @@ export default function ActivityReviewPage() {
                           <TableRow
                             onClick={() => {
                               if (!isDriver) toggleActivityExpanded(activity);
+                            }}
+                            onMouseEnter={() => {
+                              if (!isDriver) prefetchActivityPhotos(activity);
                             }}
                             className={`border-slate-50 hover:bg-slate-50/40 transition-colors ${
                               !isDriver ? 'cursor-pointer' : ''

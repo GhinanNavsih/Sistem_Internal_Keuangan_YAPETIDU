@@ -85,17 +85,13 @@ export default function FacilityReportsPage() {
   const [zoomPhoto, setZoomPhoto] = useState<{ report: FacilityReportRow; photo: PhotoEvidence } | null>(null);
   const prefetchedPhotoUrlsRef = useRef(new Set<string>());
 
-  const prefetchReportImages = useCallback((nextReports: FacilityReportRow[]) => {
-    if (typeof window === 'undefined') return;
-
-    // The newest reports are the most likely to be opened. Preload a bounded
-    // number so expanding a recent report can reuse a warm browser cache
-    // without downloading an unbounded history in the background.
-    const urls = nextReports
-      .flatMap((report) => report.photos || [])
-      .map((photo) => photo.url)
-      .filter(Boolean)
-      .slice(0, 12);
+  // Only prefetch a report's photos once the user shows intent to open it
+  // (hover/focus on its row) rather than warming a batch on every list load —
+  // each unique photo view is a billable Firebase Storage egress, so this
+  // avoids paying for photos nobody ends up looking at.
+  const prefetchReportPhotos = useCallback((photos: PhotoEvidence[] | undefined) => {
+    if (typeof window === 'undefined' || !photos || photos.length === 0) return;
+    const urls = photos.map((photo) => photo.url).filter(Boolean);
 
     window.setTimeout(() => {
       urls.forEach((url) => {
@@ -125,7 +121,6 @@ export default function FacilityReportsPage() {
           return String(b.reportedDate || '').localeCompare(String(a.reportedDate || ''));
         });
       setReports(nextReports);
-      prefetchReportImages(nextReports);
     } catch (error) {
       console.error('Error loading facility reports:', error);
       setMessage({
@@ -135,7 +130,7 @@ export default function FacilityReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [prefetchReportImages]);
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadReports(), 0);
@@ -497,6 +492,8 @@ export default function FacilityReportsPage() {
                   <button
                     type="button"
                     onClick={() => toggleReport(report.id)}
+                    onMouseEnter={() => prefetchReportPhotos(report.photos)}
+                    onFocus={() => prefetchReportPhotos(report.photos)}
                     aria-expanded={expandedReportIds.has(report.id)}
                     className="flex min-w-0 flex-1 items-start gap-2 text-left cursor-pointer"
                   >

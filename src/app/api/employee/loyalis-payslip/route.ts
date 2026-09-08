@@ -126,11 +126,12 @@ export async function GET(request: NextRequest) {
 
     const functionalMatrix: Record<
       string,
-      { base_value: number; functional_tiers: Record<string, number> }
+      { education_level?: string; base_value: number; functional_tiers: Record<string, number> }
     > = {};
     functionalRows.docs.forEach((row) => {
       const data = row.data();
       functionalMatrix[row.id] = {
+        education_level: data.education_level,
         base_value: asNumber(data.base_value),
         functional_tiers: Object.fromEntries(
           Object.entries(data.functional_tiers || {}).map(([tier, amount]) => [

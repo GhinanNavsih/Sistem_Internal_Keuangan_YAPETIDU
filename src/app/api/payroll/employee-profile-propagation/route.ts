@@ -166,11 +166,12 @@ export async function POST(request: NextRequest) {
 
     const functionalMatrix: Record<
       string,
-      { base_value: number; functional_tiers: Record<string, number> }
+      { education_level?: string; base_value: number; functional_tiers: Record<string, number> }
     > = {};
     functionalRows.docs.forEach((row) => {
       const data = row.data();
       functionalMatrix[row.id] = {
+        education_level: data.education_level,
         base_value: data.base_value || 0,
         functional_tiers: data.functional_tiers || {},
       };
