@@ -118,7 +118,7 @@ function getDosenDecision(educationLevel: string | null, educationGroup: string 
         : proposedIsDosen
           ? "The education level is not in the Administrasi group, so isDosen is true."
           : "The education level is in the Administrasi group, so isDosen is false.",
-    reviewFlags: [],
+    reviewFlags: [] as string[],
   };
 }
 
@@ -144,7 +144,7 @@ function getObligationPreview(loyalisType: LoyalisType | null, jabatan: string |
       kjmTreatment: 'all_recognized_teaching_attendance_is_excess' as const,
       reason:
         'Keluarga loyalis have no attendance obligation, so all recognized lecturing attendance goes into KJM; the jabatan-based obligation reduction does not apply.',
-      reviewFlags: [],
+      reviewFlags: [] as string[],
     };
   }
 
@@ -185,7 +185,7 @@ function getObligationPreview(loyalisType: LoyalisType | null, jabatan: string |
     reason: jabatanIsDosen
       ? 'The jabatan is Dosen, so the 2-SKS/28-attendance reduction does not apply.'
       : 'The jabatan is not Dosen, so the 2-SKS/28-attendance reduction applies to the non-family obligation.',
-    reviewFlags: [],
+    reviewFlags: [] as string[],
   };
 }
 
