@@ -1,0 +1,2119 @@
+{
+  "review_summary": {
+    "source_file": "Data Loyalis SAKU updated.xlsx",
+    "sheet": "Loyalis",
+    "rows_reviewed": 253,
+    "name_title_column": "B / Nama Lengkap",
+    "database_collection_checked": "Employees_Loyalis",
+    "database_records_checked": 253,
+    "employee_ids_present_in_both": 253,
+    "exact_text_differences_between_sheet_and_database": 146,
+    "formatting_only_fixes": 166,
+    "name_or_credential_items_for_hr_confirmation": 50,
+    "instructions_found_in_workbook": []
+  },
+  "formatting_standard_used": [
+    "Keep the person name and honorifics in the same order unless a separate HR confirmation is listed.",
+    "Use a comma before each post-nominal credential and a terminal period for abbreviated credentials.",
+    "Use common forms such as S.AB., M.AB., S.ST., S.HI., S.IP., M.MR., and M.Pd.I.",
+    "Do not treat a difference in the live database as automatically correct because that source also contains inconsistent formatting."
+  ],
+  "formatting_fixes": [
+    {
+      "employee_id": "Loyalis_001",
+      "sheet_row": 2,
+      "nip_y_niy_presensi": "11010901001",
+      "name_title_before": "Prof. DR.H.Ahmad Zahro, MA.",
+      "proposed_fix": "Prof. Dr. H. Ahmad Zahro, M.A.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_002",
+      "sheet_row": 3,
+      "nip_y_niy_presensi": "1010901002",
+      "name_title_before": "Drs. HM. Zaimuddin W.As'ad, MS",
+      "proposed_fix": "Drs. H.M. Zaimuddin W. As'ad, M.S.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_004",
+      "sheet_row": 5,
+      "nip_y_niy_presensi": "12010901005",
+      "name_title_before": "H. Misbakhul Munir, S. Kom.",
+      "proposed_fix": "H. Misbakhul Munir, S.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_005",
+      "sheet_row": 6,
+      "nip_y_niy_presensi": "12010901023",
+      "name_title_before": "Hj. Suspa Hariati, S. Sos. MM.",
+      "proposed_fix": "Hj. Suspa Hariati, S.Sos., M.M.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_006",
+      "sheet_row": 7,
+      "nip_y_niy_presensi": "12010707010",
+      "name_title_before": "Abdullah Rikza, S. IP.M.Pdi.",
+      "proposed_fix": "Abdullah Rikza, S.IP., M.Pd.I.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_007",
+      "sheet_row": 8,
+      "nip_y_niy_presensi": "12090504090",
+      "name_title_before": "Luluk Mahfiyah, SP",
+      "proposed_fix": "Luluk Mahfiyah, S.P.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_008",
+      "sheet_row": 9,
+      "nip_y_niy_presensi": "12140306099",
+      "name_title_before": "Nur Mulyawati. S.Sos",
+      "proposed_fix": "Nur Mulyawati, S.Sos.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_010",
+      "sheet_row": 11,
+      "nip_y_niy_presensi": "12110901024",
+      "name_title_before": "H. M. Abd. Natsir, M.AB",
+      "proposed_fix": "H. M. Abd. Natsir, M.AB.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_011",
+      "sheet_row": 12,
+      "nip_y_niy_presensi": "12010901025",
+      "name_title_before": "H. Harun Ar Rasyid, S.Pd.I",
+      "proposed_fix": "H. Harun Ar Rasyid, S.Pd.I.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_013",
+      "sheet_row": 14,
+      "nip_y_niy_presensi": "12010901009",
+      "name_title_before": "Hj. Anna Qomariana, SE, M.Pdi",
+      "proposed_fix": "Hj. Anna Qomariana, S.E., M.Pd.I.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_014",
+      "sheet_row": 15,
+      "nip_y_niy_presensi": "12190901026",
+      "name_title_before": "Indah Sumiyarsih, SE.",
+      "proposed_fix": "Indah Sumiyarsih, S.E.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_015",
+      "sheet_row": 16,
+      "nip_y_niy_presensi": "12130107101",
+      "name_title_before": "Lilik Nur Azizah, SE.",
+      "proposed_fix": "Lilik Nur Azizah, S.E.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_016",
+      "sheet_row": 17,
+      "nip_y_niy_presensi": "12010505093",
+      "name_title_before": "M. Qomaruzzaman, S. Sos",
+      "proposed_fix": "M. Qomaruzzaman, S.Sos.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_019",
+      "sheet_row": 20,
+      "nip_y_niy_presensi": "11010901004",
+      "name_title_before": "DR. H. Isrofil Amar,M.Ag.",
+      "proposed_fix": "Dr. H. Isrofil Amar, M.Ag.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_022",
+      "sheet_row": 23,
+      "nip_y_niy_presensi": "12010908044",
+      "name_title_before": "H. Kusnan, S. Kom.",
+      "proposed_fix": "H. Kusnan, S.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_024",
+      "sheet_row": 25,
+      "nip_y_niy_presensi": "11011001012",
+      "name_title_before": "Dr. Mukhlisin, M. PdI.",
+      "proposed_fix": "Dr. Mukhlisin, M.Pd.I.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_027",
+      "sheet_row": 28,
+      "nip_y_niy_presensi": "11010209035",
+      "name_title_before": "Dr. Mujianto Sholichin, M. PdI.",
+      "proposed_fix": "Dr. Mujianto Sholichin, M.Pd.I.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_029",
+      "sheet_row": 30,
+      "nip_y_niy_presensi": "12010901077",
+      "name_title_before": "Arifin, S. Ag., M.Pd.I",
+      "proposed_fix": "Arifin, S.Ag., M.Pd.I.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_030",
+      "sheet_row": 31,
+      "nip_y_niy_presensi": "12160207102",
+      "name_title_before": "Lulus Oktavia Kartikasari, S.Pd",
+      "proposed_fix": "Lulus Oktavia Kartikasari, S.Pd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_031",
+      "sheet_row": 32,
+      "nip_y_niy_presensi": "01010901013",
+      "name_title_before": "Hj. Uswatun Qoyyimah, SS., M. Ed. Ph.D",
+      "proposed_fix": "Hj. Uswatun Qoyyimah, S.S., M.Ed., Ph.D.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_033",
+      "sheet_row": 34,
+      "nip_y_niy_presensi": "11010905032",
+      "name_title_before": "Trikaloka Handayani Putri, SS. M.Pd",
+      "proposed_fix": "Trikaloka Handayani Putri, S.S., M.Pd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_034",
+      "sheet_row": 35,
+      "nip_y_niy_presensi": "11011206058",
+      "name_title_before": "Dr. Endang Suciati, SS. M.A",
+      "proposed_fix": "Dr. Endang Suciati, S.S., M.A.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_035",
+      "sheet_row": 36,
+      "nip_y_niy_presensi": "11090903087",
+      "name_title_before": "Dr. H. Achmad Fanani, SS. M.Pd",
+      "proposed_fix": "Dr. H. Achmad Fanani, S.S., M.Pd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_036",
+      "sheet_row": 37,
+      "nip_y_niy_presensi": "12011108045",
+      "name_title_before": "Dwi Nurcahyani, SS, M.Pd.I",
+      "proposed_fix": "Dwi Nurcahyani, S.S., M.Pd.I.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_037",
+      "sheet_row": 38,
+      "nip_y_niy_presensi": "12010505091",
+      "name_title_before": "Wahyuning Ucik, S.Sos",
+      "proposed_fix": "Wahyuning Ucik, S.Sos.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_038",
+      "sheet_row": 39,
+      "nip_y_niy_presensi": "12011209110",
+      "name_title_before": "Siti Zainab Setiawati, Amd",
+      "proposed_fix": "Siti Zainab Setiawati, A.Md.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_039",
+      "sheet_row": 40,
+      "nip_y_niy_presensi": "11010901019",
+      "name_title_before": "Dr. Wiwik Maryati, S.Sos. M.S.M",
+      "proposed_fix": "Dr. Wiwik Maryati, S.Sos., M.S.M.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_042",
+      "sheet_row": 43,
+      "nip_y_niy_presensi": "01011201008",
+      "name_title_before": "H.Yosi Agustiawan, ST., M. MT. AFHEA, Ph.D",
+      "proposed_fix": "H. Yosi Agustiawan, S.T., M.MT., AFHEA, Ph.D.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_043",
+      "sheet_row": 44,
+      "nip_y_niy_presensi": "11011004022",
+      "name_title_before": "M. Masrur,S.Kom, M. Kom.",
+      "proposed_fix": "M. Masrur, S.Kom., M.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_044",
+      "sheet_row": 45,
+      "nip_y_niy_presensi": "12050209107",
+      "name_title_before": "A. Khaerudin, S. Ag.",
+      "proposed_fix": "A. Khaerudin, S.Ag.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_045",
+      "sheet_row": 46,
+      "nip_y_niy_presensi": "12010901039",
+      "name_title_before": "Emy Irsyadi, SE",
+      "proposed_fix": "Emy Irsyadi, S.E.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_046",
+      "sheet_row": 47,
+      "nip_y_niy_presensi": "12010901076",
+      "name_title_before": "Imam Arifin, S.PdI. M.Pd",
+      "proposed_fix": "Imam Arifin, S.Pd.I., M.Pd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_047",
+      "sheet_row": 48,
+      "nip_y_niy_presensi": "11010901015",
+      "name_title_before": "Drs.H. Ir. Sumargono, M.Pd.",
+      "proposed_fix": "Drs. H. Ir. Sumargono, M.Pd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_048",
+      "sheet_row": 49,
+      "nip_y_niy_presensi": "11120302021",
+      "name_title_before": "Sujarwo, ST., M.Kom",
+      "proposed_fix": "Sujarwo, S.T., M.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_050",
+      "sheet_row": 51,
+      "nip_y_niy_presensi": "11010901020",
+      "name_title_before": "H. Andi Yudianto, S. Kep. Ners. M.Kes",
+      "proposed_fix": "H. Andi Yudianto, S.Kep., Ners., M.Kes.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_051",
+      "sheet_row": 52,
+      "nip_y_niy_presensi": "11010901051",
+      "name_title_before": "Hj. Kurniawati, S. Kep., Ners. M.Kep",
+      "proposed_fix": "Hj. Kurniawati, S.Kep., Ners., M.Kep.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_052",
+      "sheet_row": 53,
+      "nip_y_niy_presensi": "11030203056",
+      "name_title_before": "Ana Farida Ulfa, S. Kep. Ners. M.Kep",
+      "proposed_fix": "Ana Farida Ulfa, S.Kep., Ners., M.Kep.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_054",
+      "sheet_row": 55,
+      "nip_y_niy_presensi": "11010901079",
+      "name_title_before": "Pujiani, S. Kep. Ns, M.Kes",
+      "proposed_fix": "Pujiani, S.Kep., Ns., M.Kes.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_055",
+      "sheet_row": 56,
+      "nip_y_niy_presensi": "11010901030",
+      "name_title_before": "Hj. Sabrina Dwi Prihatini, SKM., M.Kes",
+      "proposed_fix": "Hj. Sabrina Dwi Prihatini, S.KM., M.Kes.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_056",
+      "sheet_row": 57,
+      "nip_y_niy_presensi": "11010502054",
+      "name_title_before": "Ninik Azizah, SST., M.Kes",
+      "proposed_fix": "Ninik Azizah, S.ST., M.Kes.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_057",
+      "sheet_row": 58,
+      "nip_y_niy_presensi": "11111003055",
+      "name_title_before": "Suyati, SST., M.Kes",
+      "proposed_fix": "Suyati, S.ST., M.Kes.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_058",
+      "sheet_row": 59,
+      "nip_y_niy_presensi": "11110106094",
+      "name_title_before": "Muzayyaroh, SST.., M.Keb",
+      "proposed_fix": "Muzayyaroh, S.ST., M.Keb.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_059",
+      "sheet_row": 60,
+      "nip_y_niy_presensi": "11110106096",
+      "name_title_before": "Dian Puspita Yani, SST., M.Kes",
+      "proposed_fix": "Dian Puspita Yani, S.ST., M.Kes.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_061",
+      "sheet_row": 62,
+      "nip_y_niy_presensi": "11010901031",
+      "name_title_before": "Moh. Rajin, S.Kep.Ners. M. Kes.",
+      "proposed_fix": "Moh. Rajin, S.Kep., Ners., M.Kes.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_062",
+      "sheet_row": 63,
+      "nip_y_niy_presensi": "11010901052",
+      "name_title_before": "Zulfa Khusniyah, S.Kep.Ns., M.Pd.I",
+      "proposed_fix": "Zulfa Khusniyah, S.Kep., Ns., M.Pd.I.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_063",
+      "sheet_row": 64,
+      "nip_y_niy_presensi": "11010901053",
+      "name_title_before": "Dr. H. Nasrudin, SKM., M.Kes",
+      "proposed_fix": "Dr. H. Nasrudin, S.KM., M.Kes.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_064",
+      "sheet_row": 65,
+      "nip_y_niy_presensi": "11010609109",
+      "name_title_before": "Indah Mukarromah, S. Kep. Ns., M.Kep",
+      "proposed_fix": "Indah Mukarromah, S.Kep., Ns., M.Kep.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_065",
+      "sheet_row": 66,
+      "nip_y_niy_presensi": "12170202042",
+      "name_title_before": "Hudzaifah, SS.",
+      "proposed_fix": "Hudzaifah, S.S.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_067",
+      "sheet_row": 68,
+      "nip_y_niy_presensi": "12010901080",
+      "name_title_before": "Hj. Masrikah, S.AB",
+      "proposed_fix": "Hj. Masrikah, S.AB.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_069",
+      "sheet_row": 70,
+      "nip_y_niy_presensi": "12010901060",
+      "name_title_before": "Aizun Najih,S.Psi., M.I.Kom",
+      "proposed_fix": "Aizun Najih, S.Psi., M.I.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_070",
+      "sheet_row": 71,
+      "nip_y_niy_presensi": "12010901082",
+      "name_title_before": "Khamim Mansyur, S.AB",
+      "proposed_fix": "Khamim Mansyur, S.AB.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_071",
+      "sheet_row": 72,
+      "nip_y_niy_presensi": "12010503061",
+      "name_title_before": "Alifah Nuriyati, S.Sos",
+      "proposed_fix": "Alifah Nuriyati, S.Sos.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_073",
+      "sheet_row": 74,
+      "nip_y_niy_presensi": "11010901062",
+      "name_title_before": "Abdul Ghofar, S. Kep., Ners. M.Pd.I",
+      "proposed_fix": "Abdul Ghofar, S.Kep., Ners., M.Pd.I.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_074",
+      "sheet_row": 75,
+      "nip_y_niy_presensi": "11020901083",
+      "name_title_before": "Dr. Mukhoirotin, S.Kep.Ners. M.Kep",
+      "proposed_fix": "Dr. Mukhoirotin, S.Kep., Ners., M.Kep.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_075",
+      "sheet_row": 76,
+      "nip_y_niy_presensi": "11180101063",
+      "name_title_before": "Hj. Khotimah, S.Kep., Ns., M.Kes",
+      "proposed_fix": "Hj. Khotimah, S.Kep., Ns., M.Kes.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_076",
+      "sheet_row": 77,
+      "nip_y_niy_presensi": "11010901065",
+      "name_title_before": "Siti Muniroh, S. Kep. Ners.",
+      "proposed_fix": "Siti Muniroh, S.Kep., Ners.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_079",
+      "sheet_row": 80,
+      "nip_y_niy_presensi": "12010901041",
+      "name_title_before": "Khoiro Ummah, S.AB",
+      "proposed_fix": "Khoiro Ummah, S.AB.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_080",
+      "sheet_row": 81,
+      "nip_y_niy_presensi": "12011203089",
+      "name_title_before": "Siti Rofi'ah, S.Ptk",
+      "proposed_fix": "Siti Rofi'ah, S.Ptk.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_081",
+      "sheet_row": 82,
+      "nip_y_niy_presensi": "12010902068",
+      "name_title_before": "Nurdin Bramono, SS. M.Hum",
+      "proposed_fix": "Nurdin Bramono, S.S., M.Hum.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_083",
+      "sheet_row": 84,
+      "nip_y_niy_presensi": "12010901070",
+      "name_title_before": "Abdul Hamid, S.Hi",
+      "proposed_fix": "Abdul Hamid, S.HI.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_084",
+      "sheet_row": 85,
+      "nip_y_niy_presensi": "12070206071",
+      "name_title_before": "Andri Eko Zulfikar, S.Kom",
+      "proposed_fix": "Andri Eko Zulfikar, S.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_085",
+      "sheet_row": 86,
+      "nip_y_niy_presensi": "01010901049",
+      "name_title_before": "Dra. Hj. Umi Hasunah Zaim, M.Th.I",
+      "proposed_fix": "Dra. Hj. Umi Hasunah Zaim, M.Th.I.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_086",
+      "sheet_row": 87,
+      "nip_y_niy_presensi": null,
+      "name_title_before": "DR.H.Afifudin Dimyathi",
+      "proposed_fix": "Dr. H. Afifudin Dimyathi",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_087",
+      "sheet_row": 88,
+      "nip_y_niy_presensi": "12010110113",
+      "name_title_before": "Nur Elizah, S.Pd. I",
+      "proposed_fix": "Nur Elizah, S.Pd.I.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_088",
+      "sheet_row": 89,
+      "nip_y_niy_presensi": "12010110112",
+      "name_title_before": "M. Faizin, S.Pdi",
+      "proposed_fix": "M. Faizin, S.Pd.I.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_090",
+      "sheet_row": 91,
+      "nip_y_niy_presensi": "12070206098",
+      "name_title_before": "Purwanti, S. Pd. I.",
+      "proposed_fix": "Purwanti, S.Pd.I.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_091",
+      "sheet_row": 92,
+      "nip_y_niy_presensi": "12230210147",
+      "name_title_before": "Anisatul Barita, S. Sos.",
+      "proposed_fix": "Anisatul Barita, S.Sos.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_092",
+      "sheet_row": 93,
+      "nip_y_niy_presensi": "12170310148",
+      "name_title_before": "Ahmad Izzul Iman, S.Kom",
+      "proposed_fix": "Ahmad Izzul Iman, S.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_093",
+      "sheet_row": 94,
+      "nip_y_niy_presensi": "11100510152",
+      "name_title_before": "Mohammad Imsin, SE.,M.P.",
+      "proposed_fix": "Mohammad Imsin, S.E., M.P.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_094",
+      "sheet_row": 95,
+      "nip_y_niy_presensi": "11240510153",
+      "name_title_before": "Siti Mutrofin, S Kom, M. Kom.",
+      "proposed_fix": "Siti Mutrofin, S.Kom., M.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_095",
+      "sheet_row": 96,
+      "nip_y_niy_presensi": "11030710155",
+      "name_title_before": "H. Achmad Farid, SS., MA, Ph.D",
+      "proposed_fix": "H. Achmad Farid, S.S., M.A., Ph.D.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_097",
+      "sheet_row": 98,
+      "nip_y_niy_presensi": "01010901050",
+      "name_title_before": "Dr. Hj. Afifa S. Zulfikar, SS. MSc.",
+      "proposed_fix": "Dr. Hj. Afifa S. Zulfikar, S.S., M.Sc.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_098",
+      "sheet_row": 99,
+      "nip_y_niy_presensi": "11010810165",
+      "name_title_before": "Didik Saudin, S.Kep Ners, M.Kep.",
+      "proposed_fix": "Didik Saudin, S.Kep., Ners., M.Kep.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_099",
+      "sheet_row": 100,
+      "nip_y_niy_presensi": "11010810169",
+      "name_title_before": "Edi Wibowo Suwandi, S.Kep,Ners",
+      "proposed_fix": "Edi Wibowo Suwandi, S.Kep., Ners.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_101",
+      "sheet_row": 102,
+      "nip_y_niy_presensi": "11010810166",
+      "name_title_before": "Siti Urifah, S.Kep. Ns., M.NS",
+      "proposed_fix": "Siti Urifah, S.Kep., Ns., M.Ns.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_102",
+      "sheet_row": 103,
+      "nip_y_niy_presensi": "11010810163",
+      "name_title_before": "Irta Fitriana, S.S. M.Hum",
+      "proposed_fix": "Irta Fitriana, S.S., M.Hum.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_105",
+      "sheet_row": 106,
+      "nip_y_niy_presensi": "11010810159",
+      "name_title_before": "Dr. Agus Mahfudin, M.SI.",
+      "proposed_fix": "Dr. Agus Mahfudin, M.Si.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_107",
+      "sheet_row": 108,
+      "nip_y_niy_presensi": "11010810162",
+      "name_title_before": "M.Ali Nawawi, SE., MM",
+      "proposed_fix": "M. Ali Nawawi, S.E., M.M.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_108",
+      "sheet_row": 109,
+      "nip_y_niy_presensi": "11010810161",
+      "name_title_before": "Bambang Setyobudi, SE., MM.",
+      "proposed_fix": "Bambang Setyobudi, S.E., M.M.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_110",
+      "sheet_row": 111,
+      "nip_y_niy_presensi": "12101010176",
+      "name_title_before": "Bakri, S.Pd.I. M.Pd",
+      "proposed_fix": "Bakri, S.Pd.I., M.Pd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_111",
+      "sheet_row": 112,
+      "nip_y_niy_presensi": "11011114287",
+      "name_title_before": "H. Sufendi hariyanto,S.Kep., NS, M.MB",
+      "proposed_fix": "H. Sufendi Hariyanto, S.Kep., Ns., M.MB.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_115",
+      "sheet_row": 116,
+      "nip_y_niy_presensi": "12010211184",
+      "name_title_before": "Nur Feri Setiono, S.AB",
+      "proposed_fix": "Nur Feri Setiono, S.AB.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_116",
+      "sheet_row": 117,
+      "nip_y_niy_presensi": "12010211185",
+      "name_title_before": "Yazid Bustomi, S,Kom.",
+      "proposed_fix": "Yazid Bustomi, S.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_121",
+      "sheet_row": 122,
+      "nip_y_niy_presensi": "11010611193",
+      "name_title_before": "Dr. Mahmud Huda, S.H.I.,M.S.I.",
+      "proposed_fix": "Dr. Mahmud Huda, S.HI., M.S.I.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_123",
+      "sheet_row": 124,
+      "nip_y_niy_presensi": "12101011198",
+      "name_title_before": "Muh.Nur Khozin, SPdI",
+      "proposed_fix": "Muh. Nur Khozin, S.Pd.I.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_124",
+      "sheet_row": 125,
+      "nip_y_niy_presensi": "12011111199",
+      "name_title_before": "Ahmad Arif, SAB",
+      "proposed_fix": "Ahmad Arif, S.AB.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_125",
+      "sheet_row": 126,
+      "nip_y_niy_presensi": "11071014286",
+      "name_title_before": "Nurul Khoirun Nisa', S.Kep.,Ners.",
+      "proposed_fix": "Nurul Khoirun Nisa', S.Kep., Ners.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_126",
+      "sheet_row": 127,
+      "nip_y_niy_presensi": "11141111200",
+      "name_title_before": "Adi Yusuf, SS, M.Pd",
+      "proposed_fix": "Adi Yusuf, S.S., M.Pd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_128",
+      "sheet_row": 129,
+      "nip_y_niy_presensi": "11211111202",
+      "name_title_before": "Yuyun Fitriani, A. Md. Keb.",
+      "proposed_fix": "Yuyun Fitriani, A.Md.Keb.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_129",
+      "sheet_row": 130,
+      "nip_y_niy_presensi": "11011211205",
+      "name_title_before": "Athi' Linda Yani, S.Kep.Ners. M.Kep",
+      "proposed_fix": "Athi' Linda Yani, S.Kep., Ners., M.Kep.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_131",
+      "sheet_row": 132,
+      "nip_y_niy_presensi": "12010213240",
+      "name_title_before": "Wim Banu Ukhrowi, SS., M.Pd",
+      "proposed_fix": "Wim Banu Ukhrowi, S.S., M.Pd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_133",
+      "sheet_row": 134,
+      "nip_y_niy_presensi": "11010212210",
+      "name_title_before": "Nufan Balafif, S.Kom., MM",
+      "proposed_fix": "Nufan Balafif, S.Kom., M.M.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_134",
+      "sheet_row": 135,
+      "nip_y_niy_presensi": "11150212218",
+      "name_title_before": "Dewi Triloka Wulandari, S.ST., M.Tr.Keb",
+      "proposed_fix": "Dewi Triloka Wulandari, S.ST., M.Tr.Keb.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_136",
+      "sheet_row": 137,
+      "nip_y_niy_presensi": "11200212212",
+      "name_title_before": "Eddy Kurniawan, S.Kom. MM.",
+      "proposed_fix": "Eddy Kurniawan, S.Kom., M.M.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_137",
+      "sheet_row": 138,
+      "nip_y_niy_presensi": "12100312220",
+      "name_title_before": "Achmad Mundzir, S.HI",
+      "proposed_fix": "Achmad Mundzir, S.HI.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_138",
+      "sheet_row": 139,
+      "nip_y_niy_presensi": "12010312219",
+      "name_title_before": "Sandy Octavia Kunyono Rini, S.TP",
+      "proposed_fix": "Sandy Octavia Kunyono Rini, S.TP.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_139",
+      "sheet_row": 140,
+      "nip_y_niy_presensi": "12010214260",
+      "name_title_before": "Ika Vita Sari, S.S",
+      "proposed_fix": "Ika Vita Sari, S.S.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_142",
+      "sheet_row": 143,
+      "nip_y_niy_presensi": "11170912224",
+      "name_title_before": "Yuliasnita Verlandes, SE, MSM",
+      "proposed_fix": "Yuliasnita Verlandes, S.E., M.S.M.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_147",
+      "sheet_row": 148,
+      "nip_y_niy_presensi": "11011212235",
+      "name_title_before": "Nailul Fauziyah, S.Hum.,M.Pd.",
+      "proposed_fix": "Nailul Fauziyah, S.Hum., M.Pd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_148",
+      "sheet_row": 149,
+      "nip_y_niy_presensi": "11120113238",
+      "name_title_before": "Sri BanunTiti Istiqomah, S.ST., M.Kes",
+      "proposed_fix": "Sri Banun Titi Istiqomah, S.ST., M.Kes.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_152",
+      "sheet_row": 153,
+      "nip_y_niy_presensi": "12010313241",
+      "name_title_before": "Roikhatur Roisah,SS",
+      "proposed_fix": "Roikhatur Roisah, S.S.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_153",
+      "sheet_row": 154,
+      "nip_y_niy_presensi": "1210313243",
+      "name_title_before": "Ratna Wati, S.Kom",
+      "proposed_fix": "Ratna Wati, S.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_154",
+      "sheet_row": 155,
+      "nip_y_niy_presensi": "11010413244",
+      "name_title_before": "Putri Rahayuningtyas, S.Pd,M.Pd.",
+      "proposed_fix": "Putri Rahayuningtyas, S.Pd., M.Pd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_155",
+      "sheet_row": 156,
+      "nip_y_niy_presensi": "11010513246",
+      "name_title_before": "Rina Suci Andriani, M.Pd",
+      "proposed_fix": "Rina Suci Andriani, M.Pd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_156",
+      "sheet_row": 157,
+      "nip_y_niy_presensi": "11010513245",
+      "name_title_before": "Fenny Vitiasaridessy, S.ST",
+      "proposed_fix": "Fenny Vitiasaridessy, S.ST.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_157",
+      "sheet_row": 158,
+      "nip_y_niy_presensi": "11030613247",
+      "name_title_before": "Zakiah, S.Keb. Bd.",
+      "proposed_fix": "Zakiah, S.Keb., Bd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_158",
+      "sheet_row": 159,
+      "nip_y_niy_presensi": "12010913248",
+      "name_title_before": "Ardian Syaifuddin, Amd. Kep.",
+      "proposed_fix": "Ardian Syaifuddin, A.Md.Kep.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_160",
+      "sheet_row": 161,
+      "nip_y_niy_presensi": "11051013251",
+      "name_title_before": "Hendy, S.Si. M.Si",
+      "proposed_fix": "Hendy, S.Si., M.Si.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_162",
+      "sheet_row": 163,
+      "nip_y_niy_presensi": "11211013252",
+      "name_title_before": "Anna Rakhmawati, SS",
+      "proposed_fix": "Anna Rakhmawati, S.S.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_163",
+      "sheet_row": 164,
+      "nip_y_niy_presensi": "12061113254",
+      "name_title_before": "Hosnatul Hasanah, S.Kom",
+      "proposed_fix": "Hosnatul Hasanah, S.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_164",
+      "sheet_row": 165,
+      "nip_y_niy_presensi": "12061113253",
+      "name_title_before": "Darmaji, S. Kom",
+      "proposed_fix": "Darmaji, S.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_165",
+      "sheet_row": 166,
+      "nip_y_niy_presensi": "11050114259",
+      "name_title_before": "Suprapti, S.S., M.Pd.I",
+      "proposed_fix": "Suprapti, S.S., M.Pd.I.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_166",
+      "sheet_row": 167,
+      "nip_y_niy_presensi": "11060314264",
+      "name_title_before": "Imam Mutaqin, M.Pd.I",
+      "proposed_fix": "Imam Mutaqin, M.Pd.I.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_167",
+      "sheet_row": 168,
+      "nip_y_niy_presensi": "11010414262",
+      "name_title_before": "Devin Prihar Ninuk, S.Kep.Ns, M.Kep",
+      "proposed_fix": "Devin Prihar Ninuk, S.Kep., Ns., M.Kep.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_168",
+      "sheet_row": 169,
+      "nip_y_niy_presensi": "12050514270",
+      "name_title_before": "David Budi Hartanto, S.Kom",
+      "proposed_fix": "David Budi Hartanto, S.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_172",
+      "sheet_row": 173,
+      "nip_y_niy_presensi": "11010614271",
+      "name_title_before": "Muhammad Saifuddin, M.Pd",
+      "proposed_fix": "Muhammad Saifuddin, M.Pd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_174",
+      "sheet_row": 175,
+      "nip_y_niy_presensi": "11010714278",
+      "name_title_before": "Endang Kurniawan, S.Kom., MM",
+      "proposed_fix": "Endang Kurniawan, S.Kom., M.M.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_175",
+      "sheet_row": 176,
+      "nip_y_niy_presensi": "11090814279",
+      "name_title_before": "Erliyah Nurul Jannah, S.Kom.,M.Sc",
+      "proposed_fix": "Erliyah Nurul Jannah, S.Kom., M.Sc.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_176",
+      "sheet_row": 177,
+      "nip_y_niy_presensi": "11010914280",
+      "name_title_before": "Ciptianingsari Ayu Vitantri, M.Pd",
+      "proposed_fix": "Ciptianingsari Ayu Vitantri, M.Pd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_177",
+      "sheet_row": 178,
+      "nip_y_niy_presensi": "11011014282",
+      "name_title_before": "Tafsillatul Mufida Asriningsih, M. Pd.",
+      "proposed_fix": "Tafsillatul Mufida Asriningsih, M.Pd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_179",
+      "sheet_row": 180,
+      "nip_y_niy_presensi": "12061114288",
+      "name_title_before": "Mokhamad Dafid Andianto, S.Kep., Ners",
+      "proposed_fix": "Mokhamad Dafid Andianto, S.Kep., Ners.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_181",
+      "sheet_row": 182,
+      "nip_y_niy_presensi": "12011214290",
+      "name_title_before": "Imam Latif Rosyadi, A. Md.",
+      "proposed_fix": "Imam Latif Rosyadi, A.Md.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_182",
+      "sheet_row": 183,
+      "nip_y_niy_presensi": "12240115294",
+      "name_title_before": "Zainudin, S.Kom",
+      "proposed_fix": "Zainudin, S.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_186",
+      "sheet_row": 186,
+      "nip_y_niy_presensi": "11010115",
+      "name_title_before": "Ahmad Dzulfikar, M.Pd",
+      "proposed_fix": "Ahmad Dzulfikar, M.Pd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_187",
+      "sheet_row": 187,
+      "nip_y_niy_presensi": "11010415",
+      "name_title_before": "Wiwit Denny Fitriana, SSi, M.Si",
+      "proposed_fix": "Wiwit Denny Fitriana, S.Si., M.Si.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_189",
+      "sheet_row": 189,
+      "nip_y_niy_presensi": "11010815",
+      "name_title_before": "Galuh Tisna Widiana, M.Pd",
+      "proposed_fix": "Galuh Tisna Widiana, M.Pd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_190",
+      "sheet_row": 190,
+      "nip_y_niy_presensi": "11010915304",
+      "name_title_before": "Dr. H. Imam Baidlowi, MM",
+      "proposed_fix": "Dr. H. Imam Baidlowi, M.M.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_191",
+      "sheet_row": 191,
+      "nip_y_niy_presensi": "11011015",
+      "name_title_before": "Kusuma Wardhani Mas'udah,S.Si., M.Si",
+      "proposed_fix": "Kusuma Wardhani Mas'udah, S.Si., M.Si.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_192",
+      "sheet_row": 192,
+      "nip_y_niy_presensi": "11011015",
+      "name_title_before": "Eka Nurjanah, M.Pd",
+      "proposed_fix": "Eka Nurjanah, M.Pd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_194",
+      "sheet_row": 194,
+      "nip_y_niy_presensi": "12071115308",
+      "name_title_before": "Thoif, S.HI., M.Pd",
+      "proposed_fix": "Thoif, S.HI., M.Pd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_195",
+      "sheet_row": 195,
+      "nip_y_niy_presensi": "11090515301",
+      "name_title_before": "Nisa Ayunda, S.Si. M.Si",
+      "proposed_fix": "Nisa Ayunda, S.Si., M.Si.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_196",
+      "sheet_row": 196,
+      "nip_y_niy_presensi": "12011215309",
+      "name_title_before": "Fitrotus Salamah, SS",
+      "proposed_fix": "Fitrotus Salamah, S.S.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_199",
+      "sheet_row": 199,
+      "nip_y_niy_presensi": "12020416312",
+      "name_title_before": "M Khoirul Abdillah, S.Kom",
+      "proposed_fix": "M. Khoirul Abdillah, S.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_201",
+      "sheet_row": 201,
+      "nip_y_niy_presensi": "12011116316",
+      "name_title_before": "Achmat Rosid, S.Kom., M.Kom",
+      "proposed_fix": "Achmat Rosid, S.Kom., M.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_203",
+      "sheet_row": 203,
+      "nip_y_niy_presensi": "1010901151",
+      "name_title_before": "H.M. Zahrul Jihad, S.H., M.Si",
+      "proposed_fix": "H.M. Zahrul Jihad, S.H., M.Si.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_205",
+      "sheet_row": 205,
+      "nip_y_niy_presensi": null,
+      "name_title_before": "Ircham Ali, S.Kom",
+      "proposed_fix": "Ircham Ali, S.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_206",
+      "sheet_row": 206,
+      "nip_y_niy_presensi": null,
+      "name_title_before": "Fatikhatus Sholikhah, S.Kom",
+      "proposed_fix": "Fatikhatus Sholikhah, S.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_207",
+      "sheet_row": 207,
+      "nip_y_niy_presensi": "12150117319",
+      "name_title_before": "Luxman Nul Khakim, S.Kep., Ners., M.Kep",
+      "proposed_fix": "Luxman Nul Khakim, S.Kep., Ners., M.Kep.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_208",
+      "sheet_row": 208,
+      "nip_y_niy_presensi": "11020117314",
+      "name_title_before": "Moh. Faizal Fuad Aziz, M.Pd",
+      "proposed_fix": "Moh. Faizal Fuad Aziz, M.Pd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_209",
+      "sheet_row": 209,
+      "nip_y_niy_presensi": "12010420342",
+      "name_title_before": "Ainun Ni'mah, S.S",
+      "proposed_fix": "Ainun Ni'mah, S.S.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_213",
+      "sheet_row": 213,
+      "nip_y_niy_presensi": "12071017321",
+      "name_title_before": "Serly Apririya Ardi, S.AB",
+      "proposed_fix": "Serly Apririya Ardi, S.AB.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_215",
+      "sheet_row": 215,
+      "nip_y_niy_presensi": "12011117323",
+      "name_title_before": "Sri Wahyuni,SS",
+      "proposed_fix": "Sri Wahyuni, S.S.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_216",
+      "sheet_row": 216,
+      "nip_y_niy_presensi": "11011217324",
+      "name_title_before": "Tomy Syafrudin, M.Pd",
+      "proposed_fix": "Tomy Syafrudin, M.Pd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_217",
+      "sheet_row": 217,
+      "nip_y_niy_presensi": "12010218326",
+      "name_title_before": "Elly Megawati, S.IP",
+      "proposed_fix": "Elly Megawati, S.IP.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_218",
+      "sheet_row": 218,
+      "nip_y_niy_presensi": "12010218327",
+      "name_title_before": "Muhammad Ainun Abdurrahman, S.Kom",
+      "proposed_fix": "Muhammad Ainun Abdurrahman, S.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_219",
+      "sheet_row": 219,
+      "nip_y_niy_presensi": "12010218325",
+      "name_title_before": "Riftin Zakia Darajad, S. Kom",
+      "proposed_fix": "Riftin Zakia Darajad, S.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_225",
+      "sheet_row": 225,
+      "nip_y_niy_presensi": "12050918330",
+      "name_title_before": "Irvan Sarifudin, S.Kom",
+      "proposed_fix": "Irvan Sarifudin, S.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_226",
+      "sheet_row": 226,
+      "nip_y_niy_presensi": "12011018331",
+      "name_title_before": "Ryan Irwanda Pratama, S.Kom",
+      "proposed_fix": "Ryan Irwanda Pratama, S.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_227",
+      "sheet_row": 227,
+      "nip_y_niy_presensi": "11020219332",
+      "name_title_before": "Ahmad Farhan, S.Kom., MM",
+      "proposed_fix": "Ahmad Farhan, S.Kom., M.M.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_228",
+      "sheet_row": 228,
+      "nip_y_niy_presensi": "11030219333",
+      "name_title_before": "Mey Lista Tauryawati, S.Si.M.Si.",
+      "proposed_fix": "Mey Lista Tauryawati, S.Si., M.Si.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_229",
+      "sheet_row": 229,
+      "nip_y_niy_presensi": "11230219334",
+      "name_title_before": "Andi Agung , S.Si.M.Si",
+      "proposed_fix": "Andi Agung, S.Si., M.Si.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_231",
+      "sheet_row": 231,
+      "nip_y_niy_presensi": "12020519336",
+      "name_title_before": "Siti Nafiatul Azizah, S.S",
+      "proposed_fix": "Siti Nafiatul Azizah, S.S.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_232",
+      "sheet_row": 232,
+      "nip_y_niy_presensi": "11020919337",
+      "name_title_before": "Beda Puspita Candra , M.Kom",
+      "proposed_fix": "Beda Puspita Candra, M.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_233",
+      "sheet_row": 233,
+      "nip_y_niy_presensi": "11020919338",
+      "name_title_before": "Rizka Kurnia Andaru , M.AB",
+      "proposed_fix": "Rizka Kurnia Andaru, M.AB.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_236",
+      "sheet_row": 236,
+      "nip_y_niy_presensi": "11010120340",
+      "name_title_before": "Puspa Mia Widiyaningsih, M.Pd",
+      "proposed_fix": "Puspa Mia Widiyaningsih, M.Pd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_238",
+      "sheet_row": 238,
+      "nip_y_niy_presensi": "11010320341",
+      "name_title_before": "Moh. Shohibul Wafa, S.Kom., M.Kom",
+      "proposed_fix": "Moh. Shohibul Wafa, S.Kom., M.Kom.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_239",
+      "sheet_row": 239,
+      "nip_y_niy_presensi": "11011220343",
+      "name_title_before": "Herjanti Nursuksmaningtyas Santoso, S.S, M.Si.",
+      "proposed_fix": "Herjanti Nursuksmaningtyas Santoso, S.S., M.Si.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_241",
+      "sheet_row": 241,
+      "nip_y_niy_presensi": "11030821346",
+      "name_title_before": "Fandy Ahmad, S.Sos,. M.Ag",
+      "proposed_fix": "Fandy Ahmad, S.Sos., M.Ag.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_242",
+      "sheet_row": 242,
+      "nip_y_niy_presensi": "1010921347",
+      "name_title_before": "H. Ahmad Laroibafih Zulfikar, SH",
+      "proposed_fix": "H. Ahmad Laroibafih Zulfikar, S.H.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_244",
+      "sheet_row": 244,
+      "nip_y_niy_presensi": "31612050123349",
+      "name_title_before": "Fais Tanwirotul Fadhilah, S.AB",
+      "proposed_fix": "Fais Tanwirotul Fadhilah, S.AB.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_245",
+      "sheet_row": 245,
+      "nip_y_niy_presensi": "12020124351",
+      "name_title_before": "Ihwanus Sholihin, M.Pd",
+      "proposed_fix": "Ihwanus Sholihin, M.Pd.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_246",
+      "sheet_row": 246,
+      "nip_y_niy_presensi": "01010924352",
+      "name_title_before": "Fathmah Muthi'ah , S.Ag",
+      "proposed_fix": "Fathmah Muthi'ah, S.Ag.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_247",
+      "sheet_row": 247,
+      "nip_y_niy_presensi": "12150125353",
+      "name_title_before": "Krisna Atikah Madjid, S.IP",
+      "proposed_fix": "Krisna Atikah Madjid, S.IP.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_251",
+      "sheet_row": 251,
+      "nip_y_niy_presensi": "01011125357",
+      "name_title_before": "dr. Muhammad Qoimam Bilqisthi Zulfikar, M.Sc, M.P.H",
+      "proposed_fix": "Dr. Muhammad Qoimam Bilqisthi Zulfikar, M.Sc., M.P.H.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_252",
+      "sheet_row": 252,
+      "nip_y_niy_presensi": "11210226358",
+      "name_title_before": "Royyan Amigo, S.Mat., M.Mat",
+      "proposed_fix": "Royyan Amigo, S.Mat., M.Mat.",
+      "change_type": "formatting_only",
+      "review_required": false
+    },
+    {
+      "employee_id": "Loyalis_253",
+      "sheet_row": 253,
+      "nip_y_niy_presensi": "01050526359",
+      "name_title_before": "Muhammad Ghinan Navsih, S.Si.D",
+      "proposed_fix": "Muhammad Ghinan Navsih, S.Si.D.",
+      "change_type": "formatting_only",
+      "review_required": false
+    }
+  ],
+  "needs_hr_confirmation": [
+    {
+      "employee_id": "Loyalis_003",
+      "sheet_row": 4,
+      "nip_y_niy_presensi": "1010901003",
+      "name_title_before": "Dr. HM. Zulfikar As'ad, M.MR.",
+      "proposed_fix": "Dr. dr. H.M. Zulfikar As'ad, M.MR.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record contains an additional medical title; confirm the official title sequence.",
+      "basis": "live record differs in title sequence",
+      "live_database_name": "DR.dr.H.M. Zulfikar As'ad, MMR"
+    },
+    {
+      "employee_id": "Loyalis_009",
+      "sheet_row": 10,
+      "nip_y_niy_presensi": "12010901007",
+      "name_title_before": "Muhamad Zaki, S.E. M.Pd",
+      "proposed_fix": "Muhammad Zaky, S.E., M.Pd.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Spelling differs from the matched employee record; confirm the legal spelling.",
+      "basis": "matched-name override and live record",
+      "live_database_name": "Muhammad Zaky, SE.M.Pd"
+    },
+    {
+      "employee_id": "Loyalis_017",
+      "sheet_row": 18,
+      "nip_y_niy_presensi": "12010901075",
+      "name_title_before": "Achyar, S.AB",
+      "proposed_fix": "M. Achyar, S.AB.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record includes the initial M.; confirm whether it belongs in the displayed name.",
+      "basis": "live record differs in name prefix",
+      "live_database_name": "M. Achyar"
+    },
+    {
+      "employee_id": "Loyalis_018",
+      "sheet_row": 19,
+      "nip_y_niy_presensi": "01050209047",
+      "name_title_before": "Hj. Arifa Retnowuni, S.Psi., M.Kes",
+      "proposed_fix": "Arifah Retnowuni Dzulhilmi, S.Psi., M.Kes.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record expands the name; confirm against HR identity documents.",
+      "basis": "live record differs in name",
+      "live_database_name": "Arifah Retnowuni Dzulhilmi, S.Psi., M.Kes"
+    },
+    {
+      "employee_id": "Loyalis_023",
+      "sheet_row": 24,
+      "nip_y_niy_presensi": "12010901074",
+      "name_title_before": "Asna Malini",
+      "proposed_fix": "Asna Malini, S.Kom.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record includes S.Kom.; confirm the qualification before adding it.",
+      "basis": "live record adds a credential",
+      "live_database_name": "Asna Malini, S. Kom."
+    },
+    {
+      "employee_id": "Loyalis_025",
+      "sheet_row": 26,
+      "nip_y_niy_presensi": "01150702017",
+      "name_title_before": "Dr. H. Ali Muchsin, S.Ag., M.Pd.I",
+      "proposed_fix": "Dr. Drs. H. Ali Muhsin, S.Ag., M.Pd.I.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record differs in spelling and prefix titles; confirm the official form.",
+      "basis": "live record differs in name and titles",
+      "live_database_name": "DR. Drs. H. Ali Muhsin, M. Pd. I."
+    },
+    {
+      "employee_id": "Loyalis_026",
+      "sheet_row": 27,
+      "nip_y_niy_presensi": "11030105057",
+      "name_title_before": "Lilik Maftuhatin, M.Pd. I.",
+      "proposed_fix": "Lilik Maftukhatin, S.Pd.I., M.Pd.I.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record differs in surname spelling and lists an additional qualification.",
+      "basis": "live record differs in name and credentials",
+      "live_database_name": "Lilik Maftukhatin, S.Pdi.M.Pdi"
+    },
+    {
+      "employee_id": "Loyalis_028",
+      "sheet_row": 29,
+      "nip_y_niy_presensi": "12010901038",
+      "name_title_before": "Ahmad Mundzir, S.HI.",
+      "proposed_fix": "Achmad Mundzir, S.HI.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Existing matched-name override uses Achmad; confirm the official spelling.",
+      "basis": "matched-name override",
+      "live_database_name": "Drs. M.Mundir"
+    },
+    {
+      "employee_id": "Loyalis_032",
+      "sheet_row": 33,
+      "nip_y_niy_presensi": "11010901018",
+      "name_title_before": "Dr. Nuning Yudhi Prasetyani, SS. M. Hum.",
+      "proposed_fix": "Dr. Nuning Yudhi Prastyani, S.S., M.Hum.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record spells the surname differently; confirm the official spelling.",
+      "basis": "live record differs in name",
+      "live_database_name": "Dr. Nuning Yudhi Prastyani, SS. M. Hum."
+    },
+    {
+      "employee_id": "Loyalis_040",
+      "sheet_row": 41,
+      "nip_y_niy_presensi": "12070206043",
+      "name_title_before": "Irva Arina Alawiyyah, S.E.",
+      "proposed_fix": "Irva Arina Alawiyah, S.E.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Existing matched-name override uses Alawiyah; confirm the official spelling.",
+      "basis": "matched-name override",
+      "live_database_name": "Irva Arina Alawiyah, SE"
+    },
+    {
+      "employee_id": "Loyalis_041",
+      "sheet_row": 42,
+      "nip_y_niy_presensi": "12010908106",
+      "name_title_before": "Sholihuddin, S. Pd.I.",
+      "proposed_fix": "Sholahuddin, S.Pd.I.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Existing matched-name override uses Sholahuddin; confirm the official spelling.",
+      "basis": "matched-name override",
+      "live_database_name": "Sholahuddin, S.Pdi"
+    },
+    {
+      "employee_id": "Loyalis_053",
+      "sheet_row": 54,
+      "nip_y_niy_presensi": "11010901078",
+      "name_title_before": "Dr. Hj. Masruroh, S.Kep.Ns,. M.Kes",
+      "proposed_fix": "Dr. Hj. Masruroh Hasyim, S.Kep., Ns., M.Kes.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record includes Hasyim; confirm whether the family name is required.",
+      "basis": "live record differs in name",
+      "live_database_name": "Dr. Hj. Masruroh Hasyim, S.Kep.Ns. M.Kes"
+    },
+    {
+      "employee_id": "Loyalis_060",
+      "sheet_row": 61,
+      "nip_y_niy_presensi": "11020608105",
+      "name_title_before": "Helmi Annuchasari, S.KM, M.KM",
+      "proposed_fix": "Helmi Anuchasari, S.KM., M.KM.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Existing matched-name override uses Anuchasari; confirm the official spelling.",
+      "basis": "matched-name override",
+      "live_database_name": "Helmi Anuchasari, S.KM., M.KM"
+    },
+    {
+      "employee_id": "Loyalis_068",
+      "sheet_row": 69,
+      "nip_y_niy_presensi": "12070206097",
+      "name_title_before": "Anggria Maduratih, S.AB",
+      "proposed_fix": "Anggrea Maduratih, S.AB.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Existing matched-name override uses Anggrea; confirm the official spelling.",
+      "basis": "matched-name override",
+      "live_database_name": "Anggrea Maduratih, S.AB"
+    },
+    {
+      "employee_id": "Loyalis_072",
+      "sheet_row": 73,
+      "nip_y_niy_presensi": "12021102085",
+      "name_title_before": "Hj. Mas'adah Endang Susilowati, S.AB",
+      "proposed_fix": "Hj. Masadah Endang Susilowati, S.AB.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record omits the apostrophe in Masadah; confirm the official spelling.",
+      "basis": "live record differs in spelling",
+      "live_database_name": "Hj. Masadah Endang Susilowati, S.AB"
+    },
+    {
+      "employee_id": "Loyalis_077",
+      "sheet_row": 78,
+      "nip_y_niy_presensi": "11020201066",
+      "name_title_before": "Dr. Herin Mawarti, S. Kep. Ners. M.Biomed",
+      "proposed_fix": "Dr. Hj. Herin Mawarti, S.Kep., Ners., M.Biomed.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record includes Hj.; confirm the honorific and credential spelling.",
+      "basis": "live record differs in titles",
+      "live_database_name": "Dr. Hj. Herin Mawarti, S. Kep. Ners, M.Biomed"
+    },
+    {
+      "employee_id": "Loyalis_078",
+      "sheet_row": 79,
+      "nip_y_niy_presensi": "11010901064",
+      "name_title_before": "Wiwiek Widiatie, S. Kep. Ners. M.Kep",
+      "proposed_fix": "Wiwiek Widiatie, S.Kep., Ners., M.Kes.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record lists M.Kes. rather than M.Kep.; confirm the certificate.",
+      "basis": "live record differs in credential",
+      "live_database_name": "Wiwiek Widiatie, S. Kep. Ners.M.Kes"
+    },
+    {
+      "employee_id": "Loyalis_089",
+      "sheet_row": 90,
+      "nip_y_niy_presensi": "11010608073",
+      "name_title_before": "Binti Qani'ah, SS. M.Hum",
+      "proposed_fix": "Binti Qoni'ah, S.S., M.Hum.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Existing matched-name override uses Qoni'ah; confirm the official spelling.",
+      "basis": "matched-name override",
+      "live_database_name": "Binti Qoni'ah, SS, M. Hum"
+    },
+    {
+      "employee_id": "Loyalis_096",
+      "sheet_row": 97,
+      "nip_y_niy_presensi": "11190710156",
+      "name_title_before": "Dr. Muhammad Syafi'i, M.Pd.I.",
+      "proposed_fix": "Dr. Muhammad Syafii, M.Pd.I.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record omits the apostrophe in Syafii; confirm the official spelling.",
+      "basis": "live record differs in spelling",
+      "live_database_name": "Dr. Muhammad Syafii, M.PdI"
+    },
+    {
+      "employee_id": "Loyalis_100",
+      "sheet_row": 101,
+      "nip_y_niy_presensi": "11010810168",
+      "name_title_before": "Diah Ayu Fatmawati, M.Kep.",
+      "proposed_fix": "Diah Ayu Fatmawati, S.Kep., Ners.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record lists S.Kep., Ners. rather than M.Kep.; confirm the certificate.",
+      "basis": "live record differs in credential",
+      "live_database_name": "Diah Ayu Fatmawati, S.Kep, Ners"
+    },
+    {
+      "employee_id": "Loyalis_106",
+      "sheet_row": 107,
+      "nip_y_niy_presensi": "11010810157",
+      "name_title_before": "Dr. Mohamad Yahya Ashari, M.Pd.",
+      "proposed_fix": "Dr. H. Moh. Yahya Ashari, M.Pd.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record differs in honorific and short form of Mohamad; confirm with HR.",
+      "basis": "live record differs in name and titles",
+      "live_database_name": "Dr. H. M.Yahya Ashari,M.Pd"
+    },
+    {
+      "employee_id": "Loyalis_109",
+      "sheet_row": 110,
+      "nip_y_niy_presensi": "11070810170",
+      "name_title_before": "Nurul Laili, S.Pd, M.Pd",
+      "proposed_fix": "Nurul Laili, S.Pd.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record lists S.Pd. only while the sheet lists M.Pd.; confirm the highest qualification.",
+      "basis": "live record differs in credential",
+      "live_database_name": "Nurul Laili,S.Pd"
+    },
+    {
+      "employee_id": "Loyalis_112",
+      "sheet_row": 113,
+      "nip_y_niy_presensi": "11041010174",
+      "name_title_before": "Afsah Novita Sari, M.Si.",
+      "proposed_fix": "Afsah Novitasari, S.Si., M.Pd.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Matched-name override and live record differ from the sheet in name and credentials.",
+      "basis": "matched-name override and live record",
+      "live_database_name": "Afsah Novitasari, S.Si, M.Pd,"
+    },
+    {
+      "employee_id": "Loyalis_120",
+      "sheet_row": 121,
+      "nip_y_niy_presensi": "11010611191",
+      "name_title_before": "Indra Kusuma Wardani, M.Si",
+      "proposed_fix": "Indra Kusuma Wardani, S.Si., M.Pd.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record lists S.Si., M.Pd. rather than M.Si.; confirm the certificate.",
+      "basis": "live record differs in credential",
+      "live_database_name": "Indra Kusuma Wardani, S.Si,M.Pd."
+    },
+    {
+      "employee_id": "Loyalis_122",
+      "sheet_row": 123,
+      "nip_y_niy_presensi": "11010211186",
+      "name_title_before": "Mohamad Ali Murtadho, M.Kom.",
+      "proposed_fix": "Muh. Ali Murtadlo, M.Kom.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record differs in name spelling and shortened form; confirm the official spelling.",
+      "basis": "live record differs in name",
+      "live_database_name": "Muh. Ali Murtadlo. M.Kom"
+    },
+    {
+      "employee_id": "Loyalis_127",
+      "sheet_row": 128,
+      "nip_y_niy_presensi": "11211111201",
+      "name_title_before": "Vivin Eka Rahmawati, SST",
+      "proposed_fix": "Vivin Eka Rahmawati, A.Md.Keb.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record lists A.Md.Keb. rather than S.ST.; confirm the qualification.",
+      "basis": "live record differs in credential",
+      "live_database_name": "Vivin Eka Rahmawati, A. Md. Keb."
+    },
+    {
+      "employee_id": "Loyalis_132",
+      "sheet_row": 133,
+      "nip_y_niy_presensi": "11010212209",
+      "name_title_before": "Ivan Dwi Fibrian, M.Kom., M.I.Kom",
+      "proposed_fix": "Ivan Dwi Fibrian, S.Kom., M.I.Kom.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record lists S.Kom. rather than M.Kom.; confirm the certificate.",
+      "basis": "live record differs in credential",
+      "live_database_name": "Ivan Dwi Fibrian, S.Kom, M.I.Kom"
+    },
+    {
+      "employee_id": "Loyalis_140",
+      "sheet_row": 141,
+      "nip_y_niy_presensi": "12010412221",
+      "name_title_before": "Yuliana Ika Purnamasari, SST. Keb.",
+      "proposed_fix": "Yuliana Ika Purnamasari, A.Md.Keb.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record lists A.Md.Keb. rather than S.ST.Keb.; confirm the qualification.",
+      "basis": "live record differs in credential",
+      "live_database_name": "Yuliana Ika Purnamasari, A.Md.Keb"
+    },
+    {
+      "employee_id": "Loyalis_141",
+      "sheet_row": 142,
+      "nip_y_niy_presensi": "11080912222",
+      "name_title_before": "Dr. H. Mochamad Samsukadi, Lc.,M.Th.I.",
+      "proposed_fix": "H.M. Samsukadi, Lc., M.Th.I.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record differs in prefix and name spelling; confirm the official display name.",
+      "basis": "live record differs in name and titles",
+      "live_database_name": "H.M. Samsukadi, Lc, M.Th.I"
+    },
+    {
+      "employee_id": "Loyalis_143",
+      "sheet_row": 144,
+      "nip_y_niy_presensi": "11011012204",
+      "name_title_before": "Hj. Zuliani, S.Kep.Ners. M.Kep",
+      "proposed_fix": "Zuliani, S.Kep., Ns., M.Kep.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record omits Hj. and uses a different credential style; confirm the official form.",
+      "basis": "live record differs in titles",
+      "live_database_name": "Zuliani,S. Kep. Ns. M. Kep."
+    },
+    {
+      "employee_id": "Loyalis_144",
+      "sheet_row": 145,
+      "nip_y_niy_presensi": "11011012226",
+      "name_title_before": "Chandra Sukma Anugrah, M.Kom.",
+      "proposed_fix": "Chandra Sukma Anugrah, S.Kom.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record lists S.Kom. rather than M.Kom.; confirm the certificate.",
+      "basis": "live record differs in credential",
+      "live_database_name": "Chandra Sukma Anugrah, S. Kom."
+    },
+    {
+      "employee_id": "Loyalis_145",
+      "sheet_row": 146,
+      "nip_y_niy_presensi": "11011012227",
+      "name_title_before": "Ririn Susilawati, SHI.,MEI",
+      "proposed_fix": "Ririn Susilowati, S.HI., M.E.I.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Existing matched-name override uses Susilowati; confirm the official spelling.",
+      "basis": "matched-name override",
+      "live_database_name": "Ririn Susilowati, S.H.I, M.E.I"
+    },
+    {
+      "employee_id": "Loyalis_149",
+      "sheet_row": 150,
+      "nip_y_niy_presensi": "11070113223",
+      "name_title_before": "Maisarah, SS. M.Si.",
+      "proposed_fix": "Maisaroh, M.Si.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Existing matched-name override uses Maisaroh; confirm the official spelling and whether S.S. remains.",
+      "basis": "matched-name override and live record",
+      "live_database_name": "Maisaroh, M.Si"
+    },
+    {
+      "employee_id": "Loyalis_150",
+      "sheet_row": 151,
+      "nip_y_niy_presensi": "12050113235",
+      "name_title_before": "Teguh Priyo Utomo, S.Kom., M.I.Kom",
+      "proposed_fix": "Teguh Priyo Utomo, S.Kom.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record lists S.Kom. only; confirm whether M.I.Kom. should remain.",
+      "basis": "live record differs in credentials",
+      "live_database_name": "Teguh Priyo Utomo, S.Kom"
+    },
+    {
+      "employee_id": "Loyalis_159",
+      "sheet_row": 160,
+      "nip_y_niy_presensi": "11011013249",
+      "name_title_before": "Dina Eka Shofiana, SE., MA",
+      "proposed_fix": "Dina Eka Sofiana, S.E., M.A.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Existing matched-name override uses Sofiana; confirm the official spelling.",
+      "basis": "matched-name override",
+      "live_database_name": "Dina Eka Sofiana, SE, M.A"
+    },
+    {
+      "employee_id": "Loyalis_161",
+      "sheet_row": 162,
+      "nip_y_niy_presensi": "11011013250",
+      "name_title_before": "Siti Roudhotul Jannah, M.Tr.Keb",
+      "proposed_fix": "Siti Roudhatul Jannah, S.ST.Keb., M.Tr.Keb.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Matched-name override uses Roudhatul and includes S.ST.Keb.; confirm both.",
+      "basis": "matched-name override and live record",
+      "live_database_name": "Siti Roudhatul Jannah, SST.Keb. M. Tr. Keb."
+    },
+    {
+      "employee_id": "Loyalis_169",
+      "sheet_row": 170,
+      "nip_y_niy_presensi": "12050514269",
+      "name_title_before": "Sri Wahyuni, S.I.Pust",
+      "proposed_fix": "Sri Wahyuni, A.Ma. Pust.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record lists A.Ma. Pust. rather than S.I.Pust.; confirm the certificate.",
+      "basis": "live record differs in credential",
+      "live_database_name": "Sri Wahyuni, A.Ma. Pust"
+    },
+    {
+      "employee_id": "Loyalis_171",
+      "sheet_row": 172,
+      "nip_y_niy_presensi": "11010614273",
+      "name_title_before": "Dr. Abid Datul Mukhoyaroh, S.Sos, M.Si",
+      "proposed_fix": "Dr. Abid Datul Mukhoyaroh, S.Sos., M.A.B.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record lists M.A.B. rather than M.Si.; confirm the certificate.",
+      "basis": "live record differs in credential",
+      "live_database_name": "Abid Datul Mukhoyaroh, S.Sos., M.A.B."
+    },
+    {
+      "employee_id": "Loyalis_173",
+      "sheet_row": 174,
+      "nip_y_niy_presensi": "12010614274",
+      "name_title_before": "Isbayu Ulyah, S.Kom",
+      "proposed_fix": "Isbayu' Uliyah, S.Kom.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record differs in apostrophe and spelling; confirm the official name.",
+      "basis": "live record differs in name",
+      "live_database_name": "Isbayu' Uliyah, S.Kom"
+    },
+    {
+      "employee_id": "Loyalis_178",
+      "sheet_row": 179,
+      "nip_y_niy_presensi": "12011014283",
+      "name_title_before": "Nurul Lailiyah, S.AB, M.Si",
+      "proposed_fix": "Nurul Lailiyah",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record omits the sheet credentials; confirm whether they are current.",
+      "basis": "live record differs in credentials",
+      "live_database_name": "Nurul Lailiyah"
+    },
+    {
+      "employee_id": "Loyalis_185",
+      "sheet_row": 185,
+      "nip_y_niy_presensi": "12010315295",
+      "name_title_before": "M. Miftakhul Syaikhuddin, M.Kom",
+      "proposed_fix": "Muhammad Miftakhul Syaikhuddin, S.Kom., M.Kom.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Matched-name override expands the initial and changes the spelling; confirm with HR.",
+      "basis": "matched-name override and live record",
+      "live_database_name": "Muhammad Miftakhul Syakhuddin"
+    },
+    {
+      "employee_id": "Loyalis_197",
+      "sheet_row": 197,
+      "nip_y_niy_presensi": "1020116310",
+      "name_title_before": "H. Ahmad Haibat Kannaby Z., S.I.P., M.Hub.Int",
+      "proposed_fix": "H. Ahmad Haibat Kannaby Zaimuddin, S.I.P., M.Hub.Int.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record expands the surname and omits M.Hub.Int.; confirm the official name and credentials.",
+      "basis": "live record differs in name and credentials",
+      "live_database_name": "H. Ahmad Haibat Kannaby Zaimuddin,S.I.P"
+    },
+    {
+      "employee_id": "Loyalis_214",
+      "sheet_row": 214,
+      "nip_y_niy_presensi": "12091017322",
+      "name_title_before": "Muhammad Iqbal Prasetiya, S.Kom",
+      "proposed_fix": "Muhamad Iqbal Prasetya, S.Kom.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record differs in spelling and uses Muhamad; confirm the official spelling.",
+      "basis": "live record differs in name",
+      "live_database_name": "Muhamad Iqbal Prasetya, S.kom"
+    },
+    {
+      "employee_id": "Loyalis_221",
+      "sheet_row": 221,
+      "nip_y_niy_presensi": "1010318350",
+      "name_title_before": "Drs. Hj. Niswah Qonita",
+      "proposed_fix": "Dra. Hj. Niswah Qonita",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record uses Dra. rather than Drs.; confirm the correct title.",
+      "basis": "live record differs in title",
+      "live_database_name": "Dra. Hj. Niswah Qonita"
+    },
+    {
+      "employee_id": "Loyalis_230",
+      "sheet_row": 230,
+      "nip_y_niy_presensi": "11190319335",
+      "name_title_before": "Siti Asiah, S.Pd., M.Pd",
+      "proposed_fix": "Siti Asiah, M.Pd.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record lists M.Pd. only while the sheet lists S.Pd., M.Pd.; confirm the credentials.",
+      "basis": "live record differs in credentials",
+      "live_database_name": "Siti Asiah, M.Pd."
+    },
+    {
+      "employee_id": "Loyalis_235",
+      "sheet_row": 235,
+      "nip_y_niy_presensi": "11011219339",
+      "name_title_before": "Cynthia Alvionita Ferima, M.Si",
+      "proposed_fix": "Cynthia Alvionita Ferima, S.Si., M.Si.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record includes S.Si.; confirm the complete credential set.",
+      "basis": "live record adds a credential",
+      "live_database_name": "Cynthia Alvionita Ferima, S.Si., M.Si."
+    },
+    {
+      "employee_id": "Loyalis_243",
+      "sheet_row": 243,
+      "nip_y_niy_presensi": "1020123348",
+      "name_title_before": "Ashlaha Baladina Z, S.I.Kom, MA",
+      "proposed_fix": "Ashlaha Baladina, S.I.Kom., M.A.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record omits the final Z and M.A.; confirm the official name and credentials.",
+      "basis": "live record differs in name and credentials",
+      "live_database_name": "Ashlaha Baladina, S.I.Kom."
+    },
+    {
+      "employee_id": "Loyalis_248",
+      "sheet_row": 248,
+      "nip_y_niy_presensi": "1100924352",
+      "name_title_before": "Muhammad Fajrul Ulin Nuha, S.Kom., M.Kom",
+      "proposed_fix": "Muhammad Fajrul Alam Ulin Nuha, S.Kom., M.Kom.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record includes Alam; confirm whether the sheet is missing part of the legal name.",
+      "basis": "live record adds a name component",
+      "live_database_name": "Muhammad Fajrul Alam Ulin Nuha, S.Kom., M.Kom"
+    },
+    {
+      "employee_id": "Loyalis_249",
+      "sheet_row": 249,
+      "nip_y_niy_presensi": "1050225354",
+      "name_title_before": "Muhammad Alhimny Rusidy, SKM",
+      "proposed_fix": "Muhammad Al Himmy Rusydy, S.KM.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record differs in spacing and spelling; confirm the official name.",
+      "basis": "live record differs in name",
+      "live_database_name": "Muhammad Al Himmy Rusydy, S.KM"
+    },
+    {
+      "employee_id": "Loyalis_254",
+      "sheet_row": 254,
+      "nip_y_niy_presensi": "11010315296",
+      "name_title_before": "Dr. Amrullah, Lc., M.Th.I",
+      "proposed_fix": "Dr. Amrulloh, Lc., M.Th.I.",
+      "change_type": "name_or_credential_review",
+      "review_required": true,
+      "reason": "Live record spells the surname Amrulloh; confirm the official spelling.",
+      "basis": "live record differs in name",
+      "live_database_name": "Amrulloh Dr., Lc., M.Th.I"
+    }
+  ]
+}

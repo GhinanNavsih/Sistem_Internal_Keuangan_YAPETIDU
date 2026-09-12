@@ -221,11 +221,18 @@ service cloud.firestore {
     match /VakasiTambahan/{docId} {
       allow read: if isFinanceRole() || roleIs('satker_head_loyalis');
       allow create: if (isFinanceVerifier() || isSuperAdmin() ||
-        roleIs('satker_head_loyalis')) && createsOpenPeriodRecord();
+        roleIs('satker_head_loyalis')) && createsOpenPeriodRecord() &&
+        !docId.matches('KJM_.*') && request.resource.data.get('sourceKind', '') != 'kjm_import';
       allow update: if (isFinanceVerifier() || isSuperAdmin() ||
-        roleIs('satker_head_loyalis')) && updatesOpenPeriodRecord();
+        roleIs('satker_head_loyalis')) && updatesOpenPeriodRecord() &&
+        !docId.matches('KJM_.*') && resource.data.get('sourceKind', '') != 'kjm_import' &&
+        request.resource.data.get('sourceKind', '') != 'kjm_import';
       allow delete: if false;
     }
+
+    // KJM draft/review/approval and semester claims are server-owned.
+    match /KjmImports/{docId} { allow read, write: if false; }
+    match /KjmPaymentClaims/{docId} { allow read, write: if false; }
 
     match /KegiatanSpj/{docId} {
       allow read: if hasProfile();

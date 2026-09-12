@@ -90,6 +90,8 @@ import {
 import { referenceKeys } from '@/lib/queries/keys';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 import { normalizeNipy } from '@/lib/payroll/attendance';
+import { getPayImpactLabels } from '@/lib/payroll/slipPropagation';
+import { matchFunctionalAllowance } from '@/lib/payroll/salaryMatrix';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 
 const JOB_CATEGORIES = ['SATPAM', 'SOPIR', 'KEBERSIHAN', 'TEKNISI', 'KEBERSIHAN_PONTI'];
@@ -329,6 +331,15 @@ interface FieldChange {
   field: string;
   oldValue: any;
   newValue: any;
+  /** Earning label(s) this field feeds that won't show their own diff row (e.g. education_level -> Tunjangan Fungsional). Absent when the field has no such derived impact. */
+  payImpact?: readonly string[];
+  /**
+   * The real old/new amount for a payImpact label, when it's cheap and safe to
+   * compute here (a direct matrix lookup) rather than duplicating a heavier
+   * formula (e.g. Gaji Pokok's years-of-service banding) outside its one real
+   * implementation.
+   */
+  payImpactAmount?: { label: string; oldValue: number; newValue: number };
 }
 
 interface PendingEdit {
@@ -516,6 +527,14 @@ export default function EmployeesPage() {
     'SalaryMatrix_Functional',
     functionalVersion,
   );
+  // Loaded independent of the role-gated dashboard-wide context (which only
+  // populates for super_admin/finance_verifier) so employee_admin can also
+  // preview the Kepangkatan impact of a Kredit Kumulatif edit below.
+  const { data: kepangkatanVersion } = useMatrixActiveVersion('SalaryMatrix_Kepangkatan');
+  const { data: kepangkatanRows } = useMatrixRows<{ credit_score?: number; allowance?: number }>(
+    'SalaryMatrix_Kepangkatan',
+    kepangkatanVersion,
+  );
   const { data: dbPositions = [] } = useJabatanStruktural();
   const { data: departments = [] } = useDepartments();
   const queryClient = useQueryClient();
@@ -526,6 +545,30 @@ export default function EmployeesPage() {
       .filter(Boolean);
     return Array.from(new Set(levels)).sort();
   }, [functionalRows]);
+
+  // Same matrix shape/lookup DashboardDataContext uses to build its
+  // functionalAllowanceMap/kepangkatanAllowanceMap — reused here so the
+  // pre-save change log can preview the real Tunjangan Fungsional/Kepangkatan
+  // amount a Pendidikan/Beban Kerja/Kredit Kumulatif edit will produce.
+  const functionalMatrixForImpact = useMemo(() => {
+    const matrix: Record<string, { education_level?: string; base_value: number; functional_tiers: Record<string, number> }> = {};
+    (functionalRows || []).forEach((row: any) => {
+      matrix[row.id] = {
+        education_level: row.education_level,
+        base_value: row.base_value || 0,
+        functional_tiers: row.functional_tiers || {},
+      };
+    });
+    return matrix;
+  }, [functionalRows]);
+
+  const kepangkatanMatrixForImpact = useMemo(() => {
+    const matrix: Record<number, number> = {};
+    (kepangkatanRows || []).forEach((row: any) => {
+      matrix[Number(row.credit_score) || 0] = Number(row.allowance) || 0;
+    });
+    return matrix;
+  }, [kepangkatanRows]);
 
   // Redirect if unauthorized
   useEffect(() => {
@@ -1026,6 +1069,53 @@ export default function EmployeesPage() {
       if (editingEmployee) {
         const diffs = getObjectDiff(editingEmployee, final);
         changedFields = diffs.map(diff => diff.field);
+        // Loyalis-only: point out changes to a field whose money shows up under a
+        // differently-named earning (e.g. Pendidikan -> Tunjangan Fungsional), since
+        // that earning won't otherwise get its own diff row. Tunjangan Fungsional and
+        // Kepangkatan are cheap, direct matrix lookups, so those two also get a real
+        // old/new rupiah figure; the rest (Gaji Pokok and its dependents, Tunjangan
+        // Keluarga, Tunjangan Struktural) only get a "check this" flag, since computing
+        // their real amount would mean duplicating the years-of-service/matrix-banding
+        // gapok formula outside its one real implementation.
+        if (activeTab === 'loyalis') {
+          const oldFungsional = matchFunctionalAllowance(
+            editingEmployee.academic_and_tier?.education_level,
+            editingEmployee.academic_and_tier?.functional_tier,
+            functionalMatrixForImpact,
+          );
+          const newFungsional = matchFunctionalAllowance(
+            final.academic_and_tier?.education_level,
+            final.academic_and_tier?.functional_tier,
+            functionalMatrixForImpact,
+          );
+          const oldKepangkatan = kepangkatanMatrixForImpact[Number(editingEmployee.kepangkatan?.cummulativeCredit) || 0] || 0;
+          const newKepangkatan = kepangkatanMatrixForImpact[Number(final.kepangkatan?.cummulativeCredit) || 0] || 0;
+
+          let fungsionalAttached = false;
+          diffs.forEach(diff => {
+            const payImpact = getPayImpactLabels(diff.field);
+            if (payImpact.length === 0) return;
+
+            if (diff.field === 'academic_and_tier.education_level' || diff.field === 'academic_and_tier.functional_tier') {
+              if (oldFungsional === newFungsional) return; // resolved amount didn't actually move
+              diff.payImpact = payImpact;
+              if (!fungsionalAttached) {
+                diff.payImpactAmount = { label: 'Tunjangan Fungsional', oldValue: oldFungsional, newValue: newFungsional };
+                fungsionalAttached = true;
+              }
+              return;
+            }
+
+            if (diff.field === 'kepangkatan.cummulativeCredit') {
+              if (oldKepangkatan === newKepangkatan) return;
+              diff.payImpact = payImpact;
+              diff.payImpactAmount = { label: 'Kepangkatan', oldValue: oldKepangkatan, newValue: newKepangkatan };
+              return;
+            }
+
+            diff.payImpact = payImpact;
+          });
+        }
         if (diffs.length > 0) {
           const pendingChange: PendingEdit = {
             employeeId,
@@ -3043,13 +3133,32 @@ export default function EmployeesPage() {
 
                 <div className="space-y-2">
                   {edit.changes.map((c, cIdx) => (
-                    <div key={cIdx} className="grid grid-cols-3 gap-2 text-xs items-center leading-normal">
-                      <span className="font-semibold text-slate-500 font-mono break-all">{c.field}</span>
-                      <div className="col-span-2 flex items-center gap-1.5 flex-wrap">
-                        <span className="text-rose-600 bg-rose-50 px-2 py-0.5 rounded line-through max-w-[150px] truncate" title={String(c.oldValue)}>{String(c.oldValue) || 'empty'}</span>
-                        <span className="text-slate-400">➔</span>
-                        <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-semibold max-w-[150px] truncate" title={String(c.newValue)}>{String(c.newValue) || 'empty'}</span>
+                    <div key={cIdx} className="space-y-1">
+                      <div className="grid grid-cols-3 gap-2 text-xs items-center leading-normal">
+                        <span className="font-semibold text-slate-500 font-mono break-all">{c.field}</span>
+                        <div className="col-span-2 flex items-center gap-1.5 flex-wrap">
+                          <span className="text-rose-600 bg-rose-50 px-2 py-0.5 rounded line-through max-w-[150px] truncate" title={String(c.oldValue)}>{String(c.oldValue) || 'empty'}</span>
+                          <span className="text-slate-400">➔</span>
+                          <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-semibold max-w-[150px] truncate" title={String(c.newValue)}>{String(c.newValue) || 'empty'}</span>
+                        </div>
                       </div>
+                      {c.payImpactAmount && (
+                        <div className="flex items-start gap-1.5 pl-1 text-[11px] text-amber-700">
+                          <Coins className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                          <span>
+                            Turut memengaruhi: <span className="font-semibold">{c.payImpactAmount.label}</span>{' '}
+                            <span className="line-through text-rose-600">{formatIDR(c.payImpactAmount.oldValue)}</span>
+                            {' ➔ '}
+                            <span className="font-semibold text-emerald-700">{formatIDR(c.payImpactAmount.newValue)}</span>
+                          </span>
+                        </div>
+                      )}
+                      {!c.payImpactAmount && c.payImpact && c.payImpact.length > 0 && (
+                        <div className="flex items-start gap-1.5 pl-1 text-[11px] text-amber-700">
+                          <Coins className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                          <span>Turut memengaruhi: <span className="font-semibold">{c.payImpact.join(', ')}</span></span>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

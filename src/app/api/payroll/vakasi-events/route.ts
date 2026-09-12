@@ -397,6 +397,9 @@ export async function POST(request: NextRequest) {
     assertActionAllowed(actor, command);
 
     const eventId = command.eventId || `VAKASI_${command.requestId}`;
+    if (eventId.startsWith('KJM_')) {
+      throw new HttpError(409, 'KJM hanya dapat diubah melalui halaman Kelebihan Jam Mengajar.');
+    }
     const requestHash = createHash('sha256')
       .update(JSON.stringify(command))
       .digest('hex');
@@ -431,6 +434,9 @@ export async function POST(request: NextRequest) {
       const before = eventSnapshot.exists
         ? (eventSnapshot.data() as Record<string, unknown>)
         : null;
+      if (before?.sourceKind === 'kjm_import') {
+        throw new HttpError(409, 'KJM hanya dapat diubah melalui halaman Kelebihan Jam Mengajar.');
+      }
       if (before && isProposalLpjSandboxSource(before)) {
         throw new HttpError(409, 'Catatan LPJ sandbox tidak dapat diubah sebagai Vakasi payroll.');
       }

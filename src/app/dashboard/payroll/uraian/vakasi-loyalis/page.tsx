@@ -234,7 +234,7 @@ export default function VakasiLoyalisPage() {
           id: d.id,
           ...d.data()
         }))
-        .filter((event) => !isProposalLpjSandboxSource(event)) as any[];
+        .filter((event) => !isProposalLpjSandboxSource(event) && !('sourceKind' in event && event.sourceKind === 'kjm_import')) as any[];
 
       if (profile.role === 'satker_head_loyalis') {
         list = list.filter(evt => evt.submittedBy === profile.uid);

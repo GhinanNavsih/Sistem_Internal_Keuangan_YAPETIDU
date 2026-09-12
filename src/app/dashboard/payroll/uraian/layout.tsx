@@ -163,6 +163,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
     if (pathname.includes('/presensi-pekarya')) return 'presensi_pekarya';
     if (pathname.includes('/rekap-pekarya')) return 'presensi';
     if (pathname.includes('/vakasi-loyalis')) return 'vakasi_loyalis';
+    if (pathname.includes('/kjm')) return 'kjm';
     if (pathname.includes('/proposal-kegiatan')) return 'proposal_kegiatan';
     if (pathname.includes('/pelaporan-kegiatan')) return 'pelaporan_kegiatan';
     if (pathname.includes('/presensi-loyalis-raw')) return 'presensi_loyalis_raw';
@@ -296,6 +297,8 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
 
   const pageTitle = useMemo(() => {
     switch (activeTab) {
+      case 'kjm':
+        return 'Kelebihan Jam Mengajar';
       case 'presensi':
         return 'Rekap Uraian Pekarya';
       case 'presensi_pekarya':
@@ -319,6 +322,8 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
 
   const pageDescription = useMemo(() => {
     switch (activeTab) {
+      case 'kjm':
+        return 'Upload data mentah, tinjau perhitungan, lalu setujui ke payroll';
       case 'presensi':
         return 'Upload rekap PDF/Gambar untuk auto-input';
       case 'presensi_pekarya':
@@ -393,7 +398,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
             <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v, 10))}>
               <SelectTrigger className="w-56 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
                 <SelectValue>
-                  {activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis_raw' || activeTab === 'pelaporan_kegiatan' || activeTab === 'presence_corrections' ? (
+                  {activeTab === 'kjm' || activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis_raw' || activeTab === 'pelaporan_kegiatan' || activeTab === 'presence_corrections' ? (
                     `${MONTHS_ID[month - 1]} (1 – ${new Date(year, month, 0).getDate()} ${MONTHS_ID[month - 1].slice(0, 3)})`
                   ) : (
                     year > 2026 || (year === 2026 && month > 7) ? (
@@ -429,7 +434,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
                       <SelectItem key={val} value={String(val)}>
                         <div className="flex flex-col py-0.5">
                           <span className="font-semibold">{m}</span>
-                          {activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis_raw' || activeTab === 'pelaporan_kegiatan' || activeTab === 'presence_corrections' ? (
+                          {activeTab === 'kjm' || activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis_raw' || activeTab === 'pelaporan_kegiatan' || activeTab === 'presence_corrections' ? (
                             <span className="text-[11px] text-slate-400">1 – {lastDay} {m}</span>
                           ) : (
                             year > 2026 || (year === 2026 && val > 7) ? (

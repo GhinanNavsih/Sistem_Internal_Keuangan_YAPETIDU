@@ -4,6 +4,7 @@ import {
   assertOnlyOwnedChanged,
   assertOnlyProfileOwnedChanged,
   classifySlipForPropagation,
+  getPayImpactLabels,
   isPayRelevantChange,
   isProfileOwnedLabel,
   mergeOwnedFields,
@@ -189,6 +190,27 @@ test('pay relevance is decided by profile path prefix', () => {
   assert.equal(isPayRelevantChange(['personal_info.phone']), false);
   assert.equal(isPayRelevantChange(['personal_info.phone', 'ziz.deductionAmount']), true);
   assert.equal(isPayRelevantChange([]), false);
+});
+
+test('education level and functional tier are flagged as feeding Tunjangan Fungsional', () => {
+  assert.deepEqual(getPayImpactLabels('academic_and_tier.education_level'), ['Tunjangan Fungsional']);
+  assert.deepEqual(getPayImpactLabels('academic_and_tier.functional_tier'), ['Tunjangan Fungsional']);
+});
+
+test('grade and service-date fields are flagged as feeding Gaji Pokok and Tunjangan Hari Tua', () => {
+  assert.deepEqual(getPayImpactLabels('academic_and_tier.level_code'), ['Gaji Pokok', 'Tunjangan Hari Tua']);
+  assert.deepEqual(getPayImpactLabels('employment_profile.date_of_hire'), ['Gaji Pokok', 'Tunjangan Hari Tua']);
+  assert.deepEqual(getPayImpactLabels('employment_profile.date_recognized'), ['Gaji Pokok', 'Tunjangan Hari Tua']);
+});
+
+test('family dependent counts are flagged as feeding Tunjangan Keluarga regardless of which one changed', () => {
+  assert.deepEqual(getPayImpactLabels('family_allowance_metrics.spouse_count'), ['Tunjangan Keluarga']);
+  assert.deepEqual(getPayImpactLabels('family_allowance_metrics.children_pt'), ['Tunjangan Keluarga']);
+});
+
+test('a field with no derived-earning impact is not flagged', () => {
+  assert.deepEqual(getPayImpactLabels('personal_info.phone'), []);
+  assert.deepEqual(getPayImpactLabels('bpjs.t_bpjs_tk'), []);
 });
 
 // ── Single-label ownership, as used by the historical SPJ correction ────────

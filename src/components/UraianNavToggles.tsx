@@ -35,6 +35,7 @@ export default function UraianNavToggles() {
     if (pathname.includes('/presensi-pekarya')) return 'presensi_pekarya';
     if (pathname.includes('/rekap-pekarya')) return 'presensi';
     if (pathname.includes('/vakasi-loyalis')) return 'vakasi_loyalis';
+    if (pathname.includes('/kjm')) return 'kjm';
     if (pathname.includes('/proposal-kegiatan')) return 'proposal_kegiatan';
     if (pathname.includes('/pelaporan-kegiatan')) return 'pelaporan_kegiatan';
     if (pathname.includes('/presensi-loyalis-raw')) return 'presensi_loyalis_raw';
@@ -54,7 +55,7 @@ export default function UraianNavToggles() {
   const getCleanParamsString = useCallback((tab: string) => {
     const params = new URLSearchParams(searchParams.toString());
     if (
-      tab === 'vakasi_loyalis' ||
+      tab === 'vakasi_loyalis' || tab === 'kjm' ||
       tab === 'proposal_kegiatan' ||
       tab === 'pelaporan_kegiatan' ||
       tab === 'presensi_loyalis_raw' ||
@@ -103,6 +104,9 @@ export default function UraianNavToggles() {
         <div className="flex bg-white p-1 rounded-xl w-fit shadow-sm border border-slate-200/60 overflow-x-auto max-w-full">
           {profile.role === 'super_admin' && (
             <>
+              <button onClick={() => router.push(`/dashboard/payroll/uraian/kjm${getCleanParamsString('kjm')}`)} className={btnCls(activeTab === 'kjm')}>
+                <Banknote className="w-4 h-4" /> Kelebihan Jam Mengajar
+              </button>
               <button
                 onClick={() => router.push(`/dashboard/payroll/uraian/proposal-kegiatan${getCleanParamsString('proposal_kegiatan')}`)}
                 className={btnCls(activeTab === 'proposal_kegiatan')}

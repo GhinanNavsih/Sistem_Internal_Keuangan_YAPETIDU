@@ -61,6 +61,7 @@ export function isProposalLpjSandboxSource(value: unknown): boolean {
 export function isPayableVakasiTambahan(value: unknown): boolean {
   const record = asFinancialRecord(value);
   if (isProposalLpjSandboxSource(record)) return false;
+  if (record.sourceKind === 'kjm_import') return record.status === 'approved';
   return !record.status || record.status === 'approved';
 }
 

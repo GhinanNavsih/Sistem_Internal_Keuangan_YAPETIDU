@@ -264,3 +264,45 @@ export function isPayRelevantChange(changedFields: readonly string[]): boolean {
     PAY_RELEVANT_FIELD_PATHS.some((path) => field === path || field.startsWith(path)),
   );
 }
+
+/**
+ * Input fields whose *own* change is invisible in a generic before/after diff,
+ * because the money they drive is computed under a differently-named label
+ * (Gaji Pokok, Tunjangan Fungsional, ...) rather than stored on the field
+ * itself. Direct-value fields (bpjs.*, salaryProfile.tunjanganBeras, ...) are
+ * deliberately left out here — their own diff row already shows the exact
+ * amount, so flagging them again would just be noise.
+ *
+ * Used only to annotate the pre-save employee-edit change log with which
+ * earning a field feeds; it never gates or alters propagation itself.
+ */
+export interface PayImpactRule {
+  /** Field path, matched the same prefix-or-exact way as PAY_RELEVANT_FIELD_PATHS. */
+  path: string;
+  /** Slip earning label(s) this field's value ultimately feeds. */
+  labels: readonly string[];
+}
+
+const GAJI_POKOK_LABELS = ['Gaji Pokok', 'Tunjangan Hari Tua'] as const;
+
+export const PAY_IMPACT_RULES: readonly PayImpactRule[] = [
+  { path: 'academic_and_tier.education_level', labels: ['Tunjangan Fungsional'] },
+  { path: 'academic_and_tier.functional_tier', labels: ['Tunjangan Fungsional'] },
+  { path: 'academic_and_tier.level_code', labels: GAJI_POKOK_LABELS },
+  { path: 'employment_profile.date_of_hire', labels: GAJI_POKOK_LABELS },
+  { path: 'employment_profile.date_recognized', labels: GAJI_POKOK_LABELS },
+  { path: 'kepangkatan.cummulativeCredit', labels: ['Kepangkatan'] },
+  { path: 'family_allowance_metrics.', labels: ['Tunjangan Keluarga'] },
+  { path: 'employment_profile.structural_positions', labels: ['Tunjangan Struktural'] },
+];
+
+/** Earning label(s) a changed field feeds, for surfacing in the change log. Empty when the field's own diff already shows the affected amount directly. */
+export function getPayImpactLabels(field: string): readonly string[] {
+  const labels = new Set<string>();
+  for (const rule of PAY_IMPACT_RULES) {
+    if (field === rule.path || field.startsWith(rule.path)) {
+      rule.labels.forEach((label) => labels.add(label));
+    }
+  }
+  return Array.from(labels);
+}
