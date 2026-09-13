@@ -157,6 +157,14 @@ type BlueCollarReviewItem =
 
 type ReviewSource = 'all' | 'loyalis' | 'blue_collar';
 
+type BlueCollarCategoryFilter = 'all' | 'pekarya' | 'satpam';
+
+const blueCollarCategoryOptions: Array<{ value: BlueCollarCategoryFilter; label: string }> = [
+  { value: 'all', label: 'Semua Kategori' },
+  { value: 'pekarya', label: 'Pekarya' },
+  { value: 'satpam', label: 'Satpam' },
+];
+
 type BlueCollarReviewAction =
   | 'approve'
   | 'decline'
@@ -207,6 +215,10 @@ function statusMatches(value: string, selected: PresenceCorrectionStatus | 'all'
   if (selected === 'all') return true;
   if (selected === 'rejected') return value === 'rejected' || value === 'declined';
   return value === selected;
+}
+
+function categoryMatches(item: BlueCollarReviewItem, selected: BlueCollarCategoryFilter): boolean {
+  return selected === 'all' || item.source === selected;
 }
 
 function statusLabel(value: string): string {
@@ -294,6 +306,7 @@ export default function PresenceCorrectionsAdminPage() {
     return `${now.getFullYear()}-${m}`;
   })());
   const [selectedSource, setSelectedSource] = useState<ReviewSource>('all');
+  const [selectedCategory, setSelectedCategory] = useState<BlueCollarCategoryFilter>('all');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Rejection dialog states
@@ -382,7 +395,7 @@ export default function PresenceCorrectionsAdminPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedLeaveKeys(new Set());
     setSelectedLoyalisRequestIds(new Set());
-  }, [selectedPeriod, selectedSource, selectedStatus]);
+  }, [selectedCategory, selectedPeriod, selectedSource, selectedStatus]);
 
   // Loyalis corrections come from the shared cache — the same entry the raw
   // presence page reads, so the two pages no longer pull this collection twice.
@@ -492,20 +505,22 @@ export default function PresenceCorrectionsAdminPage() {
     () => blueCollarPeriodRequests.filter((item) =>
       canAuditBlueCollar &&
       (selectedSource === 'all' || selectedSource === 'blue_collar') &&
+      categoryMatches(item, selectedCategory) &&
       statusMatches(blueCollarRequestStatus(item), selectedStatus),
     ),
-    [blueCollarPeriodRequests, canAuditBlueCollar, selectedSource, selectedStatus],
+    [blueCollarPeriodRequests, canAuditBlueCollar, selectedCategory, selectedSource, selectedStatus],
   );
 
   const bulkEligibleLeaveRequests = useMemo(
     () => blueCollarPeriodRequests.filter((item) =>
       canAuditBlueCollar &&
       (selectedSource === 'all' || selectedSource === 'blue_collar') &&
+      categoryMatches(item, selectedCategory) &&
       (selectedStatus === 'pending' || selectedStatus === 'all') &&
       blueCollarRequestStatus(item) === 'pending' &&
       isBlueCollarLeaveRequest(item),
     ),
-    [blueCollarPeriodRequests, canAuditBlueCollar, selectedSource, selectedStatus],
+    [blueCollarPeriodRequests, canAuditBlueCollar, selectedCategory, selectedSource, selectedStatus],
   );
 
   const selectedBulkLeaveItems = useMemo(
@@ -541,10 +556,12 @@ export default function PresenceCorrectionsAdminPage() {
         ? allRequests.filter((request) => requestMatchesPeriod(request, selectedPeriod))
         : []),
       ...(canAuditBlueCollar && (selectedSource === 'all' || selectedSource === 'blue_collar')
-        ? blueCollarPeriodRequests.map((item) => ({ status: blueCollarRequestStatus(item) }))
+        ? blueCollarPeriodRequests
+            .filter((item) => categoryMatches(item, selectedCategory))
+            .map((item) => ({ status: blueCollarRequestStatus(item) }))
         : []),
     ],
-    [allRequests, blueCollarPeriodRequests, canAuditBlueCollar, canAuditLoyalis, selectedPeriod, selectedSource],
+    [allRequests, blueCollarPeriodRequests, canAuditBlueCollar, canAuditLoyalis, selectedCategory, selectedPeriod, selectedSource],
   );
 
   const stats = useMemo(() => ({
@@ -1395,6 +1412,32 @@ export default function PresenceCorrectionsAdminPage() {
             ) : (
               <div className="inline-flex h-12 items-center rounded-xl border border-indigo-100 bg-indigo-50 px-4 text-sm font-bold text-indigo-700">
                 Sumber: {canAuditLoyalis ? 'Loyalis' : 'Blue Collar'}
+              </div>
+            )}
+            {canAuditBlueCollar && (selectedSource === 'all' || selectedSource === 'blue_collar') && (
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="text-sm font-semibold text-slate-500 whitespace-nowrap">Kategori</span>
+                <Select
+                  value={selectedCategory}
+                  onValueChange={(value) => {
+                    if (value === 'all' || value === 'pekarya' || value === 'satpam') {
+                      setSelectedCategory(value);
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-12 w-full min-w-44 rounded-xl border-slate-200 bg-white text-base font-bold md:w-48">
+                    <SelectValue>
+                      {blueCollarCategoryOptions.find((option) => option.value === selectedCategory)?.label}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl bg-white">
+                    {blueCollarCategoryOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value} className="min-h-11 text-base">
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
             <div className="flex min-w-0 items-center gap-2">

@@ -1949,7 +1949,7 @@ export default function RekapPekaryaPage() {
                                   : isAttendanceDerived
                                     ? activeAttendanceImportRevisionId
                                       ? 'Nominal rupiah ini dihitung dari unggahan Presensi Pekarya aktif.'
-                                      : 'Belum ada unggahan presensi aktif; nilai sementara memakai logika pratinjau sebelumnya.'
+                                      : 'Nilai sementara (pratinjau) — akan diganti otomatis begitu presensi bulanan diimpor.'
                                     : isSopirPiket
                                       ? 'Piket dihitung otomatis dari jadwal Piket Sopir dan selalu diperbarui setiap kali rekap disimpan.'
                                       : isLocked && !canEditThisHistoricalSpj

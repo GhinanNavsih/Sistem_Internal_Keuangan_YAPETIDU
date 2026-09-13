@@ -1,5 +1,6 @@
 import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
 import { db, secondaryDb } from '@/lib/firebase';
+import { authenticatedJson } from '@/lib/payroll/client';
 import { timestampToMillis } from '@/lib/payroll/presenceCorrections';
 import type { SalaryMatrixCollection } from './keys';
 
@@ -149,6 +150,25 @@ export async function fetchSettingsSignatures(): Promise<Record<string, Signatur
 export async function fetchPayrollPeriod(period: string): Promise<any | null> {
   const snap = await getDoc(doc(db, 'PayrollPeriods', period));
   return snap.exists() ? snap.data() : null;
+}
+
+export interface AttendanceImportStatus {
+  imported: boolean;
+  revision: number;
+  stale?: boolean;
+}
+
+/**
+ * Unlike every other fetcher here this goes through an API route, not a direct
+ * Firestore read: `AttendanceImports` is closed to satker heads and employees
+ * under Firestore rules, and they need this status too.
+ */
+export async function fetchAttendanceImportStatus(
+  period: string,
+): Promise<AttendanceImportStatus> {
+  return authenticatedJson<AttendanceImportStatus>(
+    `/api/attendance/period-status?period=${encodeURIComponent(period)}`,
+  );
 }
 
 export async function fetchSatpamShiftTeams(): Promise<any[]> {

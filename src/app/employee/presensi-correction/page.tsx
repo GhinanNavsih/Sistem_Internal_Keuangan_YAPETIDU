@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
+import { AttendanceImportStatusBanner } from '@/components/AttendanceImportStatusBanner';
 import { useAuth } from '@/lib/AuthContext';
 import { db } from '@/lib/firebase';
 import { usePayrollCacheInvalidation } from '@/lib/queries/hooks';
@@ -461,6 +462,11 @@ export default function PresensiCorrectionPage() {
         </div>
 
         <FloatingSnackbar message={message} />
+
+        <AttendanceImportStatusBanner
+          period={minDate.slice(0, 7)}
+          variant="loyalis"
+        />
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 

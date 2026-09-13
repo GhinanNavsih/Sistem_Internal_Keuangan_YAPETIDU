@@ -89,6 +89,18 @@ export const payrollPeriodKeys = {
 };
 
 /**
+ * Whether `AttendanceImports/{period}` has an active revision yet — the
+ * once-a-month shared attendance upload. A separate axis from
+ * {@link payrollPeriodKeys}' open/closed status, and served through an API
+ * route rather than Firestore because satker heads and employees cannot read
+ * that collection directly.
+ */
+export const attendanceImportStatusKeys = {
+  all: ['attendanceImportStatus'] as const,
+  doc: (period: string) => ['attendanceImportStatus', period] as const,
+};
+
+/**
  * The whole `LoyalisPresenceCorrections` collection. Read unfiltered by both
  * the raw-presence page and the corrections review queue, then filtered
  * client-side by `date` (never by the unreliable optional `period` field).

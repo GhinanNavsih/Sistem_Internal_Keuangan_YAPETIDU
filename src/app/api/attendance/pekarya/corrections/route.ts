@@ -121,7 +121,9 @@ export async function POST(request: NextRequest) {
     if (!nipy) {
       throw new HttpError(409, 'NIPY pegawai wajib dilengkapi sebelum koreksi.');
     }
-    const view = await buildPekaryaAttendanceView(period, category);
+    const view = await buildPekaryaAttendanceView(period, category, {
+      allowMissingActiveImport: true,
+    });
     const employeeView = view.employees.find(
       (candidate) => candidate.employeeId === employeeId,
     );

@@ -18,6 +18,7 @@ import { db } from '@/lib/firebase';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
 import UraianNavToggles from '@/components/UraianNavToggles';
+import { AttendanceImportStatusBanner } from '@/components/AttendanceImportStatusBanner';
 import { defaultPayrollPeriodToken, previousPayrollPeriodToken } from '@/lib/payroll/domain';
 import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
 
@@ -33,6 +34,16 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
   const month = parseInt(searchParams.get('month') || String(new Date().getMonth() + 1), 10);
   const year = parseInt(searchParams.get('year') || String(new Date().getFullYear()), 10);
   const category = (searchParams.get('category') || '').trim().toUpperCase();
+
+  // Only the pages whose numbers come from the shared attendance file. The
+  // other uraian tabs (KJM, proposal, vakasi, SPJ) never read it, so the
+  // status would just be noise there.
+  const showsAttendanceImportStatus = [
+    '/presensi-pekarya',
+    '/presensi-loyalis-raw',
+    '/rekap-pekarya',
+    '/presence-corrections',
+  ].some((segment) => pathname.includes(segment));
 
   // Land on the month being compiled: before the 6th that is still the
   // previous period, unless it has already been closed. Only kicks in when
@@ -509,6 +520,13 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
         {/* Tab Switcher for Super Admin & other roles */}
         {profile && profile.role !== 'satker_head' && profile.role !== 'satker_head_loyalis' && (
           <UraianNavToggles />
+        )}
+
+        {showsAttendanceImportStatus && (
+          <AttendanceImportStatusBanner
+            period={`${year}-${String(month).padStart(2, '0')}`}
+            variant="admin"
+          />
         )}
 
         <div className="w-full">{children}</div>

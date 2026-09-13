@@ -13,6 +13,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
+import { AttendanceImportStatusBanner } from '@/components/AttendanceImportStatusBanner';
 import { uploadProofFile } from '@/lib/uploads';
 import {
   prepareProofImage,
@@ -271,6 +272,7 @@ export function PekaryaOfficialLeavePanel(props: {
 
   const body = (
     <CardContent className="space-y-5 p-4 sm:p-5">
+      <AttendanceImportStatusBanner period={period} variant="pekarya" />
       {(message || error) && (
         <div
           role="status"

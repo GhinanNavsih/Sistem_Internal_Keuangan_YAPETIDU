@@ -355,7 +355,12 @@ export async function POST(request: NextRequest) {
       throw new HttpError(409, 'NIPY pegawai wajib dilengkapi sebelum izin disetujui.');
     }
 
-    const view = await buildPekaryaAttendanceView(period, category);
+    // Decisions are not gated on the once-a-month import landing: an approval
+    // writes a correction head, which every later view rebuild merges in
+    // whether or not raw rows exist yet.
+    const view = await buildPekaryaAttendanceView(period, category, {
+      allowMissingActiveImport: true,
+    });
     const employeeView = view.employees.find(
       (candidate) => candidate.employeeId === employeeId,
     );

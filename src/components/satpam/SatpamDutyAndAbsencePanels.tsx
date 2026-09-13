@@ -18,6 +18,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
+import { AttendanceImportStatusBanner } from '@/components/AttendanceImportStatusBanner';
 import { uploadProofFile } from '@/lib/uploads';
 import {
   SATPAM_POSTS,
@@ -1400,6 +1401,10 @@ export function SatpamAbsencePanel(props: {
 
   const body = (
     <CardContent className="space-y-5 p-4 sm:p-5">
+        <AttendanceImportStatusBanner
+          period={period}
+          variant={reportType === 'scan' ? 'satpam-scan' : 'satpam-independent'}
+        />
         {(message || error) && (
           <div
             role="status"

@@ -403,7 +403,7 @@ export async function POST(request: NextRequest) {
       const attendanceView = await buildPekaryaAttendanceView(
         period,
         'SATPAM',
-        { allowMissingActiveImport: action === 'decline' },
+        { allowMissingActiveImport: true },
       );
       const employeeView = attendanceView.employees.find(
         (candidate) => candidate.employeeId === employeeId,

@@ -311,7 +311,8 @@ export default function PresensiLoyalisRawPage() {
   const blueCollarQuery = useEmployeesBlueCollar();
   const loyalisQuery = useEmployeesLoyalis();
   const loadingLoyalis = loyalisQuery.isLoading;
-  const { invalidateLoyalisPresenceCorrections } = usePayrollCacheInvalidation();
+  const { invalidateLoyalisPresenceCorrections, invalidateAttendanceImportStatus } =
+    usePayrollCacheInvalidation();
 
   // Categories present on blue-collar staff, unioned with the fixed set.
   const dynamicCategories = useMemo(() => {
@@ -1329,6 +1330,7 @@ export default function PresensiLoyalisRawPage() {
           activeRevision: activated.activeRevision,
           activeRevisionId: activated.activeRevisionId,
         });
+        void invalidateAttendanceImportStatus(periodToken);
         // The server has parsed and stored the file; read the table back from
         // it rather than parsing the same bytes a second time here. Only the
         // server applies the department routing, so a local re-parse would
@@ -1648,6 +1650,8 @@ export default function PresensiLoyalisRawPage() {
       };
 
       await setDoc(doc(db, 'LoyalisPresence', presenceDocId), payload);
+      // The save clears `sourceImportStale`, which the shared status banner reads.
+      void invalidateAttendanceImportStatus(periodToken);
 
       let propagationNote = '';
       try {
@@ -1927,23 +1931,20 @@ export default function PresensiLoyalisRawPage() {
 
             {usesSharedImport && (
               <div className="space-y-3">
-                <div className={`rounded-2xl border p-4 text-sm ${
-                  activeImport?.activeRevision
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                    : 'border-amber-200 bg-amber-50 text-amber-900'
-                }`}>
-                  {activeImport?.activeRevision
-                    ? `File presensi bersama aktif: revisi ${activeImport.activeRevision}. Unggahan baru akan membuat revisi pengganti dan tetap menyimpan file lama.`
-                    : 'Belum ada file presensi bersama aktif untuk periode ini. Unggah satu XLSX yang memuat Loyalis dan Pekarya.'}
-                  {(existingPresence?.sourceImportStale ||
-                    existingPresence?.sourceCalendarStale) && (
-                    <p className="mt-2 font-bold">
-                      Hasil Loyalis lama sudah tidak sesuai dengan revisi import
-                      atau kalender aktif. Proses dan simpan ulang sebelum periode
-                      ditutup.
-                    </p>
-                  )}
-                </div>
+                {!activeImport?.activeRevision && (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                    Unggah satu XLSX yang memuat Loyalis dan Pekarya untuk periode
+                    ini. Unggahan baru selalu membuat revisi pengganti dan tetap
+                    menyimpan file lama.
+                  </div>
+                )}
+                {existingPresence?.sourceCalendarStale && (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-900">
+                    Kalender kerja periode ini berubah sejak hasil Loyalis
+                    terakhir disimpan. Proses dan simpan ulang sebelum periode
+                    ditutup.
+                  </div>
+                )}
                 {importHistory.length > 0 && (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs font-bold text-slate-700">Riwayat file presensi</p>

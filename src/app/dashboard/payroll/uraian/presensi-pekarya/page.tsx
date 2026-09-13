@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -424,6 +424,8 @@ function categoryLabel(category: string): string {
 }
 
 export default function PekaryaAttendancePage() {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const { profile } = useAuth();
   const month = Number(searchParams.get('month') || new Date().getMonth() + 1);
@@ -442,6 +444,20 @@ export default function PekaryaAttendancePage() {
         : '') ||
     ''
   ).toUpperCase();
+  // Whether this account can see Satpam data at all — mirrors the check the
+  // review endpoints themselves use, so the toggle never offers a tab that
+  // would just come back empty/forbidden.
+  const canViewSatpamCategory =
+    ['super_admin', 'finance_verifier'].includes(profile?.role || '') ||
+    Boolean(profile?.permittedCategories?.includes('SATPAM'));
+  const setCategory = useCallback(
+    (nextCategory: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set('category', nextCategory);
+      router.push(`${pathname}?${params.toString()}`);
+    },
+    [pathname, router, searchParams],
+  );
   const period = `${year}-${String(month).padStart(2, '0')}`;
   const [data, setData] = useState<AttendanceView | SatpamView | null>(null);
   const [loading, setLoading] = useState(false);
@@ -938,27 +954,40 @@ export default function PekaryaAttendancePage() {
                 : 'Pilih kategori untuk melihat hasil presensi.'}
             </p>
           </div>
-          <Button
-            variant="outline"
-            className="min-h-12 gap-2"
-            onClick={() => void load()}
-            disabled={loading || !category}
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Muat Ulang
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {canViewSatpamCategory && (
+              <div className="flex rounded-xl border border-slate-200 bg-slate-50 p-1">
+                {[
+                  [ALL_BLUE_COLLAR_CATEGORY, 'Semua Pekarya'],
+                  ['SATPAM', 'Satpam'],
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setCategory(value)}
+                    className={`min-h-10 rounded-lg px-3 text-sm font-bold transition-all ${
+                      category === value
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'text-slate-500 hover:bg-slate-100'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+            <Button
+              variant="outline"
+              className="min-h-12 gap-2"
+              onClick={() => void load()}
+              disabled={loading || !category}
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              Muat Ulang
+            </Button>
+          </div>
         </div>
       </section>
-
-      {data && !data.importRevisionId && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900">
-          <p className="font-bold">Import presensi aktif belum tersedia</p>
-          <p className="mt-1 text-sm">
-            Muat ulang halaman ini setelah import presensi terpadu diaktifkan.
-            Data pegawai tetap ditampilkan, tetapi belum dapat dipublikasikan ke Rekap Uraian.
-          </p>
-        </div>
-      )}
 
       {data &&
         !isSatpamView(data) &&
@@ -1403,6 +1432,18 @@ export default function PekaryaAttendancePage() {
                 {data.mismatches.length} temuan
               </p>
             </div>
+            {!data.importRevisionId && (
+              <div className="flex items-start gap-2 border-b border-amber-100 bg-amber-50 p-4 text-sm text-amber-900">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>
+                  Presensi bulanan periode ini belum diimpor, jadi belum ada data
+                  presensi mentah untuk dicocokkan.
+                  {data.mismatches.length === 0
+                    ? ' Angka 0 di atas belum berarti aman — periksa ulang setelah presensi bulanan diimpor.'
+                    : ' Temuan di bawah baru berdasarkan laporan dan koreksi yang sudah masuk.'}
+                </p>
+              </div>
+            )}
             <div className="divide-y divide-slate-100">
               {data.mismatches.length === 0 ? (
                 <div className="p-8 text-center text-slate-500">
@@ -1489,6 +1530,14 @@ export default function PekaryaAttendancePage() {
                 </Button>
               )}
             </div>
+            {!data.importRevisionId && (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                Publikasi menunggu presensi bulanan diimpor. Menyetujui atau
+                menolak pengajuan di bawah tetap bisa dilakukan sekarang — begitu
+                presensi bulanan diimpor, keputusan yang sudah diambil ikut
+                terhitung otomatis dan publikasi bisa dilanjutkan.
+              </div>
+            )}
             {data.employees.some((employee) => employee.publishBlocked) && (
               <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
                 Publikasi ditahan sampai semua pegawai aktif memiliki NIPY yang

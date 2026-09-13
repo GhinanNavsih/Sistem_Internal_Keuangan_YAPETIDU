@@ -3,6 +3,7 @@
 import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  attendanceImportStatusKeys,
   employeeKeys,
   kegiatanHistoryKeys,
   koperasiKeys,
@@ -14,6 +15,7 @@ import {
   type SalaryMatrixCollection,
 } from './keys';
 import {
+  fetchAttendanceImportStatus,
   fetchDepartments,
   fetchEmployeesBlueCollar,
   fetchEmployeesLoyalis,
@@ -159,6 +161,16 @@ export function usePayrollPeriod(period: string, enabled = true) {
   });
 }
 
+/** Whether this period's shared attendance file has been imported yet. */
+export function useAttendanceImportStatus(period: string, enabled = true) {
+  return useQuery({
+    queryKey: attendanceImportStatusKeys.doc(period),
+    queryFn: () => fetchAttendanceImportStatus(period),
+    staleTime: STALE_TIME.workflow,
+    enabled: enabled && Boolean(period),
+  });
+}
+
 export function useLoyalisPresenceCorrections(enabled = true) {
   return useQuery({
     queryKey: loyalisPresenceCorrectionsKeys.all,
@@ -232,6 +244,16 @@ export function usePayrollCacheInvalidation() {
     [queryClient],
   );
 
+  const invalidateAttendanceImportStatus = useCallback(
+    (period?: string) =>
+      queryClient.invalidateQueries({
+        queryKey: period
+          ? attendanceImportStatusKeys.doc(period)
+          : attendanceImportStatusKeys.all,
+      }),
+    [queryClient],
+  );
+
   return {
     invalidateEmployees,
     invalidateSalaryMatrix,
@@ -239,5 +261,6 @@ export function usePayrollCacheInvalidation() {
     invalidateReference,
     invalidatePayrollPeriod,
     invalidateLoyalisPresenceCorrections,
+    invalidateAttendanceImportStatus,
   };
 }
