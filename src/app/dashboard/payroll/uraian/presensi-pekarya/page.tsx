@@ -433,14 +433,6 @@ export default function PekaryaAttendancePage() {
   );
   const category = (
     searchParams.get('category') ||
-    (year === 2026 &&
-    month === 7 &&
-    (['super_admin', 'finance_verifier'].includes(
-      profile?.role || '',
-    ) ||
-      profile?.permittedCategories?.includes('SATPAM'))
-      ? 'SATPAM'
-      : '') ||
     (profile?.role === 'satker_head'
       ? permittedAttendanceCategory
         ? ALL_BLUE_COLLAR_CATEGORY
