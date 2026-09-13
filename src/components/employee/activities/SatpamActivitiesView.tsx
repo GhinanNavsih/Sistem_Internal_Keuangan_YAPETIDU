@@ -670,6 +670,21 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                     </SelectItem>
                                   ))}
                                 </SelectGroup>
+                                {visibleExternalEmployees.length > 0 && (
+                                  <>
+                                    <SelectSeparator className="my-1" />
+                                    <SelectGroup>
+                                      <SelectLabel className="text-base font-black text-slate-600 px-2 py-2 bg-slate-50">
+                                        Satpam di Luar Regu Anda (Lembur Sendiri)
+                                      </SelectLabel>
+                                      {visibleExternalEmployees.map(emp => (
+                                        <SelectItem key={emp.id} value={emp.id} className="text-base py-3 pl-3">
+                                          {emp.name} · Regu lain / belum masuk regu
+                                        </SelectItem>
+                                      ))}
+                                    </SelectGroup>
+                                  </>
+                                )}
                               </SelectContent>
                             </Select>
                           </div>

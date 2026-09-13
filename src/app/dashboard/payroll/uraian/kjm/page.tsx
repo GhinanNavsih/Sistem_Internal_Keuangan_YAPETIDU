@@ -378,7 +378,7 @@ function KjmContent() {
           {KJM_SECTION_OPTIONS.map(section => <button key={section.key} id={`kjm-tab-${section.key}`} type="button" role="tab" aria-selected={activeKjmSection === section.key} aria-controls={`kjm-panel-${section.key}`} onClick={() => setActiveKjmSection(section.key)} className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${activeKjmSection === section.key ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-indigo-50 hover:text-indigo-700'}`}>
             <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs ${activeKjmSection === section.key ? 'bg-white/20' : 'bg-slate-100 text-slate-500'}`}>{section.label.slice(0, 1)}</span>
             {section.label}
-            {section.key === 'calculation' && review.issues.length > 0 && <span className={`rounded-full px-1.5 py-0.5 text-xs ${activeKjmSection === section.key ? 'bg-white/20' : 'bg-amber-100 text-amber-700'}`}>{review.issues.length}</span>}
+            {section.key === 'lecturers' && review.issues.length > 0 && <span className={`rounded-full px-1.5 py-0.5 text-xs ${activeKjmSection === section.key ? 'bg-white/20' : 'bg-amber-100 text-amber-700'}`}>{review.issues.length}</span>}
           </button>)}
         </div>
       </div>
@@ -393,6 +393,7 @@ function KjmContent() {
       {activeKjmSection === 'lecturers' && <section id="kjm-panel-lecturers" role="tabpanel" aria-labelledby="kjm-tab-lecturers" className="rounded-2xl border bg-white p-5 space-y-4">
         <h2 className="font-bold text-lg">2. Periksa dosen dan rincian mata kuliah</h2>
         <p className="text-sm text-slate-600">{visibleCourses.length} baris · {lecturers.length} identitas sumber{excludedCourseCount > 0 ? ` · ${excludedCourseCount} baris dikecualikan otomatis dari Tetap Asli` : ''}. Jenis Mata Kuliah mengikuti pembedaan di bagian 1. Hadir dikoreksi otomatis diisi maksimal 14, lalu dikalikan SKS untuk memperoleh Hadir diakui.</p>
+        {review.issues.length > 0 && <details open className="bg-amber-50 p-4 rounded-xl text-amber-900 text-sm"><summary>{review.issues.length} masalah harus diselesaikan</summary><ul className="list-disc pl-5 mt-2 space-y-1">{review.issues.map((s,i) => <li key={i}><button type="button" className="text-left underline decoration-dotted underline-offset-2 hover:text-amber-950" onClick={() => jumpToIssue(s)}>{s}</button></li>)}</ul></details>}
         {unmatchedLecturers.length > 0 && <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 space-y-4">
           <p className="font-semibold text-amber-900">{unmatchedLecturers.length} nama dari berkas belum cocok otomatis dengan pegawai (NIPY tidak ditemukan atau tidak unik). Hubungkan ke pegawai aktif atau kecualikan di bawah ini.</p>
           {unmatchedLecturers.map(lecturer => {
@@ -450,7 +451,6 @@ function KjmContent() {
           <div className="rounded-xl bg-indigo-50 px-3 py-2 text-right"><p className="text-xs font-semibold uppercase tracking-wide text-indigo-500">Total KJM</p><p className="text-lg font-bold text-indigo-700">{rupiah(review.total)}</p></div>
         </div>
         <p className="text-sm text-slate-600">Tanggal penilaian masa kerja: {review.assessmentDate} · Matrix {draft.status === 'approved' ? draft.rateVersion : master.version}. Angka jam adalah unit SKS × hadir diakui. Konsorsium diprioritaskan dalam batas kelebihan.</p>
-        {review.issues.length > 0 && <details open className="bg-amber-50 p-4 rounded-xl text-amber-900 text-sm"><summary>{review.issues.length} masalah harus diselesaikan</summary><ul className="list-disc pl-5 mt-2 space-y-1">{review.issues.map((s,i) => <li key={i}><button type="button" className="text-left underline decoration-dotted underline-offset-2 hover:text-amber-950" onClick={() => jumpToIssue(s)}>{s}</button></li>)}</ul></details>}
         {review.ignored.length > 0 && <details className="text-sm text-slate-500"><summary>{review.ignored.length} identitas diabaikan</summary><ul className="list-disc pl-5">{review.ignored.map(s => <li key={s}>{s}</li>)}</ul></details>}
         <div className="grid gap-3 lg:grid-cols-2">
           {review.results.map(r => {
