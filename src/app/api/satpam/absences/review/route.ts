@@ -107,6 +107,10 @@ export async function POST(request: NextRequest) {
     const absence = beforeSnapshot.data()!;
     const period = String(absence.period || '');
     const employeeId = String(absence.employeeId || '');
+    const reportType = satpamAttendanceReportType(absence);
+    const absenceTeamId = String(absence.teamId || '').trim();
+    const isUnassignedSatpam =
+      absence.scheduleRelation === 'unassigned' || !absenceTeamId;
     const employeeRef = adminDb.collection('Employees_BlueCollar').doc(employeeId);
     const employeeSnapshot = await employeeRef.get();
     const employee = employeeSnapshot.data();
@@ -119,28 +123,42 @@ export async function POST(request: NextRequest) {
     ) {
       throw new HttpError(409, 'Pegawai Satpam aktif tidak ditemukan.');
     }
-    const plan = await loadSatpamDutyPlan(period, String(absence.teamId || ''));
-    if (!plan) {
+    const plan = isUnassignedSatpam
+      ? null
+      : await loadSatpamDutyPlan(period, absenceTeamId);
+    if (!isUnassignedSatpam && !plan) {
       throw new HttpError(409, 'Rencana dinas sumber tidak ditemukan.');
     }
-    const planDay = plan.generatedDays.find(
+    const planDay = plan?.generatedDays.find(
       (day) => day.dutyDate === absence.dutyDate,
-    );
+    ) || null;
     if (
-      !planDay ||
-      !planDay.assignments.some(
-        (assignment) => assignment.employeeId === employeeId,
-      )
+      !isUnassignedSatpam &&
+      (!planDay ||
+        !planDay.assignments.some(
+          (assignment) => assignment.employeeId === employeeId,
+        ))
     ) {
       throw new HttpError(
         409,
         'Pegawai tidak lagi memiliki kewajiban dinas pada tanggal tersebut.',
       );
     }
-    const reportType = satpamAttendanceReportType(absence);
+    if (isUnassignedSatpam && reportType === 'scan') {
+      throw new HttpError(
+        409,
+        'Koreksi scan hanya tersedia untuk Satpam dengan jadwal dinas.',
+      );
+    }
     const requestedReportType =
       action === 'change_type' ? String(body.reportType || '') : '';
     if (action === 'change_type') {
+      if (isUnassignedSatpam || !plan || !planDay) {
+        throw new HttpError(
+          409,
+          'Pengajuan izin tanpa regu tidak dapat diubah menjadi koreksi scan.',
+        );
+      }
       if (requestedReportType !== 'scan' && requestedReportType !== 'izin_resmi') {
         throw new HttpError(400, 'Jenis pengajuan presensi baru tidak valid.');
       }
@@ -374,6 +392,12 @@ export async function POST(request: NextRequest) {
       });
     }
     if (reportType === 'scan') {
+      if (!plan || !planDay) {
+        throw new HttpError(
+          409,
+          'Koreksi scan hanya tersedia untuk Satpam dengan jadwal dinas.',
+        );
+      }
       if (action !== 'approve' && action !== 'decline') {
         throw new HttpError(
           409,
@@ -703,7 +727,7 @@ export async function POST(request: NextRequest) {
       requestId,
       reason,
       expectedRevision,
-      planRevision: plan.revision,
+      planRevision: plan?.revision ?? null,
     });
     const idempotencyRef = adminDb
       .collection('FinancialIdempotencyKeys')
@@ -714,9 +738,9 @@ export async function POST(request: NextRequest) {
     const ledgerRef = adminDb
       .collection('PayrollLedgerEntries')
       .doc(`ABS-${absenceRequestId}`);
-    const planRef = adminDb
-      .collection('SatpamDutyPlans')
-      .doc(plan.id);
+    const planRef = plan
+      ? adminDb.collection('SatpamDutyPlans').doc(plan.id)
+      : null;
     const periodRef = adminDb.collection('PayrollPeriods').doc(period);
     const slipRef = adminDb
       .collection('PayrollSlipStates')
@@ -736,7 +760,7 @@ export async function POST(request: NextRequest) {
         shiftReportsSnapshot,
       ] = await Promise.all([
         transaction.get(absenceRef),
-        transaction.get(planRef),
+        planRef ? transaction.get(planRef) : Promise.resolve(null),
         transaction.get(periodRef),
         transaction.get(slipRef),
         transaction.get(employeeRef),
@@ -758,6 +782,8 @@ export async function POST(request: NextRequest) {
             idempotencySnapshot.data()?.harianCountAdded === true,
           payrollExcludedFromHarian:
             idempotencySnapshot.data()?.payrollExcludedFromHarian === true,
+          payrollExclusionReason:
+            idempotencySnapshot.data()?.payrollExclusionReason || null,
           idempotent: true,
         };
       }
@@ -794,7 +820,10 @@ export async function POST(request: NextRequest) {
       ) {
         throw new HttpError(409, 'Hanya keputusan final yang dapat digantikan.');
       }
-      if (Number(latestPlan.data()?.revision || 0) !== plan.revision) {
+      if (
+        plan &&
+        Number(latestPlan?.data()?.revision || 0) !== plan.revision
+      ) {
         throw new HttpError(
           409,
           'Rencana dinas berubah. Muat ulang sebelum memutuskan izin.',
@@ -813,13 +842,16 @@ export async function POST(request: NextRequest) {
       });
       const payrollExcludedFromHarian =
         approving &&
-        shouldExcludeSatpamLeaveFromHarian({
-          hasShiftRegistration: Boolean(shiftRegistration),
-        });
+        (isUnassignedSatpam ||
+          shouldExcludeSatpamLeaveFromHarian({
+            hasShiftRegistration: Boolean(shiftRegistration),
+          }));
       const harianCountAdded = approving && !payrollExcludedFromHarian;
       const approvedAmount = harianCountAdded ? 12_500 : 0;
       const payrollExclusionReason = payrollExcludedFromHarian
-        ? 'SHIFT_REGISTERED_SAME_DATE'
+        ? isUnassignedSatpam
+          ? 'NO_SCHEDULED_DUTY'
+          : 'SHIFT_REGISTERED_SAME_DATE'
         : null;
       const after = {
         ...current,
@@ -835,7 +867,7 @@ export async function POST(request: NextRequest) {
         payrollExcludedFromHarian,
         payrollExclusionReason,
         payrollExclusionShiftReportId: shiftRegistration?.id || null,
-        planRevision: plan.revision,
+        planRevision: plan?.revision ?? null,
         updatedAt: now,
       };
       transaction.set(absenceRef, after);
@@ -856,6 +888,12 @@ export async function POST(request: NextRequest) {
         },
       );
       if (harianCountAdded) {
+        if (!plan) {
+          throw new HttpError(
+            409,
+            'Izin tanpa regu tidak memiliki kewajiban dinas yang dapat dibayar.',
+          );
+        }
         const entitlement = {
           ...absenceEntitlementData({
             absenceRequestId,
@@ -954,7 +992,7 @@ export async function POST(request: NextRequest) {
             payrollExcludedFromHarian,
             payrollExclusionReason,
             shiftRegistrationReportId: shiftRegistration?.id || null,
-            planRevision: plan.revision,
+            planRevision: plan?.revision ?? null,
           },
         }),
       );
@@ -969,6 +1007,7 @@ export async function POST(request: NextRequest) {
         amount: approvedAmount,
         harianCountAdded,
         payrollExcludedFromHarian,
+        payrollExclusionReason,
         createdAt: now,
       });
       return {
@@ -978,6 +1017,7 @@ export async function POST(request: NextRequest) {
         amount: approvedAmount,
         harianCountAdded,
         payrollExcludedFromHarian,
+        payrollExclusionReason,
         idempotent: false,
       };
     });

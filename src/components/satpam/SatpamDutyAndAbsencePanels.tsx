@@ -138,8 +138,10 @@ type PendingPlanLiburSwap = SwapLiburPrompt & {
 type AbsenceRequest = {
   id: string;
   dutyDate: string;
-  shiftName: string;
-  postId: string;
+  shiftName?: string | null;
+  postId?: string | null;
+  teamId?: string | null;
+  scheduleRelation?: 'scheduled' | 'unassigned' | string;
   reportType?: SatpamAttendanceReportType;
   scanIn?: string | null;
   scanOut?: string | null;
@@ -152,6 +154,7 @@ type AbsenceRequest = {
   decisionReason?: string;
   approvedAmount?: number;
   payrollExcludedFromHarian?: boolean;
+  payrollExclusionReason?: string | null;
   hasShiftRegistrationConflict?: boolean;
 };
 
@@ -216,6 +219,15 @@ function payrollPeriodLabel(period: string) {
     year: 'numeric',
     timeZone: 'Asia/Jakarta',
   }).format(new Date(Date.UTC(year, month - 1, 1)));
+}
+
+function jakartaToday(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
 }
 
 function employeeName(
@@ -1224,12 +1236,7 @@ export function SatpamAbsencePanel(props: {
   const { employeeId, openPeriods, embedded } = props;
   const [selectedPeriod, setPeriod] = useState('');
   const defaultPeriod = useMemo(() => {
-    const today = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Jakarta',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(new Date());
+    const today = jakartaToday();
     const currentPeriod = pekaryaPayrollPeriodForDate(today);
     return (
       openPeriods.find((item) => item.period === currentPeriod)?.period ||
@@ -1241,6 +1248,7 @@ export function SatpamAbsencePanel(props: {
   const period = selectedPeriod || defaultPeriod;
   const [requests, setRequests] = useState<AbsenceRequest[]>([]);
   const [scheduledDuties, setScheduledDuties] = useState<ScheduledDuty[]>([]);
+  const [teamAssigned, setTeamAssigned] = useState<boolean | null>(null);
   const [dutyDate, setDutyDate] = useState('');
   const [reportType, setReportType] =
     useState<SatpamAttendanceReportType>('izin_resmi');
@@ -1250,9 +1258,14 @@ export function SatpamAbsencePanel(props: {
   const [reason, setReason] = useState('');
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [working, setWorking] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const isUnassignedSatpam = teamAssigned === false;
+  const selectedPeriodWindow = useMemo(
+    () => openPeriods.find((item) => item.period === period) || null,
+    [openPeriods, period],
+  );
   const selectedDuty = useMemo(
     () => scheduledDuties.find((duty) => duty.dutyDate === dutyDate) || null,
     [dutyDate, scheduledDuties],
@@ -1283,31 +1296,57 @@ export function SatpamAbsencePanel(props: {
   }, [selectedDuty]);
 
   const load = useCallback(async () => {
-    if (!period) return;
+    if (!period) {
+      setTeamAssigned(true);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError('');
     try {
       const response = await authenticatedJson<{
         requests: AbsenceRequest[];
         scheduledDuties: ScheduledDuty[];
+        teamAssigned?: boolean;
       }>(`/api/satpam/absences?period=${encodeURIComponent(period)}`, {
         method: 'GET',
       });
-      setRequests(response.requests || []);
-      setScheduledDuties(response.scheduledDuties || []);
-      setDutyDate((current) =>
-        response.scheduledDuties.some((duty) => duty.dutyDate === current)
-          ? current
-          : response.scheduledDuties[0]?.dutyDate || '',
-      );
+      const nextRequests = response.requests || [];
+      const nextScheduledDuties = response.scheduledDuties || [];
+      const nextTeamAssigned = response.teamAssigned !== false;
+      setRequests(nextRequests);
+      setScheduledDuties(nextScheduledDuties);
+      setTeamAssigned(nextTeamAssigned);
+      if (nextTeamAssigned) {
+        setDutyDate((current) =>
+          nextScheduledDuties.some((duty) => duty.dutyDate === current)
+            ? current
+            : nextScheduledDuties[0]?.dutyDate || '',
+        );
+      } else {
+        setReportType('izin_resmi');
+        const startDate = selectedPeriodWindow?.startDate || '';
+        const endDate = selectedPeriodWindow?.endDate || '';
+        const today = jakartaToday();
+        setDutyDate((current) =>
+          current &&
+          (!startDate || current >= startDate) &&
+          (!endDate || current <= endDate)
+            ? current
+            : today >= startDate && today <= endDate
+              ? today
+              : startDate,
+        );
+      }
     } catch (cause) {
+      setTeamAssigned(true);
       setError(
         cause instanceof Error ? cause.message : 'Pengajuan izin gagal dimuat.',
       );
     } finally {
       setLoading(false);
     }
-  }, [period]);
+  }, [period, selectedPeriodWindow]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
@@ -1315,14 +1354,25 @@ export function SatpamAbsencePanel(props: {
   }, [load]);
 
   const submit = async () => {
-    if (!dutyDate) return;
-    if (!selectedDuty) {
+    if (!dutyDate) {
+      setError(
+        isUnassignedSatpam
+          ? 'Pilih tanggal izin terlebih dahulu.'
+          : 'Pilih tanggal kewajiban dinas terlebih dahulu.',
+      );
+      return;
+    }
+    if (!isUnassignedSatpam && !selectedDuty) {
       setError('Pilih tanggal kewajiban dinas terlebih dahulu.');
+      return;
+    }
+    if (isUnassignedSatpam && reportType !== 'izin_resmi') {
+      setError('Satpam tanpa regu hanya dapat mengajukan izin resmi.');
       return;
     }
     if (reportType === 'scan' && scanRangeInvalid) {
       setError(
-        selectedDuty.shiftName === 'Malam'
+        selectedDuty?.shiftName === 'Malam'
           ? 'Jam scan Shift Malam harus membentuk rentang dinas yang valid hingga hari berikutnya.'
           : 'Scan keluar harus lebih lambat dari scan masuk.',
       );
@@ -1401,10 +1451,12 @@ export function SatpamAbsencePanel(props: {
 
   const body = (
     <CardContent className="space-y-5 p-4 sm:p-5">
-        <AttendanceImportStatusBanner
-          period={period}
-          variant={reportType === 'scan' ? 'satpam-scan' : 'satpam-independent'}
-        />
+        {!isUnassignedSatpam && (
+          <AttendanceImportStatusBanner
+            period={period}
+            variant={reportType === 'scan' ? 'satpam-scan' : 'satpam-independent'}
+          />
+        )}
         {(message || error) && (
           <div
             role="status"
@@ -1429,45 +1481,79 @@ export function SatpamAbsencePanel(props: {
             }))}
           />
         </div>
-        {loading ? (
+        {loading || teamAssigned === null ? (
           <div className="flex min-h-24 items-center justify-center gap-2 text-slate-500">
             <Loader2 className="h-5 w-5 animate-spin" />
             Memuat jadwal Anda…
           </div>
-        ) : scheduledDuties.length === 0 ? (
+        ) : !isUnassignedSatpam && scheduledDuties.length === 0 ? (
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-slate-700">
             Belum ada kewajiban dinas yang dapat dipilih pada periode ini.
           </div>
         ) : (
           <>
-            <div className="space-y-2">
-              <Label htmlFor="absence-duty-date">Tanggal Kewajiban Dinas</Label>
-              <LargeSelect
-                id="absence-duty-date"
-                value={dutyDate}
-                onValueChange={selectDutyDate}
-                options={scheduledDuties.map((duty) => ({
-                  value: duty.dutyDate,
-                  label: `${duty.dutyDate} · ${duty.shiftName} · ${formatSatpamPostLabel(duty.postId)}`,
-                }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="satpam-report-type">Jenis pengajuan</Label>
-              <LargeSelect
-                id="satpam-report-type"
-                value={reportType}
-                onValueChange={(value) => {
-                  setReportType(value as SatpamAttendanceReportType);
-                  setError('');
-                }}
-                options={[
-                  { value: 'scan', label: 'Scan Masuk & Scan Keluar' },
-                  { value: 'izin_resmi', label: 'Izin Resmi / Tidak Dapat Dinas' },
-                ]}
-              />
-            </div>
-            {reportType === 'scan' ? (
+            {isUnassignedSatpam ? (
+              <>
+                <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-900">
+                  <p className="font-bold">Anda belum ditempatkan pada regu Satpam.</p>
+                  <p className="mt-1">
+                    Anda tetap dapat mengajukan izin administratif dengan memilih
+                    tanggal dalam jendela payroll. Pengajuan tanpa regu tidak
+                    menambah hak Harian karena tidak ada jadwal dinas yang
+                    digantikan.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="absence-duty-date">Tanggal izin</Label>
+                  <Input
+                    id="absence-duty-date"
+                    type="date"
+                    value={dutyDate}
+                    min={selectedPeriodWindow?.startDate}
+                    max={selectedPeriodWindow?.endDate}
+                    onChange={(event) => selectDutyDate(event.target.value)}
+                    className="min-h-14 rounded-xl text-base font-mono"
+                  />
+                  {selectedPeriodWindow && (
+                    <p className="text-xs text-slate-500">
+                      Pilih tanggal antara {selectedPeriodWindow.startDate} dan{' '}
+                      {selectedPeriodWindow.endDate}.
+                    </p>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="absence-duty-date">Tanggal Kewajiban Dinas</Label>
+                <LargeSelect
+                  id="absence-duty-date"
+                  value={dutyDate}
+                  onValueChange={selectDutyDate}
+                  options={scheduledDuties.map((duty) => ({
+                    value: duty.dutyDate,
+                    label: `${duty.dutyDate} · ${duty.shiftName} · ${formatSatpamPostLabel(duty.postId)}`,
+                  }))}
+                />
+              </div>
+            )}
+            {!isUnassignedSatpam && (
+              <div className="space-y-2">
+                <Label htmlFor="satpam-report-type">Jenis pengajuan</Label>
+                <LargeSelect
+                  id="satpam-report-type"
+                  value={reportType}
+                  onValueChange={(value) => {
+                    setReportType(value as SatpamAttendanceReportType);
+                    setError('');
+                  }}
+                  options={[
+                    { value: 'scan', label: 'Scan Masuk & Scan Keluar' },
+                    { value: 'izin_resmi', label: 'Izin Resmi / Tidak Dapat Dinas' },
+                  ]}
+                />
+              </div>
+            )}
+            {reportType === 'scan' && !isUnassignedSatpam ? (
               <>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
@@ -1592,6 +1678,9 @@ export function SatpamAbsencePanel(props: {
             <h3 className="font-bold">Riwayat Pengajuan</h3>
             {requests.map((request) => {
               const requestType = satpamAttendanceReportType(request);
+              const isUnassignedRequest =
+                request.scheduleRelation === 'unassigned' ||
+                !request.teamId;
               return (
                 <article
                   key={request.id}
@@ -1600,8 +1689,10 @@ export function SatpamAbsencePanel(props: {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-bold">
-                        {request.dutyDate} · {request.shiftName} ·{' '}
-                        {formatSatpamPostLabel(request.postId)}
+                        {request.dutyDate} ·{' '}
+                        {isUnassignedRequest
+                          ? 'Tanpa regu'
+                          : `${request.shiftName || '--'} · ${formatSatpamPostLabel(request.postId || '')}`}
                       </p>
                       <p className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-indigo-700">
                         {requestType === 'scan' ? (
@@ -1622,7 +1713,9 @@ export function SatpamAbsencePanel(props: {
                             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                             {request.status === 'approved' &&
                             request.payrollExcludedFromHarian
-                              ? 'Izin disetujui tanpa tambahan Harian karena Anda sudah terdaftar pada shift ini.'
+                              ? request.payrollExclusionReason === 'NO_SCHEDULED_DUTY'
+                                ? 'Izin disetujui tanpa tambahan Harian karena belum ada regu atau jadwal dinas.'
+                                : 'Izin disetujui tanpa tambahan Harian karena Anda sudah terdaftar pada shift ini.'
                               : 'Anda sudah terdaftar pada shift ini. Jika izin disetujui, pengajuan tidak menambah hitungan Harian.'}
                           </p>
                         )}
@@ -1632,7 +1725,9 @@ export function SatpamAbsencePanel(props: {
                         Revisi {request.revision}
                         {requestType === 'izin_resmi' &&
                         request.status === 'approved'
-                          ? request.payrollExcludedFromHarian
+                          ? request.payrollExclusionReason === 'NO_SCHEDULED_DUTY'
+                            ? ' · Tanpa tambahan Harian (tanpa regu/jadwal)'
+                            : request.payrollExcludedFromHarian
                             ? ' · Tanpa tambahan Harian'
                             : ' · Dibayar Rp12.500'
                           : ''}
@@ -1665,12 +1760,14 @@ export function SatpamAbsencePanel(props: {
       <CardHeader className="border-b border-amber-100 bg-amber-50/70 p-5">
         <CardTitle className="flex items-center gap-2 text-xl">
           <ShieldCheck className="h-6 w-6 text-amber-700" />
-          Ajukan Izin &amp; Presensi Satpam
+          {isUnassignedSatpam
+            ? 'Ajukan Izin Satpam Tanpa Regu'
+            : 'Ajukan Izin & Presensi Satpam'}
         </CardTitle>
         <p className="text-base text-slate-600">
-          Laporkan scan masuk &amp; keluar yang terlupa atau ajukan izin untuk
-          kewajiban dinas yang terjadwal. Izin yang tumpang tindih dengan
-          shift terdaftar tidak menambah Harian.
+          {isUnassignedSatpam
+            ? 'Pilih tanggal untuk mengajukan izin administratif. Pengajuan tanpa regu tidak menghasilkan tambahan Harian.'
+            : 'Laporkan scan masuk & keluar yang terlupa atau ajukan izin untuk kewajiban dinas yang terjadwal. Izin yang tumpang tindih dengan shift terdaftar tidak menambah Harian.'}
         </p>
       </CardHeader>
       {body}

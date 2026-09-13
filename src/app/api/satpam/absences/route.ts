@@ -9,6 +9,7 @@ import {
 } from '@/lib/payroll/domain';
 import { payrollPeriodForDutyDate } from '@/lib/payroll/domain';
 import { normalizeAttendanceTime } from '@/lib/payroll/attendance';
+import { pekaryaPayrollWindow } from '@/lib/payroll/pekaryaSpj';
 import {
   isSatpamDutyPlanRequired,
   isSatpamPlanDayStarted,
@@ -32,7 +33,10 @@ import {
   requireAuthenticatedProfile,
   requireRole,
 } from '@/lib/server/auth';
-import { isPeriodClosed } from '@/lib/server/payrollPeriod';
+import {
+  assertPeriodAcceptsInput,
+  isPeriodClosed,
+} from '@/lib/server/payrollPeriod';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,6 +53,17 @@ function absenceRequestId(employeeId: string, dutyDate: string): string {
 
 function stableHash(value: unknown) {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+function assertDateBelongsToPayrollPeriod(period: string, dutyDate: string) {
+  const window = pekaryaPayrollWindow(period);
+  if (
+    dutyDate < window.startsOn ||
+    dutyDate > window.endsOn ||
+    payrollPeriodForDutyDate(dutyDate) !== period
+  ) {
+    throw new HttpError(400, 'Tanggal izin berada di luar periode payroll.');
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -117,8 +132,10 @@ export async function GET(request: NextRequest) {
       shiftName: string;
       postId: string;
     }> = [];
+    let teamAssigned: boolean | undefined;
     if (isEmployee && actor.linkedEmployeeId) {
       const team = await findSatpamTeamForEmployee(actor.linkedEmployeeId);
+      teamAssigned = Boolean(team);
       if (team) {
         const plan = await loadSatpamDutyPlanContext(
           period,
@@ -144,6 +161,7 @@ export async function GET(request: NextRequest) {
     return Response.json(
       {
         period,
+        ...(isEmployee ? { teamAssigned: teamAssigned === true } : {}),
         scheduledDuties,
         requests: requests
           .sort((left, right) =>
@@ -207,31 +225,41 @@ export async function POST(request: NextRequest) {
     }
     const period = payrollPeriodForDutyDate(dutyDate);
     const periodSnapshot = await adminDb.collection('PayrollPeriods').doc(period).get();
+    const team = await findSatpamTeamForEmployee(actor.linkedEmployeeId);
+    const isUnassignedSatpam = !team;
+    assertDateBelongsToPayrollPeriod(period, dutyDate);
     if (
-      isPeriodClosed(periodSnapshot.data()) ||
-      !isSatpamDutyPlanRequired(period, periodSnapshot.data() || null)
+      isUnassignedSatpam &&
+      action === 'submit' &&
+      body.reportType !== 'izin_resmi'
     ) {
       throw new HttpError(
         409,
-        'Pengajuan hanya tersedia pada periode rencana dinas yang terbuka.',
+        'Satpam tanpa regu hanya dapat mengajukan izin resmi.',
       );
     }
-    const team = await findSatpamTeamForEmployee(actor.linkedEmployeeId);
-    if (!team) {
-      throw new HttpError(409, 'Satpam belum ditempatkan pada regu.');
+    if (
+      isPeriodClosed(periodSnapshot.data()) ||
+      (!isUnassignedSatpam &&
+        !isSatpamDutyPlanRequired(period, periodSnapshot.data() || null))
+    ) {
+      throw new HttpError(
+        409,
+        isUnassignedSatpam
+          ? 'Pengajuan hanya tersedia pada periode payroll yang terbuka.'
+          : 'Pengajuan hanya tersedia pada periode rencana dinas yang terbuka.',
+      );
     }
-    const { plan, day } = await loadSatpamDutyPlanContext(
-      period,
-      team.teamId,
-      dutyDate,
-    );
-    if (!plan || !day) {
+    const { plan, day } = team
+      ? await loadSatpamDutyPlanContext(period, team.teamId, dutyDate)
+      : { plan: null, day: null };
+    if (!isUnassignedSatpam && (!plan || !day)) {
       throw new HttpError(409, 'Rencana dinas tanggal ini belum diterbitkan.');
     }
-    const plannedAssignment = day.assignments.find(
+    const plannedAssignment = day?.assignments.find(
       (assignment) => assignment.employeeId === actor.linkedEmployeeId,
-    );
-    if (!plannedAssignment) {
+    ) || null;
+    if (!isUnassignedSatpam && !plannedAssignment) {
       throw new HttpError(
         409,
         'Tanggal ini adalah hari Libur atau bukan kewajiban dinas Anda.',
@@ -244,9 +272,9 @@ export async function POST(request: NextRequest) {
     const idempotencyRef = adminDb
       .collection('FinancialIdempotencyKeys')
       .doc(`${actor.uid}__${requestId}`);
-    const planRef = adminDb
-      .collection('SatpamDutyPlans')
-      .doc(plan.id);
+    const planRef = plan
+      ? adminDb.collection('SatpamDutyPlans').doc(plan.id)
+      : null;
 
     let reportType: SatpamAttendanceReportType =
       body.reportType === 'scan' ? 'scan' : 'izin_resmi';
@@ -268,6 +296,12 @@ export async function POST(request: NextRequest) {
         );
       }
       if (reportType === 'scan') {
+        if (!day) {
+          throw new HttpError(
+            409,
+            'Koreksi scan hanya tersedia untuk Satpam dengan jadwal dinas.',
+          );
+        }
         scanIn = normalizeAttendanceTime(body.scanIn);
         scanOut = normalizeAttendanceTime(body.scanOut);
         if (
@@ -319,7 +353,7 @@ export async function POST(request: NextRequest) {
       absenceType,
       reason,
       evidenceUrl,
-      planRevision: plan.revision,
+      planRevision: plan?.revision ?? null,
     });
     const result = await adminDb.runTransaction(async (transaction) => {
       const [
@@ -331,7 +365,7 @@ export async function POST(request: NextRequest) {
         transaction.get(absenceRef),
         transaction.get(idempotencyRef),
         transaction.get(adminDb.collection('PayrollPeriods').doc(period)),
-        transaction.get(planRef),
+        planRef ? transaction.get(planRef) : Promise.resolve(null),
       ]);
       if (idempotencySnapshot.exists) {
         if (idempotencySnapshot.data()?.requestHash !== requestHash) {
@@ -346,18 +380,17 @@ export async function POST(request: NextRequest) {
           idempotent: true,
         };
       }
-      if (isPeriodClosed(latestPeriodSnapshot.data())) {
-        throw new HttpError(
-          409,
-          'Periode payroll sudah ditutup; pengajuan tidak dapat diubah.',
-        );
-      }
+      assertPeriodAcceptsInput(
+        latestPeriodSnapshot.data(),
+        'Periode payroll sudah ditutup; pengajuan tidak dapat diubah.',
+      );
       if (
-        !isSatpamDutyPlanRequired(
+        plan &&
+        (!isSatpamDutyPlanRequired(
           period,
           latestPeriodSnapshot.data() || null,
         ) ||
-        Number(latestPlanSnapshot.data()?.revision || 0) !== plan.revision
+          Number(latestPlanSnapshot?.data()?.revision || 0) !== plan.revision)
       ) {
         throw new HttpError(
           409,
@@ -394,11 +427,10 @@ export async function POST(request: NextRequest) {
       }
       const revision = currentRevision + 1;
       const now = admin.firestore.FieldValue.serverTimestamp();
-      const late = isSatpamPlanDayStarted(day);
-      const { startsAtIso, endsAtIso } = getShiftIsoBounds(
-        dutyDate,
-        day.shiftName,
-      );
+      const late = day ? isSatpamPlanDayStarted(day) : false;
+      const shiftBounds = day
+        ? getShiftIsoBounds(dutyDate, day.shiftName)
+        : null;
       const after =
         action === 'withdraw'
           ? {
@@ -416,14 +448,15 @@ export async function POST(request: NextRequest) {
               ),
               employeeNipy: String(employeeSnapshot.data()?.nipy || ''),
               period,
-              teamId: team.teamId,
-              planId: plan.id,
-              planRevision: plan.revision,
+              teamId: team?.teamId || null,
+              planId: plan?.id || null,
+              planRevision: plan?.revision ?? null,
               dutyDate,
-              shiftName: day.shiftName,
-              postId: plannedAssignment.postId,
-              startsAtIso,
-              endsAtIso,
+              shiftName: day?.shiftName || null,
+              postId: plannedAssignment?.postId || null,
+              startsAtIso: shiftBounds?.startsAtIso || null,
+              endsAtIso: shiftBounds?.endsAtIso || null,
+              scheduleRelation: isUnassignedSatpam ? 'unassigned' : 'scheduled',
               reportType,
               scanIn,
               scanOut,
@@ -474,7 +507,7 @@ export async function POST(request: NextRequest) {
               : `Pengajuan ${effectiveReportType === 'scan' ? 'presensi' : 'izin'} dikirim tanpa keterangan tambahan oleh Satpam.`),
           before,
           after,
-          metadata: { late, planRevision: plan.revision },
+          metadata: { late, planRevision: plan?.revision ?? null },
         }),
       );
       transaction.create(idempotencyRef, {

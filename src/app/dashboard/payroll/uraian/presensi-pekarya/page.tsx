@@ -172,8 +172,10 @@ type SatpamAbsenceAdminView = {
     employeeId: string;
     employeeName?: string;
     dutyDate: string;
-    shiftName?: string;
-    postId?: string;
+    shiftName?: string | null;
+    postId?: string | null;
+    teamId?: string | null;
+    scheduleRelation?: string;
     reportType?: SatpamAttendanceReportType;
     scanIn?: string | null;
     scanOut?: string | null;
@@ -572,6 +574,7 @@ export default function PekaryaAttendancePage() {
     try {
       const reviewResult = await authenticatedJson<{
         payrollExcludedFromHarian?: boolean;
+        payrollExclusionReason?: string | null;
       }>('/api/satpam/absences/review', {
         method: 'POST',
         body: JSON.stringify({
@@ -581,15 +584,20 @@ export default function PekaryaAttendancePage() {
           expectedRevision: absence.revision,
         }),
       });
+      const isUnassignedSatpam =
+        absence.scheduleRelation === 'unassigned' || !absence.teamId;
       setMessage(
         reportType === 'scan'
           ? action === 'approve'
             ? 'Laporan scan disetujui dan presensi Satpam telah diperbarui.'
             : 'Laporan scan ditolak.'
           : action.endsWith('approve')
-            ? reviewResult.payrollExcludedFromHarian === true
-              ? 'Izin disetujui tanpa tambahan Harian karena pegawai telah terdaftar shift pada tanggal tersebut.'
-              : 'Izin disetujui. Hak Rp12.500 dan rekonsiliasi telah diperbarui.'
+            ? reviewResult.payrollExclusionReason === 'NO_SCHEDULED_DUTY' ||
+              (isUnassignedSatpam && reviewResult.payrollExcludedFromHarian === true)
+              ? 'Izin disetujui tanpa tambahan Harian karena pegawai belum memiliki regu atau jadwal dinas.'
+              : reviewResult.payrollExcludedFromHarian === true
+                ? 'Izin disetujui tanpa tambahan Harian karena pegawai telah terdaftar shift pada tanggal tersebut.'
+                : 'Izin disetujui. Hak Rp12.500 dan rekonsiliasi telah diperbarui.'
             : 'Izin ditolak dan rekonsiliasi telah diperbarui.',
       );
       await load();
@@ -1214,7 +1222,9 @@ export default function PekaryaAttendancePage() {
                 <p className="text-sm text-slate-500">
                   Laporan scan memperbaiki bukti presensi tanpa mengubah upah
                   shift. Izin disetujui menambah Harian Rp12.500 hanya jika
-                  tidak ada shift terdaftar pada tanggal yang sama.
+                  tidak ada shift terdaftar pada tanggal yang sama. Satpam tanpa
+                  regu dapat mengajukan izin administratif, tetapi tidak mendapat
+                  tambahan Harian karena tidak ada jadwal dinas yang digantikan.
                 </p>
               </div>
               <div className="divide-y divide-slate-100">
@@ -1235,6 +1245,8 @@ export default function PekaryaAttendancePage() {
                         : 'supersede_decline';
                     const payrollExcludedFromHarian =
                       absence.payrollExcludedFromHarian === true;
+                    const isUnassignedSatpam =
+                      absence.scheduleRelation === 'unassigned' || !absence.teamId;
                     return (
                       <article key={absence.id} className="space-y-3 p-5">
                         <div>
@@ -1248,8 +1260,10 @@ export default function PekaryaAttendancePage() {
                               : satpamAbsenceTypeLabel(absence.absenceType)}
                             {absence.shiftName ? ` · ${absence.shiftName}` : ''}
                             {absence.postId ? ` · ${absence.postId}` : ''}
+                            {isUnassignedSatpam ? ' · Tanpa regu' : ''}
                           </p>
                           {requestType === 'izin_resmi' &&
+                            !isUnassignedSatpam &&
                             (absence.hasShiftRegistrationConflict === true ||
                               (absence.shiftRegistrationConflicts?.length || 0) > 0) && (
                             <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
@@ -1277,7 +1291,9 @@ export default function PekaryaAttendancePage() {
                             {requestType === 'izin_resmi' &&
                             absence.status === 'approved'
                               ? payrollExcludedFromHarian
-                                ? ' · tanpa tambahan Harian'
+                                ? absence.payrollExclusionReason === 'NO_SCHEDULED_DUTY'
+                                  ? ' · tanpa tambahan Harian (tanpa regu/jadwal)'
+                                  : ' · tanpa tambahan Harian'
                                 : ` · ${money(absence.approvedAmount || 12_500)}`
                               : ''}
                           </p>

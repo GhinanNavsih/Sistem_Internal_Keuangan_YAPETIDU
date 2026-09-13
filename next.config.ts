@@ -1,6 +1,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  experimental: {
+    // Turbopack's dev persistent cache (.next/dev/cache/turbopack) has no
+    // pruning, so it grows unbounded across a long-running/multi-day dev
+    // session until loading it becomes expensive enough to peg CPU on
+    // startup. Disabling it trades slightly slower rebuilds after a restart
+    // for not accumulating that cache at all. See vercel/next.js#94915.
+    turbopackFileSystemCacheForDev: false,
+  },
   async headers() {
     return [
       {

@@ -124,8 +124,10 @@ interface SatpamReviewRequest {
   employeeId: string;
   employeeName?: string;
   dutyDate: string;
-  shiftName?: string;
-  postId?: string;
+  shiftName?: string | null;
+  postId?: string | null;
+  teamId?: string | null;
+  scheduleRelation?: string;
   reportType?: SatpamAttendanceReportType;
   scanIn?: string | null;
   scanOut?: string | null;
@@ -1067,6 +1069,7 @@ export default function PresenceCorrectionsAdminPage() {
     const isSatpam = item.source === 'satpam';
     return authenticatedJson<{
       payrollExcludedFromHarian?: boolean;
+      payrollExclusionReason?: string | null;
     }>(
       isSatpam
         ? '/api/satpam/absences/review'
@@ -1089,17 +1092,30 @@ export default function PresenceCorrectionsAdminPage() {
 
   const blueCollarApprovalMessage = (
     item: BlueCollarReviewItem,
-    reviewResult: { payrollExcludedFromHarian?: boolean },
+    reviewResult: {
+      payrollExcludedFromHarian?: boolean;
+      payrollExclusionReason?: string | null;
+    },
   ) => {
     const isSatpam = item.source === 'satpam';
     const requestType = isSatpam
       ? satpamAttendanceReportType(item.request)
       : pekaryaAttendanceReportType(item.request);
     const sourceLabel = isSatpam ? 'Satpam' : 'Pekarya';
+    const isUnassignedSatpam =
+      isSatpam &&
+      item.source === 'satpam' &&
+      (item.request.scheduleRelation === 'unassigned' ||
+        !item.request.teamId);
     return isSatpam &&
       requestType === 'izin_resmi' &&
-      reviewResult.payrollExcludedFromHarian === true
-      ? 'Izin Satpam berhasil disetujui tanpa tambahan Harian karena pegawai sudah terdaftar shift pada tanggal tersebut.'
+      (reviewResult.payrollExclusionReason === 'NO_SCHEDULED_DUTY' ||
+        (isUnassignedSatpam && reviewResult.payrollExcludedFromHarian === true))
+      ? 'Izin Satpam berhasil disetujui tanpa tambahan Harian karena pegawai belum memiliki regu atau jadwal dinas.'
+      : isSatpam &&
+          requestType === 'izin_resmi' &&
+          reviewResult.payrollExcludedFromHarian === true
+        ? 'Izin Satpam berhasil disetujui tanpa tambahan Harian karena pegawai sudah terdaftar shift pada tanggal tersebut.'
       : `${requestType === 'scan' ? 'Laporan scan' : 'Izin'} ${sourceLabel} berhasil disetujui dan presensi diperbarui.`;
   };
 
@@ -1274,8 +1290,11 @@ export default function PresenceCorrectionsAdminPage() {
     const reportType = item.source === 'satpam'
       ? satpamAttendanceReportType(request)
       : pekaryaAttendanceReportType(request);
-    const defaultTimes = item.source === 'satpam' && isSatpamShiftName(item.request.shiftName)
-      ? defaultSatpamScanTimes(item.request.shiftName)
+    const satpamShiftName = item.source === 'satpam'
+      ? item.request.shiftName || undefined
+      : undefined;
+    const defaultTimes = isSatpamShiftName(satpamShiftName)
+      ? defaultSatpamScanTimes(satpamShiftName)
       : { scanIn: '08:00', scanOut: '14:00' };
     setEditingTypeRequestId(`${item.source}:${request.id}`);
     setEditingReportType(reportType);
@@ -1298,12 +1317,15 @@ export default function PresenceCorrectionsAdminPage() {
   ) => {
     const request = item.request;
     if (request.status !== 'pending') return;
+    const satpamShiftName = item.source === 'satpam'
+      ? item.request.shiftName || undefined
+      : undefined;
     const scanRangeValid = item.source === 'satpam'
-      ? isSatpamShiftName(item.request.shiftName) &&
+      ? isSatpamShiftName(satpamShiftName) &&
         isValidSatpamAttendanceScanRange(
           editingScanIn,
           editingScanOut,
-          item.request.shiftName,
+          satpamShiftName,
         )
       : isValidAttendanceScanRange(editingScanIn, editingScanOut);
     if (editingReportType === 'scan' && !scanRangeValid) {
@@ -1943,6 +1965,12 @@ export default function PresenceCorrectionsAdminPage() {
                     isSatpam &&
                     item.source === 'satpam' &&
                     item.request.payrollExcludedFromHarian === true;
+                  const isUnassignedSatpam =
+                    isSatpam &&
+                    item.source === 'satpam' &&
+                    (item.request.scheduleRelation === 'unassigned' ||
+                      !item.request.teamId);
+                  const canChangeType = !isUnassignedSatpam;
 
                   const isExpanded = expandedReqId === reasonKey;
                   const isEditingType = editingTypeRequestId === reasonKey;
@@ -1995,6 +2023,11 @@ export default function PresenceCorrectionsAdminPage() {
                           <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[10px] font-semibold text-slate-500">
                             {isSatpam && item.source === 'satpam' && item.request.shiftName && <span>Shift {item.request.shiftName}</span>}
                             {isSatpam && item.source === 'satpam' && item.request.postId && <span>{item.request.postId}</span>}
+                            {isUnassignedSatpam && (
+                              <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 font-bold text-indigo-700">
+                                Tanpa regu
+                              </span>
+                            )}
                             {hasShiftRegistrationConflict && (
                               <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-bold text-amber-800">
                                 ⚠ Shift sudah terdaftar
@@ -2035,7 +2068,7 @@ export default function PresenceCorrectionsAdminPage() {
                                         <span>Jenis:</span>
                                         <div className="flex flex-wrap items-center justify-end gap-2">
                                           <span className="text-indigo-600 text-[10px] font-bold text-right">{requestTitle}</span>
-                                          {status === 'pending' && (
+                                          {status === 'pending' && canChangeType && (
                                             <Button
                                               type="button"
                                               variant="outline"
@@ -2063,6 +2096,12 @@ export default function PresenceCorrectionsAdminPage() {
                                         <div className="flex items-center justify-between gap-3">
                                           <span>Shift / Pos:</span>
                                           <span className="text-slate-900">{item.request.shiftName}{item.request.postId ? ` · ${item.request.postId}` : ''}</span>
+                                        </div>
+                                      )}
+                                      {isUnassignedSatpam && (
+                                        <div className="flex items-center justify-between gap-3">
+                                          <span>Penjadwalan:</span>
+                                          <span className="font-bold text-indigo-700">Tanpa regu / jadwal dinas</span>
                                         </div>
                                       )}
                                       {hasShiftRegistrationConflict && (
@@ -2093,7 +2132,9 @@ export default function PresenceCorrectionsAdminPage() {
                                       )}
                                       {payrollExcludedFromHarian && status === 'approved' && (
                                         <p className="pt-2 text-xs font-bold text-amber-700">
-                                          Disetujui tanpa tambahan Harian karena pegawai telah terdaftar pada shift ini.
+                                          {item.source === 'satpam' && item.request.payrollExclusionReason === 'NO_SCHEDULED_DUTY'
+                                            ? 'Disetujui tanpa tambahan Harian karena pegawai belum memiliki regu atau jadwal dinas.'
+                                            : 'Disetujui tanpa tambahan Harian karena pegawai telah terdaftar pada shift ini.'}
                                         </p>
                                       )}
                                     </div>

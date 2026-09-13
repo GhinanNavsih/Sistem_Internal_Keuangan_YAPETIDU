@@ -91,8 +91,8 @@ export default function EmployeeLeavePage() {
               Pengajuan Tidak Tersedia
             </h1>
             <p className="text-sm leading-relaxed text-slate-500">
-              Akun ini belum terhubung ke pegawai Pekarya yang dapat mengajukan
-              presensi atau izin.
+              Akun ini belum terhubung ke pegawai yang dapat mengajukan presensi
+              atau izin.
             </p>
             <Button
               variant="outline"
