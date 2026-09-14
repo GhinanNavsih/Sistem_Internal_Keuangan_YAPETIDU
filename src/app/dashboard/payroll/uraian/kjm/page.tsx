@@ -270,6 +270,17 @@ function KjmContent() {
       return { ...current, courses };
     });
   };
+  const courseExcluded = (id: string): boolean => !!edits.courses[id]?.exclude;
+  const groupIsExcluded = (group: ReturnType<typeof groupKjmCourses>[number]): boolean => {
+    return group.courseIds.length > 0 && group.courseIds.every(id => courseExcluded(id));
+  };
+  const setGroupExclusion = (group: ReturnType<typeof groupKjmCourses>[number], exclude: boolean) => {
+    setEdits(current => {
+      const courses = { ...current.courses };
+      group.courseIds.forEach(id => { courses[id] = { ...courses[id], exclude }; });
+      return { ...current, courses };
+    });
+  };
   const upload = async () => {
     if (!file) throw new Error('Pilih berkas XLSX.');
     const token = await auth.currentUser?.getIdToken();
@@ -385,8 +396,8 @@ function KjmContent() {
       {activeKjmSection === 'classification' && <section id="kjm-panel-classification" role="tabpanel" aria-labelledby="kjm-tab-classification" className="rounded-2xl border bg-white p-5 space-y-4">
         <h2 className="font-bold text-lg">1. Bedakan Mata Kuliah</h2>
         <p className="text-sm text-slate-600">Semua Mata Kuliah yang masuk rekap otomatis dianggap Reguler. Centang hanya Mata Kuliah Konsorsium; pilihan akan diterapkan ke seluruh kelas dan baris sumber dengan Kode MK yang sama dalam program studi tersebut.</p>
-        <div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead className="bg-indigo-50"><tr>{['Program studi', 'Kode MK', 'Nama Mata Kuliah', 'Kelas', 'SKS', 'Baris sumber', 'Konsorsium?'].map(h => <th key={h} className="p-3 whitespace-nowrap">{h}</th>)}</tr></thead><tbody>
-          {courseGroups.map(group => <tr key={group.key} className="border-t align-top"><td className="p-3">{group.program || '—'}</td><td className="p-3 whitespace-nowrap">{group.code}</td><td className="p-3 min-w-64">{group.name}<br /><span className="text-xs text-slate-500">{group.courseIds.length > 1 ? 'Beberapa kelas/baris sumber' : 'Satu baris sumber'}</span></td><td className="p-3 whitespace-nowrap">{group.classes.join(', ') || '—'}</td><td className="p-3 whitespace-nowrap">{group.sks.join(', ')}</td><td className="p-3 text-center">{group.courseIds.length}</td><td className="p-3 text-center"><input aria-label={`Konsorsium ${group.code}`} type="checkbox" checked={groupIsConsortium(group)} disabled={!editable} onChange={e => setGroupClassification(group, e.target.checked)} /></td></tr>)}
+        <div className="max-h-[85vh] overflow-auto"><table className="w-full text-sm text-left"><thead className="sticky top-0 z-10 bg-indigo-50"><tr>{['Program studi', 'Kode MK', 'Nama Mata Kuliah', 'Kelas', 'SKS', 'Baris sumber', 'Konsorsium?', 'Kecualikan?'].map(h => <th key={h} className="p-3 whitespace-nowrap">{h}</th>)}</tr></thead><tbody>
+          {courseGroups.map(group => <tr key={group.key} className="border-t align-top"><td className="p-3">{group.program || '—'}</td><td className="p-3 whitespace-nowrap">{group.code}</td><td className="p-3 min-w-64">{group.name}<br /><span className="text-xs text-slate-500">{group.courseIds.length > 1 ? 'Beberapa kelas/baris sumber' : 'Satu baris sumber'}</span></td><td className="p-3 whitespace-nowrap">{group.classes.join(', ') || '—'}</td><td className="p-3 whitespace-nowrap">{group.sks.join(', ')}</td><td className="p-3 text-center">{group.courseIds.length}</td><td className="p-3 text-center"><input aria-label={`Konsorsium ${group.code}`} type="checkbox" checked={groupIsConsortium(group)} disabled={!editable} onChange={e => setGroupClassification(group, e.target.checked)} /></td><td className="p-3 text-center"><input aria-label={`Kecualikan ${group.code}`} type="checkbox" checked={groupIsExcluded(group)} disabled={!editable} onChange={e => setGroupExclusion(group, e.target.checked)} /></td></tr>)}
         </tbody></table></div>
         <label className="flex gap-2 text-sm"><input id="consortium-reviewed-checkbox" type="checkbox" checked={edits.consortiumReviewed} disabled={!editable} onChange={e => setEdits(old => ({ ...old, consortiumReviewed: e.target.checked }))} /> Saya telah memeriksa semua Mata Kuliah dan pembedaan Reguler/Konsorsium.</label>
       </section>}
