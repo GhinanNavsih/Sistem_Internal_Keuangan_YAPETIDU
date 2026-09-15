@@ -3134,16 +3134,15 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
         (assignment) => assignment.employeeId,
       );
       if (
-        assigned.length !== POSTS_CONFIG.length ||
         new Set(assigned.map((assignment) => assignment.employeeId)).size !==
-          POSTS_CONFIG.length ||
+          assigned.length ||
         !assigned.some(
           (assignment) => assignment.employeeId === profile.linkedEmployeeId,
         )
       ) {
         setMessage({
           type: 'error',
-          text: 'Regu ini masih memakai alur lama: sembilan pos harus diisi unik dan Ketua Shift harus tercantum.',
+          text: 'Regu ini masih memakai alur lama: petugas yang diisi harus unik dan Ketua Shift harus tercantum.',
         });
         return;
       }

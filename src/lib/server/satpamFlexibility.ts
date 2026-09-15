@@ -2,8 +2,9 @@
  * Rollout switch for the flexible Satpam workflow.
  *
  * SATPAM_FLEXIBILITY_ENABLED=true enables every team (the default).
- * SATPAM_FLEXIBILITY_ENABLED=false keeps the legacy strict validation, except
- * for comma-separated team IDs listed in SATPAM_FLEXIBILITY_TEAM_IDS.
+ * SATPAM_FLEXIBILITY_ENABLED=false keeps the legacy date, shift, and roster
+ * restrictions, except for comma-separated team IDs listed in
+ * SATPAM_FLEXIBILITY_TEAM_IDS. Intentionally unstaffed posts remain valid.
  */
 export function isSatpamFlexibilityEnabled(teamId: string): boolean {
   if (process.env.SATPAM_FLEXIBILITY_ENABLED !== 'false') return true;

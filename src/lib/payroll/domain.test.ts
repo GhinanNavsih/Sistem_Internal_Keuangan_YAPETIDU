@@ -20,6 +20,7 @@ import {
   resolveCrossTeamPos9PayType,
   defaultSatpamAssignmentPayType,
   resolveSatpamAssignmentPayType,
+  SATPAM_POSTS,
   SATPAM_RATES,
   shiftOccurrenceId,
   satpamKetuaEditConflict,
@@ -284,6 +285,34 @@ test('flexible Satpam submission records warnings without rejecting partial rost
     anomalies.find((item) => item.code === 'MISSING_POSTS')?.severity,
     'warning',
   );
+});
+
+test('a valid Satpam shift may leave one post unstaffed', () => {
+  const anomalies = analyzeSatpamShiftSubmission({
+    dutyDate: '2026-08-03',
+    reportedShiftName: 'Pagi',
+    suggestedShiftName: 'Pagi',
+    ketuaShiftId: 'KETUA001',
+    assignments: SATPAM_POSTS.slice(0, 8).map((post, index) => ({
+      postId: post.id,
+      employeeId: index === 0 ? 'KETUA001' : `GUARD00${index}`,
+      photoUrl: 'https://example.com/proof.jpg',
+    })),
+    activeSatpamIds: new Set([
+      'KETUA001',
+      'GUARD001',
+      'GUARD002',
+      'GUARD003',
+      'GUARD004',
+      'GUARD005',
+      'GUARD006',
+      'GUARD007',
+    ]),
+    holidayCalendarConfigured: true,
+  });
+
+  assert.deepEqual(anomalies.map((item) => item.code), ['MISSING_POSTS']);
+  assert.equal(anomalies[0].severity, 'warning');
 });
 
 test('Pos 9 accepts an ad-hoc replacement but flags it for auditor review', () => {

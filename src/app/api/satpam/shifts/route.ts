@@ -685,8 +685,9 @@ async function mutateShift(
     if (
       command.dutyDate !== today ||
       reportedShiftName !== suggestedShiftName ||
-      command.assignments.length !== SATPAM_POSTS.length ||
-      uniquePosts.size !== SATPAM_POSTS.length ||
+      // A report may intentionally leave one or more posts unstaffed. The
+      // supplied rows must still represent distinct valid posts.
+      uniquePosts.size !== command.assignments.length ||
       new Set(assignedEmployees).size !== assignedEmployees.length ||
       !assignedEmployees.includes(actor.linkedEmployeeId) ||
       command.assignments.some((assignment) => !roster.includes(assignment.employeeId))

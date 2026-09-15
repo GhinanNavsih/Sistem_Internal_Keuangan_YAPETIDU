@@ -250,7 +250,8 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                       </p>
                       {!satpamFlexibilityEnabled && (
                         <p className="text-sm font-semibold text-amber-800">
-                          Alur fleksibel sedang diuji pada regu lain; regu ini masih memakai tanggal dan rota hari ini.
+                          Regu ini masih memakai tanggal dan rota hari ini. Pos
+                          yang tidak memiliki Satpam boleh dibiarkan kosong.
                         </p>
                       )}
                     </div>
@@ -293,6 +294,11 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                     <h3 className="text-base font-bold text-slate-600 border-b border-slate-100 pb-2">
                       Penugasan Pos Keamanan (9 Pos)
                     </h3>
+                    <p className="text-sm text-slate-600">
+                      Jika suatu pos tidak memiliki Satpam, biarkan pilihan
+                      petugas kosong. Laporan tetap dapat dikirim dan akan
+                      ditandai untuk pemeriksaan auditor.
+                    </p>
                     {pos9GuardIds.size < 3 && (
                       <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
                         Tiga petugas Pos 9 belum lengkap dari rencana regu periode ini. Pos 9 tetap dapat dilaporkan, tetapi perlu diperiksa Kepala SatKer.
