@@ -102,6 +102,26 @@ test('raw parser propagates lecturer context and ignores derived sheets', () => 
   const r = parseKjmWorkbook(XLSX.write(w, { type: 'buffer', bookType: 'xlsx' }));
   assert.equal(r.length, 2); assert.equal(r[0].nipy, '01123'); assert.equal(r[0].lecturer, '01123-Test'); assert.equal(r[0].attendance, 16);
 });
+test('raw parser parses latest format with Program Studi column', () => {
+  const w = XLSX.utils.book_new();
+  for (const name of ['Kontrak Asli', 'Tetap Asli']) XLSX.utils.book_append_sheet(w, XLSX.utils.aoa_to_sheet([
+    ['Detail Rekap Kehadiran Dosen'],
+    ['01 Maret 2026 s.d 31 Agustus 2026'],
+    ['Program Studi '],
+    ['#', 'Program Studi', 'Kode MK', 'Nama Mata Kuliah', 'SKS', 'Kelas', 'Hadir', 'SKS*Hadir'],
+    ['12011116316-Achmat Rosid S.Kom., M.Kom'],
+    [1, 'Administrasi Bisnis', '31WP19017', 'SISTEM INFORMASI MANAJEMEN', 3, '4A1', 10, 30],
+  ]), name);
+  const r = parseKjmWorkbook(XLSX.write(w, { type: 'buffer', bookType: 'xlsx' }));
+  assert.equal(r.length, 2);
+  assert.equal(r[0].nipy, '12011116316');
+  assert.equal(r[0].lecturer, '12011116316-Achmat Rosid S.Kom., M.Kom');
+  assert.equal(r[0].program, 'Administrasi Bisnis');
+  assert.equal(r[0].code, '31WP19017');
+  assert.equal(r[0].name, 'SISTEM INFORMASI MANAJEMEN');
+  assert.equal(r[0].sks, 3);
+  assert.equal(r[0].attendance, 10);
+});
 test('rekap excludes NERS, RPL, and Praktek/Praktik only from Tetap Asli', () => {
   const makeCourse = (id: string, sheet: string, changes: Partial<KjmCourse>): KjmCourse => ({ ...course, id, sheet, ...changes });
   const courses = [

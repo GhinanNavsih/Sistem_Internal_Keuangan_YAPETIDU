@@ -27,6 +27,7 @@ function validId(value: unknown): string {
   return value;
 }
 const reviewHash = (review: KjmReview, version: string) => kjmHash({ review, version, ruleVersion: KJM_RULE_VERSION });
+const claimDocId = (semester: string, employeeId: string) => `${semester.replace('/', '')}_${employeeId}`;
 export async function GET(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request); requireRole(actor, ['super_admin']);
@@ -38,11 +39,14 @@ export async function GET(request: NextRequest) {
       if (!doc.exists || doc.data()?.period !== period) throw new HttpError(404, 'Impor tidak ditemukan pada periode ini.');
       return Response.json({ ...master, draft: { id: doc.id, ...doc.data() } });
     }
-    const records = await adminDb.collection('KjmImports').where('period', '==', period).get();
-    const periodDoc = await adminDb.collection('PayrollPeriods').doc(period).get();
-    return Response.json({ ...master, closed: periodDoc.data()?.attendanceStatus === 'closed', imports: records.docs.map(d => {
+    const [importsSnap, periodSnap] = await Promise.all([
+      adminDb.collection('KjmImports').where('period', '==', period).get(),
+      adminDb.collection('PayrollPeriods').doc(period).get(),
+    ]);
+    const imports = importsSnap.docs.map(d => {
       const r = d.data() as Draft; return { id: d.id, fileName: r.fileName, semester: r.semester, status: r.status, total: r.review.total, revision: r.revision };
-    }) });
+    });
+    return Response.json({ ...master, imports, closed: periodSnap.data()?.attendanceStatus === 'closed' });
   } catch (e) { return errorResponse(e); }
 }
 
@@ -55,7 +59,7 @@ export async function POST(request: NextRequest) {
       const file = form.get('file');
       const period = validPeriod(form.get('period'));
       const semester = String(form.get('semester') || '').trim();
-      if (!/^20\d{2}[12]$/.test(semester)) throw new HttpError(400, 'Semester wajib seperti 20251 (ganjil) atau 20252 (genap).');
+      if (!/^(20\d{2}\/[12]|20\d{2}[12])$/.test(semester)) throw new HttpError(400, 'Semester wajib seperti 2025/1 atau 2025/2.');
       if (!(file instanceof File) || !/\.xlsx$/i.test(file.name) || file.size > 5_000_000 || file.size === 0) throw new HttpError(400, 'Unggah XLSX maksimum 5 MB.');
       let courses: KjmCourse[];
       try { courses = parseKjmWorkbook(Buffer.from(await file.arrayBuffer())); }
@@ -100,7 +104,7 @@ export async function POST(request: NextRequest) {
         const claimRefs = resultRows.flatMap((result) => {
           const employeeId = result?.employee?.id;
           return typeof employeeId === 'string' && employeeId
-            ? [adminDb.collection('KjmPaymentClaims').doc(`${before.semester}_${employeeId}`)]
+            ? [adminDb.collection('KjmPaymentClaims').doc(claimDocId(before.semester, employeeId))]
             : [];
         });
         const [projectionSnapshot, ...claimSnapshots] = await tx.getAll(projectionRef, ...claimRefs);
@@ -142,7 +146,7 @@ export async function POST(request: NextRequest) {
       }
       const financial = action !== 'save';
       const employeeIds = financial ? review.results.map(r => r.employee.id) : [];
-      const claims = employeeIds.map(employeeId => adminDb.collection('KjmPaymentClaims').doc(`${before.semester}_${employeeId}`));
+      const claims = employeeIds.map(employeeId => adminDb.collection('KjmPaymentClaims').doc(claimDocId(before.semester, employeeId)));
       const now = admin.firestore.FieldValue.serverTimestamp();
       const eventName = `Kelebihan Jam Mengajar ${before.semester}`;
       const event = {

@@ -7,6 +7,7 @@ import { auth } from '@/lib/firebase';
 import { authenticatedJson } from '@/lib/payroll/client';
 import { emptyKjmEdits, filterKjmCourses, groupKjmCourses, reviewKjm, type KjmCourse, type KjmEdits, type KjmEmployee, type KjmRate, type KjmReview } from '@/lib/payroll/kjm';
 import { Button } from '@/components/ui/button';
+import { ChevronDown, FileSpreadsheet, Upload, X } from 'lucide-react';
 
 interface ImportSummary { id: string; fileName: string; semester: string; status: string; total: number; revision: number }
 interface Draft extends ImportSummary { period: string; revision: number; courses: KjmCourse[]; edits: KjmEdits; review: KjmReview; reviewHash: string; rateVersion: string }
@@ -54,6 +55,245 @@ function EmployeeSearchSelect({ employees, value, onChange, disabled, ariaLabel 
       </li>)}
     </ul>}
   </div>;
+}
+
+function SemesterSearchSelect({ value, onChange, disabled, period }: {
+  value: string; onChange: (val: string) => void; disabled?: boolean; period?: string;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const baseYear = useMemo(() => {
+    const fromPeriod = period ? parseInt(period.split('-')[0], 10) : NaN;
+    return Number.isFinite(fromPeriod) ? fromPeriod : new Date().getFullYear();
+  }, [period]);
+
+  const allOptions = useMemo(() => {
+    const list: Array<{ value: string; term: string }> = [];
+    for (let y = baseYear + 2; y >= baseYear - 3; y--) {
+      list.push({ value: `${y}/2`, term: 'Genap' });
+      list.push({ value: `${y}/1`, term: 'Ganjil' });
+    }
+    return list;
+  }, [baseYear]);
+
+  // Handle clicking outside to close
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q || q === value.toLowerCase()) return allOptions;
+
+    let normalized = q;
+    if (/^20\d{2}[12]$/.test(q)) {
+      normalized = `${q.slice(0, 4)}/${q.slice(4)}`;
+    }
+
+    const filtered = allOptions.filter(o =>
+      o.value.toLowerCase().includes(normalized) ||
+      o.term.toLowerCase().includes(normalized) ||
+      (normalized === 'ganjil' && o.value.endsWith('/1')) ||
+      (normalized === 'genap' && o.value.endsWith('/2'))
+    );
+
+    if (/^20\d{2}\/[12]$/.test(normalized) && !filtered.some(f => f.value === normalized)) {
+      const isGanjil = normalized.endsWith('/1');
+      return [{
+        value: normalized,
+        term: isGanjil ? 'Ganjil' : 'Genap',
+      }, ...filtered];
+    }
+
+    return filtered;
+  }, [allOptions, query, value]);
+
+  const handleSelect = (val: string) => {
+    onChange(val);
+    setQuery('');
+    setOpen(false);
+  };
+
+  return (
+    <div ref={containerRef} className="relative w-full">
+      <div className="relative flex items-center">
+        <input
+          ref={inputRef}
+          aria-label="Semester sumber"
+          role="combobox"
+          aria-expanded={open}
+          autoComplete="off"
+          placeholder="Pilih semester (contoh 2025/1)…"
+          className={`${inputClass} h-10 pr-9 cursor-pointer`}
+          disabled={disabled}
+          value={open ? query : value}
+          onChange={e => {
+            setQuery(e.target.value);
+            if (!open) setOpen(true);
+          }}
+          onFocus={() => {
+            if (!disabled) {
+              setOpen(true);
+              setQuery(value);
+              requestAnimationFrame(() => inputRef.current?.select());
+            }
+          }}
+          onClick={() => {
+            if (!disabled && !open) {
+              setOpen(true);
+              setQuery(value);
+              requestAnimationFrame(() => inputRef.current?.select());
+            }
+          }}
+          onKeyDown={e => {
+            if (e.key === 'Escape') {
+              setOpen(false);
+              setQuery('');
+            } else if (e.key === 'Enter') {
+              e.preventDefault();
+              if (matches.length > 0) {
+                handleSelect(matches[0].value);
+              }
+            } else if (e.key === 'ArrowDown') {
+              if (!open) {
+                e.preventDefault();
+                setOpen(true);
+                setQuery(value);
+                requestAnimationFrame(() => inputRef.current?.select());
+              }
+            }
+          }}
+        />
+        <button
+          type="button"
+          tabIndex={-1}
+          disabled={disabled}
+          onClick={() => {
+            if (!disabled) {
+              if (open) {
+                setOpen(false);
+                setQuery('');
+              } else {
+                setOpen(true);
+                setQuery(value);
+                inputRef.current?.focus();
+                requestAnimationFrame(() => inputRef.current?.select());
+              }
+            }
+          }}
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 disabled:opacity-50 p-0.5"
+        >
+          <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+      {open && (
+        <ul
+          role="listbox"
+          className="absolute left-0 right-0 z-30 mt-1 max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white py-1 text-sm shadow-lg"
+        >
+          {!matches.length && (
+            <li className="px-3 py-2 text-slate-400 text-xs">Semester tidak ditemukan.</li>
+          )}
+          {matches.map(opt => (
+            <li key={opt.value} role="option" aria-selected={value === opt.value}>
+              <button
+                type="button"
+                className={`w-full px-3 py-2 text-left flex items-center justify-between hover:bg-indigo-50 transition-colors ${
+                  value === opt.value ? 'bg-indigo-50 font-semibold text-indigo-700' : 'text-slate-700'
+                }`}
+                onMouseDown={e => {
+                  e.preventDefault();
+                  handleSelect(opt.value);
+                }}
+              >
+                <span className="font-medium">{opt.value}</span>
+                <span className={`text-xs px-2 py-0.5 rounded font-normal ${
+                  value === opt.value ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'
+                }`}>
+                  {opt.term}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function KjmFileInput({ file, onChange, disabled }: {
+  file: File | null; onChange: (file: File | null) => void; disabled?: boolean;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  return (
+    <div className="relative w-full">
+      <input
+        ref={fileInputRef}
+        aria-label="Berkas KJM"
+        type="file"
+        accept=".xlsx"
+        className="hidden"
+        disabled={disabled}
+        onChange={e => {
+          onChange(e.target.files?.[0] || null);
+          e.target.value = '';
+        }}
+      />
+      {file ? (
+        <div className="flex h-10 items-center justify-between gap-2 rounded-lg border border-emerald-300 bg-emerald-50/70 px-3 py-1.5 transition-colors">
+          <div
+            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2"
+            onClick={() => !disabled && fileInputRef.current?.click()}
+            title={`${file.name} (${formatSize(file.size)}) — Klik untuk ganti berkas`}
+          >
+            <FileSpreadsheet className="h-4 w-4 shrink-0 text-emerald-600" />
+            <div className="min-w-0 flex-1 truncate">
+              <span className="block truncate text-xs font-semibold text-slate-800">{file.name}</span>
+              <span className="block text-[10px] text-slate-500 font-normal leading-none">{formatSize(file.size)} · Klik untuk ganti</span>
+            </div>
+          </div>
+          {!disabled && (
+            <button
+              type="button"
+              className="shrink-0 rounded p-1 text-slate-400 hover:bg-emerald-100 hover:text-red-600 transition-colors"
+              onClick={() => onChange(null)}
+              title="Hapus berkas"
+              aria-label="Hapus berkas"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      ) : (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => fileInputRef.current?.click()}
+          className="flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50/60 px-3 text-sm text-slate-600 hover:border-indigo-400 hover:bg-indigo-50/30 hover:text-indigo-600 transition-all disabled:pointer-events-none disabled:opacity-50"
+        >
+          <Upload className="h-4 w-4 text-slate-400" />
+          <span className="truncate text-xs font-medium">Pilih berkas Excel (.xlsx)</span>
+        </button>
+      )}
+    </div>
+  );
 }
 
 function KjmMetricGroup({ title, items }: {
@@ -361,9 +601,30 @@ function KjmContent() {
       <h2 className="font-bold text-lg">Upload data mentah KJM</h2>
       <p className="text-sm text-slate-600">Periode pembayaran: <strong>{period}</strong>. Hanya sheet Kontrak Asli dan Tetap Asli yang dibaca. Data tersimpan sebagai draft, bukan penghasilan.</p>
       <div className="flex flex-wrap items-end gap-4">
-        <label className="text-sm space-y-1">Semester sumber (contoh 20251)<input aria-label="Semester sumber" value={semester} onChange={e => setSemester(e.target.value)} placeholder="20251" maxLength={5} className={inputClass} disabled={!!busy || closed || autosaveState === 'saving'} /></label>
-        <label className="text-sm space-y-1">Berkas XLSX (maks. 5 MB)<input aria-label="Berkas KJM" type="file" accept=".xlsx" className={inputClass} disabled={!!busy || closed || autosaveState === 'saving'} onChange={e => setFile(e.target.files?.[0] || null)} /></label>
-        <Button disabled={!!busy || closed || autosaveState === 'saving' || !file || !/^20\d{2}[12]$/.test(semester)} onClick={() => void run('Mengunggah dan menghitung draft…', upload)}>Upload & buat draft</Button>
+        <div className="w-full sm:w-60 space-y-1.5">
+          <label className="text-sm font-medium text-slate-700">Semester sumber</label>
+          <SemesterSearchSelect
+            value={semester}
+            onChange={setSemester}
+            period={period}
+            disabled={!!busy || closed || autosaveState === 'saving'}
+          />
+        </div>
+        <div className="w-full sm:w-80 space-y-1.5">
+          <label className="text-sm font-medium text-slate-700">Berkas XLSX (maks. 5 MB)</label>
+          <KjmFileInput
+            file={file}
+            onChange={setFile}
+            disabled={!!busy || closed || autosaveState === 'saving'}
+          />
+        </div>
+        <Button
+          className="h-10 px-5 font-semibold"
+          disabled={!!busy || closed || autosaveState === 'saving' || !file || !/^(20\d{2}\/[12]|20\d{2}[12])$/.test(semester)}
+          onClick={() => void run('Mengunggah dan menghitung draft…', upload)}
+        >
+          Upload & buat draft
+        </Button>
       </div>
       {closed && <p className="text-amber-700">Periode sudah ditutup. Data hanya dapat dilihat.</p>}
       <p className="text-xs text-slate-500">Masa kerja Admin dinilai pada akhir bulan payroll. Non-Aktif diabaikan. Satu pegawai hanya boleh memperoleh KJM sekali untuk semester sumber yang sama.</p>
