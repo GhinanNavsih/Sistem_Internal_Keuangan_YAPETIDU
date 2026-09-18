@@ -65,15 +65,10 @@ import {
   DEFAULT_DRIVER_VEHICLE_NAME,
   DEFAULT_FUEL_PROCUREMENT_MODE,
   CURRENT_MEAL_ACCOUNTING_MODE,
-  calculateDriverJourneyOperationalCosts,
-  DEFAULT_DRIVER_JOURNEY_LOCATION,
-  driverJourneyRoutePoint,
   fuelProcurementModeLabel,
   isFuelProcurementMode,
   MAX_DRIVER_JOURNEY_DESTINATIONS,
   MAX_DRIVER_JOURNEY_LOCATIONS,
-  normalizeDriverJourneyLocation,
-  type DriverJourneyLocation,
   type DriverVehicleName,
   type FuelProcurementMode,
 } from '@/lib/payroll/driverJourney';
@@ -85,11 +80,6 @@ export interface VehicleFuelBalanceItem {
   accumulatedHoldAmount: number;
   pendingReleaseAmount: number;
 }
-import {
-  PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH,
-  useCostSafePlaceAutocomplete,
-  type CostSafePlaceSuggestion,
-} from '@/hooks/useCostSafePlaceAutocomplete';
 import {
   SOPIR_JOURNEY_REPORT_PATH,
   type EmployeeActivityWorkflow,
@@ -103,7 +93,6 @@ import {
   summarizeEmployeeActivityHistory,
 } from '@/lib/employeeActivityHistory';
 import {
-  loadGoogleMapsScript,
   type ActivityReport,
   type SatpamPostAssignment,
   type PendingDailyLiburSwap,
@@ -351,25 +340,6 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
   const [routeError, setRouteError] = useState<string>('');
   const [routeCalculatedPoints, setRouteCalculatedPoints] = useState<string[]>([]);
 
-  // ── SOPIR Additional Activities states ──
-  const [showMapSelector, setShowMapSelector] = useState(false);
-  const [mapSearchText, setMapSearchText] = useState('');
-  const [mapAddress, setMapAddress] = useState('');
-  const [mapLocation, setMapLocation] = useState<DriverJourneyLocation | null>(null);
-  const [mapSearchError, setMapSearchError] = useState('');
-
-  const mapRef = React.useRef<any>(null);
-  const markerRef = React.useRef<any>(null);
-  const mapElementRef = React.useRef<HTMLDivElement | null>(null);
-  const mapGeocodeRequestRef = React.useRef(0);
-  const {
-    suggestions: placeSuggestions,
-    isSearching: isSearchingPlaces,
-    searchError: placeSearchError,
-    search: searchPlaces,
-    cancelSearch: cancelPlaceSearch,
-  } = useCostSafePlaceAutocomplete({ loadGoogleMapsScript });
-
   // ── Journey claiming & completion states ──
   const [unassignedJourneys, setUnassignedJourneys] = useState<any[]>([]);
   const [myAssignedJourneys, setMyAssignedJourneys] = useState<any[]>([]);
@@ -384,25 +354,18 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
   const [activePiketStationName, setActivePiketStationName] = useState<string>('');
   const [showSelfPiketSpjModal, setShowSelfPiketSpjModal] = useState(false);
   const [selfPiketActivityName, setSelfPiketActivityName] = useState('');
-  const [selfPiketStartPoint, setSelfPiketStartPoint] = useState('UNIPDU Jombang, Jawa Timur');
-  const [selfPiketStartPointLocation, setSelfPiketStartPointLocation] = useState<DriverJourneyLocation>(
-    DEFAULT_DRIVER_JOURNEY_LOCATION,
-  );
-  const [selfPiketEndPoint, setSelfPiketEndPoint] = useState('');
-  const [selfPiketEndPointLocation, setSelfPiketEndPointLocation] = useState<DriverJourneyLocation | null>(null);
   const [selfPiketVehicleName, setSelfPiketVehicleName] = useState<DriverVehicleName>(DEFAULT_DRIVER_VEHICLE_NAME);
   const [selfPiketFuelProcurementMode, setSelfPiketFuelProcurementMode] = useState<FuelProcurementMode>('hold_accumulate');
   const [selfPiketFuelBalances, setSelfPiketFuelBalances] = useState<VehicleFuelBalanceItem[]>([]);
   const [creatingPiketSpj, setCreatingPiketSpj] = useState(false);
 
-  // Self Piket SPJ calculation states
-  const [selfPiketCalcDistance, setSelfPiketCalcDistance] = useState<number | null>(null);
-  const [selfPiketCalcDuration, setSelfPiketCalcDuration] = useState<number | null>(null);
-  const [selfPiketCalculating, setSelfPiketCalculating] = useState(false);
-  const [selfPiketCalcError, setSelfPiketCalcError] = useState('');
-  const [selfPiketTollFee, setSelfPiketTollFee] = useState<string>('');
-  const [mapTargetMode, setMapTargetMode] = useState<'piketStart' | 'piketEnd' | 'extra' | null>(null);
-  const lastSelfPiketCalculatedRef = useRef<{ start: string; end: string }>({ start: '', end: '' });
+  // Departure proof photo — evidence the sopir was at the vehicle when the SPJ
+  // was authorized, since the timestamp alone cannot show that.
+  const [selfPiketProofPhoto, setSelfPiketProofPhoto] = useState<PhotoEvidence | null>(null);
+  const [selfPiketProofPreview, setSelfPiketProofPreview] = useState<string>('');
+  const [selfPiketProofUploading, setSelfPiketProofUploading] = useState(false);
+  const [selfPiketProofError, setSelfPiketProofError] = useState('');
+  const [mapTargetMode, setMapTargetMode] = useState<'extra' | null>(null);
 
   const loadSelfPiketFuelBalances = useCallback(async () => {
     if (!user || !isSopir) return;
@@ -429,38 +392,6 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
     [selfPiketFuelBalances, selfPiketVehicleName],
   );
 
-  const selfPiketTollFeeValue = selfPiketTollFee
-    ? parseInt(selfPiketTollFee.replace(/\D/g, ''), 10) || 0
-    : 0;
-
-  const selfPiketOperationalCosts = useMemo(() => {
-    if (selfPiketCalcDistance === null || selfPiketCalcDuration === null) return null;
-    const mode = selfPiketVehicleName === DEFAULT_DRIVER_VEHICLE_NAME
-      ? DEFAULT_FUEL_PROCUREMENT_MODE
-      : selfPiketFuelProcurementMode;
-    const procuredAccumulatedAmount = mode === 'procure_release'
-      ? Number(selectedSelfPiketFuelBalance?.accumulatedHoldAmount || 0)
-      : 0;
-    return calculateDriverJourneyOperationalCosts(
-      selfPiketCalcDistance,
-      selfPiketCalcDuration * 2,
-      selfPiketVehicleName,
-      selfPiketTollFeeValue,
-      {
-        fuelProcurementMode: mode,
-        procuredAccumulatedAmount,
-        mealAccountingMode: CURRENT_MEAL_ACCOUNTING_MODE,
-      },
-    );
-  }, [
-    selfPiketCalcDistance,
-    selfPiketCalcDuration,
-    selfPiketVehicleName,
-    selfPiketFuelProcurementMode,
-    selectedSelfPiketFuelBalance,
-    selfPiketTollFeeValue,
-  ]);
-
   const submittedSelfPiketSpjCount = useMemo(
     () => countSubmittedSelfPiketJourneysOnDate(
       getTodayDateString('Asia/Jakarta'),
@@ -472,20 +403,47 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
 
   const resetSelfPiketForm = useCallback(() => {
     setSelfPiketActivityName('');
-    setSelfPiketStartPoint('UNIPDU Jombang, Jawa Timur');
-    setSelfPiketStartPointLocation(DEFAULT_DRIVER_JOURNEY_LOCATION);
-    setSelfPiketEndPoint('');
-    setSelfPiketEndPointLocation(null);
     setSelfPiketVehicleName(DEFAULT_DRIVER_VEHICLE_NAME);
     setSelfPiketFuelProcurementMode('hold_accumulate');
-    setSelfPiketCalcDistance(null);
-    setSelfPiketCalcDuration(null);
-    setSelfPiketCalculating(false);
-    setSelfPiketCalcError('');
-    setSelfPiketTollFee('');
+    setSelfPiketProofPhoto(null);
+    setSelfPiketProofPreview((previous) => {
+      if (previous) URL.revokeObjectURL(previous);
+      return '';
+    });
+    setSelfPiketProofUploading(false);
+    setSelfPiketProofError('');
     setMapTargetMode(null);
-    lastSelfPiketCalculatedRef.current = { start: '', end: '' };
   }, []);
+
+  const handleSelfPiketProofChange = useCallback(
+    async (file: File | null) => {
+      if (!file) return;
+      if (!profile?.linkedEmployeeId) {
+        setSelfPiketProofError('Profil Anda belum terhubung ke data Pegawai.');
+        return;
+      }
+      setSelfPiketProofUploading(true);
+      setSelfPiketProofError('');
+      try {
+        const prepared = await prepareProofImage(file);
+        const url = await uploadProofFile('/api/uploads/activity-proofs', prepared.file, {
+          employeeId: profile.linkedEmployeeId,
+          filenameHint: 'otorisasi_spj',
+        });
+        setSelfPiketProofPhoto({ url, auditMetadata: prepared.auditMetadata });
+        setSelfPiketProofPreview((previous) => {
+          if (previous) URL.revokeObjectURL(previous);
+          return URL.createObjectURL(prepared.file);
+        });
+      } catch (err: any) {
+        console.error('Error uploading SPJ authorization proof:', err);
+        setSelfPiketProofError(err?.message || 'Gagal mengunggah foto bukti. Coba lagi.');
+      } finally {
+        setSelfPiketProofUploading(false);
+      }
+    },
+    [profile?.linkedEmployeeId],
+  );
 
   const openSelfPiketSpjModal = useCallback(() => {
     resetSelfPiketForm();
@@ -528,83 +486,14 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
     return () => unsubPiket();
   }, [isSopir, profile?.linkedEmployeeId]);
 
-  // Route calculation effect for self piket SPJ modal
-  useEffect(() => {
-    if (!showSelfPiketSpjModal || !selfPiketStartPoint || !selfPiketEndPoint) {
-      setSelfPiketCalcDistance(null);
-      setSelfPiketCalcDuration(null);
-      return;
-    }
-
-    if (
-      lastSelfPiketCalculatedRef.current.start === selfPiketStartPoint &&
-      lastSelfPiketCalculatedRef.current.end === selfPiketEndPoint &&
-      selfPiketCalcDistance !== null
-    ) {
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      const calculateRoute = async () => {
-        setSelfPiketCalculating(true);
-        setSelfPiketCalcError('');
-        try {
-          if (!user) throw new Error('Sesi tidak ditemukan.');
-          const idToken = await user.getIdToken();
-          const response = await fetch('/api/calculate-route', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${idToken}`,
-            },
-            body: JSON.stringify({
-              points: [
-                driverJourneyRoutePoint(selfPiketStartPoint, selfPiketStartPointLocation),
-                driverJourneyRoutePoint(selfPiketEndPoint, selfPiketEndPointLocation),
-              ],
-            }),
-          });
-          const data = await response.json();
-
-          if (!response.ok || !data.success) {
-            throw new Error(data.error || 'Gagal menghitung rute.');
-          }
-
-          setSelfPiketCalcDistance(data.distanceKm);
-          setSelfPiketCalcDuration(data.durationHours);
-          lastSelfPiketCalculatedRef.current = { start: selfPiketStartPoint, end: selfPiketEndPoint };
-        } catch (err: any) {
-          console.error(err);
-          setSelfPiketCalcError(err.message || 'Terjadi kesalahan jaringan.');
-        } finally {
-          setSelfPiketCalculating(false);
-        }
-      };
-
-      calculateRoute();
-    }, 600);
-
-    return () => clearTimeout(timer);
-  }, [
-    showSelfPiketSpjModal,
-    selfPiketStartPoint,
-    selfPiketStartPointLocation,
-    selfPiketEndPoint,
-    selfPiketEndPointLocation,
-    user,
-  ]);
-
   const handleCreateSelfPiketSpj = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (
-      !selfPiketActivityName.trim() ||
-      !selfPiketEndPoint.trim() ||
-      selfPiketCalcDistance === null ||
-      selfPiketCalcDistance <= 0 ||
-      selfPiketCalcDuration === null ||
-      selfPiketCalcDuration <= 0
-    ) {
-      alert('Mohon lengkapi nama kegiatan dan tujuan perjalanan.');
+    if (!selfPiketActivityName.trim()) {
+      alert('Mohon lengkapi nama kegiatan.');
+      return;
+    }
+    if (!selfPiketProofPhoto) {
+      alert('Mohon ambil foto bukti sebelum mengotorisasi perjalanan.');
       return;
     }
     if (!profile?.linkedEmployeeId) {
@@ -626,15 +515,9 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
         body: JSON.stringify({
           action: 'create_self',
           activityName: selfPiketActivityName.trim(),
-          startPoint: selfPiketStartPoint.trim(),
-          startPointLocation: selfPiketStartPointLocation,
-          endPoint: selfPiketEndPoint.trim(),
-          endPointLocation: selfPiketEndPointLocation,
           vehicleName: selfPiketVehicleName,
           fuelProcurementMode: mode,
-          distanceKm: selfPiketCalcDistance,
-          durationHours: selfPiketCalcDuration,
-          tollParkingFee: selfPiketTollFeeValue,
+          authorizationProofPhoto: selfPiketProofPhoto,
         }),
       });
 
@@ -669,224 +552,6 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
 
     fetchAndEdit();
   }, [editReportIdParam, profile?.linkedEmployeeId]);
-
-  const resetMapSearch = () => {
-    cancelPlaceSearch();
-    mapGeocodeRequestRef.current += 1;
-    setMapSearchError('');
-  };
-
-  const geocodeMapSearch = (queryText: string) => {
-    const normalizedQuery = queryText.trim();
-    if (!normalizedQuery) return;
-
-    const requestId = ++mapGeocodeRequestRef.current;
-    cancelPlaceSearch();
-    setMapSearchError('');
-
-    loadGoogleMapsScript(() => {
-      const google = (window as any).google;
-      if (!google?.maps?.Geocoder) {
-        if (requestId === mapGeocodeRequestRef.current) {
-          setMapSearchError('Layanan peta belum siap. Silakan coba lagi.');
-        }
-        return;
-      }
-
-      try {
-        const geocoder = new google.maps.Geocoder();
-        geocoder.geocode(
-          { address: normalizedQuery, region: 'id' },
-          (results: any[], status: string) => {
-            if (requestId !== mapGeocodeRequestRef.current) return;
-            const firstResult = Array.isArray(results)
-              ? results.find((result: any) => result?.geometry?.location)
-              : null;
-
-            if (status !== 'OK' || !firstResult) {
-              setMapAddress('');
-              setMapLocation(null);
-              setMapSearchError('Lokasi tidak ditemukan. Pilih hasil lain atau geser pin di peta.');
-              return;
-            }
-
-            const location = firstResult.geometry.location;
-            const address = firstResult.formatted_address || normalizedQuery;
-            mapRef.current?.setCenter(location);
-            mapRef.current?.setZoom(16);
-            markerRef.current?.setPosition(location);
-            setMapAddress(address);
-            setMapSearchText(address);
-            setMapLocation({
-              address,
-              latitude: typeof location.lat === 'function' ? location.lat() : Number(location.lat),
-              longitude: typeof location.lng === 'function' ? location.lng() : Number(location.lng),
-            });
-          },
-        );
-      } catch (error) {
-        console.warn('Google address search failed:', error);
-        if (requestId === mapGeocodeRequestRef.current) {
-          setMapAddress('');
-          setMapLocation(null);
-          setMapSearchError('Lokasi tidak dapat dicari. Silakan coba kata kunci lain.');
-        }
-      }
-    });
-  };
-
-  const handleMapSearchChange = (value: string) => {
-    setMapSearchText(value);
-    setMapAddress('');
-    setMapLocation(null);
-    setMapSearchError('');
-    searchPlaces(value);
-  };
-
-  const handlePlaceSuggestionSelect = (suggestion: CostSafePlaceSuggestion) => {
-    cancelPlaceSearch();
-    setMapSearchText(suggestion.queryText);
-    geocodeMapSearch(suggestion.queryText);
-  };
-
-  const handleMapSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Escape') {
-      cancelPlaceSearch();
-      return;
-    }
-    if (event.key !== 'Enter') return;
-
-    event.preventDefault();
-    if (placeSuggestions[0]) {
-      handlePlaceSuggestionSelect(placeSuggestions[0]);
-      return;
-    }
-    setMapSearchError(
-      mapSearchText.trim().length < PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH
-        ? `Ketik minimal ${PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH} karakter untuk mencari lokasi.`
-        : 'Pilih salah satu saran lokasi sebelum melanjutkan.',
-    );
-  };
-
-  const initMap = (element: HTMLDivElement) => {
-    loadGoogleMapsScript(() => {
-      const google = (window as any).google;
-      if (!google) return;
-      if (mapRef.current && mapElementRef.current === element) return;
-      mapElementRef.current = element;
-
-      const unipduCoords = {
-        lat: DEFAULT_DRIVER_JOURNEY_LOCATION.latitude,
-        lng: DEFAULT_DRIVER_JOURNEY_LOCATION.longitude,
-      };
-      const map = new google.maps.Map(element, {
-        center: unipduCoords,
-        zoom: 13,
-        mapTypeControl: false,
-        streetViewControl: false,
-        fullscreenControl: false,
-      });
-      mapRef.current = map;
-
-      const marker = new google.maps.Marker({
-        position: unipduCoords,
-        map,
-        draggable: true,
-        animation: google.maps.Animation.DROP,
-      });
-      markerRef.current = marker;
-      const geocoder = new google.maps.Geocoder();
-
-      const updateAddress = (latLng: any) => {
-        cancelPlaceSearch();
-        mapGeocodeRequestRef.current += 1;
-        setMapSearchError('');
-        geocoder.geocode({ location: latLng }, (results: any, status: any) => {
-          const latitude = typeof latLng.lat === 'function' ? latLng.lat() : Number(latLng.lat);
-          const longitude = typeof latLng.lng === 'function' ? latLng.lng() : Number(latLng.lng);
-          const address = status === 'OK' && results?.[0]?.formatted_address
-            ? results[0].formatted_address
-            : `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
-          setMapAddress(address);
-          setMapSearchText(address);
-          setMapLocation({ address, latitude, longitude });
-        });
-      };
-
-      const existingAddress = mapAddress;
-      const existingLocation = normalizeDriverJourneyLocation(mapLocation, existingAddress);
-      if (existingLocation) {
-        const position = { lat: existingLocation.latitude, lng: existingLocation.longitude };
-        map.setCenter(position);
-        map.setZoom(15);
-        marker.setPosition(position);
-        setMapLocation(existingLocation);
-      } else if (existingAddress) {
-        // Compatibility path for records created before coordinates were stored.
-        geocoder.geocode({ address: existingAddress, region: 'id' }, (results: any, status: any) => {
-          if (status === 'OK' && results?.[0]?.geometry?.location) {
-            const loc = results[0].geometry.location;
-            const address = results[0].formatted_address || existingAddress;
-            map.setCenter(loc);
-            map.setZoom(15);
-            marker.setPosition(loc);
-            setMapAddress(address);
-            setMapSearchText(address);
-            setMapLocation({
-              address,
-              latitude: typeof loc.lat === 'function' ? loc.lat() : Number(loc.lat),
-              longitude: typeof loc.lng === 'function' ? loc.lng() : Number(loc.lng),
-            });
-          } else {
-            setMapSearchError('Alamat lama tidak dapat dipetakan. Cari lokasi atau geser pin.');
-          }
-        });
-      } else {
-        setMapAddress('');
-        setMapLocation(null);
-      }
-
-      marker.addListener('dragend', () => {
-        const position = marker.getPosition();
-        if (position) updateAddress(position);
-      });
-      map.addListener('click', (event: any) => {
-        if (event.latLng) {
-          marker.setPosition(event.latLng);
-          updateAddress(event.latLng);
-        }
-      });
-    });
-  };
-
-
-
-
-
-  const handleConfirmMapLocation = async () => {
-    if (!mapAddress.trim() || !mapLocation) return;
-
-    if (mapTargetMode === 'piketStart') {
-      setSelfPiketStartPoint(mapAddress.trim());
-      setSelfPiketStartPointLocation(mapLocation);
-      setSelfPiketCalcDistance(null);
-      lastSelfPiketCalculatedRef.current = { start: '', end: '' };
-      resetMapSearch();
-      setShowMapSelector(false);
-      setMapTargetMode(null);
-      return;
-    }
-
-    if (mapTargetMode === 'piketEnd') {
-      setSelfPiketEndPoint(mapAddress.trim());
-      setSelfPiketEndPointLocation(mapLocation);
-      setSelfPiketCalcDistance(null);
-      lastSelfPiketCalculatedRef.current = { start: '', end: '' };
-      resetMapSearch();
-      setShowMapSelector(false);
-      setMapTargetMode(null);
-    }
-  };
 
   // ── Notifications ──
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -3471,20 +3136,6 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
     setRouteError,
     routeError,
     routeCalculatedPoints,
-    showMapSelector,
-    setShowMapSelector,
-    mapSearchText,
-    setMapSearchText,
-    setMapAddress,
-    mapAddress,
-    setMapLocation,
-    mapLocation,
-    setMapSearchError,
-    mapSearchError,
-    cancelPlaceSearch,
-    placeSuggestions,
-    isSearchingPlaces,
-    placeSearchError,
     unassignedJourneys,
     myAssignedJourneys,
     myClaimedJourneys,
@@ -3496,10 +3147,6 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
     showSelfPiketSpjModal,
     selfPiketActivityName,
     setSelfPiketActivityName,
-    selfPiketStartPoint,
-    selfPiketStartPointLocation,
-    selfPiketEndPoint,
-    selfPiketEndPointLocation,
     selfPiketVehicleName,
     setSelfPiketVehicleName,
     selfPiketFuelProcurementMode,
@@ -3507,24 +3154,15 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
     selfPiketFuelBalances,
     selectedSelfPiketFuelBalance,
     creatingPiketSpj,
-    setSelfPiketCalcDistance,
-    selfPiketCalcDistance,
-    selfPiketCalcDuration,
-    selfPiketCalculating,
-    selfPiketCalcError,
-    setMapTargetMode,
-    lastSelfPiketCalculatedRef,
-    selfPiketOperationalCosts,
+    selfPiketProofPhoto,
+    selfPiketProofPreview,
+    selfPiketProofUploading,
+    selfPiketProofError,
+    handleSelfPiketProofChange,
     submittedSelfPiketSpjCount,
     openSelfPiketSpjModal,
     closeSelfPiketSpjModal,
     handleCreateSelfPiketSpj,
-    resetMapSearch,
-    handleMapSearchChange,
-    handlePlaceSuggestionSelect,
-    handleMapSearchKeyDown,
-    initMap,
-    handleConfirmMapLocation,
     message,
     setMessage,
     setStatusFilter,

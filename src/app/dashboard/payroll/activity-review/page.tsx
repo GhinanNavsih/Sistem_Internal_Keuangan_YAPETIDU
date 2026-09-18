@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } fr
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import GlobalHeader from '@/components/GlobalHeader';
 import UraianNavToggles from '@/components/UraianNavToggles';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
 import { ImageExifViewer } from '@/components/ImageExifViewer';
@@ -545,16 +545,53 @@ function InlinePhotoWithExif({
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function ActivityReviewPage() {
+function ActivityReviewPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { profile, user } = useAuth();
+
+  const requestedMonth = Number(searchParams.get('month'));
+  const requestedYear = Number(searchParams.get('year'));
+  const initialMonth =
+    Number.isInteger(requestedMonth) && requestedMonth >= 1 && requestedMonth <= 12
+      ? requestedMonth
+      : new Date().getMonth() + 1;
+  const initialYear =
+    Number.isInteger(requestedYear) && requestedYear >= 2020
+      ? requestedYear
+      : new Date().getFullYear();
+  const requestedStatus = searchParams.get('status');
+  const initialStatus: 'all' | 'pending' | 'approved' | 'declined' =
+    requestedStatus === 'all' ||
+    requestedStatus === 'pending' ||
+    requestedStatus === 'approved' ||
+    requestedStatus === 'declined'
+      ? requestedStatus
+      : 'pending';
+  const requestedReportType = searchParams.get('reportType');
+  const initialReportType: 'all' | 'activity' | 'found_item' | 'reprimand' | 'shift' =
+    requestedReportType === 'all' ||
+    requestedReportType === 'activity' ||
+    requestedReportType === 'found_item' ||
+    requestedReportType === 'reprimand' ||
+    requestedReportType === 'shift'
+      ? requestedReportType
+      : 'all';
+  const requestedCategory = searchParams.get('category');
+  const initialCategory =
+    requestedCategory === 'all' ||
+    (requestedCategory && CLEANING_CATEGORIES.includes(requestedCategory))
+      ? requestedCategory
+      : 'all';
+  const initialFocusOccurrenceId = searchParams.get('occurrenceId')?.trim() || null;
+  const initialFocusEmployeeId = searchParams.get('employeeId')?.trim() || null;
 
   // ── Period ──
   // Default to the current month, but interpret the selected month using the
   // shared Pekarya payroll window. July 2026 is the transition period from
   // 26 June through 31 July rather than a calendar month.
-  const [month, setMonth] = useState(() => new Date().getMonth() + 1);
-  const [year, setYear] = useState(() => new Date().getFullYear());
+  const [month, setMonth] = useState(initialMonth);
+  const [year, setYear] = useState(initialYear);
 
   // Enforce no future periods
   useEffect(() => {
@@ -575,11 +612,11 @@ export default function ActivityReviewPage() {
   const [loading, setLoading] = useState(true);
 
   // ── UI State ──
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'declined'>('pending');
+  const [statusFilter, setStatusFilter] = useState(initialStatus);
   const [reportTypeFilter, setReportTypeFilter] = useState<
     'all' | 'activity' | 'found_item' | 'reprimand' | 'shift'
-  >('all');
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  >(initialReportType);
+  const [categoryFilter, setCategoryFilter] = useState<string>(initialCategory);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -649,6 +686,9 @@ export default function ActivityReviewPage() {
     status: 'processing' | 'success';
     message: string;
   } | null>(null);
+  const [focusDismissed, setFocusDismissed] = useState(false);
+  const focusOccurrenceId = focusDismissed ? null : initialFocusOccurrenceId;
+  const focusEmployeeId = focusDismissed ? null : initialFocusEmployeeId;
   const [satpamEmployeeDirectory, setSatpamEmployeeDirectory] = useState<SatpamEmployeeOption[]>([]);
   // A "planned" guard (the "Rencana:" line on an audit card) can be someone
   // no longer classified as SATPAM by the time this renders, so they may be
@@ -1012,6 +1052,22 @@ export default function ActivityReviewPage() {
           a.shiftName.localeCompare(b.shiftName)) * dateDirection,
       );
   }, [filteredActivities, statusFilter]);
+
+  // When a conflict card sends the auditor here, keep the relevant guard in
+  // view and let the matching assignment card provide the same transient
+  // warning flash used by the KJM issue links.
+  useEffect(() => {
+    if (!focusOccurrenceId || !focusEmployeeId || loading) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.querySelector<HTMLElement>(
+        '[data-focus-assignment="true"]',
+      );
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusEmployeeId, focusOccurrenceId, loading, satpamShiftGroups]);
 
   // Keep the complete occurrence assignment list separate from the visible
   // cards. Status/search filters can hide rows, but an accepted-shift edit
@@ -1894,7 +1950,10 @@ export default function ActivityReviewPage() {
   };
 
   const toggleShiftExpanded = (occurrenceId: string) => {
-    setExpandedShiftIds(prev => (prev.has(occurrenceId) ? new Set() : new Set([occurrenceId])));
+    const isCurrentlyExpanded =
+      expandedShiftIds.has(occurrenceId) || focusOccurrenceId === occurrenceId;
+    setFocusDismissed(true);
+    setExpandedShiftIds(() => (isCurrentlyExpanded ? new Set() : new Set([occurrenceId])));
     setExpandedActivityIds(new Set());
   };
 
@@ -2404,7 +2463,9 @@ export default function ActivityReviewPage() {
                     {combinedTableItems.map((item) => {
                       if (item.type === 'satpam_group') {
                         const group = item.group;
-                        const isExpanded = expandedShiftIds.has(group.occurrenceId);
+                        const isExpanded =
+                          expandedShiftIds.has(group.occurrenceId) ||
+                          focusOccurrenceId === group.occurrenceId;
                         const isPending = group.pendingCount > 0;
                         const isSubmitting = submittingShiftId === group.occurrenceId;
                         const noteValue = shiftReviewNotes[group.occurrenceId] || '';
@@ -2584,15 +2645,24 @@ export default function ActivityReviewPage() {
                                     {group.assignments.map((item) => {
                                       const verdict = shiftDecisions[item.id] || 'approve';
                                       const rowPending = item.status === 'pending';
+                                      const isFocusedAssignment =
+                                        focusOccurrenceId === group.occurrenceId &&
+                                        focusEmployeeId !== null &&
+                                        item.employeeId === focusEmployeeId;
                                       return (
                                         <div
                                           key={item.id}
+                                          data-focus-assignment={
+                                            isFocusedAssignment ? 'true' : undefined
+                                          }
                                           className={`p-3 rounded-2xl border bg-white space-y-2.5 flex flex-col justify-between transition-all ${
-                                            rowPending && verdict === 'decline'
-                                              ? 'border-rose-300 ring-2 ring-rose-100'
-                                              : rowPending && verdict === 'approve'
-                                                ? 'border-emerald-300 ring-1 ring-emerald-100/60'
-                                                : 'border-slate-200'
+                                            isFocusedAssignment
+                                              ? 'satpam-assignment-focus-flash border-amber-400 bg-yellow-50 ring-2 ring-amber-300 shadow-lg shadow-amber-100'
+                                              : rowPending && verdict === 'decline'
+                                                ? 'border-rose-300 ring-2 ring-rose-100'
+                                                : rowPending && verdict === 'approve'
+                                                  ? 'border-emerald-300 ring-1 ring-emerald-100/60'
+                                                  : 'border-slate-200'
                                           }`}
                                         >
                                           <div className="space-y-2 flex flex-col flex-1 min-h-0">
@@ -3894,5 +3964,19 @@ export default function ActivityReviewPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function ActivityReviewPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
+          <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+        </div>
+      }
+    >
+      <ActivityReviewPageContent />
+    </Suspense>
   );
 }

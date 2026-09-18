@@ -2,6 +2,54 @@ import type { PhotoEvidence } from '@/lib/payroll/domain';
 
 export const FACILITY_REPORTS_COLLECTION = 'FacilityReports';
 
+export const EMPLOYEE_FACILITY_REPORTS_PATH = '/employee/facility-reports';
+export const FACILITY_REPORT_DASHBOARD_PATH = '/dashboard/payroll/facility-reports';
+
+const FACILITY_REPORT_DASHBOARD_CATEGORIES = ['TEKNISI', 'KEBERSIHAN'] as const;
+
+export interface FacilityReportNavigationProfile {
+  role?: string | null;
+  permittedCategories?: readonly string[] | null;
+}
+
+/**
+ * Teknisi and Kebersihan honorer employees use the shared facility dashboard
+ * to carry out repairs. Keep this rule based on the server-backed user profile
+ * categories so the employee menu, route guard, and repair API agree.
+ */
+export function isBlueCollarFacilityDashboardUser(
+  profile: FacilityReportNavigationProfile | null | undefined,
+): boolean {
+  if (profile?.role !== 'honorer') return false;
+  return (profile.permittedCategories || []).some((category) => {
+    const normalizedCategory = category.trim().toUpperCase();
+    return (FACILITY_REPORT_DASHBOARD_CATEGORIES as readonly string[]).includes(
+      normalizedCategory,
+    );
+  });
+}
+
+/**
+ * Report creation is kept for employees who discover facility problems.
+ * Teknisi and Kebersihan are the repairers for those reports, so they may
+ * view and close an existing report but must not create another one.
+ */
+export function canSubmitFacilityReport(
+  profile: FacilityReportNavigationProfile | null | undefined,
+): boolean {
+  if (!profile) return false;
+  if (profile.role === 'loyalis' || profile.role === 'ketua_shift_satpam') return true;
+  return profile.role === 'honorer' && !isBlueCollarFacilityDashboardUser(profile);
+}
+
+export function getFacilityReportsPath(
+  profile: FacilityReportNavigationProfile | null | undefined,
+): string {
+  return isBlueCollarFacilityDashboardUser(profile)
+    ? FACILITY_REPORT_DASHBOARD_PATH
+    : EMPLOYEE_FACILITY_REPORTS_PATH;
+}
+
 /**
  * The reporting form offers this fixed list of campus areas plus "Lainnya",
  * which reveals a free-text field instead. `place` on the report itself
@@ -30,9 +78,9 @@ export function isFacilityArea(value: unknown): value is FacilityArea {
 }
 
 /**
- * A report starts `pending` and stays there until the Kepala SatKer records
- * the final outcome. `declined` closes a report that is not a real fault (or
- * is already covered by another report) and always carries a reason.
+ * A report starts `pending`. An authorized Teknisi/Kebersihan repairer can
+ * close it as `resolved` after the work, while the Kepala SatKer can resolve
+ * or decline it during review. `declined` always carries a reason.
  */
 export const FACILITY_REPORT_STATUSES = [
   'pending',
@@ -72,6 +120,8 @@ export interface FacilityReport {
   place: string;
   description: string;
   photos?: PhotoEvidence[];
+  /** Photos captured by a Teknisi/Kebersihan repairer after fixing the issue. */
+  resolutionPhotos?: PhotoEvidence[];
   status: FacilityReportStatus;
   reportedAt?: unknown;
   /** ISO date (YYYY-MM-DD) of submission, kept for grouping and filtering. */
@@ -80,6 +130,9 @@ export interface FacilityReport {
   reviewedByUid?: string | null;
   reviewedByName?: string | null;
   reviewedAt?: unknown;
+  resolvedByUid?: string | null;
+  resolvedByName?: string | null;
+  resolvedAt?: unknown;
   updatedAt?: unknown;
 }
 
@@ -98,8 +151,9 @@ export function isFacilityReportOpen(status: unknown): boolean {
 }
 
 /**
- * Which transitions a reviewer may apply. The workflow has one open state:
- * a pending report is closed directly as either resolved or declined.
+ * The workflow has one open state: a pending report is closed directly as
+ * either resolved or declined. Both the reviewer and authorized repairer use
+ * the same transition guard for the resolved outcome.
  */
 export function canTransitionFacilityReport(
   from: FacilityReportStatus,

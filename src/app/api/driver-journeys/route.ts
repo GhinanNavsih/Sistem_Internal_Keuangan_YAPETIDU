@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import admin from '@/lib/firebase-admin';
 import { adminDb } from '@/lib/firebase-admin';
-import { assertDateOnly } from '@/lib/payroll/domain';
+import { assertDateOnly, assertPekaryaActivityProofUrl } from '@/lib/payroll/domain';
 import {
   calculateDriverJourneyOperationalCosts,
   calculateEstimatedDriverWage,
@@ -10,6 +10,7 @@ import {
   DEFAULT_DRIVER_JOURNEY_POINT,
   DEFAULT_DRIVER_VEHICLE_NAME,
   DEFAULT_FUEL_PROCUREMENT_MODE,
+  getDriverVehicleRate,
   isFuelProcurementMode,
   isDriverVehicleName,
   MAX_MAIN_DESTINATIONS,
@@ -44,6 +45,7 @@ import {
   requireAuthenticatedProfile,
   requireRole,
 } from '@/lib/server/auth';
+import { parseProofPhoto } from '@/lib/server/photoEvidence';
 
 export const dynamic = 'force-dynamic';
 
@@ -545,18 +547,12 @@ export async function POST(request: NextRequest) {
     if (action === 'create_self') {
       requireSopirProfile(actor);
       const activityName = stringField(body?.activityName, 'Nama kegiatan', 180);
-      const startPoint = stringField(body?.startPoint, 'Titik awal', 300);
-      const endPoint = stringField(body?.endPoint, 'Tujuan perjalanan', 300);
-      const startPointLocation = journeyLocationField(
-        body?.startPointLocation,
-        startPoint,
-        'Koordinat titik awal',
-      );
-      const endPointLocation = journeyLocationField(
-        body?.endPointLocation,
-        endPoint,
-        'Koordinat tujuan perjalanan',
-      );
+      const authorizationProofPhoto = parseProofPhoto(body?.authorizationProofPhoto);
+      try {
+        assertPekaryaActivityProofUrl(authorizationProofPhoto.url, actor.linkedEmployeeId!);
+      } catch (error) {
+        throw new HttpError(400, (error as Error).message);
+      }
       if (
         body?.vehicleName !== undefined &&
         body?.vehicleName !== null &&
@@ -581,9 +577,6 @@ export async function POST(request: NextRequest) {
       if (vehicleName === DEFAULT_DRIVER_VEHICLE_NAME && requestedFuelMode !== DEFAULT_FUEL_PROCUREMENT_MODE) {
         throw new HttpError(400, 'Kendaraan Ndalem hanya menggunakan Pengisian Standard.');
       }
-      const distanceKm = numberField(body?.distanceKm, 'Jarak satu arah', { min: 0.001, max: 10_000 });
-      const durationHours = numberField(body?.durationHours, 'Durasi satu arah', { min: 0.001, max: 10_000 });
-      const tollParkingFee = numberField(body?.tollParkingFee ?? 0, 'Tol & parkir', { min: 0, max: MAX_MONEY });
       const activityDate = jakartaToday();
       const period = pekaryaPayrollPeriodForDate(activityDate);
 
@@ -621,63 +614,19 @@ export async function POST(request: NextRequest) {
         const journeyRef = adminDb.collection('DriverJourneys').doc(journeyId);
         const reservationId = `FUEL-${journeyId}-${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}`;
 
-        const selfWageEst = calculateEstimatedDriverWage(
-          distanceKm * 2,
-          durationHours * 2,
-          CURRENT_MEAL_ACCOUNTING_MODE,
-        );
-        const baseOperationalCosts = calculateDriverJourneyOperationalCosts(
-          distanceKm,
-          durationHours * 2,
-          vehicleName,
-          tollParkingFee,
-          { mealAccountingMode: CURRENT_MEAL_ACCOUNTING_MODE },
-        );
-        const balanceVehicles = vehicleName === DEFAULT_DRIVER_VEHICLE_NAME ? [] : [vehicleName];
-        const fuelContext = balanceVehicles.length > 0
-          ? await createFuelLedgerContext(transaction, balanceVehicles, {
-              uid: actor.uid,
-              displayName: actor.displayName,
-              role: actor.role,
-            })
-          : null;
-        let reservation: FuelReservationRecord;
-        if (requestedFuelMode === DEFAULT_FUEL_PROCUREMENT_MODE) {
-          reservation = {
-            fuelReservationVersion: CURRENT_FUEL_RESERVATION_VERSION,
-            fuelReservationId: reservationId,
-            fuelReservationState: 'none',
-            fuelReservationVehicleName: vehicleName,
-            fuelProcurementMode: requestedFuelMode,
-            baseFuelAllowance: Math.ceil(baseOperationalCosts.baseOperationalCost),
-            heldFuelAmount: 0,
-            procuredAccumulatedAmount: 0,
-          };
-        } else if (fuelContext) {
-          reservation = reserveFuel(fuelContext, {
-            journeyId,
-            reservationId,
-            vehicleName,
-            mode: requestedFuelMode,
-            baseFuelAllowance: baseOperationalCosts.baseOperationalCost,
-            reason: 'Reservasi BBM saat otorisasi SPJ Mandiri',
-          });
-        } else {
-          throw new HttpError(409, 'Saldo BBM kendaraan tidak dapat diproses.');
-        }
-
-        const operationalCosts = calculateDriverJourneyOperationalCosts(
-          distanceKm,
-          durationHours * 2,
-          vehicleName,
-          tollParkingFee,
-          {
-            fuelProcurementMode: requestedFuelMode,
-            procuredAccumulatedAmount: reservation.procuredAccumulatedAmount,
-            mealAccountingMode: CURRENT_MEAL_ACCOUNTING_MODE,
-          },
-        );
-        if (fuelContext) flushFuelLedger(fuelContext);
+        // The route is not known at authorization; distance-derived costs and
+        // the BBM reservation are both deferred to report submission, where the
+        // driver's actual measured route first becomes available.
+        const reservation: FuelReservationRecord = {
+          fuelReservationVersion: CURRENT_FUEL_RESERVATION_VERSION,
+          fuelReservationId: reservationId,
+          fuelReservationState: 'none',
+          fuelReservationVehicleName: vehicleName,
+          fuelProcurementMode: requestedFuelMode,
+          baseFuelAllowance: 0,
+          heldFuelAmount: 0,
+          procuredAccumulatedAmount: 0,
+        };
 
         const now = admin.firestore.FieldValue.serverTimestamp();
         transaction.create(journeyRef, {
@@ -685,34 +634,19 @@ export async function POST(request: NextRequest) {
           activityName,
           activityDate,
           journeyDate: activityDate,
-          startPoint,
-          endPoint,
-          mainDestinations: [endPoint],
-          ...(startPointLocation !== undefined ? { startPointLocation } : {}),
-          ...(endPointLocation !== undefined
-            ? { mainDestinationLocations: [endPointLocation] }
-            : {}),
           vehicleName,
-          vehicleRate: operationalCosts.vehicleRate,
-          distanceKm,
-          totalDistanceKm: distanceKm * 2,
-          durationHours,
-          customDurationPP: durationHours * 2,
-          baseOperationalCost: operationalCosts.baseOperationalCost,
-          mealAllowance: operationalCosts.mealAllowance,
+          vehicleRate: getDriverVehicleRate(vehicleName),
           // Stamped so a journey keeps the treatment it was authorized under
           // even if policy changes before it is reported and audited.
-          mealAccountingMode: operationalCosts.mealAccountingMode,
-          grossMealAllowance: operationalCosts.grossMealAllowance,
-          tollParkingFee,
-          preAuthorizedToll: tollParkingFee,
-          totalOperationalCost: operationalCosts.totalOperationalCost,
+          mealAccountingMode: CURRENT_MEAL_ACCOUNTING_MODE,
           ...reservationFields(reservation),
           fuelModeSelectionRequired: false,
-          estimatedComponentJarak: selfWageEst.compJarak,
-          estimatedComponentWaktu: selfWageEst.compWaktu,
-          estimatedBaseDriverWage: selfWageEst.baseWage,
-          estimatedMaxDriverWage: selfWageEst.maxWage,
+          // Marks this journey as born under the rule that authorizing IS
+          // departing. Journeys authorized before this existed were not, so the
+          // absence of the flag keeps their sopir-entered departure untouched.
+          departureLockedToAuthorization: true,
+          authorizationProofPhotoUrl: authorizationProofPhoto.url,
+          authorizationProofPhotoAuditMetadata: authorizationProofPhoto.auditMetadata,
           employeeId: actor.linkedEmployeeId,
           employeeName: actor.displayName,
           claimedBy: actor.uid,
@@ -784,6 +718,26 @@ export async function POST(request: NextRequest) {
           throw new HttpError(409, 'Jenis kendaraan perjalanan tidak valid.');
         }
         const baseFuelAllowance = Math.ceil(Number(journey.baseOperationalCost || 0));
+        // Before a report is submitted the route — and so the fuel amount — is
+        // unknown; record the chosen mode and let submission place the hold,
+        // rather than reserving a meaningless zero against the vehicle balance.
+        if (baseFuelAllowance <= 0) {
+          transaction.update(journeyRef, {
+            fuelProcurementMode: requestedFuelMode,
+            fuelModeSelectionRequired: false,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          return {
+            journeyId,
+            fuelProcurementMode: requestedFuelMode,
+            heldFuelAmount: 0,
+            procuredAccumulatedAmount: 0,
+            fuelAllowanceForSettlement: 0,
+            fuelTotalAllocation: 0,
+            fuelBalance: null,
+            idempotent: false,
+          };
+        }
         const balanceVehicles = vehicleName === DEFAULT_DRIVER_VEHICLE_NAME ? [] : [vehicleName];
         const fuelContext = balanceVehicles.length > 0
           ? await createFuelLedgerContext(transaction, balanceVehicles, {

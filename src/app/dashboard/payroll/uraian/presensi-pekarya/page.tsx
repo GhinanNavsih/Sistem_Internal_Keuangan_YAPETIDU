@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   AlertTriangle,
@@ -8,6 +9,7 @@ import {
   ChevronDown,
   ChevronUp,
   ClipboardCheck,
+  ExternalLink,
   Eye,
   RefreshCw,
   Save,
@@ -197,6 +199,7 @@ type SatpamAbsenceAdminView = {
       shiftType: string | null;
       status: string;
       ketuaShiftName: string | null;
+      sourceOccurrenceId?: string | null;
     }>;
   }>;
 };
@@ -425,6 +428,170 @@ function categoryLabel(category: string): string {
   );
 }
 
+function satpamShiftReviewHref(
+  absence: SatpamAbsenceAdminView['requests'][number],
+): string {
+  const params = new URLSearchParams({
+    reportType: 'shift',
+    category: 'SATPAM',
+    status: 'all',
+  });
+  const periodDate = /^(\d{4})-(\d{2})-\d{2}$/.exec(absence.dutyDate);
+  if (periodDate) {
+    params.set('year', periodDate[1]);
+    params.set('month', String(Number(periodDate[2])));
+  }
+  const registration = absence.shiftRegistrationConflicts?.find(
+    (item) => item.sourceOccurrenceId,
+  );
+  if (registration?.sourceOccurrenceId) {
+    params.set('occurrenceId', registration.sourceOccurrenceId);
+  }
+  if (absence.employeeId) {
+    params.set('employeeId', absence.employeeId);
+  }
+  return `/dashboard/payroll/activity-review?${params.toString()}`;
+}
+
+function SatpamSubmissionsSection({
+  requests,
+  notice,
+  canEdit,
+  working,
+  onReview,
+}: {
+  requests: SatpamAbsenceAdminView['requests'];
+  notice?: string;
+  canEdit: boolean;
+  working: boolean;
+  onReview: (
+    absence: SatpamAbsenceAdminView['requests'][number],
+    action: 'approve' | 'decline' | 'supersede_approve' | 'supersede_decline',
+  ) => void;
+}) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-200 p-5">
+        <h2 className="font-bold">Pengajuan Presensi &amp; Izin Satpam</h2>
+        <p className="text-sm text-slate-500">
+          Laporan scan memperbaiki bukti presensi tanpa mengubah upah shift. Izin
+          disetujui menambah Harian Rp12.500 hanya jika tidak ada shift terdaftar
+          pada tanggal yang sama. Satpam tanpa regu dapat mengajukan izin
+          administratif, tetapi tidak mendapat tambahan Harian karena tidak ada
+          jadwal dinas yang digantikan.
+        </p>
+      </div>
+      <div className="divide-y divide-slate-100">
+        {requests.length === 0 ? (
+          <div className="p-8 text-center text-slate-500">
+            {notice
+              ? `Pengajuan Satpam belum dapat dimuat: ${notice}`
+              : 'Belum ada pengajuan presensi atau izin.'}
+          </div>
+        ) : (
+          requests.map((absence) => {
+            const requestType = satpamAttendanceReportType(absence);
+            const approveAction =
+              absence.status === 'pending' ? 'approve' : 'supersede_approve';
+            const declineAction =
+              absence.status === 'pending' ? 'decline' : 'supersede_decline';
+            const payrollExcludedFromHarian =
+              absence.payrollExcludedFromHarian === true;
+            const isUnassignedSatpam =
+              absence.scheduleRelation === 'unassigned' || !absence.teamId;
+            return (
+              <article key={absence.id} className="space-y-3 p-5">
+                <div>
+                  <p className="font-bold text-slate-900">
+                    {absence.employeeName || absence.employeeId} ·{' '}
+                    {absence.dutyDate}
+                  </p>
+                  <p className="text-sm font-semibold text-indigo-700">
+                    {requestType === 'scan'
+                      ? `Scan Masuk & Scan Keluar · ${absence.scanIn?.slice(0, 5) || '--:--'}–${absence.scanOut?.slice(0, 5) || '--:--'}`
+                      : satpamAbsenceTypeLabel(absence.absenceType)}
+                    {absence.shiftName ? ` · ${absence.shiftName}` : ''}
+                    {absence.postId ? ` · ${absence.postId}` : ''}
+                    {isUnassignedSatpam ? ' · Tanpa regu' : ''}
+                  </p>
+                  {requestType === 'izin_resmi' &&
+                    !isUnassignedSatpam &&
+                    (absence.hasShiftRegistrationConflict === true ||
+                      (absence.shiftRegistrationConflicts?.length || 0) > 0) && (
+                      <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
+                        <p className="font-bold">⚠ Shift sudah terdaftar pada tanggal ini</p>
+                        <p className="mt-1 text-xs">
+                          {absence.status === 'approved' && payrollExcludedFromHarian
+                            ? 'Izin telah disetujui tanpa tambahan Harian karena shift ini sudah terdaftar.'
+                            : 'Jika izin disetujui, pengajuan tidak akan menambah hitungan Harian.'}
+                        </p>
+                        {absence.shiftRegistrationConflicts?.map((registration) => (
+                          <p key={registration.id} className="mt-1 text-xs">
+                            {registration.shiftName || 'Shift'}
+                            {registration.postId ? ` · ${registration.postId}` : ''}
+                            {registration.shiftType ? ` · ${registration.shiftType}` : ''}
+                            {registration.ketuaShiftName
+                              ? ` · Ketua: ${registration.ketuaShiftName}`
+                              : ''}
+                          </p>
+                        ))}
+                        <Link
+                          href={satpamShiftReviewHref(absence)}
+                          className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-lg border border-amber-300 bg-white px-3 text-sm font-bold text-amber-800 transition-colors hover:bg-amber-100"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                          Check Shift
+                        </Link>
+                      </div>
+                    )}
+                  <p className="text-sm text-slate-600">{absence.reason}</p>
+                  <p className="mt-1 text-xs font-semibold uppercase text-slate-400">
+                    {decisionStatusLabel(absence.status)}
+                    {absence.late ? ' · diajukan terlambat' : ''}
+                    {requestType === 'izin_resmi' && absence.status === 'approved'
+                      ? payrollExcludedFromHarian
+                        ? absence.payrollExclusionReason === 'NO_SCHEDULED_DUTY'
+                          ? ' · tanpa tambahan Harian (tanpa regu/jadwal)'
+                          : ' · tanpa tambahan Harian'
+                        : ` · ${money(absence.approvedAmount || 12_500)}`
+                      : ''}
+                  </p>
+                </div>
+                {canEdit &&
+                  (requestType === 'izin_resmi' || absence.status === 'pending') && (
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {absence.status !== 'approved' &&
+                        (requestType === 'izin_resmi' || absence.status === 'pending') && (
+                          <Button
+                            className="min-h-12 bg-emerald-600 hover:bg-emerald-700"
+                            disabled={working}
+                            onClick={() => void onReview(absence, approveAction)}
+                          >
+                            Setujui
+                          </Button>
+                        )}
+                      {absence.status !== 'declined' &&
+                        (requestType === 'izin_resmi' || absence.status === 'pending') && (
+                          <Button
+                            variant="outline"
+                            className="min-h-12 border-rose-200 text-rose-700"
+                            disabled={working}
+                            onClick={() => void onReview(absence, declineAction)}
+                          >
+                            Tolak
+                          </Button>
+                        )}
+                    </div>
+                  )}
+              </article>
+            );
+          })
+        )}
+      </div>
+    </section>
+  );
+}
+
 export default function PekaryaAttendancePage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -484,10 +651,13 @@ export default function PekaryaAttendancePage() {
     useState<PlanCorrectionState | null>(null);
   const [satpamOperations, setSatpamOperations] =
     useState<SatpamOperations | null>(null);
+  const [satpamSubmissions, setSatpamSubmissions] =
+    useState<SatpamAbsenceAdminView | null>(null);
   const [satpamTab, setSatpamTab] = useState<
     'plans' | 'absences' | 'reconciliation' | 'mismatches'
   >('plans');
   const [satpamAttendanceNotice, setSatpamAttendanceNotice] = useState('');
+  const [satpamSubmissionNotice, setSatpamSubmissionNotice] = useState('');
   const [linkTarget, setLinkTarget] = useState<DepartmentUnmatchedRow | null>(null);
   const [linkEmployeeId, setLinkEmployeeId] = useState('');
   const [linkSearch, setLinkSearch] = useState('');
@@ -514,6 +684,8 @@ export default function PekaryaAttendancePage() {
     try {
       if (category === 'SATPAM') {
         setSatpamAttendanceNotice('');
+        setSatpamSubmissionNotice('');
+        setSatpamSubmissions(null);
         const attendancePromise = authenticatedJson<SatpamView>(
           `/api/attendance/pekarya?period=${encodeURIComponent(period)}&category=SATPAM`,
         ).catch((cause): SatpamView => {
@@ -551,10 +723,28 @@ export default function PekaryaAttendancePage() {
         setSatpamOperations({ dutyPlans, absences, reconciliation });
       } else {
         setSatpamAttendanceNotice('');
-        const result = await authenticatedJson<AttendanceView>(
-          `/api/attendance/pekarya?period=${encodeURIComponent(period)}&category=${encodeURIComponent(category)}`,
-        );
+        setSatpamSubmissionNotice('');
+        const satpamSubmissionsPromise: Promise<SatpamAbsenceAdminView | null> =
+          category === ALL_BLUE_COLLAR_CATEGORY && canViewSatpamCategory
+            ? authenticatedJson<SatpamAbsenceAdminView>(
+                `/api/satpam/absences?period=${encodeURIComponent(period)}`,
+              ).catch((cause): SatpamAbsenceAdminView => {
+                setSatpamSubmissionNotice(
+                  cause instanceof Error
+                    ? cause.message
+                    : 'Gagal memuat pengajuan Satpam.',
+                );
+                return { requests: [] };
+              })
+            : Promise.resolve(null);
+        const [result, submissions] = await Promise.all([
+          authenticatedJson<AttendanceView>(
+            `/api/attendance/pekarya?period=${encodeURIComponent(period)}&category=${encodeURIComponent(category)}`,
+          ),
+          satpamSubmissionsPromise,
+        ]);
         setData(result);
+        setSatpamSubmissions(submissions);
         setSatpamOperations(null);
       }
     } catch (cause) {
@@ -562,7 +752,7 @@ export default function PekaryaAttendancePage() {
     } finally {
       setLoading(false);
     }
-  }, [canEdit, category, period]);
+  }, [canEdit, canViewSatpamCategory, category, period]);
 
   const reviewAbsence = async (
     absence: SatpamAbsenceAdminView['requests'][number],
@@ -1004,8 +1194,8 @@ export default function PekaryaAttendancePage() {
             <p className="font-bold">Semua pegawai blue collar</p>
             <p className="mt-1 text-sm">
               Daftar ini menggabungkan seluruh kategori yang memakai upah
-              presensi. Satpam tetap diperiksa melalui kategori Satpam karena
-              pembayarannya bersumber dari laporan Ketua Shift.
+              presensi dan menampilkan pengajuan Satpam di bagian terpisah.
+              Pembayaran shift Satpam tetap bersumber dari laporan Ketua Shift.
             </p>
           </div>
         )}
@@ -1216,127 +1406,12 @@ export default function PekaryaAttendancePage() {
           )}
 
           {satpamOperations && satpamTab === 'absences' && (
-            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div className="border-b border-slate-200 p-5">
-                <h2 className="font-bold">Pengajuan Presensi &amp; Izin Satpam</h2>
-                <p className="text-sm text-slate-500">
-                  Laporan scan memperbaiki bukti presensi tanpa mengubah upah
-                  shift. Izin disetujui menambah Harian Rp12.500 hanya jika
-                  tidak ada shift terdaftar pada tanggal yang sama. Satpam tanpa
-                  regu dapat mengajukan izin administratif, tetapi tidak mendapat
-                  tambahan Harian karena tidak ada jadwal dinas yang digantikan.
-                </p>
-              </div>
-              <div className="divide-y divide-slate-100">
-                {satpamOperations.absences.requests.length === 0 ? (
-                  <div className="p-8 text-center text-slate-500">
-                    Belum ada pengajuan presensi atau izin.
-                  </div>
-                ) : (
-                  satpamOperations.absences.requests.map((absence) => {
-                    const requestType = satpamAttendanceReportType(absence);
-                    const approveAction =
-                      absence.status === 'pending'
-                        ? 'approve'
-                        : 'supersede_approve';
-                    const declineAction =
-                      absence.status === 'pending'
-                        ? 'decline'
-                        : 'supersede_decline';
-                    const payrollExcludedFromHarian =
-                      absence.payrollExcludedFromHarian === true;
-                    const isUnassignedSatpam =
-                      absence.scheduleRelation === 'unassigned' || !absence.teamId;
-                    return (
-                      <article key={absence.id} className="space-y-3 p-5">
-                        <div>
-                          <p className="font-bold text-slate-900">
-                            {absence.employeeName || absence.employeeId} ·{' '}
-                            {absence.dutyDate}
-                          </p>
-                          <p className="text-sm font-semibold text-indigo-700">
-                            {requestType === 'scan'
-                              ? `Scan Masuk & Scan Keluar · ${absence.scanIn?.slice(0, 5) || '--:--'}–${absence.scanOut?.slice(0, 5) || '--:--'}`
-                              : satpamAbsenceTypeLabel(absence.absenceType)}
-                            {absence.shiftName ? ` · ${absence.shiftName}` : ''}
-                            {absence.postId ? ` · ${absence.postId}` : ''}
-                            {isUnassignedSatpam ? ' · Tanpa regu' : ''}
-                          </p>
-                          {requestType === 'izin_resmi' &&
-                            !isUnassignedSatpam &&
-                            (absence.hasShiftRegistrationConflict === true ||
-                              (absence.shiftRegistrationConflicts?.length || 0) > 0) && (
-                            <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
-                              <p className="font-bold">⚠ Shift sudah terdaftar pada tanggal ini</p>
-                              <p className="mt-1 text-xs">
-                                {absence.status === 'approved' && payrollExcludedFromHarian
-                                  ? 'Izin telah disetujui tanpa tambahan Harian karena shift ini sudah terdaftar.'
-                                  : 'Jika izin disetujui, pengajuan tidak akan menambah hitungan Harian.'}
-                              </p>
-                              {absence.shiftRegistrationConflicts?.map((registration) => (
-                                <p key={registration.id} className="mt-1 text-xs">
-                                  {registration.shiftName || 'Shift'}{registration.postId ? ` · ${registration.postId}` : ''}
-                                  {registration.shiftType ? ` · ${registration.shiftType}` : ''}
-                                  {registration.ketuaShiftName ? ` · Ketua: ${registration.ketuaShiftName}` : ''}
-                                </p>
-                              ))}
-                            </div>
-                          )}
-                          <p className="text-sm text-slate-600">
-                            {absence.reason}
-                          </p>
-                          <p className="mt-1 text-xs font-semibold uppercase text-slate-400">
-                            {decisionStatusLabel(absence.status)}
-                            {absence.late ? ' · diajukan terlambat' : ''}
-                            {requestType === 'izin_resmi' &&
-                            absence.status === 'approved'
-                              ? payrollExcludedFromHarian
-                                ? absence.payrollExclusionReason === 'NO_SCHEDULED_DUTY'
-                                  ? ' · tanpa tambahan Harian (tanpa regu/jadwal)'
-                                  : ' · tanpa tambahan Harian'
-                                : ` · ${money(absence.approvedAmount || 12_500)}`
-                              : ''}
-                          </p>
-                        </div>
-                        {canEdit &&
-                          (requestType === 'izin_resmi' ||
-                            absence.status === 'pending') && (
-                          <div className="flex flex-wrap justify-end gap-2">
-                            {absence.status !== 'approved' &&
-                              (requestType === 'izin_resmi' ||
-                                absence.status === 'pending') && (
-                              <Button
-                                className="min-h-12 bg-emerald-600 hover:bg-emerald-700"
-                                disabled={working}
-                                onClick={() =>
-                                  void reviewAbsence(absence, approveAction)
-                                }
-                              >
-                                Setujui
-                              </Button>
-                            )}
-                            {absence.status !== 'declined' &&
-                              (requestType === 'izin_resmi' ||
-                                absence.status === 'pending') && (
-                              <Button
-                                variant="outline"
-                                className="min-h-12 border-rose-200 text-rose-700"
-                                disabled={working}
-                                onClick={() =>
-                                  void reviewAbsence(absence, declineAction)
-                                }
-                              >
-                                Tolak
-                              </Button>
-                            )}
-                          </div>
-                        )}
-                      </article>
-                    );
-                  })
-                )}
-              </div>
-            </section>
+            <SatpamSubmissionsSection
+              requests={satpamOperations.absences.requests}
+              canEdit={canEdit}
+              working={working}
+              onReview={reviewAbsence}
+            />
           )}
 
           {satpamOperations && satpamTab === 'reconciliation' && (
@@ -1643,6 +1718,18 @@ export default function PekaryaAttendancePage() {
               )}
             </div>
           </section>
+
+          {category === ALL_BLUE_COLLAR_CATEGORY &&
+            canViewSatpamCategory &&
+            satpamSubmissions && (
+              <SatpamSubmissionsSection
+                requests={satpamSubmissions.requests}
+                notice={satpamSubmissionNotice}
+                canEdit={canEdit}
+                working={working}
+                onReview={reviewAbsence}
+              />
+            )}
 
           <div className="flex justify-between items-center px-1">
             <span className="text-[11px] text-slate-500 font-bold">

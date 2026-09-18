@@ -11,6 +11,7 @@ import {
   History,
   Info,
   Loader2,
+  LogOut,
   Plus,
   ReceiptText,
   Scale,
@@ -19,6 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { SimpanPinjamPageSkeleton } from '@/components/SimpanPinjamSkeleton';
+import EmployeeNavigationMenu from '@/components/EmployeeNavigationMenu';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -262,7 +264,7 @@ function LoanTerms() {
 }
 
 export default function EmployeeSimpanPinjamPage() {
-  const { profile: rawProfile, activeProfile } = useAuth();
+  const { profile: rawProfile, activeProfile, logout } = useAuth();
   const profile = activeProfile || rawProfile;
 
   const [loans, setLoans] = useState<LoanRow[]>([]);
@@ -487,39 +489,63 @@ export default function EmployeeSimpanPinjamPage() {
 
   const header = (
     <>
-      <div className="flex items-center justify-between gap-3">
-        <Link href={homeHref}>
-          <Button
-            variant="outline"
-            className="rounded-xl h-9 px-3 border-slate-200 bg-white shadow-sm cursor-pointer flex items-center gap-1.5 text-slate-600 font-bold text-xs"
-          >
-            <ChevronLeft className="w-4 h-4" />
-            Kembali
-          </Button>
-        </Link>
+      <header className="sticky top-0 z-40 -mx-4 -mt-6 border-b border-slate-200/80 bg-white/95 shadow-sm backdrop-blur sm:-mx-6 sm:-mt-8">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <Link href={homeHref}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 shrink-0 rounded-xl text-slate-400 hover:bg-slate-50 hover:text-slate-700"
+                title="Kembali"
+                aria-label="Kembali"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </Button>
+            </Link>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-200/60">
+              <Banknote className="h-4.5 w-4.5" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="truncate text-sm font-bold leading-tight text-slate-900">
+                Simpan Pinjam
+              </h1>
+              <p className="truncate text-[11px] font-medium text-slate-400">
+                {profile?.displayName || profile?.email || 'Karyawan'}
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+            <EmployeeNavigationMenu />
+            <Button
+              type="button"
+              onClick={() => void logout()}
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-xl border border-slate-150/40 bg-white text-slate-400 shadow-sm hover:text-rose-500"
+              title="Keluar"
+              aria-label="Keluar"
+            >
+              <LogOut className="h-4.5 w-4.5" />
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="max-w-3xl text-xs leading-relaxed text-slate-500 sm:text-sm">
+          Ajukan, restrukturisasi, dan pantau cicilan pinjaman Koperasi UNIPDU Anda.
+        </p>
         {canApply && (
           <Button
             onClick={openApplyDialog}
-            className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-9 px-3.5 shadow-sm cursor-pointer flex items-center gap-1.5"
+            className="h-10 w-full shrink-0 rounded-xl bg-indigo-600 px-3.5 text-xs font-bold text-white shadow-sm hover:bg-indigo-700 sm:w-auto"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="h-4 w-4" />
             Ajukan Pinjaman
           </Button>
         )}
-      </div>
-
-      <div className="flex items-center gap-3">
-        <div className="w-11 h-11 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shadow-inner shrink-0">
-          <Banknote className="w-5 h-5" />
-        </div>
-        <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-            Simpan Pinjam
-          </h1>
-          <p className="text-slate-500 text-xs sm:text-sm">
-            Ajukan, restrukturisasi, dan pantau cicilan pinjaman Koperasi UNIPDU Anda.
-          </p>
-        </div>
       </div>
     </>
   );

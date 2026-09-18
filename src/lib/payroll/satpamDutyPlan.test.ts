@@ -391,6 +391,42 @@ test('Ketua Shift may choose Harian or Lembur Sendiri on their own post', () => 
   assert.equal(noPlan.assignments[0]?.payType, 'Lembur Sendiri');
 });
 
+test('Ketua Shift may choose Lembur Cover when moved to another planned post', () => {
+  const [planDay] = generatePlan('2026-08-01', '2026-08-08').generatedDays;
+  const coveredAssignment = planDay.assignments.find(
+    (assignment) =>
+      assignment.employeeId !== ketuaShiftId &&
+      assignment.postId !== SATPAM_KETUA_POST_ID,
+  )!;
+  const movedAssignments = planDay.assignments
+    .filter((assignment) => assignment.employeeId !== coveredAssignment.employeeId)
+    .map((assignment) =>
+      assignment.employeeId === ketuaShiftId
+        ? {
+            ...assignment,
+            postId: coveredAssignment.postId,
+            shiftType: 'Lembur Cover' as const,
+            coveredEmployeeId: coveredAssignment.employeeId,
+          }
+        : assignment,
+    );
+
+  const result = classifySatpamDutyAssignments({
+    planDay,
+    primaryAssignments: movedAssignments,
+    regularPayType: 'Jumat & Libur',
+    teamRosterEmployeeIds: new Set(roster),
+    ketuaShiftId,
+  });
+  const movedKetua = result.assignments.find(
+    (assignment) => assignment.employeeId === ketuaShiftId,
+  );
+
+  assert.equal(movedKetua?.payType, 'Lembur Cover');
+  assert.equal(movedKetua?.coveredEmployeeId, coveredAssignment.employeeId);
+  assert.equal(movedKetua?.scheduleRelation, 'planned_other_post');
+});
+
 test('a cross-team Pos 9 guard defaults to Harian and may use either overtime type', () => {
   const [planDay] = generatePlan('2026-08-01', '2026-08-08').generatedDays;
   const otherTeamPos9 = 'SAT-99';

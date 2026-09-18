@@ -35,8 +35,12 @@ import {
   MapPin,
   RefreshCw,
   ExternalLink,
+  Sparkles,
+  AlertCircle,
+  X,
 } from 'lucide-react';
 import type { PhotoAuditMetadata, PhotoEvidence } from '@/lib/payroll/domain';
+import type { JourneyAuditResult, JourneyAuditPayload } from '@/lib/ai/journeyAudit';
 import {
   calculateEditableDriverJourneyTimeline,
   calculateDriverReimbursementSettlement,
@@ -195,6 +199,8 @@ export interface DriverAuditReport {
   tollReceiptUrl?: string;
   fuelReceiptEvidence?: PhotoEvidence[];
   tollReceiptEvidence?: PhotoEvidence[];
+  authorizationProofPhotoUrl?: string;
+  authorizationProofPhotoAuditMetadata?: PhotoAuditMetadata | null;
 }
 
 function auditReportPointLocations(
@@ -395,6 +401,12 @@ export function DriverJourneyAuditDialog({
   const [mapSearchError, setMapSearchError] = useState('');
   const [mapTargetIndex, setMapTargetIndex] = useState<number | null>(null);
 
+  // AI Journey Audit state (Gemini 3.7 Flash Lite)
+  const [isAuditingAi, setIsAuditingAi] = useState(false);
+  const [aiAuditResult, setAiAuditResult] = useState<JourneyAuditResult | null>(null);
+  const [aiAuditError, setAiAuditError] = useState('');
+  const [showAiAuditCard, setShowAiAuditCard] = useState(true);
+
   const mapRef = React.useRef<any>(null);
   const markerRef = React.useRef<any>(null);
   const mapElementRef = React.useRef<HTMLDivElement | null>(null);
@@ -456,9 +468,17 @@ export function DriverJourneyAuditDialog({
     // Closing discards the draft so reopening the same report starts from the
     // sopir's submitted figures again rather than the abandoned edits.
     setSeededReportId(null);
+    setAiAuditResult(null);
+    setAiAuditError('');
+    setIsAuditingAi(false);
+    setShowAiAuditCard(true);
   }
   if (report && report.id !== seededReportId) {
     setSeededReportId(report.id);
+    setAiAuditResult(null);
+    setAiAuditError('');
+    setIsAuditingAi(false);
+    setShowAiAuditCard(true);
     const distKm = report.distanceKm || 0;
     const durHrs = report.durationHours || 0;
     const authDurPP =
@@ -1202,6 +1222,68 @@ export function DriverJourneyAuditDialog({
     });
   };
 
+  const handleRunAiAudit = async () => {
+    if (!report || !auditCalc) return;
+    setIsAuditingAi(true);
+    setAiAuditError('');
+    setShowAiAuditCard(true);
+
+    try {
+      const legDetails = Object.entries(auditLegWages).map(([idxStr, leg]) => {
+        const idx = Number(idxStr);
+        return {
+          legIndex: idx,
+          from: auditPoints[idx] || `Titik ${idx}`,
+          to: auditPoints[idx + 1] || auditPoints[0],
+          distanceKm: leg.distanceKm,
+          durationHours: leg.durationHours,
+        };
+      });
+
+      const payload: JourneyAuditPayload = {
+        reportId: report.id,
+        employeeName: report.employeeName,
+        activityName: report.activityName,
+        dateStart: auditDateStart || report.dateStart || report.activityDate,
+        timeStart: auditTimeStart,
+        dateEnd: auditDateEnd || report.dateEnd || report.activityDate,
+        timeEnd: auditTimeEnd,
+        isMultiDay: auditIsMultiDay,
+        nightCount: auditNightCount,
+        elapsedDurationHours: auditCalc.actualJourneyDurationHours,
+        drivingDurationHours: auditRouteDurationHours,
+        totalDistanceKm: auditDistanceKm,
+        points: auditPoints,
+        pointLocations: auditPointLocations.map((loc, i) =>
+          normalizeDriverJourneyLocation(loc, auditPoints[i]),
+        ),
+        legDetails,
+        vehicleType: auditVehicleType,
+        fuelProcurementMode: auditCalc.fuelProcurementMode,
+      };
+
+      const res = await authenticatedJson<{
+        success: boolean;
+        data?: JourneyAuditResult;
+        error?: string;
+      }>('/api/driver-journeys/ai-audit', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      if (res.data) {
+        setAiAuditResult(res.data);
+      } else {
+        throw new Error(res.error || 'Gagal menerima hasil audit AI.');
+      }
+    } catch (err) {
+      console.error('Error running AI audit:', err);
+      setAiAuditError(err instanceof Error ? err.message : 'Gagal menjalankan audit AI.');
+    } finally {
+      setIsAuditingAi(false);
+    }
+  };
+
   const mapsRouteUrl = buildGoogleMapsRouteUrl(auditPoints, auditPointLocations);
 
   return (
@@ -1209,19 +1291,77 @@ export function DriverJourneyAuditDialog({
       <Dialog open={report !== null} onOpenChange={onOpenChange}>
         <DialogContent className="w-[96vw] max-w-[96vw] sm:max-w-[96vw] h-[92vh] max-h-[92vh] rounded-[28px] border-none shadow-2xl bg-white p-5 sm:p-7 flex flex-col justify-between overflow-hidden">
           <DialogHeader className="pb-2.5 border-b border-slate-100 shrink-0">
-            <DialogTitle className="text-xl font-extrabold flex items-center gap-2.5 text-slate-800">
-              <Compass className="w-6 h-6 text-indigo-500 shrink-0" />
-              <span>
-                {report?.status === 'pending'
-                  ? 'Audit & Edit Perjalanan Sopir'
-                  : canReEditConfirmed
-                    ? 'Edit Perjalanan Sopir (Terkonfirmasi)'
-                    : 'Detail Audit Perjalanan Sopir'}
-              </span>
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-400">
-              Verifikasi rute, BBM, uang makan, dan hitung delta serta upah bersih sopir.
-            </DialogDescription>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pr-8 sm:pr-10">
+              <div>
+                <DialogTitle className="text-xl font-extrabold flex items-center gap-2.5 text-slate-800">
+                  <Compass className="w-6 h-6 text-indigo-500 shrink-0" />
+                  <span>
+                    {report?.status === 'pending'
+                      ? 'Audit & Edit Perjalanan Sopir'
+                      : canReEditConfirmed
+                        ? 'Edit Perjalanan Sopir (Terkonfirmasi)'
+                        : 'Detail Audit Perjalanan Sopir'}
+                  </span>
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-400">
+                  Verifikasi rute, BBM, uang makan, dan hitung delta serta upah bersih sopir.
+                </DialogDescription>
+              </div>
+
+              {/* Audit AI Button on top right */}
+              <div className="flex items-center gap-2 shrink-0">
+                {aiAuditResult && !showAiAuditCard && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowAiAuditCard(true)}
+                    className="h-8 px-2.5 text-[10px] font-bold border-purple-200 text-purple-700 bg-purple-50/70 hover:bg-purple-100 rounded-xl cursor-pointer"
+                  >
+                    Buka Hasil AI ({aiAuditResult.riskScore}%)
+                  </Button>
+                )}
+                {aiAuditResult && (
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] font-extrabold px-2.5 py-1 rounded-lg ${
+                      aiAuditResult.verdict === 'ANOMALI_KRITIS'
+                        ? 'bg-rose-50 text-rose-700 border-rose-200'
+                        : aiAuditResult.verdict === 'PERLU_DITINJAU'
+                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                          : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    }`}
+                  >
+                    {aiAuditResult.verdict === 'ANOMALI_KRITIS'
+                      ? `🔴 Anomali Kritis (${aiAuditResult.riskScore}%)`
+                      : aiAuditResult.verdict === 'PERLU_DITINJAU'
+                        ? `🟡 Perlu Tinjauan (${aiAuditResult.riskScore}%)`
+                        : `🟢 Lolos Audit (${aiAuditResult.riskScore}%)`}
+                  </Badge>
+                )}
+
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={isAuditingAi || !report || !auditPoints || auditPoints.length < 2}
+                  onClick={handleRunAiAudit}
+                  className="h-8 px-3 text-xs font-black bg-gradient-to-r from-purple-600 via-indigo-600 to-indigo-700 hover:from-purple-700 hover:to-indigo-800 text-white rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  title="Jalankan Audit AI dengan Gemini 3.7 Flash Lite"
+                >
+                  {isAuditingAi ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Menganalisis...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Audit AI</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
           </DialogHeader>
 
           {report?.status === 'approved' && (
@@ -1246,6 +1386,144 @@ export function DriverJourneyAuditDialog({
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 min-h-0 py-2 overflow-y-auto lg:overflow-hidden">
               {/* LEFT HALF: Card 1 (Journey Overview) & Card 2 (Parameter Audit) */}
               <div className="flex flex-col gap-4 overflow-y-auto pr-1">
+                {/* AI AUDIT ERROR BANNER */}
+                {aiAuditError && (
+                  <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs space-y-1 shadow-xs">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-extrabold text-rose-900">
+                        <AlertCircle className="w-4 h-4 text-rose-600" />
+                        <span>Audit AI Gagal</span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setAiAuditError('')}
+                        className="h-6 w-6 p-0 text-rose-600 hover:bg-rose-100 rounded-md cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                    <p className="text-[11px] font-medium text-rose-700 leading-relaxed">{aiAuditError}</p>
+                  </div>
+                )}
+
+                {/* AI AUDIT FINDINGS CARD */}
+                {aiAuditResult && showAiAuditCard && (
+                  <div
+                    className={`p-4 rounded-2xl border space-y-3 text-xs shadow-xs transition-all ${
+                      aiAuditResult.verdict === 'ANOMALI_KRITIS'
+                        ? 'bg-rose-50/70 border-rose-200'
+                        : aiAuditResult.verdict === 'PERLU_DITINJAU'
+                          ? 'bg-amber-50/70 border-amber-200'
+                          : 'bg-emerald-50/70 border-emerald-200'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-xl bg-purple-100 flex items-center justify-center text-purple-700 shrink-0 shadow-2xs">
+                          <Sparkles className="w-4 h-4 text-purple-600" />
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-black uppercase tracking-wider text-purple-900 block flex items-center gap-1.5">
+                            Hasil Audit AI · Gemini 3.7 Flash Lite
+                          </span>
+                          <span className="text-xs font-extrabold text-slate-800">
+                            {aiAuditResult.verdict === 'ANOMALI_KRITIS'
+                              ? '⚠️ Terdeteksi Anomali Kritis'
+                              : aiAuditResult.verdict === 'PERLU_DITINJAU'
+                                ? '🔍 Perlu Perhatian Auditor'
+                                : '✅ Rute & Timeline Terlihat Wajar'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Badge
+                          variant="outline"
+                          className={`text-[9.5px] font-extrabold ${
+                            aiAuditResult.riskScore >= 70
+                              ? 'bg-rose-100 text-rose-800 border-rose-300'
+                              : aiAuditResult.riskScore >= 30
+                                ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                          }`}
+                        >
+                          Skor Risiko: {aiAuditResult.riskScore}/100
+                        </Badge>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowAiAuditCard(false)}
+                          className="h-6 w-6 p-0 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md cursor-pointer"
+                          title="Tutup banner"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    <p className="text-[11.5px] font-semibold text-slate-700 bg-white/90 p-2.5 rounded-xl border border-slate-150 leading-relaxed">
+                      {aiAuditResult.summary}
+                    </p>
+
+                    {aiAuditResult.anomalies.length > 0 && (
+                      <div className="space-y-2 pt-0.5">
+                        <span className="text-[9.5px] font-black text-slate-500 uppercase tracking-wider block">
+                          Temuan & Rekomendasi ({aiAuditResult.anomalies.length}):
+                        </span>
+                        <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                          {aiAuditResult.anomalies.map((anom, aIdx) => (
+                            <div
+                              key={aIdx}
+                              className="p-2.5 rounded-xl bg-white border border-slate-200 space-y-1.5 shadow-2xs"
+                            >
+                              <div className="flex items-center justify-between gap-1">
+                                <span
+                                  className={`text-[9px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wider ${
+                                    anom.type === 'GEO_OUTLIER' || anom.type === 'SUSPICIOUS_DETOUR'
+                                      ? 'bg-rose-100 text-rose-800'
+                                      : anom.type === 'TIMELINE_IMPOSSIBLE'
+                                        ? 'bg-orange-100 text-orange-800'
+                                        : 'bg-amber-100 text-amber-800'
+                                  }`}
+                                >
+                                  {anom.type === 'GEO_OUTLIER'
+                                    ? 'Salah Titik (Geocoding)'
+                                    : anom.type === 'SUSPICIOUS_DETOUR'
+                                      ? 'Detour Mencurigakan'
+                                      : anom.type === 'TIMELINE_IMPOSSIBLE'
+                                        ? 'Timeline Tak Wajar'
+                                        : anom.type === 'PURPOSE_MISMATCH'
+                                          ? 'Keperluan vs Rute'
+                                          : anom.type === 'VAGUE_LOCATION'
+                                            ? 'Format Alamat Samar'
+                                            : 'Pola Rute Berulang'}
+                                </span>
+                                {anom.locationName && (
+                                  <span className="text-[10px] font-bold text-slate-700 truncate max-w-[180px]">
+                                    {anom.stopIndex !== null && anom.stopIndex !== undefined
+                                      ? `Titik #${anom.stopIndex + 1}: `
+                                      : ''}
+                                    {anom.locationName}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-slate-700 font-medium leading-relaxed">
+                                {anom.finding}
+                              </p>
+                              <div className="p-2 rounded-lg bg-indigo-50/70 border border-indigo-100 text-[10.5px] font-bold text-indigo-900 flex items-start gap-1">
+                                <span className="shrink-0 text-indigo-600">💡</span>
+                                <span>{anom.recommendedFix}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* CARD 1: Journey Overview Card */}
                 <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-3 text-xs text-slate-600 shadow-xs">
                   <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Ringkasan Perjalanan</span>
@@ -1424,8 +1702,24 @@ export function DriverJourneyAuditDialog({
                   </div>
 
                   {/* Receipt Attachments with EXIF Audit Viewer */}
-                  {(report.fuelReceiptUrl || report.tollReceiptUrl) && (
+                  {(report.fuelReceiptUrl || report.tollReceiptUrl || report.authorizationProofPhotoUrl) && (
                     <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-200/60">
+                      {report.authorizationProofPhotoUrl && (
+                        <div className="flex flex-wrap gap-1.5 items-center">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">Bukti Otorisasi:</span>
+                          <button
+                            type="button"
+                            onClick={() => onOpenPhoto({
+                              url: report.authorizationProofPhotoUrl!,
+                              title: 'Bukti Foto Otorisasi SPJ',
+                              auditMetadata: report.authorizationProofPhotoAuditMetadata,
+                            })}
+                            className="text-[10px] font-extrabold text-amber-800 hover:bg-amber-100 bg-amber-50 border border-amber-300 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                          >
+                            🔍 Audit Metadata & Foto Keberangkatan
+                          </button>
+                        </div>
+                      )}
                       {report.fuelReceiptUrl && (
                         <div className="flex flex-wrap gap-1.5 items-center">
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">Bukti BBM:</span>

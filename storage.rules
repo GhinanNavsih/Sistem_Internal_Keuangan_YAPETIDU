@@ -113,9 +113,19 @@ service firebase.storage {
     }
 
     // Optional photo attached to a broken-facility report. Scoped to the
-    // reporting Loyalis employee because the photo is uploaded before the
+    // reporting employee because the photo is uploaded before the
     // FacilityReports document exists.
     match /facility_reports/{employeeId}/{filename} {
+      allow read: if isFinance() || roleIs('satker_head') ||
+        (hasActiveProfile() && profile().get('linkedEmployeeId', '') == employeeId);
+      allow create, update: if false;
+      allow delete: if false;
+    }
+
+    // Optional proof photo captured by a Teknisi/Kebersihan repairer after a
+    // facility report has been fixed. The repair API checks the same path
+    // ownership before attaching the URL to the report.
+    match /facility_report_proofs/{employeeId}/{filename} {
       allow read: if isFinance() || roleIs('satker_head') ||
         (hasActiveProfile() && profile().get('linkedEmployeeId', '') == employeeId);
       allow create, update: if false;

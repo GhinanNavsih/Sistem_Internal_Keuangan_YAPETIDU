@@ -119,6 +119,40 @@ test('category authorization redirects employees away from another workflow', ()
   );
 });
 
+test('Teknisi and Kebersihan can open the shared facility dashboard', () => {
+  for (const category of ['TEKNISI', 'KEBERSIHAN']) {
+    assert.equal(
+      getEmployeeRouteRedirect(
+        { role: 'honorer', permittedCategories: [category] },
+        '/dashboard/payroll/facility-reports',
+      ),
+      null,
+    );
+    assert.equal(
+      getEmployeeRouteRedirect(
+        { role: 'honorer', permittedCategories: [category] },
+        '/employee/facility-reports',
+      ),
+      '/dashboard/payroll/facility-reports',
+    );
+  }
+
+  assert.equal(
+    getEmployeeRouteRedirect(
+      { role: 'honorer', permittedCategories: ['SOPIR'] },
+      '/dashboard/payroll/facility-reports',
+    ),
+    EMPLOYEE_ACTIVITY_PATHS.sopir,
+  );
+  assert.equal(
+    getEmployeeRouteRedirect(
+      { role: 'ketua_shift_satpam', permittedCategories: ['SATPAM'] },
+      '/dashboard/payroll/facility-reports',
+    ),
+    EMPLOYEE_ACTIVITY_PATHS.satpam,
+  );
+});
+
 test('Ketua Shift can use Satpam support pages but not Sopir pages', () => {
   const ketua = {
     role: 'ketua_shift_satpam',

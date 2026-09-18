@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
 import EmployeeNavigationMenu from '@/components/EmployeeNavigationMenu';
 import { db, secondaryDb } from '@/lib/firebase';
@@ -35,6 +36,7 @@ import {
   Landmark,
   Coins,
   Lock,
+  ChevronLeft,
   ChevronDown,
   ChevronUp,
   CreditCard,
@@ -51,6 +53,7 @@ import {
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import { authenticatedJson } from '@/lib/payroll/client';
 import { activityBelongsToPayrollPeriod } from '@/lib/payroll/pekaryaSpj';
+import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
 import {
   composeKoperasiLoanHistoryTrail,
   koperasiProjectedPaidInstallments,
@@ -1656,6 +1659,10 @@ export default function EmployeePayslipPage() {
     );
   }
 
+  const employeeHomeHref = profile.role === 'loyalis'
+    ? null
+    : getEmployeeActivitiesPath(profile);
+
   return (
     <div className="min-h-screen bg-white font-sans selection:bg-indigo-100 relative text-black pb-16">
 
@@ -1663,6 +1670,20 @@ export default function EmployeePayslipPage() {
       <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-slate-100 shadow-sm relative z-20">
         <div className="max-w-5xl mx-auto px-3.5 sm:px-8 md:px-12 py-3 sm:py-4 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            {employeeHomeHref && (
+              <Link href={employeeHomeHref}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 shrink-0 rounded-xl text-slate-400 hover:bg-slate-50 hover:text-slate-700"
+                  title="Kembali ke Laporan Kegiatan"
+                  aria-label="Kembali ke Laporan Kegiatan"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </Button>
+              </Link>
+            )}
             <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-400 flex items-center justify-center shadow-lg shadow-indigo-200 shrink-0">
               <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </div>

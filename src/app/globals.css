@@ -181,3 +181,36 @@ input:-webkit-autofill:active {
   -webkit-text-fill-color: inherit !important;
   transition: background-color 5000s ease-in-out 0s;
 }
+
+/* Briefly draw attention to the Satpam assignment opened from a conflict warning. */
+@keyframes satpam-assignment-focus-flash {
+  0%,
+  100% {
+    background-color: rgb(254 249 195);
+    box-shadow: 0 0 0 0 rgb(250 204 21 / 0);
+  }
+
+  12%,
+  32% {
+    background-color: rgb(254 240 138);
+    box-shadow: 0 0 0 4px rgb(250 204 21 / 0.55);
+  }
+
+  22%,
+  42% {
+    background-color: rgb(254 249 195);
+    box-shadow: 0 0 0 0 rgb(250 204 21 / 0);
+  }
+}
+
+.satpam-assignment-focus-flash {
+  animation: satpam-assignment-focus-flash 2.4s ease-in-out 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .satpam-assignment-focus-flash {
+    animation: none;
+    background-color: rgb(254 240 138);
+    box-shadow: 0 0 0 3px rgb(250 204 21 / 0.45);
+  }
+}

@@ -785,25 +785,40 @@ export function classifySatpamDutyAssignments(input: {
     }
     const plannedPost = plannedPostByEmployee.get(assignment.employeeId);
     if (plannedPost) {
-      if (plannedPost !== assignment.postId) {
+      const isMovedToAnotherPlannedPost = plannedPost !== assignment.postId;
+      if (isMovedToAnotherPlannedPost) {
         anomalies.push('ACTUAL_ROSTER_DIFFERS');
       }
       const isKetua = Boolean(ketuaShiftId) && assignment.employeeId === ketuaShiftId;
       const designatedPos9 = isDesignatedPos9(assignment);
+      const plannedEmployeeForPost = plannedByPost.get(assignment.postId) || null;
+      const isKetuaCover =
+        isKetua &&
+        isMovedToAnotherPlannedPost &&
+        assignment.shiftType === 'Lembur Cover';
+      const payType = designatedPos9
+        ? resolveDesignatedPos9PayType(
+            assignment.shiftType,
+            input.regularPayType,
+          )
+        : isKetuaCover
+          ? ('Lembur Cover' as const)
+          : isKetua
+            ? resolveKetuaSatpamPayType(assignment.shiftType, input.regularPayType)
+            : input.regularPayType;
       return {
         ...assignment,
         assignmentKind: 'primary' as const,
-        payType: designatedPos9
-          ? resolveDesignatedPos9PayType(
-              assignment.shiftType,
-              input.regularPayType,
-            )
-          : isKetua
-            ? resolveKetuaSatpamPayType(assignment.shiftType, input.regularPayType)
-            : input.regularPayType,
-        coveredEmployeeId: null,
+        payType,
+        coveredEmployeeId:
+          payType === 'Lembur Cover'
+            ? assignment.coveredEmployeeId ||
+              (plannedEmployeeForPost && !actualEmployeeIds.has(plannedEmployeeForPost)
+                ? plannedEmployeeForPost
+                : null)
+            : null,
         scheduleRelation:
-          plannedPost === assignment.postId
+          !isMovedToAnotherPlannedPost
             ? designatedPos9
               ? ('designated_pos9' as const)
               : ('planned_post' as const)

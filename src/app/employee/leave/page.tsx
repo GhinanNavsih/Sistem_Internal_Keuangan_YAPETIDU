@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertCircle, LogOut, ShieldCheck } from 'lucide-react';
+import { AlertCircle, ChevronLeft, LogOut, ShieldCheck } from 'lucide-react';
 import EmployeeNavigationMenu from '@/components/EmployeeNavigationMenu';
 import { PekaryaOfficialLeavePanel } from '@/components/pekarya/PekaryaOfficialLeavePanel';
 import { SatpamAbsencePanel } from '@/components/satpam/SatpamDutyAndAbsencePanels';
@@ -110,26 +110,40 @@ export default function EmployeeLeavePage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 text-slate-900">
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 shadow-sm backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3 sm:px-6">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-200/60">
-            <ShieldCheck className="h-6 w-6" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-lg font-extrabold">Ajukan Izin</h1>
-            <p className="truncate text-sm text-slate-500">
-              {profile.displayName || profile.email}
-            </p>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <Link href={getEmployeeActivitiesPath(profile)}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 shrink-0 rounded-xl text-slate-400 hover:bg-slate-50 hover:text-slate-700"
+                title="Kembali ke Laporan Kegiatan"
+                aria-label="Kembali ke Laporan Kegiatan"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </Button>
+            </Link>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-200/60">
+              <ShieldCheck className="h-4.5 w-4.5" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="truncate text-sm font-bold leading-tight">Ajukan Izin</h1>
+              <p className="truncate text-[11px] font-medium text-slate-400">
+                {profile.displayName || profile.email}
+              </p>
+            </div>
           </div>
           <EmployeeNavigationMenu />
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="icon"
             onClick={() => void logout()}
-            className="h-9 w-9 shrink-0 rounded-xl border-slate-200 bg-white shadow-sm"
+            className="h-9 w-9 shrink-0 rounded-xl border border-slate-150/40 bg-white text-slate-400 shadow-sm hover:text-rose-500"
             title="Keluar"
             aria-label="Keluar"
           >
-            <LogOut className="h-4.5 w-4.5 text-slate-500" />
+            <LogOut className="h-4.5 w-4.5" />
           </Button>
         </div>
       </header>

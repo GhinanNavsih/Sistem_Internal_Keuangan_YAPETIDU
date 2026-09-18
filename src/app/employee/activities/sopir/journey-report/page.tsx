@@ -167,6 +167,37 @@ function getTodayISO(): string {
   return d.toISOString().split('T')[0];
 }
 
+/** Firestore timestamps reach the client as `{_seconds}` once JSON-serialized. */
+function firestoreDateFrom(value: unknown): Date | null {
+  if (!value || typeof value !== 'object') return null;
+  const timestamp = value as { toDate?: () => Date; seconds?: number; _seconds?: number };
+  if (typeof timestamp.toDate === 'function') return timestamp.toDate();
+  const seconds = timestamp.seconds ?? timestamp._seconds;
+  return typeof seconds === 'number' ? new Date(seconds * 1_000) : null;
+}
+
+function jakartaClockTimeFrom(value: unknown): string | null {
+  const date = firestoreDateFrom(value);
+  if (!date || Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Jakarta',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(date);
+}
+
+function jakartaDateFrom(value: unknown): string | null {
+  const date = firestoreDateFrom(value);
+  if (!date || Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
 function getNextDayISO(dateStr: string): string {
   if (!dateStr) return '';
   const d = new Date(dateStr.includes('T') ? dateStr : `${dateStr}T00:00:00`);
@@ -197,6 +228,22 @@ function calculateElapsedHours(start: string, end: string, nightCount: number): 
   } catch {
     return 0;
   }
+}
+
+/** Digit mask for the JJ:MM clock inputs, clamping to 23:59 as it is typed. */
+function maskClockInput(raw: string): string {
+  let val = raw.replace(/[^0-9]/g, '');
+  if (val.length > 4) val = val.slice(0, 4);
+  if (val.length === 1 && parseInt(val, 10) > 2) val = `0${val}`;
+  if (val.length >= 2) {
+    const hours = parseInt(val.slice(0, 2), 10);
+    if (hours > 23) val = '23' + val.slice(2);
+  }
+  if (val.length === 4) {
+    const minutes = parseInt(val.slice(2, 4), 10);
+    if (minutes > 59) val = val.slice(0, 2) + '59';
+  }
+  return val.length > 2 ? `${val.slice(0, 2)}:${val.slice(2)}` : val;
 }
 
 function padTime(time: string): string {
@@ -466,10 +513,30 @@ function JourneyReportContent() {
               : DEFAULT_FUEL_PROCUREMENT_MODE,
           );
 
-          const initialDate = localDraft?.formDate ?? reportData.activityDate ?? reportData.dateStart ?? reportData.journeyDate ?? getTodayISO();
+          // On a self-authorized SPJ the departure is the moment the sopir hit
+          // "Otorisasi & Mulai Perjalanan". The server derives it from
+          // `authorizedAt` on submit regardless, so show that same figure rather
+          // than a draft value that would silently be overwritten. An assigned
+          // journey's `authorizedAt` is only when the Kepala Satker raised it,
+          // so those keep the sopir's own entry.
+          const authorizedDeparture = normalizedReportData.departureLockedToAuthorization === true
+            ? jakartaClockTimeFrom(reportData.authorizedAt)
+            : null;
+          const initialDate =
+            (authorizedDeparture ? jakartaDateFrom(reportData.authorizedAt) : null) ??
+            localDraft?.formDate ??
+            reportData.activityDate ??
+            reportData.dateStart ??
+            reportData.journeyDate ??
+            getTodayISO();
           setFormDate(initialDate);
 
-          const initialTimeStart = localDraft?.formTimeStart ?? reportData.draftTimeStart ?? reportData.timeStart ?? '';
+          const initialTimeStart =
+            authorizedDeparture ??
+            localDraft?.formTimeStart ??
+            reportData.draftTimeStart ??
+            reportData.timeStart ??
+            '';
           setFormTimeStart(initialTimeStart);
 
           const initialTimeEnd = localDraft?.formTimeEnd ?? reportData.draftTimeEnd ?? reportData.timeEnd ?? '';
@@ -683,6 +750,18 @@ function JourneyReportContent() {
       ? overrideStartPointLocation
       : activeReportingJourney.startPointLocation;
     const extraLocs = list.filter(a => a.type === 'tambah_lokasi' && a.destination);
+
+    if (extraLocs.length === 0) {
+      if (requestId !== routeCalculationRequestRef.current) return;
+      setIsCalculatingExtraRoute(false);
+      setExtraRouteError('');
+      setHasMeasuredRoundTrip(false);
+      setCalculatedDistanceKm(0);
+      setCalculatedDurationHours(0);
+      setOutboundDistanceKm(0);
+      setOutboundDurationHours(0);
+      return;
+    }
 
     setIsCalculatingExtraRoute(true);
     setExtraRouteError('');
@@ -1124,7 +1203,7 @@ function JourneyReportContent() {
     resetMapSearch();
     setIsCalculatingExtraRoute(false);
     setHasMeasuredRoundTrip(false);
-    setExtraRouteError('Pilih lokasi baru agar rute pulang-pergi dapat diukur ulang.');
+    setExtraRouteError('');
     setExtraActivities([...extraActivities, {
       type: 'tambah_lokasi',
       destination: '',
@@ -1189,6 +1268,20 @@ function JourneyReportContent() {
     await recalculateRouteChain(updated);
   };
 
+  const handleCloseMapSelector = () => {
+    resetMapSearch();
+    setShowMapSelector(false);
+    if (
+      mapTargetIndex !== null &&
+      mapTargetIndex !== -2 &&
+      extraActivities[mapTargetIndex] &&
+      !extraActivities[mapTargetIndex].destination
+    ) {
+      setExtraActivities((prev) => prev.filter((_, idx) => idx !== mapTargetIndex));
+    }
+    setMapTargetIndex(null);
+  };
+
   const handleUploadReceipt = async (file: File, type: 'bbm' | 'toll') => {
     if (!activeReportingJourney) return;
     const isBbm = type === 'bbm';
@@ -1223,6 +1316,12 @@ function JourneyReportContent() {
   const isSelfCreatedJourney = useMemo(() => {
     return activeReportingJourney ? isSelfCreatedDriverJourney(activeReportingJourney) : false;
   }, [activeReportingJourney]);
+
+  // Only journeys authorized under the "authorizing is departing" rule carry
+  // this flag, so reports already in flight when it shipped stay editable.
+  const isDepartureLocked = useMemo(() => {
+    return activeReportingJourney?.departureLockedToAuthorization === true;
+  }, [activeReportingJourney?.departureLockedToAuthorization]);
 
   const canEditMainDestination = useMemo(() => {
     return activeReportingJourney?.status === 'claimed';
@@ -1937,98 +2036,132 @@ function JourneyReportContent() {
                     )}
                   </div>
 
-                  {/* Destination Nodes — every stop is equal and reorderable, so
-                      the list can record the order actually driven. */}
-                  {extraActivities.map((act, index) => {
-                    if (act.type !== 'tambah_lokasi') return null;
-                    const stopNumber = extraActivities
-                      .slice(0, index + 1)
-                      .filter((entry) => entry?.type === 'tambah_lokasi').length;
-                    const isFirstStop = !extraActivities
-                      .slice(0, index)
-                      .some((entry) => entry?.type === 'tambah_lokasi');
-                    const isLastStop = !extraActivities
-                      .slice(index + 1)
-                      .some((entry) => entry?.type === 'tambah_lokasi');
-                    return (
-                      <div key={index} className="relative flex items-center justify-between gap-3 text-xs pl-0.5">
-                        <div className="absolute -left-[20px] top-[5px] w-3 h-3 rounded-full bg-blue-600 border-2 border-white shadow-sm" />
-
-                        <div className="flex-1 min-w-0 space-y-1">
-                          {act.destination ? (
-                            <div className="space-y-0.5">
-                              <span className="text-[9px] font-black block text-blue-700">
-                                Tujuan {stopNumber}
+                  {/* Destination Nodes or Welcome CTA Card */}
+                  {currentStops.length === 0 ? (
+                    <div className="relative pl-0.5 my-2">
+                      <div className="absolute -left-[20px] top-6 w-3 h-3 rounded-full bg-blue-500 border-2 border-white shadow-sm ring-4 ring-blue-100" />
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={handleAddLocation}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleAddLocation();
+                          }
+                        }}
+                        className="group relative cursor-pointer overflow-hidden rounded-2xl border-2 border-dashed border-blue-300 bg-gradient-to-br from-blue-50/90 via-white to-sky-50/60 p-4 transition-all hover:border-blue-500 hover:bg-blue-50 hover:shadow-md active:scale-[0.99] focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                      >
+                        <div className="flex items-center gap-3.5">
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-md shadow-blue-500/25 group-hover:scale-105 group-hover:bg-blue-700 transition-all">
+                            <Plus className="h-6 w-6 stroke-[2.5]" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-black text-blue-900 tracking-tight">
+                                Mulai Perjalanan!
                               </span>
-                              <div className="text-xs font-black text-black truncate" title={act.destination}>
-                                📍 {act.destination.split(',')[0]}
-                              </div>
-                              {act.distanceText && act.distanceKm !== undefined && (
-                                <div className="text-[9px] text-slate-800 font-bold">
-                                  Jarak Leg: <span className="text-emerald-700 font-extrabold">{act.distanceText}</span> (Upah Bersih: <span className="text-emerald-600 font-extrabold">{fmtRp(Math.ceil((act.distanceKm * 300) + ((act.durationHours || 0) * 5000)))}</span>)
-                                </div>
-                              )}
+                              <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[9px] font-black text-blue-700">
+                                Mulai Rute
+                              </span>
                             </div>
-                          ) : (
-                            <div className="text-xs font-bold text-slate-700 italic">
-                              Belum memilih lokasi
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-1 shrink-0">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            disabled={isFirstStop || isCalculatingExtraRoute}
-                            onClick={() => handleMoveExtraActivity(index, -1)}
-                            title="Naikkan urutan"
-                            className="h-7 w-7 p-0 text-slate-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                          >
-                            <ArrowUp className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            disabled={isLastStop || isCalculatingExtraRoute}
-                            onClick={() => handleMoveExtraActivity(index, 1)}
-                            title="Turunkan urutan"
-                            className="h-7 w-7 p-0 text-slate-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                          >
-                            <ArrowDown className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            onClick={() => {
-                              resetMapSearch();
-                              setMapTargetIndex(index);
-                              setMapSearchText(act.destination || '');
-                              setMapAddress(act.destination || '');
-                              setMapLocation(
-                                normalizeDriverJourneyLocation(
-                                  act.destinationLocation,
-                                  act.destination,
-                                ),
-                              );
-                              setShowMapSelector(true);
-                            }}
-                            className="text-[10px] font-bold text-blue-700 hover:text-blue-800 bg-white border border-slate-200 px-2.5 h-7 rounded-lg cursor-pointer"
-                          >
-                            {act.destination ? 'Ubah' : 'Pilih'}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            onClick={() => handleRemoveExtraActivity(index)}
-                            className="h-7 w-7 p-0 text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
+                          </div>
+                          <ArrowRight className="h-5 w-5 text-blue-400 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all shrink-0" />
                         </div>
                       </div>
-                    );
-                  })}
+                    </div>
+                  ) : (
+                    extraActivities.map((act, index) => {
+                      if (act.type !== 'tambah_lokasi') return null;
+                      const stopNumber = extraActivities
+                        .slice(0, index + 1)
+                        .filter((entry) => entry?.type === 'tambah_lokasi').length;
+                      const isFirstStop = !extraActivities
+                        .slice(0, index)
+                        .some((entry) => entry?.type === 'tambah_lokasi');
+                      const isLastStop = !extraActivities
+                        .slice(index + 1)
+                        .some((entry) => entry?.type === 'tambah_lokasi');
+                      return (
+                        <div key={index} className="relative flex items-center justify-between gap-3 text-xs pl-0.5">
+                          <div className="absolute -left-[20px] top-[5px] w-3 h-3 rounded-full bg-blue-600 border-2 border-white shadow-sm" />
+
+                          <div className="flex-1 min-w-0 space-y-1">
+                            {act.destination ? (
+                              <div className="space-y-0.5">
+                                <span className="text-[9px] font-black block text-blue-700">
+                                  Tujuan {stopNumber}
+                                </span>
+                                <div className="text-xs font-black text-black truncate" title={act.destination}>
+                                  📍 {act.destination.split(',')[0]}
+                                </div>
+                                {act.distanceText && act.distanceKm !== undefined && (
+                                  <div className="text-[9px] text-slate-800 font-bold">
+                                    Jarak Leg: <span className="text-emerald-700 font-extrabold">{act.distanceText}</span> (Upah Bersih: <span className="text-emerald-600 font-extrabold">{fmtRp(Math.ceil((act.distanceKm * 300) + ((act.durationHours || 0) * 5000)))}</span>)
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="text-xs font-bold text-slate-700 italic">
+                                Belum memilih lokasi
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              disabled={isFirstStop || isCalculatingExtraRoute}
+                              onClick={() => handleMoveExtraActivity(index, -1)}
+                              title="Naikkan urutan"
+                              className="h-7 w-7 p-0 text-slate-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                            >
+                              <ArrowUp className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              disabled={isLastStop || isCalculatingExtraRoute}
+                              onClick={() => handleMoveExtraActivity(index, 1)}
+                              title="Turunkan urutan"
+                              className="h-7 w-7 p-0 text-slate-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                            >
+                              <ArrowDown className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              onClick={() => {
+                                resetMapSearch();
+                                setMapTargetIndex(index);
+                                setMapSearchText(act.destination || '');
+                                setMapAddress(act.destination || '');
+                                setMapLocation(
+                                  normalizeDriverJourneyLocation(
+                                    act.destinationLocation,
+                                    act.destination,
+                                  ),
+                                );
+                                setShowMapSelector(true);
+                              }}
+                              className="text-[10px] font-bold text-blue-700 hover:text-blue-800 bg-white border border-slate-200 px-2.5 h-7 rounded-lg cursor-pointer"
+                            >
+                              {act.destination ? 'Ubah' : 'Pilih'}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              onClick={() => handleRemoveExtraActivity(index)}
+                              className="h-7 w-7 p-0 text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
 
                   {/* Final Node: Return to Start */}
                   <div className="relative flex items-start gap-2.5 text-xs">
@@ -2038,9 +2171,15 @@ function JourneyReportContent() {
                       <div className="font-extrabold text-black truncate" title={activeReportingJourney.startPoint}>
                         🏫 {activeReportingJourney.startPoint.split(',')[0]}
                       </div>
-                      <div className="text-[9px] text-slate-800 font-bold">
-                        Jarak Leg: <span className="text-emerald-700 font-extrabold">{returnLeg.distanceText}</span> (Upah Bersih: <span className="text-emerald-600 font-extrabold">{fmtRp(Math.ceil((returnLeg.distanceKm * 300) + ((returnLeg.durationHours || 0) * 5000)))}</span>)
-                      </div>
+                      {currentStops.length > 0 ? (
+                        <div className="text-[9px] text-slate-800 font-bold">
+                          Jarak Leg: <span className="text-emerald-700 font-extrabold">{returnLeg.distanceText}</span> (Upah Bersih: <span className="text-emerald-600 font-extrabold">{fmtRp(Math.ceil((returnLeg.distanceKm * 300) + ((returnLeg.durationHours || 0) * 5000)))}</span>)
+                        </div>
+                      ) : (
+                        <div className="text-[9px] text-slate-500 font-medium italic">
+                          Otomatis kembali ke titik awal (diukur setelah tujuan ditentukan)
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -2098,28 +2237,17 @@ function JourneyReportContent() {
                       maxLength={5}
                       placeholder="JJ:MM"
                       value={formTimeStart}
-                      onChange={(e) => {
-                        let val = e.target.value.replace(/[^0-9]/g, '');
-                        if (val.length > 4) val = val.slice(0, 4);
-                        if (val.length === 1 && parseInt(val, 10) > 2) val = `0${val}`;
-                        if (val.length >= 2) {
-                          const hours = parseInt(val.slice(0, 2), 10);
-                          if (hours > 23) val = '23' + val.slice(2);
-                        }
-                        if (val.length === 4) {
-                          const minutes = parseInt(val.slice(2, 4), 10);
-                          if (minutes > 59) val = val.slice(0, 2) + '59';
-                        }
-                        if (val.length > 2) {
-                          setFormTimeStart(`${val.slice(0, 2)}:${val.slice(2)}`);
-                        } else {
-                          setFormTimeStart(val);
-                        }
-                      }}
+                      disabled={isDepartureLocked}
+                      onChange={(e) => setFormTimeStart(maskClockInput(e.target.value))}
                       onBlur={(e) => setFormTimeStart(padTime(e.target.value))}
-                      className="rounded-xl border-slate-300 focus:border-blue-500 text-sm h-10 px-3 font-semibold text-slate-900"
+                      className={`rounded-xl text-sm h-10 px-3 font-semibold text-slate-900 ${isDepartureLocked ? 'border-slate-300 bg-slate-50 cursor-not-allowed' : 'border-slate-300 focus:border-blue-500'}`}
                       required
                     />
+                    {isDepartureLocked && (
+                      <p className="text-[10px] font-semibold text-slate-500">
+                        Terkunci ke waktu otorisasi SPJ.
+                      </p>
+                    )}
                   </div>
 
                   <div className="space-y-1.5">
@@ -2183,8 +2311,9 @@ function JourneyReportContent() {
                       id="dateStartInput"
                       type="date"
                       value={formDate}
+                      disabled={isDepartureLocked}
                       onChange={(e) => setFormDate(e.target.value)}
-                      className="rounded-xl border-slate-200 focus:border-blue-400 text-xs font-semibold text-slate-900 h-10 px-2.5"
+                      className={`rounded-xl text-xs font-semibold text-slate-900 h-10 px-2.5 ${isDepartureLocked ? 'border-slate-200 bg-slate-50 cursor-not-allowed' : 'border-slate-200 focus:border-blue-400'}`}
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -2198,27 +2327,16 @@ function JourneyReportContent() {
                       maxLength={5}
                       placeholder="JJ:MM"
                       value={formTimeStart}
-                      onChange={(e) => {
-                        let val = e.target.value.replace(/[^0-9]/g, '');
-                        if (val.length > 4) val = val.slice(0, 4);
-                        if (val.length === 1 && parseInt(val, 10) > 2) val = `0${val}`;
-                        if (val.length >= 2) {
-                          const hours = parseInt(val.slice(0, 2), 10);
-                          if (hours > 23) val = '23' + val.slice(2);
-                        }
-                        if (val.length === 4) {
-                          const minutes = parseInt(val.slice(2, 4), 10);
-                          if (minutes > 59) val = val.slice(0, 2) + '59';
-                        }
-                        if (val.length > 2) {
-                          setFormTimeStart(`${val.slice(0, 2)}:${val.slice(2)}`);
-                        } else {
-                          setFormTimeStart(val);
-                        }
-                      }}
+                      disabled={isDepartureLocked}
+                      onChange={(e) => setFormTimeStart(maskClockInput(e.target.value))}
                       onBlur={(e) => setFormTimeStart(padTime(e.target.value))}
-                      className="rounded-xl border-slate-200 focus:border-blue-400 text-xs font-semibold text-slate-900 h-10 px-3"
+                      className={`rounded-xl text-xs font-semibold text-slate-900 h-10 px-3 ${isDepartureLocked ? 'border-slate-200 bg-slate-50 cursor-not-allowed' : 'border-slate-200 focus:border-blue-400'}`}
                     />
+                    {isDepartureLocked && (
+                      <p className="text-[10px] font-semibold text-slate-500">
+                        Terkunci ke waktu otorisasi SPJ.
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -2368,18 +2486,7 @@ function JourneyReportContent() {
                     </div>
                   </div>
 
-                  {mealPaidInWage ? (
-                    <div className="p-3 bg-emerald-50 border border-emerald-200/80 rounded-xl text-xs font-bold text-emerald-900 space-y-0.5">
-                      <div className="flex items-center justify-between">
-                        <span>Uang Makan di Upah Bersih:</span>
-                        <span className="text-sm font-black text-emerald-700">+{fmtRp(totalHakUangMakan)}</span>
-                      </div>
-                      <p className="text-[10px] font-semibold text-emerald-800/80">
-                        Dibayar penuh bersama upah, tidak dipotong uang yang sudah
-                        Anda terima dan tidak lagi direimburse.
-                      </p>
-                    </div>
-                  ) : unpaidDeltaRp > 0 ? (
+                  {mealPaidInWage ? null : unpaidDeltaRp > 0 ? (
                     <div className="p-3 bg-blue-50 border border-blue-200/80 rounded-xl text-xs font-bold text-blue-900 flex items-center justify-between">
                       <span>Kekurangan Uang Makan:</span>
                       <span className="text-sm font-black text-blue-700">+{fmtRp(unpaidDeltaRp)}</span>
@@ -2691,9 +2798,9 @@ function JourneyReportContent() {
             return (
               <div className="border-t border-slate-200/70 pt-5 text-slate-900 text-xs space-y-2 font-bold">
                 <span className="font-black text-blue-700 text-sm block mb-1.5">
-                  Kalkulasi Penyesuaian & Biaya Akhir
+                  {isSelfCreatedJourney ? 'Rincian Biaya & Upah Bersih' : 'Kalkulasi Penyesuaian & Biaya Akhir'}
                 </span>
-                {(() => {
+                {!isSelfCreatedJourney && (() => {
                   const getStratumLabel = (hours: number): string => {
                     if (hours <= 0) return '—';
                     const days = Math.floor(hours / 24);
@@ -2785,13 +2892,13 @@ function JourneyReportContent() {
                   );
                 })()}
 
-                {settlement.extraFuelCost > 0 && (
+                {!isSelfCreatedJourney && settlement.extraFuelCost > 0 && (
                   <div className="flex justify-between text-slate-900 font-extrabold">
                     <span>Kelebihan BBM (Delta)</span>
                     <span className="font-black text-blue-700">+{fmtRp(Math.ceil(settlement.extraFuelCost))}</span>
                   </div>
                 )}
-                {extraMealAllowance > 0 && (
+                {!isSelfCreatedJourney && extraMealAllowance > 0 && (
                   <div className="flex justify-between text-slate-900 font-extrabold">
                     <span>Kekurangan Uang Makan (Delta)</span>
                     <span className="font-black text-blue-700">+{fmtRp(Math.ceil(extraMealAllowance))}</span>
@@ -2801,11 +2908,11 @@ function JourneyReportContent() {
                   const preAuthorizedToll = activeReportingJourney.preAuthorizedToll !== undefined && activeReportingJourney.preAuthorizedToll !== null
                     ? Number(activeReportingJourney.preAuthorizedToll)
                     : (activeReportingJourney.status === 'claimed' ? Number(activeReportingJourney.tollParkingFee || 0) : 0);
-                  const extraToll = tollVal - preAuthorizedToll;
+                  const extraToll = isSelfCreatedJourney ? tollVal : tollVal - preAuthorizedToll;
                   if (extraToll > 0) {
                     return (
                       <div className="flex justify-between text-slate-900 font-extrabold">
-                        <span>{preAuthorizedToll > 0 ? 'Kelebihan Tol & Parkir (Delta)' : 'Reimburse Tol & Parkir'}</span>
+                        <span>{isSelfCreatedJourney || preAuthorizedToll === 0 ? 'Reimburse Tol & Parkir' : 'Kelebihan Tol & Parkir (Delta)'}</span>
                         <span className="font-black text-blue-700">+{fmtRp(Math.ceil(extraToll))}</span>
                       </div>
                     );
@@ -2824,10 +2931,19 @@ function JourneyReportContent() {
 
                   return (
                     <>
-                      <div className="py-2 border-y border-blue-200/50 flex justify-between font-black text-blue-700 text-sm">
-                        <span>Total Reimburse (Delta)</span>
-                        <span>{fmtRp(Math.ceil(settlement.reimburseDelta))}</span>
-                      </div>
+                      {isSelfCreatedJourney ? (
+                        tollVal > 0 && (
+                          <div className="py-2 border-y border-blue-200/50 flex justify-between font-black text-blue-700 text-sm">
+                            <span>Total Reimburse (Tol & Parkir)</span>
+                            <span>{fmtRp(Math.ceil(tollVal))}</span>
+                          </div>
+                        )
+                      ) : (
+                        <div className="py-2 border-y border-blue-200/50 flex justify-between font-black text-blue-700 text-sm">
+                          <span>Total Reimburse (Delta)</span>
+                          <span>{fmtRp(Math.ceil(settlement.reimburseDelta))}</span>
+                        </div>
+                      )}
 
                       <div className="flex justify-between text-black text-[10px] font-extrabold pl-2">
                         <span>• Komponen Jarak ({calculatedDistanceKm.toFixed(1)} km)</span>
@@ -2954,10 +3070,7 @@ function JourneyReportContent() {
                   <h3 className="text-base font-extrabold text-slate-900">Pilih Lokasi Tambahan</h3>
                   <button
                     type="button"
-                    onClick={() => {
-                      resetMapSearch();
-                      setShowMapSelector(false);
-                    }}
+                    onClick={handleCloseMapSelector}
                     className="text-slate-900 hover:text-black p-1 rounded-full hover:bg-slate-100"
                   >
                     <XCircle className="w-5 h-5" />
@@ -3048,10 +3161,7 @@ function JourneyReportContent() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => {
-                      resetMapSearch();
-                      setShowMapSelector(false);
-                    }}
+                    onClick={handleCloseMapSelector}
                     className="rounded-xl border-slate-200 text-xs font-bold text-slate-900 h-10"
                   >
                     Batal

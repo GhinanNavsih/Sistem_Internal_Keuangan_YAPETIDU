@@ -14,14 +14,10 @@ import {
   Label,
 } from '@/components/ui/label';
 import {
-  Badge,
-} from '@/components/ui/badge';
-import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
 import {
@@ -34,7 +30,7 @@ import {
   Sparkles,
   MapPin,
   Compass,
-  Search,
+  Camera,
   Target,
 } from 'lucide-react';
 import {
@@ -48,16 +44,11 @@ import {
   cashOperationalCostFromJourney,
   calculateEstimatedDriverWage,
   resolveMealAccountingMode,
-  CURRENT_MEAL_ACCOUNTING_MODE,
-  formatDurationHoursAsJamMenit,
   fuelProcurementModeLabel,
   isFuelProcurementMode,
   type DriverVehicleName,
   type FuelProcurementMode,
 } from '@/lib/payroll/driverJourney';
-import {
-  PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH,
-} from '@/hooks/useCostSafePlaceAutocomplete';
 import {
   Select,
   SelectContent,
@@ -83,20 +74,6 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
   const {
     router,
     isSopir,
-    showMapSelector,
-    setShowMapSelector,
-    mapSearchText,
-    setMapSearchText,
-    setMapAddress,
-    mapAddress,
-    setMapLocation,
-    mapLocation,
-    setMapSearchError,
-    mapSearchError,
-    cancelPlaceSearch,
-    placeSuggestions,
-    isSearchingPlaces,
-    placeSearchError,
     unassignedJourneys,
     myAssignedJourneys,
     myClaimedJourneys,
@@ -108,34 +85,21 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
     showSelfPiketSpjModal,
     selfPiketActivityName,
     setSelfPiketActivityName,
-    selfPiketStartPoint,
-    selfPiketStartPointLocation,
-    selfPiketEndPoint,
-    selfPiketEndPointLocation,
     selfPiketVehicleName,
     setSelfPiketVehicleName,
     selfPiketFuelProcurementMode,
     setSelfPiketFuelProcurementMode,
     selectedSelfPiketFuelBalance,
     creatingPiketSpj,
-    setSelfPiketCalcDistance,
-    selfPiketCalcDistance,
-    selfPiketCalcDuration,
-    selfPiketCalculating,
-    selfPiketCalcError,
-    setMapTargetMode,
-    lastSelfPiketCalculatedRef,
-    selfPiketOperationalCosts,
+    selfPiketProofPhoto,
+    selfPiketProofPreview,
+    selfPiketProofUploading,
+    selfPiketProofError,
+    handleSelfPiketProofChange,
     submittedSelfPiketSpjCount,
     openSelfPiketSpjModal,
     closeSelfPiketSpjModal,
     handleCreateSelfPiketSpj,
-    resetMapSearch,
-    handleMapSearchChange,
-    handlePlaceSuggestionSelect,
-    handleMapSearchKeyDown,
-    initMap,
-    handleConfirmMapLocation,
     handleStartAssignedJourney,
     handleClaimJourney,
     handleCancelJourney,
@@ -306,7 +270,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                 </h3>
                 {myClaimedJourneys.map((j) => {
                   const est = calculateEstimatedDriverWage(
-                              j.distanceKm * 2,
+                              Number(j.distanceKm || 0) * 2,
                               (j.durationHours || 0) * 2,
                               resolveMealAccountingMode(j.mealAccountingMode, {
                                 alreadyApproved: j.status === 'completed',
@@ -314,6 +278,9 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                             );
                   const baseWage = j.estimatedBaseDriverWage || est.baseWage;
                   const maxWage = j.estimatedMaxDriverWage || est.maxWage;
+                  // A self-authorized journey has no route until its report is
+                  // filed, so there is no figure to show yet — only a zero.
+                  const hasRouteEstimate = Number(j.distanceKm || 0) > 0;
 
                   return (
                     <div key={j.id} className="bg-white rounded-2xl border-2 border-indigo-200 shadow-xs overflow-hidden p-4 sm:p-5 space-y-3.5">
@@ -332,23 +299,31 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                         </h4>
                       </div>
 
-                      <div className="flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 border border-slate-200/80 p-2.5 rounded-xl">
-                        <MapPin className="w-4 h-4 text-indigo-600 shrink-0" />
-                        <span className="font-bold text-slate-500">Tujuan utama:</span>
-                        <span className="truncate flex-1 font-extrabold text-slate-800" title={journeyMainDestinationLabel(j)}>{journeyMainDestinationLabel(j)}</span>
-                      </div>
+                      {hasRouteEstimate && (
+                        <div className="flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 border border-slate-200/80 p-2.5 rounded-xl">
+                          <MapPin className="w-4 h-4 text-indigo-600 shrink-0" />
+                          <span className="font-bold text-slate-500">Tujuan utama:</span>
+                          <span className="truncate flex-1 font-extrabold text-slate-800" title={journeyMainDestinationLabel(j)}>{journeyMainDestinationLabel(j)}</span>
+                        </div>
+                      )}
 
                       {/* 2-Column Cards Grid: Left = Biaya Operasional, Right = Estimasi Upah Sopir */}
-                      <div className="grid grid-cols-2 gap-2.5 pt-1">
-                        <div className="bg-indigo-50/70 border border-indigo-100 p-3.5 rounded-xl space-y-0.5">
-                          <span className="block text-[9px] font-black text-indigo-600 uppercase tracking-wider">Biaya Operasional</span>
-                          <span className="text-xs sm:text-sm font-black text-indigo-900 block">{fmtRp(cashOperationalCostFromJourney(j))}</span>
+                      {hasRouteEstimate ? (
+                        <div className="grid grid-cols-2 gap-2.5 pt-1">
+                          <div className="bg-indigo-50/70 border border-indigo-100 p-3.5 rounded-xl space-y-0.5">
+                            <span className="block text-[9px] font-black text-indigo-600 uppercase tracking-wider">Biaya Operasional</span>
+                            <span className="text-xs sm:text-sm font-black text-indigo-900 block">{fmtRp(cashOperationalCostFromJourney(j))}</span>
+                          </div>
+                          <div className="bg-emerald-50/70 border border-emerald-100 p-3.5 rounded-xl space-y-0.5">
+                            <span className="block text-[9px] font-black text-emerald-600 uppercase tracking-wider">Estimasi Upah Sopir</span>
+                            <span className="text-xs sm:text-sm font-black text-emerald-900 block">{fmtRp(baseWage)} - {fmtRp(maxWage)}</span>
+                          </div>
                         </div>
-                        <div className="bg-emerald-50/70 border border-emerald-100 p-3.5 rounded-xl space-y-0.5">
-                          <span className="block text-[9px] font-black text-emerald-600 uppercase tracking-wider">Estimasi Upah Sopir</span>
-                          <span className="text-xs sm:text-sm font-black text-emerald-900 block">{fmtRp(baseWage)} - {fmtRp(maxWage)}</span>
+                      ) : (
+                        <div className="bg-slate-50 border border-slate-200/80 p-3 rounded-xl text-[10px] font-semibold text-slate-500 leading-relaxed">
+                          Estimasi biaya dan upah tersedia setelah Anda melaporkan rute perjalanan.
                         </div>
-                      </div>
+                      )}
 
                       <div className="flex flex-col gap-2 pt-1 border-t border-slate-100">
                         <Button
@@ -477,146 +452,6 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
           </div>
         )}
 <ActivityFormDialog model={model} />
-<Dialog open={showMapSelector} onOpenChange={setShowMapSelector}>
-        <DialogContent className="sm:max-w-[500px] rounded-2xl bg-white border-slate-100 shadow-2xl p-6">
-          <DialogHeader>
-            <DialogTitle className="text-base font-extrabold text-slate-800 flex items-center gap-2">
-              <MapPin className="w-5 h-5 text-indigo-600" />
-              Pilih Tujuan di Google Maps
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-400 mt-1">
-              Cari lokasi atau geser pin merah ke lokasi tujuan perjalanan dinas.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 pt-2">
-            <div className="relative">
-              <div className="flex h-11 items-center gap-2.5 rounded-2xl border border-slate-200 bg-white px-3.5 shadow-sm transition-all focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-500/20">
-                <Compass className="h-4.5 w-4.5 shrink-0 text-indigo-500" />
-                <Input
-                  placeholder="Cari lokasi tujuan dinas..."
-                  value={mapSearchText}
-                  onChange={(event) => handleMapSearchChange(event.target.value)}
-                  onKeyDown={handleMapSearchKeyDown}
-                  onBlur={() => window.setTimeout(cancelPlaceSearch, 150)}
-                  autoComplete="off"
-                  role="combobox"
-                  aria-expanded={placeSuggestions.length > 0}
-                  className="h-full flex-1 border-none bg-transparent p-0 text-xs font-bold text-slate-700 placeholder:text-slate-400 focus-visible:ring-0"
-                />
-                {isSearchingPlaces && <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />}
-                {mapSearchText && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      resetMapSearch();
-                      setMapSearchText('');
-                      setMapAddress('');
-                      setMapLocation(null);
-                    }}
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-600"
-                    aria-label="Hapus pencarian"
-                  >
-                    <XCircle className="h-4 w-4" />
-                  </button>
-                )}
-                <div className="h-5 w-px shrink-0 bg-slate-200" />
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (placeSuggestions[0]) {
-                      handlePlaceSuggestionSelect(placeSuggestions[0]);
-                    } else {
-                      setMapSearchError(
-                        mapSearchText.trim().length < PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH
-                          ? `Ketik minimal ${PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH} karakter untuk mencari lokasi.`
-                          : 'Pilih salah satu saran lokasi sebelum melanjutkan.',
-                      );
-                    }
-                  }}
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-indigo-500 transition-all hover:bg-indigo-50 hover:text-indigo-600"
-                  aria-label="Pilih saran lokasi pertama"
-                >
-                  <Search className="h-4.5 w-4.5" />
-                </button>
-              </div>
-
-              {placeSuggestions.length > 0 && (
-                <div className="absolute inset-x-0 top-full z-[100] mt-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
-                  {placeSuggestions.map((suggestion) => (
-                    <button
-                      key={suggestion.id}
-                      type="button"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => handlePlaceSuggestionSelect(suggestion)}
-                      className="flex w-full items-start gap-2 border-b border-slate-100 px-3 py-2.5 text-left last:border-b-0 hover:bg-indigo-50"
-                    >
-                      <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-500" />
-                      <span className="min-w-0">
-                        <strong className="block truncate text-[11px] text-slate-800">{suggestion.primaryText}</strong>
-                        {suggestion.secondaryText && (
-                          <span className="block truncate text-[10px] text-slate-500">{suggestion.secondaryText}</span>
-                        )}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <p className="text-[10px] text-slate-400">
-              Ketik minimal {PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH} karakter, lalu pilih salah satu saran.
-            </p>
-            {(mapSearchError || placeSearchError) && (
-              <p className="rounded-lg bg-amber-50 px-3 py-2 text-[10px] font-semibold text-amber-700">
-                {mapSearchError || placeSearchError}
-              </p>
-            )}
-
-            {/* Map Container */}
-            <div
-              ref={(el) => {
-                if (el) {
-                  initMap(el);
-                }
-              }}
-              className="w-full h-[280px] rounded-xl border border-slate-100 overflow-hidden bg-slate-50 relative flex items-center justify-center"
-            >
-              <div className="flex flex-col items-center gap-2 text-slate-400">
-                <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
-                <span className="text-[10px] font-bold">Memuat Google Maps...</span>
-              </div>
-            </div>
-
-            {/* Selected Address Box */}
-            {mapAddress && (
-              <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-600 leading-relaxed font-semibold">
-                <span className="text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">Alamat Terpilih:</span>
-                📍 {mapAddress}
-              </div>
-            )}
-
-            <DialogFooter className="pt-2 border-t border-slate-100 gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setShowMapSelector(false)}
-                className="rounded-xl font-bold text-slate-500 hover:bg-slate-50 text-xs px-4"
-              >
-                Batal
-              </Button>
-              <Button
-                type="button"
-                disabled={!mapAddress || !mapLocation}
-                onClick={handleConfirmMapLocation}
-                className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 h-10"
-              >
-                Konfirmasi Lokasi
-              </Button>
-            </DialogFooter>
-          </div>
-        </DialogContent>
-      </Dialog>
 <Dialog
         open={showSelfPiketSpjModal}
         onOpenChange={(open) => {
@@ -668,99 +503,71 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
               </div>
             </div>
 
-            {/* Titik Mulai (Origin) & Tujuan Utama (Destination) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold text-slate-600 uppercase tracking-wider">
-                  Titik Awal
-                </Label>
-                {!selfPiketStartPoint ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      resetMapSearch();
-                      setMapTargetMode('piketStart');
-                      setMapSearchText('');
-                      setMapAddress('');
-                      setMapLocation(null);
-                      setShowMapSelector(true);
-                    }}
-                    className="w-full rounded-xl border border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50/30 hover:bg-emerald-50/50 text-emerald-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all"
-                  >
-                    <MapPin className="w-4 h-4" />
-                    Pilih Titik Awal di Peta
-                  </Button>
-                ) : (
-                  <div className="p-3 bg-emerald-50/40 border border-emerald-100 rounded-xl flex items-center justify-between gap-3 animate-in fade-in duration-200">
-                    <div className="flex items-center gap-2 overflow-hidden text-xs text-emerald-950 font-semibold flex-1">
-                      <MapPin className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-                      <span className="truncate" title={selfPiketStartPoint}>{selfPiketStartPoint}</span>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => {
-                        resetMapSearch();
-                        setMapTargetMode('piketStart');
-                        setMapSearchText(selfPiketStartPoint);
-                        setMapAddress(selfPiketStartPoint);
-                        setMapLocation(selfPiketStartPointLocation);
-                        setShowMapSelector(true);
-                      }}
-                      className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-lg shrink-0 cursor-pointer"
-                    >
-                      Ubah
-                    </Button>
+            {/* Foto Bukti Keberangkatan */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+                Foto Bukti Keberangkatan
+              </Label>
+              {selfPiketProofPhoto ? (
+                <div className="p-3 bg-emerald-50/40 border border-emerald-100 rounded-xl flex items-center justify-between gap-3 animate-in fade-in duration-200">
+                  <div className="flex items-center gap-2.5 overflow-hidden flex-1">
+                    {selfPiketProofPreview && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={selfPiketProofPreview}
+                        alt="Pratinjau foto bukti keberangkatan"
+                        className="h-11 w-11 shrink-0 rounded-lg border border-emerald-200 object-cover"
+                      />
+                    )}
+                    <span className="truncate text-xs font-semibold text-emerald-950">
+                      Foto bukti tersimpan
+                    </span>
                   </div>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold text-slate-600 uppercase tracking-wider">
-                  Tujuan Utama
-                </Label>
-                {!selfPiketEndPoint ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      resetMapSearch();
-                      setMapTargetMode('piketEnd');
-                      setMapSearchText('');
-                      setMapAddress('');
-                      setMapLocation(null);
-                      setShowMapSelector(true);
-                    }}
-                    className="w-full rounded-xl border border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50/30 hover:bg-emerald-50/50 text-emerald-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all"
-                  >
-                    <MapPin className="w-4 h-4" />
-                    Pilih Lokasi Tujuan di Peta
-                  </Button>
-                ) : (
-                  <div className="p-3 bg-emerald-50/40 border border-emerald-100 rounded-xl flex items-center justify-between gap-3 animate-in fade-in duration-200">
-                    <div className="flex items-center gap-2 overflow-hidden text-xs text-emerald-950 font-semibold flex-1">
-                      <MapPin className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-                      <span className="truncate" title={selfPiketEndPoint}>{selfPiketEndPoint}</span>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => {
-                        resetMapSearch();
-                        setMapTargetMode('piketEnd');
-                        setMapSearchText(selfPiketEndPoint);
-                        setMapAddress(selfPiketEndPoint);
-                        setMapLocation(selfPiketEndPointLocation);
-                        setShowMapSelector(true);
+                  <label className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-lg shrink-0 cursor-pointer flex items-center">
+                    Ganti
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="sr-only"
+                      onChange={(event) => {
+                        void handleSelfPiketProofChange(event.target.files?.[0] || null);
+                        event.target.value = '';
                       }}
-                      className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-lg shrink-0 cursor-pointer"
-                    >
-                      Ubah
-                    </Button>
-                  </div>
-                )}
-              </div>
+                    />
+                  </label>
+                </div>
+              ) : (
+                <label className="w-full rounded-xl border border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50/30 hover:bg-emerald-50/50 text-emerald-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all">
+                  {selfPiketProofUploading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Mengunggah foto...
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="w-4 h-4" />
+                      Ambil Foto Bukti
+                    </>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="sr-only"
+                    disabled={selfPiketProofUploading}
+                    onChange={(event) => {
+                      void handleSelfPiketProofChange(event.target.files?.[0] || null);
+                      event.target.value = '';
+                    }}
+                  />
+                </label>
+              )}
+              {selfPiketProofError && (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-[10px] font-semibold text-amber-700">
+                  {selfPiketProofError}
+                </p>
+              )}
             </div>
 
             {/* Kendaraan & Mode Pengadaan BBM */}
@@ -845,108 +652,13 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
               )}
             </div>
 
-            {/* Calculation Loader */}
-            {selfPiketCalculating && (
-              <div className="flex items-center justify-center p-3 text-xs text-emerald-700 font-bold bg-emerald-50/60 rounded-xl border border-emerald-200/60 animate-in fade-in duration-200">
-                <Loader2 className="w-4 h-4 animate-spin mr-2 text-emerald-600" />
-                Mengevaluasi rute & durasi Google Maps...
-              </div>
-            )}
-
-            {/* Calculation Errors */}
-            {selfPiketCalcError && (
-              <div className="p-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-xl font-semibold flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>{selfPiketCalcError}</span>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => {
-                    lastSelfPiketCalculatedRef.current = { start: '', end: '' };
-                    setSelfPiketCalcDistance(null);
-                  }}
-                  className="text-[10px] font-bold bg-rose-600 hover:bg-rose-700 text-white h-7 px-2.5 rounded-lg shrink-0 cursor-pointer"
-                >
-                  Coba Lagi
-                </Button>
-              </div>
-            )}
-
-            {/* Calculation Summary Preview */}
-            {selfPiketCalcDistance !== null && (
-              <div className="p-4 bg-gradient-to-br from-emerald-50/80 to-teal-50/50 border border-emerald-200/80 rounded-2xl space-y-3 animate-in fade-in duration-200">
-                <div className="flex items-center justify-between border-b border-emerald-200/60 pb-2">
-                  <span className="text-[10px] font-black text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
-                    <Compass className="w-3.5 h-3.5 text-emerald-600" />
-                    Rincian Perjalanan & Estimasi Upah Sopir
-                  </span>
-                  <Badge className="bg-emerald-200/80 text-emerald-950 border-none text-[9px] font-black">
-                    {isPiketActiveToday ? 'Piket Mandiri' : 'SPJ Mandiri'}
-                  </Badge>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-slate-700 text-xs font-semibold">
-                  <div className="bg-white p-2.5 rounded-xl border border-emerald-100 shadow-xs">
-                    <span className="block text-[9px] text-slate-400 font-extrabold uppercase">Jarak Tempuh PP</span>
-                    <span className="text-xs sm:text-sm font-black text-emerald-900">{(selfPiketCalcDistance * 2).toFixed(1)} km</span>
-                  </div>
-                  <div className="bg-white p-2.5 rounded-xl border border-emerald-100 shadow-xs">
-                    <span className="block text-[9px] text-slate-400 font-extrabold uppercase">Estimasi Waktu Tempuh PP</span>
-                    <span className="text-xs sm:text-sm font-black text-emerald-900">
-                      {formatDurationHoursAsJamMenit((selfPiketCalcDuration || 0) * 2)}
-                    </span>
-                  </div>
-                </div>
-
-                {(() => {
-                  // Mirror the server's own figure for this journey exactly
-                  // (`create_self` in /api/driver-journeys uses the same call with
-                  // CURRENT_MEAL_ACCOUNTING_MODE). Hand-rolling the formula here
-                  // dropped the meal component and understated the estimate.
-                  const { compJarak, compWaktu, shortTripMeal, mealWage, baseWage, maxWage } =
-                    calculateEstimatedDriverWage(
-                      selfPiketCalcDistance * 2,
-                      (selfPiketCalcDuration || 0) * 2,
-                      CURRENT_MEAL_ACCOUNTING_MODE,
-                    );
-
-                  return (
-                    <div className="bg-white p-3 rounded-xl border border-emerald-200/80 space-y-1.5 shadow-xs">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-extrabold text-slate-700">Estimasi Upah Bersih Sopir:</span>
-                        <span className="text-xs sm:text-sm font-black text-emerald-700">{fmtRp(baseWage)} - {fmtRp(maxWage)}</span>
-                      </div>
-                      <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-100 font-semibold">
-                        <span>
-                          Komponen Jarak ({fmtRp(compJarak)}) + Komponen Waktu ({fmtRp(compWaktu)})
-                          {shortTripMeal > 0 ? ` + Uang Makan (≤2 Jam: ${fmtRp(shortTripMeal)})` : ''}
-                          {mealWage > 0 ? ` + Uang Makan (${fmtRp(mealWage)})` : ''}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {selfPiketOperationalCosts && (
-                  <div className="bg-white p-3 rounded-xl border border-blue-200/80 space-y-1.5 shadow-xs">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-extrabold text-slate-700">Biaya Operasional SPJ:</span>
-                      <span className="text-xs sm:text-sm font-black text-blue-700">
-                        {fmtRp(selfPiketOperationalCosts.totalOperationalCost)}
-                      </span>
-                    </div>
-                    <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-100 font-semibold">
-                      BBM {fmtRp(selfPiketOperationalCosts.totalFuelAllocation)}
-                      {selfPiketOperationalCosts.heldFuelAmount > 0 ? ` (Ditahan ${fmtRp(selfPiketOperationalCosts.heldFuelAmount)})` : ''}
-                      {selfPiketOperationalCosts.procuredAccumulatedAmount > 0 ? ` (Pencairan akumulasi ${fmtRp(selfPiketOperationalCosts.procuredAccumulatedAmount)})` : ''}
-                      {' + '}Uang makan {fmtRp(selfPiketOperationalCosts.mealAllowance)} + Tol/parkir {fmtRp(selfPiketOperationalCosts.tollParkingFee)}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+            <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl text-[10px] leading-relaxed font-semibold text-slate-600 flex items-start gap-2">
+              <Compass className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+              <span>
+                Rute, jarak, dan estimasi upah dihitung dari timeline yang Anda isi pada laporan
+                perjalanan. Jam berangkat dikunci ke waktu otorisasi ini.
+              </span>
+            </div>
 
             <DialogFooter className="pt-3 border-t border-slate-100 gap-2">
               <Button
@@ -961,12 +673,9 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                 type="submit"
                 disabled={
                   creatingPiketSpj ||
-                  selfPiketCalculating ||
-                  !selfPiketEndPoint.trim() ||
-                  selfPiketCalcDistance === null ||
-                  selfPiketCalcDistance <= 0 ||
-                  selfPiketCalcDuration === null ||
-                  selfPiketCalcDuration <= 0 ||
+                  selfPiketProofUploading ||
+                  !selfPiketProofPhoto ||
+                  !selfPiketActivityName.trim() ||
                   myClaimedJourneys.length > 0
                 }
                 className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-xs px-6 h-10 gap-2 shadow-md shadow-emerald-200 cursor-pointer disabled:opacity-50"

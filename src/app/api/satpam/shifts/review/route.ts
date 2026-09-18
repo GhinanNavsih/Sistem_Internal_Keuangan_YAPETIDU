@@ -460,6 +460,7 @@ export async function POST(request: NextRequest) {
       );
 
       assertPeriodAcceptsInput(periodSnapshot.data());
+      let latestPlanDay: SatpamDutyPlanDay | null = null;
       if (
         hasApprovals &&
         isSatpamDutyPlanRequired(period, periodSnapshot.data() || null)
@@ -474,13 +475,14 @@ export async function POST(request: NextRequest) {
         const occurrenceDateIsStale =
           Array.isArray(latestPlanData.staleDates) &&
           latestPlanData.staleDates.includes(occurrence.dutyDate);
-        const latestPlanDay = Array.isArray(latestPlanData.generatedDays)
+        latestPlanDay = Array.isArray(latestPlanData.generatedDays)
           ? latestPlanData.generatedDays.find(
               (day: SatpamDutyPlanDay) =>
                 day.dutyDate === occurrence.dutyDate,
-            )
+            ) || null
           : null;
         const plannedDayChanged =
+          Boolean(occurrence.plannedAssignmentSnapshot) &&
           JSON.stringify(latestPlanDay || null) !==
           JSON.stringify(occurrence.plannedAssignmentSnapshot || null);
         if (
@@ -540,10 +542,40 @@ export async function POST(request: NextRequest) {
           'Satu petugas tidak boleh menerima dua pembayaran pada shift yang sama. Edit atau tolak salah satu penugasan.',
         );
       }
-      const anomalyCodes = Array.isArray(occurrence.anomalyCodes)
+      const rawAnomalyCodes = Array.isArray(occurrence.anomalyCodes)
         ? occurrence.anomalyCodes.filter((code: unknown): code is string => typeof code === 'string')
         : [];
-      const financiallyBlockingPlanAnomaly = anomalyCodes.find((code) =>
+      const planDayAvailable = Boolean(dutyPlanSnapshot.exists && latestPlanDay);
+      const activeAnomalyCodes = rawAnomalyCodes.filter((code) => {
+        if (
+          planDayAvailable &&
+          (code === 'DUTY_PLAN_MISSING' || code === 'DUTY_PLAN_CHANGED_AFTER_REPORT')
+        ) {
+          return false;
+        }
+        return true;
+      });
+
+      if (planDayAvailable && latestPlanDay) {
+        const primaryReports = reports.filter((r) => r.assignmentKind !== 'extra');
+        const extraReports = reports.filter((r) => r.assignmentKind === 'extra');
+        if (extraReports.length > 0) {
+          const distinctPosts = new Set(primaryReports.map((r) => r.postId));
+          const distinctGuards = new Set(primaryReports.map((r) => r.employeeId));
+          if (distinctPosts.size !== 9 || distinctGuards.size !== 9) {
+            if (!activeAnomalyCodes.includes('EXTRA_WITH_INCOMPLETE_PRIMARY_ROSTER')) {
+              activeAnomalyCodes.push('EXTRA_WITH_INCOMPLETE_PRIMARY_ROSTER');
+            }
+          }
+          if (extraReports[0].employeeId !== latestPlanDay.offDutyEmployeeId) {
+            if (!activeAnomalyCodes.includes('EXTRA_NOT_OFF_DUTY')) {
+              activeAnomalyCodes.push('EXTRA_NOT_OFF_DUTY');
+            }
+          }
+        }
+      }
+
+      const financiallyBlockingPlanAnomaly = activeAnomalyCodes.find((code) =>
         [
           'DUTY_PLAN_MISSING',
           'DUTY_PLAN_STALE',
@@ -556,7 +588,7 @@ export async function POST(request: NextRequest) {
       if (hasApprovals && financiallyBlockingPlanAnomaly) {
         throw new HttpError(
           409,
-          `Klasifikasi rencana dinas belum selesai (${financiallyBlockingPlanAnomaly}). Gunakan Edit Auditor.`,
+          `Klasifikasi rencana dinas belum selesai (${financiallyBlockingPlanAnomaly}). Periksa kesesuaian rencana dinas.`,
         );
       }
 
@@ -691,6 +723,14 @@ export async function POST(request: NextRequest) {
           );
         }
 
+        const cleanedReportAnomalyCodes = (
+          Array.isArray(before.anomalyCodes) ? before.anomalyCodes : []
+        ).filter(
+          (code: unknown) =>
+            code !== 'DUTY_PLAN_MISSING' &&
+            code !== 'DUTY_PLAN_CHANGED_AFTER_REPORT',
+        );
+
         const after =
           decision.action === 'approve'
             ? {
@@ -698,6 +738,13 @@ export async function POST(request: NextRequest) {
                 status: 'approved',
                 fee: rate!,
                 declineReason: '',
+                anomalyCodes: cleanedReportAnomalyCodes,
+                ...(dutyPlanSnapshot.exists
+                  ? {
+                      dutyPlanId: dutyPlanRef.id,
+                      dutyPlanRevision: Number(dutyPlanSnapshot.data()?.revision || 0),
+                    }
+                  : {}),
                 reviewedAt: now,
                 reviewedBy: actor.uid,
                 reviewedByRole: actor.role,
@@ -794,6 +841,14 @@ export async function POST(request: NextRequest) {
 
       const totalApprovedCount = existingApprovedCount + approvedCount;
       const totalDeclinedCount = existingDeclinedCount + declinedCount;
+      const cleanedOccurrenceAnomalyCodes = (
+        Array.isArray(occurrence.anomalyCodes) ? occurrence.anomalyCodes : []
+      ).filter(
+        (code: unknown) =>
+          code !== 'DUTY_PLAN_MISSING' &&
+          code !== 'DUTY_PLAN_CHANGED_AFTER_REPORT' &&
+          code !== 'DUTY_PLAN_STALE',
+      );
       transaction.update(occurrenceRef, {
         status: 'reviewed',
         reviewStatus:
@@ -812,6 +867,16 @@ export async function POST(request: NextRequest) {
         auditorActionAt: occurrence.auditorActionAt || now,
         reviewOwnerUid: occurrence.reviewOwnerUid || actor.uid,
         reviewNote: command.reason,
+        ...(dutyPlanSnapshot.exists
+          ? {
+              dutyPlanId: dutyPlanRef.id,
+              dutyPlanRevision: Number(dutyPlanSnapshot.data()?.revision || 0),
+              plannedAssignmentSnapshot:
+                latestPlanDay || occurrence.plannedAssignmentSnapshot || null,
+              dutyPlanStale: false,
+            }
+          : {}),
+        anomalyCodes: cleanedOccurrenceAnomalyCodes,
       });
 
       transaction.create(
@@ -1238,6 +1303,10 @@ export async function PUT(request: NextRequest) {
                   day.dutyDate === command.dutyDate,
               ) || null
           : null;
+      const ketuaPlannedPostId = planDay?.assignments.find(
+        (assignment) =>
+          assignment.employeeId === String(teamData.ketuaShiftId || ''),
+      )?.postId;
       const primaryCommandAssignments = command.assignments.filter(
         (assignment) => assignment.assignmentKind === 'primary',
       );
@@ -1304,16 +1373,20 @@ export async function PUT(request: NextRequest) {
           (assignment) =>
             assignment.assignmentKind === 'primary' &&
             assignment.employeeId === String(teamData.ketuaShiftId || '') &&
-            // Matches resolveKetuaSatpamPayType's own contract: Harian and
-            // Lembur Sendiri are explicit overrides, while Jumat & Libur is
-            // the calendar default the Ketua's own post falls back to on a
-            // Friday/holiday, same as an ordinary guard's post.
-            !['Harian', 'Jumat & Libur', 'Lembur Sendiri'].includes(assignment.shiftType),
+            // A Ketua's own planned post still follows the regular Ketua
+            // contract. When the Ketua is actually assigned to a different
+            // planned post, Lembur Cover is a valid documented substitution.
+            !['Harian', 'Jumat & Libur', 'Lembur Sendiri'].includes(assignment.shiftType) &&
+            !(
+              assignment.shiftType === 'Lembur Cover' &&
+              Boolean(ketuaPlannedPostId) &&
+              assignment.postId !== ketuaPlannedPostId
+            ),
         )
       ) {
         throw new HttpError(
           409,
-          'Jenis upah Ketua Shift hanya dapat Harian, Jumat & Libur, atau Lembur Sendiri.',
+          'Jenis upah Ketua Shift hanya dapat Harian, Jumat & Libur, Lembur Sendiri, atau Lembur Cover saat menggantikan pos lain.',
         );
       }
       if (

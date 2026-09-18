@@ -2,8 +2,10 @@ import { randomUUID } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
+  canSubmitFacilityReport,
   canTransitionFacilityReport,
   FACILITY_REPORTS_COLLECTION,
+  isBlueCollarFacilityDashboardUser,
   isFacilityReportOpen,
   isFacilityReportStatus,
   MAX_FACILITY_DESCRIPTION_LENGTH,
@@ -14,7 +16,7 @@ import {
   MIN_FACILITY_DESCRIPTION_LENGTH,
   type FacilityReportStatus,
 } from '@/lib/facilityReports';
-import { normalizePhotoAuditMetadata } from '@/lib/photoEvidence';
+import { normalizePhotoAuditMetadata, type PhotoEvidence } from '@/lib/photoEvidence';
 import { errorResponse, HttpError, requireAuthenticatedProfile } from '@/lib/server/auth';
 import type { AuthenticatedProfile } from '@/lib/server/auth';
 
@@ -22,6 +24,7 @@ export const dynamic = 'force-dynamic';
 
 const SAFE_REPORT_ID = /^[A-Za-z0-9_-]{1,180}$/;
 const STORAGE_PHOTO_PREFIX = 'https://firebasestorage.googleapis.com/';
+const REPAIR_PROOF_STORAGE_PREFIX = 'facility_report_proofs/';
 
 function textField(raw: unknown, label: string, max: number, min = 1): string {
   const value = typeof raw === 'string' ? raw.trim() : '';
@@ -39,9 +42,13 @@ function isFacilityReviewer(actor: AuthenticatedProfile): boolean {
   return actor.role === 'super_admin' || actor.role === 'satker_head';
 }
 
-/** Loyalis and blue-collar (Pekarya/Satpam/Sopir) employees can report and browse facility conditions. */
-function canReportFacilityIssues(actor: AuthenticatedProfile): boolean {
-  return actor.role === 'loyalis' || actor.role === 'honorer' || actor.role === 'ketua_shift_satpam';
+/** Reviewers, reporters, and assigned repairers can view facility reports. */
+function canViewFacilityReports(actor: AuthenticatedProfile): boolean {
+  return (
+    isFacilityReviewer(actor) ||
+    canSubmitFacilityReport(actor) ||
+    isBlueCollarFacilityDashboardUser(actor)
+  );
 }
 
 function todayJakartaISO(): string {
@@ -53,6 +60,48 @@ function todayJakartaISO(): string {
   }).format(new Date());
 }
 
+function storageUrlHasPath(url: string, expectedPathPrefix: string): boolean {
+  try {
+    const objectPath = new URL(url).pathname.split('/o/')[1] || '';
+    return decodeURIComponent(objectPath).startsWith(expectedPathPrefix);
+  } catch {
+    return false;
+  }
+}
+
+function parsePhotoEvidence(
+  raw: unknown,
+  label: string,
+  expectedPathPrefix?: string,
+): PhotoEvidence[] {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) {
+    throw new HttpError(400, `${label} tidak valid.`);
+  }
+  if (raw.length > MAX_FACILITY_PHOTOS) {
+    throw new HttpError(400, `Maksimal ${MAX_FACILITY_PHOTOS} foto per laporan.`);
+  }
+
+  return raw.map((entry, index) => {
+    const photo = entry && typeof entry === 'object'
+      ? entry as Record<string, unknown>
+      : {};
+    const url = typeof photo.url === 'string' ? photo.url.trim() : '';
+    if (!url.startsWith(STORAGE_PHOTO_PREFIX)) {
+      throw new HttpError(400, `URL ${label.toLowerCase()} ke-${index + 1} tidak valid.`);
+    }
+    if (expectedPathPrefix && !storageUrlHasPath(url, expectedPathPrefix)) {
+      throw new HttpError(400, `Foto ${label.toLowerCase()} ke-${index + 1} bukan unggahan Anda.`);
+    }
+    return {
+      url,
+      auditMetadata: normalizePhotoAuditMetadata(
+        photo.auditMetadata as Record<string, unknown> | undefined,
+      ),
+    };
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
@@ -60,7 +109,7 @@ export async function POST(request: NextRequest) {
     const action = typeof body?.action === 'string' ? body.action : '';
 
     if (action === 'submit') {
-      if (!canReportFacilityIssues(actor)) {
+      if (!canSubmitFacilityReport(actor)) {
         throw new HttpError(403, 'Anda tidak memiliki akses untuk melaporkan kondisi fasilitas.');
       }
       if (!actor.linkedEmployeeId) {
@@ -75,24 +124,7 @@ export async function POST(request: NextRequest) {
         MIN_FACILITY_DESCRIPTION_LENGTH,
       );
 
-      const rawPhotos = Array.isArray(body?.photos) ? body.photos : [];
-      if (rawPhotos.length > MAX_FACILITY_PHOTOS) {
-        throw new HttpError(400, `Maksimal ${MAX_FACILITY_PHOTOS} foto per laporan.`);
-      }
-      const photos = rawPhotos.map((entry, index) => {
-        const url = typeof (entry as Record<string, unknown>)?.url === 'string'
-          ? (entry as Record<string, unknown>).url as string
-          : '';
-        if (!url.trim().startsWith(STORAGE_PHOTO_PREFIX)) {
-          throw new HttpError(400, `URL foto ke-${index + 1} tidak valid.`);
-        }
-        return {
-          url: url.trim(),
-          auditMetadata: normalizePhotoAuditMetadata(
-            (entry as Record<string, unknown>)?.auditMetadata as Record<string, unknown> | undefined,
-          ),
-        };
-      });
+      const photos = parsePhotoEvidence(body?.photos, 'foto');
 
       const reportId = `FAC-${todayJakartaISO().replaceAll('-', '')}-${randomUUID()
         .replaceAll('-', '')
@@ -115,6 +147,52 @@ export async function POST(request: NextRequest) {
       });
 
       return NextResponse.json({ reportId, status: 'pending' }, { status: 201 });
+    }
+
+    if (action === 'repair') {
+      if (!isBlueCollarFacilityDashboardUser(actor)) {
+        throw new HttpError(403, 'Hanya Teknisi dan Kebersihan yang dapat menandai laporan sebagai selesai.');
+      }
+      if (!actor.linkedEmployeeId) {
+        throw new HttpError(409, 'Akun Anda belum terhubung ke data Pegawai.');
+      }
+
+      const reportId = textField(body?.reportId, 'ID laporan', 180);
+      if (!SAFE_REPORT_ID.test(reportId)) {
+        throw new HttpError(400, 'ID laporan tidak valid.');
+      }
+      const resolutionPhotos = parsePhotoEvidence(
+        body?.resolutionPhotos,
+        'bukti perbaikan',
+        `${REPAIR_PROOF_STORAGE_PREFIX}${actor.linkedEmployeeId}/`,
+      );
+
+      const reportRef = adminDb.collection(FACILITY_REPORTS_COLLECTION).doc(reportId);
+      const result = await adminDb.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(reportRef);
+        if (!snapshot.exists) throw new HttpError(404, 'Laporan fasilitas tidak ditemukan.');
+        const current = snapshot.data()!;
+        const currentStatus = isFacilityReportStatus(current.status) ? current.status : 'pending';
+        if (!canTransitionFacilityReport(currentStatus, 'resolved')) {
+          throw new HttpError(409, 'Laporan ini sudah diproses atau tidak dapat ditandai selesai.');
+        }
+
+        transaction.update(reportRef, {
+          status: 'resolved',
+          resolutionPhotos,
+          resolvedByUid: actor.uid,
+          resolvedByName: actor.displayName || '',
+          resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return {
+          reportId,
+          status: 'resolved' satisfies FacilityReportStatus,
+          resolutionPhotoCount: resolutionPhotos.length,
+        };
+      });
+
+      return NextResponse.json(result);
     }
 
     if (action === 'review') {
@@ -207,7 +285,7 @@ export async function GET(request: NextRequest) {
     const statusFilter = searchParams.get('status');
 
     let query: FirebaseFirestore.Query = adminDb.collection(FACILITY_REPORTS_COLLECTION);
-    if (!isFacilityReviewer(actor) && !canReportFacilityIssues(actor)) {
+    if (!canViewFacilityReports(actor)) {
       throw new HttpError(403, 'Anda tidak memiliki akses ke riwayat laporan fasilitas.');
     }
     if (statusFilter && isFacilityReportStatus(statusFilter)) {
@@ -217,7 +295,7 @@ export async function GET(request: NextRequest) {
     const snapshot = await query.get();
     const reports: Record<string, unknown>[] = snapshot.docs
       .map((document) => {
-        const { reportedAt, reviewedAt, updatedAt, ...rest } = document.data();
+        const { reportedAt, reviewedAt, resolvedAt, updatedAt, ...rest } = document.data();
         return {
           ...rest,
           id: document.id,
@@ -225,6 +303,7 @@ export async function GET(request: NextRequest) {
           // need them for ordering and display.
           reportedAtMillis: reportedAt?.toMillis?.() ?? null,
           reviewedAtMillis: reviewedAt?.toMillis?.() ?? null,
+          resolvedAtMillis: resolvedAt?.toMillis?.() ?? null,
           updatedAtMillis: updatedAt?.toMillis?.() ?? null,
         };
       })

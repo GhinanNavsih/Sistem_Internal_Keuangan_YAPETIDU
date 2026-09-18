@@ -1288,6 +1288,9 @@ async function reopenAffectedOccurrences(input: {
     writer.update(occurrenceSnapshot.ref, {
       status: 'pending_review',
       reviewStatus: 'pending',
+      dutyPlanId:
+        String(occurrence.dutyPlanId || '') ||
+        satpamDutyPlanId(input.period, input.teamId),
       dutyPlanRevision: input.dutyPlanRevision,
       dutyPlanStale: true,
       pendingReportIds,
@@ -1299,7 +1302,9 @@ async function reopenAffectedOccurrences(input: {
       anomalyCodes: Array.from(
         new Set([
           ...(Array.isArray(occurrence.anomalyCodes)
-            ? occurrence.anomalyCodes
+            ? occurrence.anomalyCodes.filter(
+                (code: unknown) => code !== 'DUTY_PLAN_MISSING',
+              )
             : []),
           'DUTY_PLAN_CHANGED_AFTER_REPORT',
         ]),

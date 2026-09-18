@@ -10,6 +10,10 @@ import {
   getEmployeeActivitiesPath,
   getEmployeeActivityWorkflow,
 } from '@/lib/employeeActivities';
+import {
+  getFacilityReportsPath,
+  isBlueCollarFacilityDashboardUser,
+} from '@/lib/facilityReports';
 import { Button } from '@/components/ui/button';
 import { FloatingSnackbar, type SnackbarMessage } from '@/components/ui/floating-snackbar';
 import {
@@ -86,6 +90,7 @@ export default function EmployeeNavigationMenu() {
   const isSopir = workflow === 'sopir';
   const leaveHref = '/employee/leave';
   const activitiesHref = getEmployeeActivitiesPath(currentProfile);
+  const facilityReportsHref = getFacilityReportsPath(currentProfile);
 
   return (
     <>
@@ -149,13 +154,15 @@ export default function EmployeeNavigationMenu() {
               Ajukan Izin Presensi
             </DropdownMenuItem>
           )}
-          {(isLoyalis || isBlueCollarHonorer) && pathname !== '/employee/facility-reports' && (
+          {(isLoyalis || isBlueCollarHonorer) && pathname !== facilityReportsHref && (
             <DropdownMenuItem
               className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
-              render={<Link href="/employee/facility-reports" />}
+              render={<Link href={facilityReportsHref} />}
             >
               <Wrench className="text-amber-500" />
-              Lapor Fasilitas
+              {isBlueCollarFacilityDashboardUser(currentProfile)
+                ? 'Perbaiki Fasilitas'
+                : 'Lapor Fasilitas'}
             </DropdownMenuItem>
           )}
           {(isLoyalis || isBlueCollarHonorer) && pathname !== '/employee/simpan-pinjam' && (

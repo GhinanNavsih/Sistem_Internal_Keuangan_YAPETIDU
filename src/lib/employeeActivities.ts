@@ -1,3 +1,9 @@
+import {
+  EMPLOYEE_FACILITY_REPORTS_PATH,
+  FACILITY_REPORT_DASHBOARD_PATH,
+  isBlueCollarFacilityDashboardUser,
+} from '@/lib/facilityReports';
+
 export const EMPLOYEE_ACTIVITY_PATHS = {
   satpam: '/employee/activities/satpam',
   sopir: '/employee/activities/sopir',
@@ -113,6 +119,20 @@ export function getEmployeeRouteRedirect(
   pathname: string,
 ): string | null {
   const activitiesPath = getEmployeeActivitiesPath(profile);
+
+  if (
+    pathname === EMPLOYEE_FACILITY_REPORTS_PATH &&
+    isBlueCollarFacilityDashboardUser(profile)
+  ) {
+    return FACILITY_REPORT_DASHBOARD_PATH;
+  }
+
+  if (
+    pathname === FACILITY_REPORT_DASHBOARD_PATH &&
+    isBlueCollarFacilityDashboardUser(profile)
+  ) {
+    return null;
+  }
 
   if (!pathname.startsWith('/employee/')) return activitiesPath;
 

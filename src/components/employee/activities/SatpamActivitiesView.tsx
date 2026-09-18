@@ -320,8 +320,28 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                         const isDesignatedPos9 = Boolean(
                           isPos9 && val.employeeId && pos9GuardIds.has(val.employeeId),
                         );
+                        const plannedEmployeeForPost = satpamDutyPlan?.day?.assignments.find(
+                          (assignment) => assignment.postId === post.id,
+                        )?.employeeId;
+                        const plannedPostForEmployee = val.employeeId
+                          ? satpamDutyPlan?.day?.assignments.find(
+                              (assignment) => assignment.employeeId === val.employeeId,
+                            )?.postId
+                          : undefined;
+                        const isKetuaCoverEligible = Boolean(
+                          isKetuaGuard &&
+                            plannedPostForEmployee &&
+                            plannedPostForEmployee !== post.id,
+                        );
+                        const canSelectLemburCover =
+                          isKetuaCoverEligible ||
+                          (!isCrossTeamPos9 &&
+                            !isExternalGuard &&
+                            !isPos9 &&
+                            !isKetuaGuard);
                         const selectedShiftType = isKetuaGuard
-                          ? (['Harian', 'Jumat & Libur', 'Lembur Sendiri'].includes(val.shiftType)
+                          ? (['Harian', 'Jumat & Libur', 'Lembur Sendiri'].includes(val.shiftType) ||
+                            (isKetuaCoverEligible && val.shiftType === 'Lembur Cover')
                             ? val.shiftType
                             : defaultShiftTypeForRender)
                           : isCrossTeamPos9
@@ -339,9 +359,6 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                             : (val.shiftType === 'Lembur Cover'
                               ? 'Lembur Cover'
                               : defaultShiftTypeForRender);
-                        const plannedEmployeeForPost = satpamDutyPlan?.day?.assignments.find(
-                          (assignment) => assignment.postId === post.id,
-                        )?.employeeId;
                         const coverCandidates = isCrossTeamPos9 && satpamDutyPlan?.fixedPost9EmployeeId
                           ? groupEmployees.filter((employee) => employee.id === satpamDutyPlan.fixedPost9EmployeeId)
                           : isExternalGuard && plannedEmployeeForPost
@@ -512,7 +529,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                       {defaultShiftTypeForRender} ({defaultShiftTypeForRender === 'Jumat & Libur' ? 'Rp25.000' : 'Rp12.500'})
                                     </SelectItem>
                                   )}
-                                  {!isCrossTeamPos9 && !isExternalGuard && !isPos9 && (
+                                  {canSelectLemburCover && (
                                     <SelectItem value="Lembur Cover" className="text-base font-bold">
                                       Lembur Cover (Rp50.000)
                                     </SelectItem>

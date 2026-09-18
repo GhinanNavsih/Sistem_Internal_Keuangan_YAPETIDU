@@ -75,6 +75,9 @@ interface LoyalisDailyLogRow {
   duration?: number;
 }
 
+/** Status of the background Firestore autosave (mirrors the KJM page's autosave UX). */
+type AutosaveState = 'idle' | 'scheduled' | 'saving' | 'saved' | 'error';
+
 /** The unsaved working table as mirrored into localStorage. */
 interface PresenceDraft {
   savedAt?: number;
@@ -233,6 +236,106 @@ const recalculateSummary = (
     dailyLogs: updatedLogs
   };
 };
+
+/**
+ * Builds the `LoyalisPresence.entries` map from the working table. Shared by
+ * the manual "Simpan Data Presensi" save and the background autosave so both
+ * write the exact same shape from the exact same rows.
+ */
+const buildPresenceEntries = (
+  rows: any[],
+  calcMode: 'worked' | 'absent',
+  activeWorkingDays: number,
+  expectedHours: number,
+  loyalisEmployees: any[],
+  calculateStratum: (minutes: number, mode: 'worked' | 'absent', days: number, hours: number) => {
+    absenceMinutes: number; stratum: number; deduction: number; netBonus: number;
+  },
+) => {
+  const entriesMap: Record<string, any> = {};
+
+  rows.forEach(row => {
+    if (!row.employeeId) return;
+    const calc = calculateStratum(row.minutes, calcMode, activeWorkingDays, expectedHours);
+    entriesMap[row.employeeId] = {
+      employeeId: row.employeeId,
+      employeeName: row.employeeName,
+      excelName: row.excelName,
+      nipy: row.nipy || '',
+      minutes: row.minutes,
+      absenceMinutes: calc.absenceMinutes,
+      stratum: calc.stratum,
+      deduction: calc.deduction,
+      netBonus: calc.netBonus,
+      isNotFoundInExcel: false,
+      activeDaysCount: row.activeDaysCount || 0,
+      incompleteDaysCount: row.incompleteDaysCount || 0,
+      absentDaysCount: row.absentDaysCount || 0,
+      offDayScannedCount: row.offDayScannedCount || 0,
+      offDayExcludedMinutes: row.offDayExcludedMinutes || 0,
+      dailyLogs: row.dailyLogs || [],
+    };
+  });
+
+  const matchedIds = new Set(rows.map(r => r.employeeId).filter(Boolean));
+  loyalisEmployees.forEach(emp => {
+    if (!matchedIds.has(emp.id)) {
+      entriesMap[emp.id] = {
+        employeeId: emp.id,
+        employeeName: emp.name,
+        excelName: '-',
+        nipy: emp.nipy || '',
+        minutes: 0,
+        absenceMinutes: activeWorkingDays * expectedHours * 60,
+        stratum: 5,
+        deduction: 250000,
+        netBonus: 0,
+        isNotFoundInExcel: true,
+        activeDaysCount: 0,
+        incompleteDaysCount: 0,
+        absentDaysCount: 0,
+        dailyLogs: [],
+      };
+    }
+  });
+
+  return entriesMap;
+};
+
+/** Builds the `LoyalisPresence` document payload. Shared by the manual save and the autosave. */
+const buildPresencePayload = ({
+  periodToken,
+  activeWorkingDays,
+  expectedHours,
+  calcMode,
+  entriesMap,
+  usesSharedImport,
+  activeImport,
+  activeCalendarRevision,
+}: {
+  periodToken: string;
+  activeWorkingDays: number;
+  expectedHours: number;
+  calcMode: 'worked' | 'absent';
+  entriesMap: Record<string, any>;
+  usesSharedImport: boolean;
+  activeImport: { activeRevision?: number; activeRevisionId?: string } | null;
+  activeCalendarRevision: number;
+}) => ({
+  period: periodToken,
+  workingDays: activeWorkingDays,
+  expectedHours,
+  mode: calcMode,
+  entries: entriesMap,
+  ...(usesSharedImport && {
+    sourceImportRevision: activeImport?.activeRevision || 0,
+    sourceImportRevisionId: activeImport?.activeRevisionId || '',
+    sourceImportStale: false,
+    sourceCalendarRevision: activeCalendarRevision,
+    sourceCalendarStale: false,
+  }),
+  updatedAt: serverTimestamp(),
+});
 
 export default function PresensiLoyalisRawPage() {
   const { profile } = useAuth();
@@ -496,6 +599,97 @@ export default function PresensiLoyalisRawPage() {
     fetchExistingPresence();
   }, [fetchExistingPresence]);
 
+  // ── Background Firestore Autosave (mirrors the KJM page's technique) ─────
+  // Persists the working table to the LoyalisPresence document in the
+  // background, debounced, so edits survive a crash/closed tab and are
+  // visible to other devices/tabs without waiting for an explicit save.
+  // Deliberately does NOT call propagateUraianToSlips or resolve pending
+  // correction requests — those stay behind the explicit "Simpan Data
+  // Presensi" click, same as KJM only propagates on explicit Approve.
+  const [autosaveState, setAutosaveState] = useState<AutosaveState>('idle');
+  const uploadedDataRef = useRef(uploadedData);
+  const workingDaysRef = useRef(workingDays);
+  const expectedHoursRef = useRef(expectedHours);
+  const calcModeRef = useRef(calcMode);
+  const savingPresenceRef = useRef(savingPresence);
+  // True immediately after a programmatic (non-user-edit) load of the working
+  // table — initial hydration from the shared import, "Ubah Data", or the
+  // localStorage draft restore — so that load is not mistaken for a dirty
+  // edit and autosaved right back at the reader.
+  const hydratingRef = useRef(false);
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autosaveInFlightRef = useRef(false);
+  const autosaveQueuedRef = useRef(false);
+  const saveDraftAutomaticallyRef = useRef<() => Promise<void>>(async () => {});
+  // Serialized working-table snapshot as of the last successful autosave (or
+  // manual save, or load) — the "clean" baseline the dirty-check diffs against.
+  const autosaveBaselineRef = useRef('');
+  // Serialized working-table snapshot that last failed to autosave, so an
+  // unchanged failed state isn't retried in a tight loop.
+  const failedAutosaveSerializedRef = useRef('');
+  useEffect(() => { uploadedDataRef.current = uploadedData; }, [uploadedData]);
+  useEffect(() => { workingDaysRef.current = workingDays; }, [workingDays]);
+  useEffect(() => { expectedHoursRef.current = expectedHours; }, [expectedHours]);
+  useEffect(() => { calcModeRef.current = calcMode; }, [calcMode]);
+  useEffect(() => { savingPresenceRef.current = savingPresence; }, [savingPresence]);
+
+  const serializeWorkingTable = useCallback(() => JSON.stringify({
+    uploadedData: uploadedDataRef.current,
+    workingDays: workingDaysRef.current,
+    expectedHours: expectedHoursRef.current,
+    calcMode: calcModeRef.current,
+  }), []);
+
+  const clearAutosaveTimer = useCallback(() => {
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleAutosave = useCallback(() => {
+    clearAutosaveTimer();
+    setAutosaveState('scheduled');
+    autosaveTimerRef.current = setTimeout(() => {
+      autosaveTimerRef.current = null;
+      void saveDraftAutomaticallyRef.current();
+    }, 500);
+  }, [clearAutosaveTimer]);
+
+  useEffect(() => {
+    if (autosaveState !== 'saved') return;
+    const timer = setTimeout(() => setAutosaveState('idle'), 3500);
+    return () => clearTimeout(timer);
+  }, [autosaveState]);
+
+  // Watches the working table for user edits and (re)schedules an autosave.
+  useEffect(() => {
+    if (hydratingRef.current) {
+      // A programmatic load, not a user edit — treat it as the new clean
+      // baseline instead of scheduling a save.
+      hydratingRef.current = false;
+      autosaveBaselineRef.current = serializeWorkingTable();
+      return;
+    }
+    if (!uploadedData) return;
+    if (savingPresence || autosaveInFlightRef.current) {
+      if (autosaveInFlightRef.current) autosaveQueuedRef.current = true;
+      return;
+    }
+    const serialized = serializeWorkingTable();
+    if (serialized === autosaveBaselineRef.current || serialized === failedAutosaveSerializedRef.current) return;
+    scheduleAutosave();
+  }, [uploadedData, workingDays, expectedHours, calcMode, savingPresence, serializeWorkingTable, scheduleAutosave]);
+
+  useEffect(() => {
+    if (!savingPresence && autosaveQueuedRef.current && !autosaveInFlightRef.current) {
+      autosaveQueuedRef.current = false;
+      scheduleAutosave();
+    }
+  }, [savingPresence, scheduleAutosave]);
+
+  useEffect(() => clearAutosaveTimer, [clearAutosaveTimer]);
+
   // ── Read the calculation table from the active shared import ──
   // The active file's parsed rows live server-side (AttendanceImportRows)
   // regardless of who uploaded it, and the server is the only place that
@@ -533,6 +727,7 @@ export default function PresensiLoyalisRawPage() {
       try {
         const parsedData = await fetchActiveImportLoyalisRows();
         if (cancelled || parsedData.length === 0) return;
+        hydratingRef.current = true;
         setUploadedData(parsedData);
       } catch (error) {
         console.error('Gagal memuat data presensi dari file aktif:', error);
@@ -629,6 +824,7 @@ export default function PresensiLoyalisRawPage() {
       // localStorage is client-only, so the restore cannot happen during
       // render; seeding the table from it here is the whole point of the
       // effect, and it runs once per period rather than on every render.
+      hydratingRef.current = true;
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setUploadedData(draftRows);
       if (draft.workingDays === '' || typeof draft.workingDays === 'number') {
@@ -883,6 +1079,79 @@ export default function PresensiLoyalisRawPage() {
     };
   }, []);
 
+  const saveDraftAutomatically = useCallback(async () => {
+    const rows = uploadedDataRef.current;
+    if (!rows || rows.length === 0) return;
+    // Same precondition as the manual save: a period on the shared-import
+    // scheme can't be persisted without knowing which import revision it
+    // came from.
+    if (usesSharedImport && (!activeImport?.activeRevision || !activeImport.activeRevisionId)) return;
+    if (savingPresenceRef.current || autosaveInFlightRef.current) {
+      autosaveQueuedRef.current = true;
+      return;
+    }
+    const serialized = serializeWorkingTable();
+    if (serialized === autosaveBaselineRef.current || serialized === failedAutosaveSerializedRef.current) return;
+
+    autosaveInFlightRef.current = true;
+    setAutosaveState('saving');
+    try {
+      const entriesMap = buildPresenceEntries(
+        rows,
+        calcModeRef.current,
+        Number(workingDaysRef.current) || 0,
+        expectedHoursRef.current,
+        loyalisEmployees,
+        calculatePresenceStratum,
+      );
+      const payload = buildPresencePayload({
+        periodToken,
+        activeWorkingDays: Number(workingDaysRef.current) || 0,
+        expectedHours: expectedHoursRef.current,
+        calcMode: calcModeRef.current,
+        entriesMap,
+        usesSharedImport,
+        activeImport,
+        activeCalendarRevision,
+      });
+      await setDoc(doc(db, 'LoyalisPresence', presenceDocId), payload);
+      autosaveBaselineRef.current = serialized;
+      failedAutosaveSerializedRef.current = '';
+      if (serializeWorkingTable() === serialized) setAutosaveState('saved');
+    } catch (err) {
+      console.error('Gagal menyimpan draf presensi Loyalis secara otomatis:', err);
+      failedAutosaveSerializedRef.current = serialized;
+      setAutosaveState('error');
+    } finally {
+      autosaveInFlightRef.current = false;
+      const currentSerialized = serializeWorkingTable();
+      const hasPendingEdits = !!uploadedDataRef.current
+        && currentSerialized !== autosaveBaselineRef.current
+        && currentSerialized !== failedAutosaveSerializedRef.current;
+      if (hasPendingEdits) {
+        if (savingPresenceRef.current) autosaveQueuedRef.current = true;
+        else scheduleAutosave();
+      } else {
+        autosaveQueuedRef.current = false;
+      }
+      if (autosaveQueuedRef.current && !savingPresenceRef.current) {
+        autosaveQueuedRef.current = false;
+        scheduleAutosave();
+      }
+    }
+  }, [
+    usesSharedImport,
+    activeImport,
+    activeCalendarRevision,
+    periodToken,
+    presenceDocId,
+    loyalisEmployees,
+    calculatePresenceStratum,
+    serializeWorkingTable,
+    scheduleAutosave,
+  ]);
+  useEffect(() => { saveDraftAutomaticallyRef.current = saveDraftAutomatically; }, [saveDraftAutomatically]);
+
   const handleUpdateMinutes = useCallback((excelName: string, minutes: number) => {
     setUploadedData(prev => {
       if (!prev) return null;
@@ -983,6 +1252,7 @@ export default function PresensiLoyalisRawPage() {
       // Tanggal Merah set the moment it is reopened for editing.
       ...recalculateSummary(entry.dailyLogs || [], expectedHours, isOffDayTanggal),
     }));
+    hydratingRef.current = true;
     setUploadedData(entriesList);
     setBulkFillSnapshots({});
     setMessage({ type: 'success', text: 'Mode edit diaktifkan. Anda sekarang dapat mengubah data logs presensi dan menghubungkan pegawai.' });
@@ -1584,72 +1854,37 @@ export default function PresensiLoyalisRawPage() {
       });
       return;
     }
+    // A pending autosave writing the same document underneath this explicit
+    // save could otherwise interleave with it.
+    clearAutosaveTimer();
     setSavingPresence(true);
     try {
-      const entriesMap: Record<string, any> = {};
-
-      uploadedData.forEach(row => {
-        if (!row.employeeId) return;
-        const calc = calculatePresenceStratum(row.minutes, calcMode, activeWorkingDays, expectedHours);
-        entriesMap[row.employeeId] = {
-          employeeId: row.employeeId,
-          employeeName: row.employeeName,
-          excelName: row.excelName,
-          nipy: row.nipy || '',
-          minutes: row.minutes,
-          absenceMinutes: calc.absenceMinutes,
-          stratum: calc.stratum,
-          deduction: calc.deduction,
-          netBonus: calc.netBonus,
-          isNotFoundInExcel: false,
-          activeDaysCount: row.activeDaysCount || 0,
-          incompleteDaysCount: row.incompleteDaysCount || 0,
-          absentDaysCount: row.absentDaysCount || 0,
-          offDayScannedCount: row.offDayScannedCount || 0,
-          offDayExcludedMinutes: row.offDayExcludedMinutes || 0,
-          dailyLogs: row.dailyLogs || [],
-        };
-      });
-
-      const matchedIds = new Set(uploadedData.map(r => r.employeeId).filter(Boolean));
-      loyalisEmployees.forEach(emp => {
-        if (!matchedIds.has(emp.id)) {
-          entriesMap[emp.id] = {
-            employeeId: emp.id,
-            employeeName: emp.name,
-            excelName: '-',
-            nipy: emp.nipy || '',
-            minutes: 0,
-            absenceMinutes: activeWorkingDays * expectedHours * 60,
-            stratum: 5,
-            deduction: 250000,
-            netBonus: 0,
-            isNotFoundInExcel: true,
-            activeDaysCount: 0,
-            incompleteDaysCount: 0,
-            absentDaysCount: 0,
-            dailyLogs: [],
-          };
-        }
-      });
-
-      const payload = {
-        period: periodToken,
-        workingDays: activeWorkingDays,
+      const entriesMap = buildPresenceEntries(
+        uploadedData,
+        calcMode,
+        activeWorkingDays,
         expectedHours,
-        mode: calcMode,
-        entries: entriesMap,
-        ...(usesSharedImport && {
-          sourceImportRevision: activeImport?.activeRevision || 0,
-          sourceImportRevisionId: activeImport?.activeRevisionId || '',
-          sourceImportStale: false,
-          sourceCalendarRevision: activeCalendarRevision,
-          sourceCalendarStale: false,
-        }),
-        updatedAt: serverTimestamp(),
-      };
+        loyalisEmployees,
+        calculatePresenceStratum,
+      );
+      const payload = buildPresencePayload({
+        periodToken,
+        activeWorkingDays,
+        expectedHours,
+        calcMode,
+        entriesMap,
+        usesSharedImport,
+        activeImport,
+        activeCalendarRevision,
+      });
 
       await setDoc(doc(db, 'LoyalisPresence', presenceDocId), payload);
+      // This explicit save is now the latest persisted state — the
+      // background autosave shouldn't consider it dirty nor retry a
+      // previously failed autosave of the same content.
+      autosaveBaselineRef.current = serializeWorkingTable();
+      failedAutosaveSerializedRef.current = '';
+      setAutosaveState('idle');
       // The save clears `sourceImportStale`, which the shared status banner reads.
       void invalidateAttendanceImportStatus(periodToken);
 
@@ -1813,6 +2048,28 @@ export default function PresensiLoyalisRawPage() {
       )}
 
       <FloatingSnackbar message={message} />
+
+      {autosaveState !== 'idle' && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`pointer-events-none fixed right-4 top-4 z-[70] max-w-sm rounded-xl border px-4 py-3 text-sm shadow-lg ${
+            autosaveState === 'error'
+              ? 'border-red-200 bg-red-50 text-red-800'
+              : autosaveState === 'saved'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                : 'border-indigo-200 bg-indigo-50 text-indigo-800'
+          }`}
+        >
+          {autosaveState === 'scheduled'
+            ? 'Perubahan dijadwalkan untuk disimpan…'
+            : autosaveState === 'saving'
+              ? 'Menyimpan draf presensi di latar belakang…'
+              : autosaveState === 'saved'
+                ? 'Draf presensi berhasil disimpan.'
+                : 'Draf belum tersimpan otomatis. Ubah data untuk mencoba lagi, atau klik Simpan Data Presensi.'}
+        </div>
+      )}
 
       {presensiTargetType === 'pekarya' &&
       profile?.role !== 'loyalis_presence_admin' &&
@@ -2776,7 +3033,11 @@ export default function PresensiLoyalisRawPage() {
                     <Button
                       type="button"
                       variant="outline"
+                      disabled={autosaveState === 'saving'}
                       onClick={() => {
+                        clearAutosaveTimer();
+                        autosaveQueuedRef.current = false;
+                        setAutosaveState('idle');
                         setUploadedData(null);
                         setBulkFillSnapshots({});
                         // An explicitly discarded session must not come back
@@ -2790,7 +3051,7 @@ export default function PresensiLoyalisRawPage() {
                     <Button
                       type="button"
                       onClick={handleSavePresence}
-                      disabled={savingPresence || uploadedData.filter(r => r.employeeId).length === 0}
+                      disabled={savingPresence || autosaveState === 'saving' || uploadedData.filter(r => r.employeeId).length === 0}
                       className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-2 shadow-md active:scale-95 transition-all cursor-pointer"
                     >
                       {savingPresence ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}

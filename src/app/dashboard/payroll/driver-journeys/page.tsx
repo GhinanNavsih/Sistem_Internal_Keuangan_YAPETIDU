@@ -150,12 +150,19 @@ function reportedDriverJourneyDistance(journey: Record<string, unknown>): number
   return null;
 }
 
-function driverJourneyDisplayDistance(journey: Record<string, unknown>): number {
-  if (isReportedDriverJourney(journey)) {
-    const measuredDistance = reportedDriverJourneyDistance(journey);
-    if (measuredDistance !== null) return measuredDistance;
-  }
-  return Math.max(0, Number(journey.distanceKm || 0) * 2);
+// Prefers a measured figure whatever the status, since a declined journey also
+// carries the distance from its earlier report. Returns null when the route is
+// still unknown — a self-authorized journey has none until its report arrives —
+// so callers can say so instead of rendering a misleading zero.
+function driverJourneyDisplayDistance(journey: Record<string, unknown>): number | null {
+  const measuredDistance = reportedDriverJourneyDistance(journey);
+  if (measuredDistance !== null) return measuredDistance;
+  const plannedDistance = Math.max(0, Number(journey.distanceKm || 0) * 2);
+  return plannedDistance > 0 ? plannedDistance : null;
+}
+
+function hasDriverJourneyEstimate(journey: Record<string, unknown>): boolean {
+  return driverJourneyDisplayDistance(journey) !== null;
 }
 
 function reportedDriverJourneyWage(journey: Record<string, unknown>): number {
@@ -168,7 +175,7 @@ function reportedDriverJourneyWage(journey: Record<string, unknown>): number {
     Number(journey.newTotalDurationHours || journey.submittedDurationHours || 0),
   );
   const baseWage = calculateDriverNetWage({
-    distanceKm: driverJourneyDisplayDistance(journey),
+    distanceKm: driverJourneyDisplayDistance(journey) ?? 0,
     travelTimeHours: Math.max(
       0,
       Number(journey.routeDurationHours || journey.newTotalDurationHours || 0),
@@ -1759,24 +1766,45 @@ function DriverJourneysContent() {
                               <div className="text-[10px] text-slate-400 font-semibold truncate">{fmtRp(j.vehicleRate)}/km</div>
                             </TableCell>
                             <TableCell className="font-bold text-slate-700 text-xs truncate">
-                              <div>{driverJourneyDisplayDistance(j)} km</div>
-                              <div className={`text-[9px] font-black ${isReportedDriverJourney(j) ? 'text-emerald-600' : 'text-slate-400'}`}>
-                                {isReportedDriverJourney(j) ? 'Terukur PP' : 'Rencana PP'}
-                              </div>
+                              {hasDriverJourneyEstimate(j) ? (
+                                <>
+                                  <div>{driverJourneyDisplayDistance(j)} km</div>
+                                  <div className={`text-[9px] font-black ${isReportedDriverJourney(j) ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                    {isReportedDriverJourney(j) ? 'Terukur PP' : 'Rencana PP'}
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="text-slate-400">—</div>
+                                  <div className="text-[9px] font-black text-slate-400">Belum diukur</div>
+                                </>
+                              )}
                             </TableCell>
                             <TableCell className="min-w-0 max-w-0 overflow-hidden">
-                              <div className="font-black text-indigo-600 text-xs sm:text-sm truncate">{fmtRp(cashOperationalCostFromJourney(j))}</div>
-                              <div className="text-[9px] text-slate-400 font-bold leading-tight truncate">
-                                Makan: {fmtRp(j.mealAllowance)}
-                              </div>
+                              {hasDriverJourneyEstimate(j) ? (
+                                <>
+                                  <div className="font-black text-indigo-600 text-xs sm:text-sm truncate">{fmtRp(cashOperationalCostFromJourney(j))}</div>
+                                  <div className="text-[9px] text-slate-400 font-bold leading-tight truncate">
+                                    Makan: {fmtRp(j.mealAllowance)}
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="text-[10px] font-bold italic text-slate-400 truncate">
+                                  Menunggu laporan
+                                </div>
+                              )}
                             </TableCell>
                             <TableCell className="min-w-0 max-w-0 overflow-hidden">
                               <div className="font-black text-emerald-600 text-xs sm:text-sm truncate">
-                                {isReportedDriverJourney(j) ? (
+                                {!hasDriverJourneyEstimate(j) ? (
+                                  <span className="font-bold italic text-slate-400 text-[10px]">
+                                    Menunggu laporan
+                                  </span>
+                                ) : isReportedDriverJourney(j) ? (
                                   <span>{fmtRp(reportedDriverJourneyWage(j))}</span>
                                 ) : (() => {
                                   const est = calculateEstimatedDriverWage(
-                                    j.distanceKm * 2,
+                                    Number(j.distanceKm || 0) * 2,
                                     (j.durationHours || 0) * 2,
                                     resolveMealAccountingMode(j.mealAccountingMode, {
                                       alreadyApproved: j.status === 'completed',
