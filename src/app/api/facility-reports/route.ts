@@ -13,7 +13,6 @@ import {
   MAX_FACILITY_PLACE_LENGTH,
   MAX_FACILITY_REVIEW_NOTE_LENGTH,
   MIN_FACILITY_DECLINE_REASON_LENGTH,
-  MIN_FACILITY_DESCRIPTION_LENGTH,
   type FacilityReportStatus,
 } from '@/lib/facilityReports';
 import { normalizePhotoAuditMetadata, type PhotoEvidence } from '@/lib/photoEvidence';
@@ -121,7 +120,6 @@ export async function POST(request: NextRequest) {
         body?.description,
         'Deskripsi masalah atau kondisi',
         MAX_FACILITY_DESCRIPTION_LENGTH,
-        MIN_FACILITY_DESCRIPTION_LENGTH,
       );
 
       const photos = parsePhotoEvidence(body?.photos, 'foto');

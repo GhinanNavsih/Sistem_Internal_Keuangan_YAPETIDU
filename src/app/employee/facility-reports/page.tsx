@@ -35,7 +35,6 @@ import {
   MAX_FACILITY_PHOTO_BYTES,
   MAX_FACILITY_PHOTOS,
   MAX_FACILITY_PLACE_LENGTH,
-  MIN_FACILITY_DESCRIPTION_LENGTH,
   type FacilityArea,
   type FacilityReportStatus,
 } from '@/lib/facilityReports';
@@ -204,11 +203,8 @@ export default function FacilityReportsPage() {
       setMessage({ type: 'error', text: 'Lokasi fasilitas wajib diisi.' });
       return;
     }
-    if (trimmedDescription.length < MIN_FACILITY_DESCRIPTION_LENGTH) {
-      setMessage({
-        type: 'error',
-        text: `Deskripsi masalah atau kondisi minimal ${MIN_FACILITY_DESCRIPTION_LENGTH} karakter.`,
-      });
+    if (!trimmedDescription) {
+      setMessage({ type: 'error', text: 'Deskripsi masalah atau kondisi wajib diisi.' });
       return;
     }
 
@@ -376,8 +372,7 @@ export default function FacilityReportsPage() {
                 className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 resize-y"
               />
               <p className="text-[10px] font-semibold text-slate-400">
-                Minimal {MIN_FACILITY_DESCRIPTION_LENGTH} karakter · {description.length}/
-                {MAX_FACILITY_DESCRIPTION_LENGTH}
+                {description.length}/{MAX_FACILITY_DESCRIPTION_LENGTH}
               </p>
             </div>
 
