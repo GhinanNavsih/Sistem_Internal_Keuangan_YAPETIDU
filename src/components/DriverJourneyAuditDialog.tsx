@@ -41,6 +41,7 @@ import {
 } from 'lucide-react';
 import type { PhotoAuditMetadata, PhotoEvidence } from '@/lib/payroll/domain';
 import type { JourneyAuditResult, JourneyAuditPayload } from '@/lib/ai/journeyAudit';
+import { isSelfCreatedDriverJourney } from '@/lib/payroll/driverPiket';
 import {
   calculateEditableDriverJourneyTimeline,
   calculateDriverReimbursementSettlement,
@@ -156,6 +157,7 @@ export interface DriverAuditReport {
   payrollPeriod?: string;
   /** Links the report back to its pre-authorized `DriverJourneys` document. */
   journeyId?: string;
+  isSelfAuthorizedWithoutPiket?: boolean;
   timeStart?: string;
   timeEnd?: string;
   dateStart?: string;
@@ -994,6 +996,20 @@ export function DriverJourneyAuditDialog({
       isMultiDay: auditIsMultiDay,
     });
   }, [report, auditDateStart, auditDateEnd, auditIsMultiDay, auditTimeStart, auditTimeEnd]);
+
+  // Ndalem carries a hardcoded Rp0 BBM rate, and a self-authorized SPJ never
+  // collects toll at authorization — together every row of the Otorisasi vs
+  // Audit matrix is guaranteed zero, so it has nothing to show. Keyed off the
+  // live vehicle selection, not the report's original one, so correcting the
+  // vehicle during audit brings the matrix back if it becomes meaningful.
+  const isOperationalMatrixMoot = Boolean(
+    report &&
+      auditVehicleType === 'Ndalem' &&
+      isSelfCreatedDriverJourney({
+        id: report.journeyId,
+        isSelfAuthorizedWithoutPiket: report.isSelfAuthorizedWithoutPiket,
+      }),
+  );
 
   const auditCalc = useMemo(() => {
     if (!report || !auditTimeline) return null;
@@ -2115,6 +2131,7 @@ export function DriverJourneyAuditDialog({
                 </div>
 
                 {/* CARD 4: Biaya Operasional (SPJ) — Matriks Perbandingan Card */}
+                {!isOperationalMatrixMoot && (
                 <div className="p-4 rounded-2xl bg-blue-50/40 border border-blue-150 space-y-3 shadow-xs">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-black text-blue-700 uppercase tracking-widest block">
@@ -2224,6 +2241,7 @@ export function DriverJourneyAuditDialog({
                     </div>
                   </div>
                 </div>
+                )}
               </div>
             </div>
           )}

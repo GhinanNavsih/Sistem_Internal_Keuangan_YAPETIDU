@@ -423,10 +423,25 @@ function sanitizeDriverData(
     throw new HttpError(400, 'ID perjalanan tidak valid.');
   }
   if (
+    (typeof result.reportedEndPoint === 'string' && !result.reportedEndPoint.trim()) ||
+    result.reportedEndPoint === undefined
+  ) {
+    if (
+      Array.isArray(result.mainDestinations) &&
+      typeof result.mainDestinations[0] === 'string' &&
+      result.mainDestinations[0].trim()
+    ) {
+      result.reportedEndPoint = result.mainDestinations[0].trim();
+    }
+  }
+  if (
     result.reportedEndPoint !== undefined &&
     (typeof result.reportedEndPoint !== 'string' || !result.reportedEndPoint.trim() || result.reportedEndPoint.length > 300)
   ) {
     throw new HttpError(400, 'Tujuan perjalanan tidak valid.');
+  }
+  if (typeof result.reportedEndPoint === 'string') {
+    result.reportedEndPoint = result.reportedEndPoint.trim();
   }
   if (result.startPoint !== undefined) {
     if (

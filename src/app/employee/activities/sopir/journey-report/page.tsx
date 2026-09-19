@@ -1041,7 +1041,7 @@ function JourneyReportContent() {
             extraActivities,
             calculatedDistanceKm,
             calculatedDurationHours,
-            endPoint: activeReportingJourney.endPoint,
+            endPoint: currentMainDestinations[0] || activeReportingJourney.endPoint || undefined,
           },
         }),
       });
@@ -1676,7 +1676,7 @@ function JourneyReportContent() {
             mainDestinations: currentMainDestinations,
             mainDestinationLocations: currentMainDestinationLocations,
             points: submittedRoutePoints,
-            reportedEndPoint: activeReportingJourney.endPoint,
+            reportedEndPoint: currentMainDestinations[0] || activeReportingJourney.endPoint || undefined,
             distanceKm: calculatedDistanceKm,
             durationHours: submittedDurationHours,
             routeDurationHours,
