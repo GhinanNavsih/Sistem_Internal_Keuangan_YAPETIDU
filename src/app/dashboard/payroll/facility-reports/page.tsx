@@ -14,6 +14,7 @@ import {
   LogOut,
   MapPin,
   ThumbsDown,
+  Trash2,
   Wrench,
 } from 'lucide-react';
 import GlobalHeader from '@/components/GlobalHeader';
@@ -51,12 +52,15 @@ import {
   facilityReportStatusTone,
   isBlueCollarFacilityDashboardUser,
   isFacilityReportStatus,
+  MAX_FACILITY_PHOTO_BYTES,
+  MAX_FACILITY_PHOTOS,
   MAX_FACILITY_REVIEW_NOTE_LENGTH,
   MIN_FACILITY_DECLINE_REASON_LENGTH,
   type FacilityReportStatus,
 } from '@/lib/facilityReports';
 import { authenticatedJson } from '@/lib/payroll/client';
-import type { PhotoEvidence } from '@/lib/photoEvidence';
+import { prepareProofImageWithLimit, type PhotoEvidence } from '@/lib/photoEvidence';
+import { uploadProofFile } from '@/lib/uploads';
 
 interface FacilityReportRow {
   id: string;
@@ -93,15 +97,17 @@ function FacilityReportPhotoGrid({
 }: {
   report: FacilityReportRow;
   photos?: PhotoEvidence[];
-  label: string;
+  label?: string;
   emptyLabel: string;
   onZoom: (report: FacilityReportRow, photo: PhotoEvidence) => void;
 }) {
   return (
     <div>
-      <p className="mb-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400">
-        {label} {photos && photos.length > 0 ? `(${photos.length})` : ''}
-      </p>
+      {label ? (
+        <p className="mb-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400">
+          {label} {photos && photos.length > 0 ? `(${photos.length})` : ''}
+        </p>
+      ) : null}
       {photos && photos.length > 0 ? (
         <div className="grid grid-cols-2 gap-2">
           {photos.map((photo, index) => (
@@ -110,12 +116,12 @@ function FacilityReportPhotoGrid({
               type="button"
               onClick={() => onZoom(report, photo)}
               className="block aspect-square cursor-zoom-in overflow-hidden rounded-xl border border-slate-200 bg-white text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
-              aria-label={`Buka ${label.toLowerCase()} di ${report.place}, foto ${index + 1}`}
+              aria-label={`Buka ${(label || 'foto').toLowerCase()} di ${report.place}, foto ${index + 1}`}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={photo.url}
-                alt={`${label} di ${report.place} — foto ${index + 1}`}
+                alt={`${label || 'Foto'} di ${report.place} — foto ${index + 1}`}
                 loading="lazy"
                 decoding="async"
                 className="h-full w-full object-cover transition-transform duration-200 hover:scale-[1.02]"
@@ -136,9 +142,13 @@ function FacilityReportPhotoGrid({
 function FacilityReportDetailsContent({
   report,
   onZoom,
+  canManageProof,
+  onManageRepair,
 }: {
   report: FacilityReportRow;
   onZoom: (report: FacilityReportRow, photo: PhotoEvidence) => void;
+  canManageProof?: boolean;
+  onManageRepair?: (report: FacilityReportRow) => void;
 }) {
   return (
     <div className="grid gap-4 md:grid-cols-2">
@@ -187,13 +197,32 @@ function FacilityReportDetailsContent({
           onZoom={onZoom}
         />
         {report.status === 'resolved' && (
-          <FacilityReportPhotoGrid
-            report={report}
-            photos={report.resolutionPhotos}
-            label="Bukti Foto Perbaikan"
-            emptyLabel="Tidak ada foto bukti perbaikan"
-            onZoom={onZoom}
-          />
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                Bukti Foto Perbaikan {report.resolutionPhotos && report.resolutionPhotos.length > 0 ? `(${report.resolutionPhotos.length})` : ''}
+              </p>
+              {canManageProof && onManageRepair && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onManageRepair(report)}
+                  className="h-7 rounded-lg border-indigo-200 bg-indigo-50/50 px-2 text-[10px] font-bold text-indigo-700 hover:bg-indigo-100"
+                >
+                  <Camera className="mr-1 h-3 w-3" />
+                  {report.resolutionPhotos && report.resolutionPhotos.length > 0 ? 'Kelola Foto' : 'Unggah Foto'}
+                </Button>
+              )}
+            </div>
+            <FacilityReportPhotoGrid
+              report={report}
+              photos={report.resolutionPhotos}
+              label=""
+              emptyLabel="Tidak ada foto bukti perbaikan"
+              onZoom={onZoom}
+            />
+          </div>
         )}
       </div>
     </div>
@@ -295,7 +324,12 @@ function FacilityReportMobileCard({
 
       {isExpanded && (
         <div className="border-t border-slate-100 bg-slate-50/70 p-4">
-          <FacilityReportDetailsContent report={report} onZoom={onZoom} />
+          <FacilityReportDetailsContent
+            report={report}
+            onZoom={onZoom}
+            canManageProof={isReviewer || isRepairer}
+            onManageRepair={onRepair}
+          />
 
           {isReviewer && report.status === 'pending' && (
             <div className="mt-4 grid grid-cols-2 gap-2">
@@ -331,6 +365,20 @@ function FacilityReportMobileCard({
               Tambahkan Bukti &amp; Tandai Selesai
             </Button>
           )}
+
+          {(isReviewer || isRepairer) && report.status === 'resolved' && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onRepair(report)}
+              className="mt-4 min-h-11 w-full rounded-xl border-indigo-200 bg-indigo-50/40 text-xs font-bold text-indigo-700 hover:bg-indigo-100/60"
+            >
+              <Camera className="h-4 w-4" />
+              {report.resolutionPhotos && report.resolutionPhotos.length > 0
+                ? 'Kelola Bukti Perbaikan'
+                : 'Unggah Bukti Perbaikan'}
+            </Button>
+          )}
         </div>
       )}
     </article>
@@ -354,6 +402,8 @@ function FacilityReportReviewContent() {
   >(null);
   const [repairTarget, setRepairTarget] = useState<FacilityReportRow | null>(null);
   const [reviewNote, setReviewNote] = useState('');
+  const [reviewPhotos, setReviewPhotos] = useState<PhotoEvidence[]>([]);
+  const [uploadingReviewPhoto, setUploadingReviewPhoto] = useState(false);
   const isRepairer = isBlueCollarFacilityDashboardUser(profile);
   const isReviewer = profile?.role === 'super_admin' || profile?.role === 'satker_head';
   const effectiveStatusFilter = statusFilter ?? 'pending';
@@ -414,6 +464,57 @@ function FacilityReportReviewContent() {
   const openReviewDialog = (report: FacilityReportRow, nextStatus: FacilityReportStatus) => {
     setReviewTarget({ report, nextStatus });
     setReviewNote('');
+    setReviewPhotos(report.resolutionPhotos || []);
+  };
+
+  const handleReviewPhotos = async (files: File[]) => {
+    const uploaderId = profile?.linkedEmployeeId || profile?.uid;
+    if (!uploaderId) {
+      setMessage({ type: 'error', text: 'Sesi akun Anda tidak valid.' });
+      return;
+    }
+
+    const remainingSlots = MAX_FACILITY_PHOTOS - reviewPhotos.length;
+    if (remainingSlots <= 0) {
+      setMessage({ type: 'error', text: `Maksimal ${MAX_FACILITY_PHOTOS} foto per bukti perbaikan.` });
+      return;
+    }
+
+    const toUpload = files.slice(0, remainingSlots);
+    if (files.length > remainingSlots) {
+      setMessage({
+        type: 'error',
+        text: `Hanya ${remainingSlots} foto lagi yang dapat ditambahkan (maks ${MAX_FACILITY_PHOTOS}).`,
+      });
+    }
+
+    setUploadingReviewPhoto(true);
+    const uploaded: PhotoEvidence[] = [];
+    try {
+      for (const file of toUpload) {
+        const prepared = await prepareProofImageWithLimit(file, MAX_FACILITY_PHOTO_BYTES);
+        const url = await uploadProofFile('/api/uploads/facility-report-proofs', prepared.file, {
+          employeeId: uploaderId,
+        });
+        uploaded.push({ url, auditMetadata: prepared.auditMetadata });
+      }
+      setReviewPhotos((previous) => [...previous, ...uploaded]);
+      setMessage({
+        type: 'success',
+        text: uploaded.length > 1
+          ? `${uploaded.length} foto bukti perbaikan berhasil diunggah.`
+          : 'Foto bukti perbaikan berhasil diunggah.',
+      });
+    } catch (error) {
+      if (uploaded.length > 0) setReviewPhotos((previous) => [...previous, ...uploaded]);
+      console.error('Error uploading review photo:', error);
+      setMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Gagal mengunggah foto bukti perbaikan.',
+      });
+    } finally {
+      setUploadingReviewPhoto(false);
+    }
   };
 
   const submitReview = async () => {
@@ -439,6 +540,7 @@ function FacilityReportReviewContent() {
           reportId: reviewTarget.report.id,
           status: reviewTarget.nextStatus,
           ...(note ? { reviewNote: note } : {}),
+          ...(reviewTarget.nextStatus === 'resolved' ? { resolutionPhotos: reviewPhotos } : {}),
         }),
       });
       setMessage({
@@ -447,6 +549,7 @@ function FacilityReportReviewContent() {
       });
       setReviewTarget(null);
       setReviewNote('');
+      setReviewPhotos([]);
       await loadReports();
     } catch (error) {
       console.error('Error reviewing facility report:', error);
@@ -761,7 +864,21 @@ function FacilityReportReviewContent() {
                                     Bukti &amp; Selesai
                                   </Button>
                                 )}
-                                {!hasActions && (
+                                {(isReviewer || isRepairer) && report.status === 'resolved' && (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => openRepairDialog(report)}
+                                    className="h-8 rounded-lg border-indigo-200 bg-indigo-50/50 px-2.5 text-[11px] font-bold text-indigo-700 hover:bg-indigo-100"
+                                  >
+                                    <Camera className="h-3 w-3" />
+                                    {report.resolutionPhotos && report.resolutionPhotos.length > 0
+                                      ? 'Bukti Foto'
+                                      : '+ Bukti Foto'}
+                                  </Button>
+                                )}
+                                {!hasActions && !((isReviewer || isRepairer) && report.status === 'resolved') && (
                                   <span className="px-2 text-[11px] font-semibold text-slate-400">
                                     Buka detail
                                   </span>
@@ -775,6 +892,8 @@ function FacilityReportReviewContent() {
                               <TableCell colSpan={6} className="bg-slate-50/70 p-4 sm:p-5">
                                 <FacilityReportDetailsContent
                                   report={report}
+                                  canManageProof={isReviewer || isRepairer}
+                                  onManageRepair={openRepairDialog}
                                   onZoom={(nextReport, photo) => setZoomPhoto({ report: nextReport, photo })}
                                 />
                               </TableCell>
@@ -832,6 +951,86 @@ function FacilityReportReviewContent() {
                   : ''}
               </p>
             </div>
+
+            {reviewTarget?.nextStatus === 'resolved' && (
+              <div className="space-y-2 pt-1">
+                <Label className="text-xs font-bold uppercase text-slate-500">
+                  Bukti Foto Perbaikan (Opsional)
+                </Label>
+                {reviewPhotos.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2">
+                    {reviewPhotos.map((photo, index) => (
+                      <div
+                        key={photo.url}
+                        className="relative aspect-square overflow-hidden rounded-xl border border-slate-200 bg-slate-100"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={photo.url}
+                          alt={`Foto bukti perbaikan ${index + 1}`}
+                          className="h-full w-full object-cover"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() =>
+                            setReviewPhotos((previous) =>
+                              previous.filter((item) => item.url !== photo.url),
+                            )
+                          }
+                          className="absolute right-1.5 top-1.5 rounded-lg bg-white/95 p-1 text-rose-600 shadow-sm hover:bg-white"
+                          title="Hapus foto"
+                          aria-label={`Hapus foto bukti perbaikan ${index + 1}`}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {reviewPhotos.length < MAX_FACILITY_PHOTOS && (
+                  <div className="relative flex min-h-24 w-full flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50/30 px-3 py-4 text-center text-slate-500 transition-colors hover:border-emerald-300 hover:bg-emerald-50/60">
+                    <input
+                      type="file"
+                      accept=".jpeg,.jpg,.png,.pdf,image/jpeg,image/png,application/pdf"
+                      capture="environment"
+                      aria-label="Ambil foto bukti perbaikan"
+                      className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
+                      disabled={uploadingReviewPhoto || actionLoading}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        event.target.value = '';
+                        if (!file) return;
+                        if (!file.type.startsWith('image/')) {
+                          setMessage({
+                            type: 'error',
+                            text: 'Berkas bukti perbaikan harus berupa foto.',
+                          });
+                          return;
+                        }
+                        void handleReviewPhotos([file]);
+                      }}
+                    />
+                    {uploadingReviewPhoto ? (
+                      <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
+                    ) : (
+                      <Camera className="h-5 w-5 text-emerald-600" />
+                    )}
+                    <span className="text-xs font-bold text-slate-600">
+                      {uploadingReviewPhoto
+                        ? 'Mengunggah foto…'
+                        : reviewPhotos.length === 0
+                          ? 'Ketuk untuk mengambil atau memilih foto bukti'
+                          : 'Tambah foto bukti lainnya'}
+                    </span>
+                    <span className="text-[10px] font-semibold text-slate-400">
+                      {reviewPhotos.length}/{MAX_FACILITY_PHOTOS} foto
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button
@@ -861,11 +1060,22 @@ function FacilityReportReviewContent() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg font-bold text-slate-900">
               <Camera className="h-5 w-5 shrink-0 text-emerald-600" />
-              Selesaikan Laporan
+              {repairTarget?.status === 'resolved'
+                ? 'Kelola Bukti Perbaikan'
+                : 'Selesaikan Laporan'}
             </DialogTitle>
             <DialogDescription className="text-sm leading-relaxed text-slate-500">
-              Laporan <strong>“{repairTarget?.place}”</strong>. Ambil foto setelah perbaikan selesai
-              untuk menyimpan bukti pekerjaan.
+              {repairTarget?.status === 'resolved' ? (
+                <>
+                  Laporan <strong>“{repairTarget?.place}”</strong>. Kelola atau perbarui foto bukti
+                  perbaikan fasilitas ini.
+                </>
+              ) : (
+                <>
+                  Laporan <strong>“{repairTarget?.place}”</strong>. Ambil foto setelah perbaikan selesai
+                  untuk menyimpan bukti pekerjaan.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
           {repairTarget && (

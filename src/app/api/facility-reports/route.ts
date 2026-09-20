@@ -72,6 +72,7 @@ function parsePhotoEvidence(
   raw: unknown,
   label: string,
   expectedPathPrefix?: string,
+  existingUrls?: Set<string>,
 ): PhotoEvidence[] {
   if (raw === undefined || raw === null) return [];
   if (!Array.isArray(raw)) {
@@ -89,7 +90,8 @@ function parsePhotoEvidence(
     if (!url.startsWith(STORAGE_PHOTO_PREFIX)) {
       throw new HttpError(400, `URL ${label.toLowerCase()} ke-${index + 1} tidak valid.`);
     }
-    if (expectedPathPrefix && !storageUrlHasPath(url, expectedPathPrefix)) {
+    const isExisting = existingUrls && existingUrls.has(url);
+    if (!isExisting && expectedPathPrefix && !storageUrlHasPath(url, expectedPathPrefix)) {
       throw new HttpError(400, `Foto ${label.toLowerCase()} ke-${index + 1} bukan unggahan Anda.`);
     }
     return {
@@ -148,22 +150,19 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'repair') {
-      if (!isBlueCollarFacilityDashboardUser(actor)) {
-        throw new HttpError(403, 'Hanya Teknisi dan Kebersihan yang dapat menandai laporan sebagai selesai.');
+      const isReviewer = isFacilityReviewer(actor);
+      if (!isBlueCollarFacilityDashboardUser(actor) && !isReviewer) {
+        throw new HttpError(
+          403,
+          'Hanya Teknisi, Kebersihan, dan Kepala SatKer yang dapat memperbarui bukti perbaikan.',
+        );
       }
-      if (!actor.linkedEmployeeId) {
-        throw new HttpError(409, 'Akun Anda belum terhubung ke data Pegawai.');
-      }
+      const uploaderId = actor.linkedEmployeeId || actor.uid;
 
       const reportId = textField(body?.reportId, 'ID laporan', 180);
       if (!SAFE_REPORT_ID.test(reportId)) {
         throw new HttpError(400, 'ID laporan tidak valid.');
       }
-      const resolutionPhotos = parsePhotoEvidence(
-        body?.resolutionPhotos,
-        'bukti perbaikan',
-        `${REPAIR_PROOF_STORAGE_PREFIX}${actor.linkedEmployeeId}/`,
-      );
 
       const reportRef = adminDb.collection(FACILITY_REPORTS_COLLECTION).doc(reportId);
       const result = await adminDb.runTransaction(async (transaction) => {
@@ -171,18 +170,34 @@ export async function POST(request: NextRequest) {
         if (!snapshot.exists) throw new HttpError(404, 'Laporan fasilitas tidak ditemukan.');
         const current = snapshot.data()!;
         const currentStatus = isFacilityReportStatus(current.status) ? current.status : 'pending';
-        if (!canTransitionFacilityReport(currentStatus, 'resolved')) {
-          throw new HttpError(409, 'Laporan ini sudah diproses atau tidak dapat ditandai selesai.');
+        if (currentStatus !== 'resolved' && !canTransitionFacilityReport(currentStatus, 'resolved')) {
+          throw new HttpError(409, 'Laporan ini sudah ditolak atau tidak dapat ditandai selesai.');
         }
 
-        transaction.update(reportRef, {
-          status: 'resolved',
+        const existingUrls = new Set(
+          (Array.isArray(current.resolutionPhotos) ? current.resolutionPhotos : []).map(
+            (p: any) => String(p?.url || ''),
+          ),
+        );
+        const resolutionPhotos = parsePhotoEvidence(
+          body?.resolutionPhotos,
+          'bukti perbaikan',
+          `${REPAIR_PROOF_STORAGE_PREFIX}${uploaderId}/`,
+          existingUrls,
+        );
+
+        const updateData: Record<string, unknown> = {
           resolutionPhotos,
-          resolvedByUid: actor.uid,
-          resolvedByName: actor.displayName || '',
-          resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
+        };
+        if (currentStatus === 'pending') {
+          updateData.status = 'resolved';
+          updateData.resolvedByUid = actor.uid;
+          updateData.resolvedByName = actor.displayName || '';
+          updateData.resolvedAt = admin.firestore.FieldValue.serverTimestamp();
+        }
+
+        transaction.update(reportRef, updateData);
         return {
           reportId,
           status: 'resolved' satisfies FacilityReportStatus,
@@ -218,6 +233,7 @@ export async function POST(request: NextRequest) {
         throw new HttpError(400, `Catatan maksimal ${MAX_FACILITY_REVIEW_NOTE_LENGTH} karakter.`);
       }
 
+      const uploaderId = actor.linkedEmployeeId || actor.uid;
       const reportRef = adminDb.collection(FACILITY_REPORTS_COLLECTION).doc(reportId);
       const result = await adminDb.runTransaction(async (transaction) => {
         const snapshot = await transaction.get(reportRef);
@@ -228,14 +244,39 @@ export async function POST(request: NextRequest) {
           throw new HttpError(409, 'Perubahan status laporan tidak diizinkan.');
         }
 
-        transaction.update(reportRef, {
+        const existingUrls = new Set(
+          (Array.isArray(current.resolutionPhotos) ? current.resolutionPhotos : []).map(
+            (p: any) => String(p?.url || ''),
+          ),
+        );
+        const resolutionPhotos =
+          nextStatus === 'resolved' && body?.resolutionPhotos !== undefined
+            ? parsePhotoEvidence(
+                body.resolutionPhotos,
+                'bukti perbaikan',
+                `${REPAIR_PROOF_STORAGE_PREFIX}${uploaderId}/`,
+                existingUrls,
+              )
+            : undefined;
+
+        const updateData: Record<string, unknown> = {
           status: nextStatus,
           reviewNote: rawNote || null,
           reviewedByUid: actor.uid,
           reviewedByName: actor.displayName || '',
           reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
+        };
+        if (nextStatus === 'resolved') {
+          updateData.resolvedByUid = actor.uid;
+          updateData.resolvedByName = actor.displayName || '';
+          updateData.resolvedAt = admin.firestore.FieldValue.serverTimestamp();
+          if (resolutionPhotos !== undefined) {
+            updateData.resolutionPhotos = resolutionPhotos;
+          }
+        }
+
+        transaction.update(reportRef, updateData);
         return { reportId, status: nextStatus };
       });
 

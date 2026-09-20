@@ -30,6 +30,18 @@ export function isBlueCollarFacilityDashboardUser(
 }
 
 /**
+ * Both authorized blue-collar repairers (Teknisi/Kebersihan) and review
+ * authorities (Satker Head and Super Admin) may upload proof of a facility fix.
+ */
+export function canUploadFacilityRepairProof(
+  profile: FacilityReportNavigationProfile | null | undefined,
+): boolean {
+  if (!profile) return false;
+  if (profile.role === 'super_admin' || profile.role === 'satker_head') return true;
+  return isBlueCollarFacilityDashboardUser(profile);
+}
+
+/**
  * Report creation is kept for employees who discover facility problems.
  * Teknisi and Kebersihan are the repairers for those reports, so they may
  * view and close an existing report but must not create another one.

@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  isBlueCollarFacilityDashboardUser,
+  canUploadFacilityRepairProof,
   MAX_FACILITY_PHOTO_BYTES,
 } from '@/lib/facilityReports';
 import { errorResponse, HttpError, requireAuthenticatedProfile } from '@/lib/server/auth';
@@ -12,23 +12,27 @@ const FACILITY_REPAIR_PROOF_CACHE_CONTROL = 'private, max-age=31536000, immutabl
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    if (!isBlueCollarFacilityDashboardUser(actor)) {
-      throw new HttpError(403, 'Hanya Teknisi dan Kebersihan yang dapat mengunggah bukti perbaikan.');
+    if (!canUploadFacilityRepairProof(actor)) {
+      throw new HttpError(
+        403,
+        'Hanya Teknisi, Kebersihan, dan Kepala SatKer yang dapat mengunggah bukti perbaikan.',
+      );
     }
 
     const form = await request.formData();
-    const employeeId = String(form.get('employeeId') || '');
+    const providedId = String(form.get('employeeId') || form.get('uploaderId') || '').trim();
     const file = form.get('file');
 
-    if (!employeeId) {
-      throw new HttpError(400, 'ID pegawai wajib diisi.');
+    const expectedId = actor.linkedEmployeeId || actor.uid;
+    if (!providedId) {
+      throw new HttpError(400, 'ID pengunggah wajib diisi.');
     }
-    if (!actor.linkedEmployeeId || actor.linkedEmployeeId !== employeeId) {
+    if (providedId !== actor.linkedEmployeeId && providedId !== actor.uid) {
       throw new HttpError(403, 'Anda tidak memiliki kewenangan untuk mengunggah bukti ini.');
     }
     assertValidProofFile(file, MAX_FACILITY_PHOTO_BYTES);
 
-    const storagePath = `facility_report_proofs/${employeeId}/${Date.now()}_${randomUUID().slice(0, 8)}.jpg`;
+    const storagePath = `facility_report_proofs/${expectedId}/${Date.now()}_${randomUUID().slice(0, 8)}.jpg`;
     const url = await saveUploadedFile(storagePath, file, actor.uid, {
       cacheControl: FACILITY_REPAIR_PROOF_CACHE_CONTROL,
     });

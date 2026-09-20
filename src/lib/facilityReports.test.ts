@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   canSubmitFacilityReport,
   canTransitionFacilityReport,
+  canUploadFacilityRepairProof,
   FACILITY_REPORT_DASHBOARD_PATH,
   FACILITY_REPORT_STATUSES,
   EMPLOYEE_FACILITY_REPORTS_PATH,
@@ -75,3 +76,23 @@ test('terminal facility report statuses cannot be changed', () => {
   assert.equal(canTransitionFacilityReport('resolved', 'declined'), false);
   assert.equal(canTransitionFacilityReport('declined', 'resolved'), false);
 });
+
+test('satker_head, super_admin, and blue-collar repairers can upload facility repair proofs', () => {
+  assert.equal(canUploadFacilityRepairProof({ role: 'super_admin' }), true);
+  assert.equal(canUploadFacilityRepairProof({ role: 'satker_head' }), true);
+  assert.equal(
+    canUploadFacilityRepairProof({ role: 'honorer', permittedCategories: ['TEKNISI'] }),
+    true,
+  );
+  assert.equal(
+    canUploadFacilityRepairProof({ role: 'honorer', permittedCategories: ['KEBERSIHAN'] }),
+    true,
+  );
+  assert.equal(
+    canUploadFacilityRepairProof({ role: 'honorer', permittedCategories: ['SATPAM'] }),
+    false,
+  );
+  assert.equal(canUploadFacilityRepairProof({ role: 'loyalis' }), false);
+  assert.equal(canUploadFacilityRepairProof(null), false);
+});
+

@@ -18,6 +18,8 @@ interface FacilityReportRepairFormProps {
   report: {
     id: string;
     place: string;
+    status?: string;
+    resolutionPhotos?: PhotoEvidence[];
   };
   profile: UserProfile | null;
   onCancel: () => void;
@@ -34,13 +36,16 @@ export default function FacilityReportRepairForm({
 }: FacilityReportRepairFormProps) {
   const { profile: rawProfile, activeProfile } = useAuth();
   const currentProfile = profile || activeProfile || rawProfile;
-  const [photos, setPhotos] = useState<PhotoEvidence[]>([]);
+  const [photos, setPhotos] = useState<PhotoEvidence[]>(
+    Array.isArray(report.resolutionPhotos) ? report.resolutionPhotos : [],
+  );
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const handlePhotos = async (files: File[]) => {
-    if (!currentProfile?.linkedEmployeeId) {
-      onMessage({ type: 'error', text: 'Akun Anda belum terhubung ke data Pegawai.' });
+    const uploaderId = currentProfile?.linkedEmployeeId || currentProfile?.uid;
+    if (!uploaderId) {
+      onMessage({ type: 'error', text: 'Sesi akun Anda tidak valid.' });
       return;
     }
 
@@ -64,7 +69,7 @@ export default function FacilityReportRepairForm({
       for (const file of toUpload) {
         const prepared = await prepareProofImageWithLimit(file, MAX_FACILITY_PHOTO_BYTES);
         const url = await uploadProofFile('/api/uploads/facility-report-proofs', prepared.file, {
-          employeeId: currentProfile.linkedEmployeeId,
+          employeeId: uploaderId,
         });
         uploaded.push({ url, auditMetadata: prepared.auditMetadata });
       }
@@ -101,7 +106,9 @@ export default function FacilityReportRepairForm({
       });
       onMessage({
         type: 'success',
-        text: `Laporan di ${report.place} berhasil ditandai selesai.`,
+        text: report.status === 'resolved'
+          ? `Bukti perbaikan di ${report.place} berhasil diperbarui.`
+          : `Laporan di ${report.place} berhasil ditandai selesai.`,
       });
       await onCompleted();
     } catch (error) {
@@ -219,9 +226,11 @@ export default function FacilityReportRepairForm({
           {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           {submitting
             ? 'Menyimpan…'
-            : photos.length > 0
-              ? 'Simpan Bukti & Tandai Selesai'
-              : 'Tandai Selesai'}
+            : report.status === 'resolved'
+              ? 'Simpan Bukti Foto'
+              : photos.length > 0
+                ? 'Simpan Bukti & Tandai Selesai'
+                : 'Tandai Selesai'}
         </Button>
       </div>
     </div>
