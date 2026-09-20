@@ -43,6 +43,7 @@ next-env.d.ts
 # Secrets
 service-account.json
 koperasi-service-account.json
+simpel-service-account.json
 
 # Python
 venv/

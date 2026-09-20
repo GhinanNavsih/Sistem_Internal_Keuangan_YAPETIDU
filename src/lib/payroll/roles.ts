@@ -42,6 +42,21 @@ export const URAIAN_EDITOR_ROLES: readonly UserRole[] = [
   'satker_head_loyalis',
 ];
 
+/**
+ * Who may reserve campus venues in SIMPEL UNIPDU from SAKU. Kepala SatKer
+ * Loyalis books rooms and equipment for their events; Super Admin can test the
+ * whole flow and act on every reservation made through SAKU. The route guard,
+ * both navigation menus and the API all read this list, so they cannot drift.
+ */
+export const VENUE_RESERVATION_ROLES: readonly UserRole[] = [
+  'super_admin',
+  'satker_head_loyalis',
+];
+
+export function canReserveVenues(role: UserRole | null | undefined): boolean {
+  return !!role && VENUE_RESERVATION_ROLES.includes(role);
+}
+
 export function isUserRole(value: unknown): value is UserRole {
   return typeof value === 'string' && (USER_ROLES as readonly string[]).includes(value);
 }

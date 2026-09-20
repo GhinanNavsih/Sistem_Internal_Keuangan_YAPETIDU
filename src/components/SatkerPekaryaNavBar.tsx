@@ -4,12 +4,17 @@ import React from 'react';
 import Image from 'next/image';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { ClipboardCheck, ScanLine, LogOut, Compass, BarChart3, Banknote, FileText, UsersRound, Wrench } from 'lucide-react';
+import { ClipboardCheck, ScanLine, LogOut, Compass, BarChart3, Banknote, CalendarCheck, FileText, UsersRound, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
+import { canReserveVenues } from '@/lib/payroll/roles';
+import { isVenueReservationPath, VENUE_RESERVATION_PATH } from '@/lib/venueReservation';
 
 export default function SatkerPekaryaNavBar() {
-  const { profile, logout } = useAuth();
+  // Follows the previewed profile, so a Super Admin in "Preview UI" sees the
+  // same tabs as the SatKer head being previewed.
+  const { profile: realProfile, activeProfile, logout } = useAuth();
+  const profile = activeProfile || realProfile;
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -68,6 +73,7 @@ export default function SatkerPekaryaNavBar() {
   const isVakasi = pathname.startsWith('/dashboard/payroll/uraian/vakasi-loyalis');
   const isProposal = pathname.startsWith('/dashboard/payroll/uraian/proposal-kegiatan');
   const isPelaporan = pathname.startsWith('/dashboard/payroll/uraian/pelaporan-kegiatan');
+  const isReservasi = isVenueReservationPath(pathname);
 
   const canSeeFacility =
     permittedCategories.includes('KEBERSIHAN') || permittedCategories.includes('TEKNISI');
@@ -133,6 +139,15 @@ export default function SatkerPekaryaNavBar() {
                 <ClipboardCheck className="w-4 h-4" />
                 <span>Pelaporan Kegiatan</span>
               </button>
+              {canReserveVenues(profile?.role) && (
+                <button
+                  onClick={() => router.push(VENUE_RESERVATION_PATH)}
+                  className={navBtnClass(isReservasi)}
+                >
+                  <CalendarCheck className="w-4 h-4" />
+                  <span>Reservasi Ruang</span>
+                </button>
+              )}
             </>
           ) : (
             <>

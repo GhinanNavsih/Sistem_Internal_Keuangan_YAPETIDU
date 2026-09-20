@@ -20,12 +20,14 @@
 ```text
 src/
 ├── app/
-│   ├── api/                       # 17 route groups / ~57 endpoints: admin, attendance, auth, employee,
+│   ├── api/                       # 18 route groups / ~59 endpoints: admin, attendance, auth, employee,
 │   │                              #   driver-journeys, events, facility-reports, koperasi, maps, payroll,
-│   │                              #   pekarya, satpam, uploads, parse-rekap, calculate-route, proxy-image
+│   │                              #   pekarya, satpam, uploads, parse-rekap, calculate-route, proxy-image,
+│   │                              #   venue-reservations (SIMPEL bridge, see Venue Reservations below)
 │   ├── dashboard/
 │   │   ├── employees/             # Employee master data admin
 │   │   ├── users/                 # User/role management
+│   │   ├── reservasi-ruang/       # Venue reservations in SIMPEL UNIPDU (Kepala SatKer Loyalis + Super Admin)
 │   │   └── payroll/
 │   │       ├── page.tsx           # Payroll Bulanan landing
 │   │       ├── activity-review/   # Approve/audit honorer activity + SOPIR trip reports
@@ -53,6 +55,7 @@ src/
 │   │                              #   Kebutuhan Dana Gaji, Potongan Gaji, Tunjangan Jabatan,
 │   │                              #   Vakasi Lain-lain/Pimpinan-Staf, Kegiatan Loyalis, Gabungan)
 │   ├── pekarya/ , satpam/         # Domain-specific panels (leave, duty/absence, shift-swap)
+│   ├── venue/                     # VenueReservationDialog (3-step booking wizard) + OptionPicker (tap-to-choose cards)
 │   ├── employee/activities/       # Split-out activity reporting: {Satpam,Sopir,Pekarya}ActivitiesView
 │   │                              #   + shared EmployeeActivitiesWorkspace, ActivityFormDialog,
 │   │                              #   ActivityHistoryPanel, activityModel (state hook), activityShared
@@ -61,6 +64,8 @@ src/
 │   ├── firebase.ts                # Primary + secondary (`secondaryApp`/`secondaryDb`) client config
 │   ├── firebase-admin.ts          # Admin SDK (adminDb/adminAuth/adminStorage)
 │   ├── koperasi-admin.ts          # Admin SDK for the secondary Koperasi project
+│   ├── simpel-admin.ts            # Admin SDK for the SIMPEL UNIPDU project (venue reservations)
+│   ├── venueReservation.ts        # Pure venue-reservation rules (+ .test.ts); see Venue Reservations
 │   ├── AuthContext.tsx / DashboardDataContext.tsx / BulkEmailContext.tsx
 │   ├── server/                    # Server-only helpers: audit.ts, auth.ts, attendanceStore.ts,
 │   │                              #   satpamDutyPlan.ts, satpamFlexibility.ts, koperasiPayrollBridge.ts,
@@ -85,7 +90,7 @@ Roles are defined in `src/lib/payroll/roles.ts` (`USER_ROLES`) and enforced by r
 - `super_admin`: Unrestricted. Redirected out of `/employee/*` back to `/dashboard/users` unless previewing.
 - `finance_verifier`: Confined to `/dashboard/payroll*`. Can verify/operate payments alongside `super_admin` (`canVerifyPayroll`, `canOperatePayments`).
 - `satker_head`: Department head for blue collar (Pekarya) operations. Confined to `/dashboard/payroll/activity-review`, `/dashboard/payroll/uraian*`, `/dashboard/payroll/driver-journeys*`, `/dashboard/payroll/pekarya-dashboard*`, `/dashboard/payroll/facility-reports*`.
-- `satker_head_loyalis`: Department head for Loyalis operations. Confined to `/dashboard/payroll/uraian*`.
+- `satker_head_loyalis`: Department head for Loyalis operations. Confined to `/dashboard/payroll/uraian*` and `/dashboard/reservasi-ruang` (venue reservations, reached from the 4th tab of `SatkerPekaryaNavBar`; SatKer heads get no sidebar).
 - `employee_admin`: Confined to `/dashboard/employees`. Can edit employee profiles (`EMPLOYEE_PROFILE_EDITOR_ROLES`, alongside `super_admin`).
 - `honorer`: Generic honorer/blue-collar portal role. Confined to `/employee/*`, and further narrowed to a single activity workflow (see below). Also has Loyalis-style access to `/employee/facility-reports` and `/employee/simpan-pinjam` (Koperasi UNIPDU membership isn't Loyalis-exclusive — a blue-collar employee's `koperasiAuthUid` lives on their `Employees_BlueCollar` doc).
 - `loyalis`: Confined to a fixed Loyalis route set: `/employee/payslip`, `/employee/presensi-correction`, `/employee/facility-reports`, `/employee/simpan-pinjam`.
@@ -93,6 +98,8 @@ Roles are defined in `src/lib/payroll/roles.ts` (`USER_ROLES`) and enforced by r
 - `ketua_shift_satpam`: Satpam shift lead. Confined to `/employee/activities/satpam`, `/employee/satpam-duty-plan`, `/employee/leave`, `/employee/payslip`, `/employee/facility-reports`, `/employee/simpan-pinjam` — reports daily work, maintains the once-per-period duty plan, views own payslip.
 
 `URAIAN_EDITOR_ROLES` (who may save an Uraian rekap / Loyalis presence calculator, triggering propagation to draft slips): `super_admin`, `finance_verifier`, `satker_head`, `satker_head_loyalis`.
+
+`VENUE_RESERVATION_ROLES` / `canReserveVenues` (who may book venues in SIMPEL UNIPDU): `super_admin`, `satker_head_loyalis`. The route guard, the Sidebar link (Super Admin), the `SatkerPekaryaNavBar` tab (Loyalis) and the `/api/venue-reservations` routes all read it. `SatkerPekaryaNavBar` follows the *previewed* profile, so Super Admin's "Preview UI" shows the SatKer tabs.
 
 ### Employee activity workflows
 
@@ -118,11 +125,27 @@ Never re-derive the workflow locally (e.g. `permittedCategories[0] === 'SOPIR'`)
 
 **Payroll core**: `PayrollPeriods`, `PayrollSlipStates` (per-employee-per-period slip — holds the earnings/deductions/taxes money rows, not just a status; doc id `{period}_{employeeId}`, shape in `PayrollSlipStateDocument`. Writable statuses are draft/locked/payment_created/paid (`PayrollStatus`); `confirmed` is read-only legacy that `isImmutablePayrollStatus` and the employee payslip query still honour; `pending` is not a slip status — it belongs to `PayrollCorrectionRequests`), `PayrollPayments`, `PayrollLedgerEntries`, `PayrollDeliveryEvents` (email delivery idempotency), `PayrollHolidayCalendars`, `PayrollCorrectionRequests`, `PayrollHistoricalCorrections`, `PayrollKoperasiProgressions` (payroll↔Koperasi bridge saga state), `FinancialIdempotencyKeys`, `FinancialAuditLogs`.
 
-**Admin / auth / misc**: `users`, `EmpEditLog`, `admin_impersonation_sessions`, `audit_logs`, `reactivation_tokens`.
+**Admin / auth / misc**: `users`, `EmpEditLog`, `admin_impersonation_sessions`, `audit_logs`, `reactivation_tokens`, `VenueReservationContacts` (server-only; one doc per account holding the WhatsApp number and unit name last used for a venue booking).
 
 **`Koperasi Unipdu` (secondary Firebase app)**: accessed via `secondaryApp`/`secondaryDb` (client) and `koperasiAdminDb()` in `src/lib/koperasi-admin.ts` (server, separate service-account credential). Collections: `simpanPinjam` (loan/savings records — writes go through `koperasiAdminDb()` only) and `users` (Koperasi-project member records, matched to primary-app employees via `koperasiAuthUid`).
 
+**`SIMPEL UNIPDU` (third Firebase project, `peminjaman-fasilitas-be85b`)**: the campus facility-lending app (separate repo `~/Documents/simpel-unipdu`, client-only Next.js, no server of its own). Accessed only server-side via `simpelAdminDb()` in `src/lib/simpel-admin.ts` (key: `simpel-service-account.json`, `SIMPEL_SERVICE_ACCOUNT`, or `SIMPEL_CLIENT_EMAIL` + `SIMPEL_PRIVATE_KEY`; the project comes from the key, so a scratch key means a scratch project). SAKU reads `simpel_gedung`, `simpel_fasilitas`, `simpel_bookings`, and writes `simpel_bookings` (reservations), `simpel_emails` (SIMPEL's in-app notification bell) and `simpel_saku_locks` (per-date transaction lock, SAKU-only).
+
 Legacy/migration-only collections (`MasterData`, unsuffixed `Employees`) exist only in one-off `scripts/`, superseded by the collections above — don't treat them as live schema.
+
+---
+
+## Venue Reservations (SIMPEL UNIPDU bridge)
+
+Kepala SatKer Loyalis books a room plus equipment at `/dashboard/reservasi-ruang`; SIMPEL's staff do the physical work in SIMPEL (Pekarya hand over, then check in). A reservation is **approved automatically when free**: it is written as an ordinary SIMPEL booking with `status: 'disetujui'`, `tipePemohon: 'tu'`, plus additive fields SIMPEL ignores except `source: 'saku'` (its "SAKU" badge) and `cancelledBy`.
+
+- **Rules** (`src/lib/venueReservation.ts`, pure and tested) mirror SIMPEL's so both apps agree on "free": a clash is the same room, same date, overlapping hours (`slotsOverlap`; touching ends are fine; an unreadable `jam` counts as the whole day); pending SIMPEL requests hold the room; equipment uses SIMPEL's three tiers (room built-in → building inventory → campus-wide stock), counting only approved bookings at overlapping hours. SIMPEL matches buildings/rooms/items by name, so SAKU only sends names read from SIMPEL's catalog. When changing these, change simpel-unipdu's `src/app/utils/timeSlots.ts` and its `checkRoomConflict` / `checkFacilityStockAvailability` too.
+- **Server** (`src/lib/server/venueReservations.ts`): create runs in one transaction on SIMPEL's database, serialized per date by the `simpel_saku_locks/{date}` document; owner actions (`cancel` before any handover, `confirm-receipt`, `ready-return`) write only their own fields; bookings SIMPEL made itself are never touched from SAKU. Audit entries go to SAKU's `audit_logs`.
+- **The booking form** is a 3-step wizard (Kegiatan & waktu → Tempat → Konfirmasi) built to `combating_form_fatigue_guide.md`: easy question first and phone number last, progress that starts at a third, one column, tap-to-choose photo cards instead of dropdowns, the optional equipment picker beside the venue cards on the (wide, desktop-only) Tempat step, errors only after a field is left or "Lanjut" is tapped, and a review step before the booking becomes real. What each step needs lives in `src/lib/venueReservationForm.ts` (pure, tested); `venueReservation.ts` still owns whether the booking is possible. `formatPhoneInput` there is the phone-number mask (its contract is pinned by `venueReservationForm.test.ts`).
+- **Venue photos**: the "Di ruangan mana?" step shows one cover photo per building and room (`GET /api/venue-reservations/photos`, fetched once when the form opens and cached by the browser for 5 minutes, separate from the per-date catalog because the photos, embedded in SIMPEL's documents as ~40 KB data URLs, are the heavy part). Only embedded raster images and https links are passed through (`pickVenuePhoto`); a missing photo shows a placeholder. The dialog is desktop-only, hence the wide 2-column photo cards.
+- **Saved progress**: closing the form half-way keeps what was entered (event, date, hours, building, room, equipment, and the step) in `localStorage` as `saku:venue-draft:{uid}`, saved a moment after each change, restored on the next open, dropped after a week or once a booking is made; the phone number is never stored there. "Mulai dari awal" (step 1, only after a restore) discards it. The pure save/restore rules are `parseSavedDraft` / `serializeDraft` in `src/lib/venueReservationForm.ts`.
+- **Contact autofill**: the form starts with the user's WhatsApp number and unit name (`GET /api/venue-reservations/contact`, `src/lib/server/venueContact.ts`, rules in `src/lib/venueReservationContact.ts`). Order: what they used for their last booking (saved per account in the server-only `VenueReservationContacts` collection after each booking), else the phone on their own employee record. A Kepala SatKer's login account carries no phone and no `linkedEmployeeId` (the Users screen only sets that for honorer/loyalis/ketua shift), so the record is found by name (`normalizeName`, titles ignored) across `Employees_Loyalis`/`WhiteCollar`/`BlueCollar`, and only when exactly one record matches; otherwise the user types the number once. Numbers are shown in the local `0812…` form, since stored ones are mostly `+62…`. The form always displays a filled-in number with an "Ubah" link.
+- **Testing**: Super Admin sees every SAKU reservation. Point the key at a scratch project before test bookings, since they are instantly real for Pekarya.
 
 ---
 

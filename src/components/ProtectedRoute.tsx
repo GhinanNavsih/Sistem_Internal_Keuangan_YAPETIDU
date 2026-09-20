@@ -7,6 +7,7 @@ import { isUserRole } from '@/lib/payroll/roles';
 import {
   getEmployeeRouteRedirect,
 } from '@/lib/employeeActivities';
+import { isVenueReservationPath } from '@/lib/venueReservation';
 import { Loader2 } from 'lucide-react';
 
 /**
@@ -77,7 +78,11 @@ export default function ProtectedRoute({
           }
         } else if (currentProfile.role === 'satker_head_loyalis') {
           // SatKer Loyalis is ONLY allowed to access /dashboard/payroll/uraian (including sub-routes)
-          if (!pathname.startsWith('/dashboard/payroll/uraian')) {
+          // and the venue reservation page
+          if (
+            !pathname.startsWith('/dashboard/payroll/uraian') &&
+            !isVenueReservationPath(pathname)
+          ) {
             router.replace('/dashboard/payroll/uraian');
           }
         } else if (currentProfile.role === 'employee_admin') {
@@ -145,7 +150,11 @@ export default function ProtectedRoute({
   ) {
     return null;
   }
-  if (profile.role === 'satker_head_loyalis' && !pathname.startsWith('/dashboard/payroll/uraian')) {
+  if (
+    profile.role === 'satker_head_loyalis' &&
+    !pathname.startsWith('/dashboard/payroll/uraian') &&
+    !isVenueReservationPath(pathname)
+  ) {
     return null;
   }
   if (profile.role === 'employee_admin' && pathname !== '/dashboard/employees') {

@@ -5,6 +5,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { canReserveVenues } from '@/lib/payroll/roles';
+import { VENUE_RESERVATION_PATH } from '@/lib/venueReservation';
 import { Button } from '@/components/ui/button';
 import {
   LayoutDashboard,
@@ -12,6 +14,7 @@ import {
   Users,
   FileSpreadsheet,
   Banknote,
+  CalendarCheck,
   Coins,
   BarChart3,
   LogOut,
@@ -92,6 +95,13 @@ export default function Sidebar() {
       icon: Banknote
     },
     {
+      // Books rooms in SIMPEL UNIPDU. Kepala SatKer Loyalis reach the same page
+      // from their own top bar (SatkerPekaryaNavBar) — they get no sidebar.
+      name: 'Reservasi Ruang',
+      path: VENUE_RESERVATION_PATH,
+      icon: CalendarCheck
+    },
+    {
       // Starts the "monitoring" group — rendered below a separator so the
       // two dashboards read apart from the operational menus above.
       name: 'Dashboard',
@@ -107,6 +117,7 @@ export default function Sidebar() {
       activePattern: '/dashboard/payroll/pekarya-dashboard'
     }
   ].filter(item => {
+    if (item.path === VENUE_RESERVATION_PATH) return canReserveVenues(currentProfile.role);
     if (currentProfile.role === 'super_admin') return true;
     return item.path === '/dashboard/payroll';
   });
