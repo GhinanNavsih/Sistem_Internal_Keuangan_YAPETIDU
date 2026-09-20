@@ -377,7 +377,7 @@ function getStatusConfig(status: string) {
 }
 
 const YEARS = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
-const CLEANING_CATEGORIES = ['KEBERSIHAN', 'TEKNISI', 'SOPIR', 'KEBERSIHAN_PONTI', 'SATPAM', 'PEKARYA', 'PONTI'];
+const CLEANING_CATEGORIES = ['KEBERSIHAN', 'TEKNISI', 'SOPIR', 'KEBERSIHAN_PONTI', 'SATPAM'];
 const JOB_CATEGORY_LABELS: Record<string, string> = {
   KEBERSIHAN: 'Kebersihan',
   TEKNISI: 'Teknisi',
@@ -767,17 +767,109 @@ function ActivityReviewPageContent() {
     }
   }, [profile, hasAccess, router]);
 
-  // ── Allowed Categories ──
-  const allowedCategories = useMemo(() => {
+  // ── Active Categories from Database ──
+  const [activeCategories, setActiveCategories] = useState<string[]>([]);
+  const [categoriesLoaded, setCategoriesLoaded] = useState(false);
+
+  // Only expose categories that have at least one active blue-collar employee.
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchCats = async () => {
+      try {
+        const activeEmployeesQuery = query(
+          collection(db, 'Employees_BlueCollar'),
+          where('employment.status', '==', 'active'),
+        );
+        const activeEmpSnap = await getDocs(activeEmployeesQuery);
+        const cats = new Set<string>();
+        activeEmpSnap.docs.forEach((employeeDoc) => {
+          const employee = employeeDoc.data();
+          if (
+            employee?.flags?.isActive === false ||
+            employee?.flags?.isPayrollEligible === false
+          ) {
+            return;
+          }
+          const rawCategory = employee?.employment?.jobCategory;
+          if (typeof rawCategory === 'string' && rawCategory.trim()) {
+            cats.add(rawCategory.trim().toUpperCase());
+          }
+        });
+
+        if (!cancelled) setActiveCategories(Array.from(cats));
+      } catch (err) {
+        console.error('Failed to load active blue-collar categories:', err);
+        if (!cancelled) setActiveCategories([]);
+      } finally {
+        if (!cancelled) setCategoriesLoaded(true);
+      }
+    };
+
+    fetchCats();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Categories that actually exist: from active employees plus any reports present in this period
+  const [existingCategories, setExistingCategories] = useState<string[]>(CLEANING_CATEGORIES);
+
+  useEffect(() => {
+    const cats = new Set<string>(activeCategories);
+    activities.forEach((a) => {
+      const c = a.jobCategory?.trim().toUpperCase();
+      if (c && c !== 'ALL') cats.add(c);
+    });
+    const sourceList = categoriesLoaded ? Array.from(cats) : CLEANING_CATEGORIES;
+    const preferredOrder = ['KEBERSIHAN', 'TEKNISI', 'SOPIR', 'KEBERSIHAN_PONTI', 'SATPAM'];
+    const sorted = [...sourceList].sort((a, b) => {
+      const idxA = preferredOrder.indexOf(a);
+      const idxB = preferredOrder.indexOf(b);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.localeCompare(b);
+    });
+    setExistingCategories((prev) => {
+      if (prev.length === sorted.length && prev.every((v, i) => v === sorted[i])) {
+        return prev;
+      }
+      return sorted;
+    });
+  }, [activeCategories, activities, categoriesLoaded]);
+
+  // Permitted categories for satker_head query (cleanly decoupled from activities to prevent circular listener loops)
+  const permittedCategoriesForQuery = useMemo(() => {
     if (!profile) return [];
     if (profile.role === 'super_admin') return CLEANING_CATEGORIES;
-    // satker_head: show exactly the categories they have been granted access to
-    return (profile.permittedCategories ?? []).filter(c => CLEANING_CATEGORIES.includes(c));
+    return (profile.permittedCategories ?? []).filter((c) => CLEANING_CATEGORIES.includes(c));
   }, [profile]);
+
+  // ── Allowed Categories for UI Display ──
+  const allowedCategories = useMemo(() => {
+    if (!profile) return [];
+    if (profile.role === 'super_admin') return existingCategories;
+    // satker_head: show exactly the categories they have been granted access to that actually exist
+    const permitted = new Set(
+      (profile.permittedCategories ?? []).map((c) => c.trim().toUpperCase()),
+    );
+    return existingCategories.filter((c) => permitted.has(c));
+  }, [profile, existingCategories]);
+
+  // Auto-reset categoryFilter if it refers to a non-existent category
+  useEffect(() => {
+    if (categoryFilter !== 'all' && categoriesLoaded) {
+      const validCategories = profile?.role === 'super_admin' ? existingCategories : allowedCategories;
+      if (!validCategories.includes(categoryFilter)) {
+        setCategoryFilter('all');
+      }
+    }
+  }, [categoriesLoaded, categoryFilter, existingCategories, allowedCategories, profile?.role]);
 
   const canManageAcceptedSatpam =
     profile?.role === 'super_admin' ||
-    (profile?.role === 'satker_head' && allowedCategories.includes('SATPAM'));
+    (profile?.role === 'satker_head' && permittedCategoriesForQuery.includes('SATPAM'));
 
 
 
@@ -794,7 +886,7 @@ function ActivityReviewPageContent() {
     setLoading(true);
     setSelectedIds(new Set());
 
-    if (profile?.role !== 'super_admin' && allowedCategories.length === 0) {
+    if (profile?.role !== 'super_admin' && permittedCategoriesForQuery.length === 0) {
       setActivities([]);
       setLoading(false);
       return;
@@ -893,7 +985,7 @@ function ActivityReviewPageContent() {
         where('period', '==', sourcePeriod),
         ...(profile?.role === 'super_admin'
           ? []
-          : [where('jobCategory', 'in', allowedCategories)]),
+          : [where('jobCategory', 'in', permittedCategoriesForQuery)]),
       ];
       const q = query(collection(db, 'ActivityReports'), ...constraints);
       return onSnapshot(
@@ -916,13 +1008,13 @@ function ActivityReviewPageContent() {
       cancelled = true;
       unsubscribes.forEach((unsubscribe) => unsubscribe());
     };
-  }, [hasAccess, periodToken, profile?.role, allowedCategories, refreshTrigger]);
+  }, [hasAccess, periodToken, profile?.role, permittedCategoriesForQuery, refreshTrigger]);
 
   // Fetch eagerly (not just when a modal opens) so the "Rencana"/"Aktual"
   // audit cards can resolve a planned employee's name instead of falling
   // back to its raw document id the moment the SATPAM group is expanded.
   useEffect(() => {
-    if (!hasAccess || !allowedCategories.includes('SATPAM') || satpamEmployeeDirectory.length > 0) {
+    if (!hasAccess || !permittedCategoriesForQuery.includes('SATPAM') || satpamEmployeeDirectory.length > 0) {
       return;
     }
     let cancelled = false;
@@ -937,7 +1029,7 @@ function ActivityReviewPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [hasAccess, allowedCategories, satpamEmployeeDirectory.length]);
+  }, [hasAccess, permittedCategoriesForQuery, satpamEmployeeDirectory.length]);
 
   // ── Filtered activities ──
   // Split out the non-status filters (report type, category, search) so the
@@ -2308,7 +2400,7 @@ function ActivityReviewPageContent() {
                     </SelectTrigger>
                     <SelectContent className="rounded-xl bg-white">
                       <SelectItem value="all" className="min-h-11 text-base">Semua Kategori</SelectItem>
-                      {CLEANING_CATEGORIES.map((category) => (
+                      {existingCategories.map((category) => (
                         <SelectItem key={category} value={category} className="min-h-11 text-base">
                           {JOB_CATEGORY_LABELS[category] || category}
                         </SelectItem>
