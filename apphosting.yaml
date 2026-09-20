@@ -38,3 +38,5 @@ env:
     secret: smtp-pass
   - variable: KOPERASI_SERVICE_ACCOUNT
     secret: koperasi-service-account
+  - variable: SIMPEL_SERVICE_ACCOUNT
+    secret: simpel-service-account
