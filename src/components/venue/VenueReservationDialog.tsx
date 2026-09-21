@@ -330,8 +330,16 @@ export default function VenueReservationDialog({
   const latestRequest = useRef(0);
   const bodyRef = useRef<HTMLDivElement>(null);
   const roomsRef = useRef<HTMLDivElement>(null);
+  const jamSelesaiInputRef = useRef<HTMLInputElement>(null);
   // Set when a gedung with rooms is picked: the view then moves down to those rooms.
   const scrollToRooms = useRef(false);
+
+  const focusWaktuSelesai = useCallback(() => {
+    requestAnimationFrame(() => {
+      jamSelesaiInputRef.current?.focus();
+      jamSelesaiInputRef.current?.select();
+    });
+  }, []);
 
   // A form closed half-way is picked up again where it was left.
   const [restored] = useState(() => readDraft(uid));
@@ -811,7 +819,23 @@ export default function VenueReservationDialog({
                             value={jamMulai}
                             aria-invalid={!!errorFor('jam') || undefined}
                             aria-describedby={errorFor('jam') ? 'reservasi-jam-message' : undefined}
-                            onChange={(event) => setJamMulai(maskTimeInput(event.target.value))}
+                            onChange={(event) => {
+                              const masked = maskTimeInput(event.target.value);
+                              setJamMulai(masked);
+                              if (masked.length === 5 && parseClock(masked) !== null) {
+                                focusWaktuSelesai();
+                              }
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault();
+                                const completed = completeTime(jamMulai);
+                                setJamMulai(completed);
+                                if (parseClock(completed) !== null) {
+                                  focusWaktuSelesai();
+                                }
+                              }
+                            }}
                             onBlur={() => {
                               setJamMulai(completeTime(jamMulai));
                               touch('jam');
@@ -824,6 +848,7 @@ export default function VenueReservationDialog({
                         <div className="relative">
                           <Timer className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
                           <Input
+                            ref={jamSelesaiInputRef}
                             id="reservasi-selesai"
                             name="jam-selesai"
                             type="text"
@@ -833,6 +858,7 @@ export default function VenueReservationDialog({
                             value={jamSelesai}
                             aria-invalid={!!errorFor('jam') || undefined}
                             aria-describedby={errorFor('jam') ? 'reservasi-jam-message' : undefined}
+                            onFocus={(event) => event.target.select()}
                             onChange={(event) => setJamSelesai(maskTimeInput(event.target.value))}
                             onBlur={() => {
                               setJamSelesai(completeTime(jamSelesai));
