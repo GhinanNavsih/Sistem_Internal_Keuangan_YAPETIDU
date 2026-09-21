@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  Building2,
   CalendarCheck,
   CalendarDays,
   Clock,
@@ -12,6 +13,7 @@ import {
   Plus,
   RefreshCw,
   UserRound,
+  ZoomIn,
 } from 'lucide-react';
 import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
 import VenueReservationDialog from '@/components/venue/VenueReservationDialog';
@@ -34,9 +36,11 @@ import {
   jamRange,
   MAX_CANCEL_REASON_LENGTH,
   RESERVATION_PHASE_LABELS,
+  resolveVenuePhoto,
   type ReservationAction,
   type ReservationPhase,
   type ReservationView,
+  type VenuePhotos,
 } from '@/lib/venueReservation';
 import { formatReservationDate } from '@/lib/venueReservationForm';
 
@@ -122,6 +126,11 @@ function ReservationsContent() {
   const [cancelReason, setCancelReason] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
 
+  // Cover photos of buildings and rooms for reservation cards and the dialog
+  const [photos, setPhotos] = useState<VenuePhotos | null>(null);
+  const [photosLoading, setPhotosLoading] = useState(true);
+  const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
+
   const loadReservations = useCallback(async () => {
     try {
       const result = await authenticatedJson<ListResponse>('/api/venue-reservations');
@@ -137,14 +146,29 @@ function ReservationsContent() {
     }
   }, []);
 
+  const loadPhotos = useCallback(async () => {
+    try {
+      const result = await authenticatedJson<VenuePhotos>('/api/venue-reservations/photos');
+      setPhotos(result);
+    } catch {
+      // Visual nicety; card falls back to clean placeholder if fetch fails.
+    } finally {
+      setPhotosLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    const timer = window.setTimeout(() => void loadReservations(), 0);
+    const timer = window.setTimeout(() => {
+      void loadReservations();
+      void loadPhotos();
+    }, 0);
     return () => window.clearTimeout(timer);
-  }, [loadReservations]);
+  }, [loadReservations, loadPhotos]);
 
   const refresh = () => {
     setRefreshing(true);
     void loadReservations();
+    void loadPhotos();
   };
 
   const { active, history } = useMemo(() => {
@@ -312,77 +336,129 @@ function ReservationsContent() {
               <ul className="space-y-3">
                 {shown.map((reservation) => {
                   const hint = phaseHint(reservation);
+                  const venuePhoto = resolveVenuePhoto(photos, reservation.gedung, reservation.ruangan);
+                  const venueTitle = `${reservation.gedung} · ${reservation.ruangan}`;
+
                   return (
-                    <li key={reservation.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="min-w-0 space-y-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h2 className="text-sm font-bold text-slate-900 sm:text-base">{reservation.kegiatan}</h2>
-                            <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${PHASE_TONES[reservation.phase]}`}>
-                              {RESERVATION_PHASE_LABELS[reservation.phase]}
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
-                            <span className="inline-flex items-center gap-1.5">
-                              <CalendarDays className="h-3.5 w-3.5 text-slate-400" />
-                              {formatReservationDate(reservation.waktu)}
-                            </span>
-                            <span className="inline-flex items-center gap-1.5">
-                              <Clock className="h-3.5 w-3.5 text-slate-400" />
-                              {reservation.jam} WIB
-                            </span>
-                            <span className="inline-flex items-center gap-1.5">
-                              <MapPin className="h-3.5 w-3.5 text-slate-400" />
-                              {reservation.gedung} · {reservation.ruangan}
-                            </span>
-                          </div>
-                          {reservation.fasilitasTambahan.length > 0 && (
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <Package className="h-3.5 w-3.5 text-slate-400" />
-                              {reservation.fasilitasTambahan.map((line) => (
-                                <span key={line} className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-600">
-                                  {line}
+                    <li
+                      key={reservation.id}
+                      className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm transition-all hover:shadow-md sm:p-5"
+                    >
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                        {/* Venue Image Thumbnail */}
+                        <div className="group/img relative aspect-[16/10] w-full shrink-0 overflow-hidden rounded-xl border border-slate-200/80 bg-slate-100 sm:w-44 md:w-48 sm:aspect-[4/3]">
+                          {venuePhoto ? (
+                            <>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={venuePhoto}
+                                alt={venueTitle}
+                                decoding="async"
+                                draggable={false}
+                                className="h-full w-full object-cover transition-transform duration-300 group-hover/img:scale-105"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setPreviewImage({ url: venuePhoto, title: venueTitle })}
+                                className="absolute inset-0 flex items-center justify-center bg-black/35 opacity-0 transition-opacity duration-200 group-hover/img:opacity-100 focus-visible:opacity-100 cursor-zoom-in"
+                                title="Lihat foto ruangan"
+                              >
+                                <span className="inline-flex items-center gap-1.5 rounded-lg bg-black/60 px-2.5 py-1 text-xs font-medium text-white shadow backdrop-blur-sm">
+                                  <ZoomIn className="h-3.5 w-3.5" />
+                                  Perbesar
                                 </span>
+                              </button>
+                            </>
+                          ) : photosLoading ? (
+                            <div className="flex h-full w-full items-center justify-center bg-slate-100 animate-pulse">
+                              <Building2 className="h-7 w-7 text-slate-300" />
+                            </div>
+                          ) : (
+                            <div className="flex h-full w-full flex-col items-center justify-center bg-slate-50/80 p-3 text-slate-300">
+                              <Building2 className="h-7 w-7 stroke-[1.5]" />
+                              <span className="mt-1.5 line-clamp-1 text-center text-[10px] font-medium text-slate-400">
+                                {reservation.ruangan || reservation.gedung}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Content details and actions */}
+                        <div className="flex min-w-0 flex-1 flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                          <div className="min-w-0 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h2 className="text-sm font-bold text-slate-900 sm:text-base">{reservation.kegiatan}</h2>
+                              <span
+                                className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${PHASE_TONES[reservation.phase]}`}
+                              >
+                                {RESERVATION_PHASE_LABELS[reservation.phase]}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+                              <span className="inline-flex items-center gap-1.5">
+                                <CalendarDays className="h-3.5 w-3.5 text-slate-400" />
+                                {formatReservationDate(reservation.waktu)}
+                              </span>
+                              <span className="inline-flex items-center gap-1.5">
+                                <Clock className="h-3.5 w-3.5 text-slate-400" />
+                                {reservation.jam} WIB
+                              </span>
+                              <span className="inline-flex items-center gap-1.5">
+                                <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                                {reservation.gedung} · {reservation.ruangan}
+                              </span>
+                            </div>
+                            {reservation.fasilitasTambahan.length > 0 && (
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <Package className="h-3.5 w-3.5 text-slate-400" />
+                                {reservation.fasilitasTambahan.map((line) => (
+                                  <span
+                                    key={line}
+                                    className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-600"
+                                  >
+                                    {line}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            <p className="flex flex-wrap items-center gap-x-2 text-[11px] text-slate-400">
+                              <span>{reservation.pemohon}</span>
+                              <span>·</span>
+                              <span>{reservation.kontak}</span>
+                              {viewerIsSuperAdmin && reservation.ownerName && (
+                                <span className="inline-flex items-center gap-1 text-slate-500">
+                                  · <UserRound className="h-3 w-3" /> dibuat oleh {reservation.ownerName}
+                                </span>
+                              )}
+                            </p>
+                            {hint && <p className="text-xs text-slate-500">{hint}</p>}
+                            {reservation.alasanPenolakan && (
+                              <p className="text-xs italic text-rose-600">&ldquo;{reservation.alasanPenolakan}&rdquo;</p>
+                            )}
+                          </div>
+                          {reservation.allowedActions.length > 0 && (
+                            <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col sm:items-end">
+                              {reservation.allowedActions.map((action) => (
+                                <Button
+                                  key={action}
+                                  type="button"
+                                  size="sm"
+                                  variant={action === 'cancel' ? 'outline' : 'default'}
+                                  onClick={() => openAction(reservation, action)}
+                                  className={`rounded-lg ${
+                                    action === 'cancel'
+                                      ? 'border-rose-200 text-rose-600 hover:bg-rose-50'
+                                      : action === 'confirm-receipt'
+                                        ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                                        : 'bg-sky-600 text-white hover:bg-sky-700'
+                                  }`}
+                                >
+                                  {ACTION_COPY[action].button}
+                                </Button>
                               ))}
                             </div>
                           )}
-                          <p className="flex flex-wrap items-center gap-x-2 text-[11px] text-slate-400">
-                            <span>{reservation.pemohon}</span>
-                            <span>·</span>
-                            <span>{reservation.kontak}</span>
-                            {viewerIsSuperAdmin && reservation.ownerName && (
-                              <span className="inline-flex items-center gap-1 text-slate-500">
-                                · <UserRound className="h-3 w-3" /> dibuat oleh {reservation.ownerName}
-                              </span>
-                            )}
-                          </p>
-                          {hint && <p className="text-xs text-slate-500">{hint}</p>}
-                          {reservation.alasanPenolakan && (
-                            <p className="text-xs italic text-rose-600">&ldquo;{reservation.alasanPenolakan}&rdquo;</p>
-                          )}
                         </div>
-                        {reservation.allowedActions.length > 0 && (
-                          <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col sm:items-end">
-                            {reservation.allowedActions.map((action) => (
-                              <Button
-                                key={action}
-                                type="button"
-                                size="sm"
-                                variant={action === 'cancel' ? 'outline' : 'default'}
-                                onClick={() => openAction(reservation, action)}
-                                className={`rounded-lg ${
-                                  action === 'cancel'
-                                    ? 'border-rose-200 text-rose-600 hover:bg-rose-50'
-                                    : action === 'confirm-receipt'
-                                      ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                                      : 'bg-sky-600 text-white hover:bg-sky-700'
-                                }`}
-                              >
-                                {ACTION_COPY[action].button}
-                              </Button>
-                            ))}
-                          </div>
-                        )}
                       </div>
                     </li>
                   );
@@ -401,6 +477,7 @@ function ReservationsContent() {
         defaultPemohon={profile?.displayName || ''}
         onCreated={handleCreated}
         onRestart={() => setFormKey((key) => key + 1)}
+        initialPhotos={photos}
       />
 
       <Dialog open={pendingAction !== null} onOpenChange={(open) => { if (!open && !actionBusy) setPendingAction(null); }}>
@@ -428,12 +505,12 @@ function ReservationsContent() {
                     maxLength={MAX_CANCEL_REASON_LENGTH}
                     value={cancelReason}
                     onChange={(event) => setCancelReason(event.target.value)}
-                    placeholder="Contoh: kegiatan ditunda"
-                    className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    placeholder="Misal: kegiatan diundur ke pekan depan"
+                    className="w-full rounded-xl border border-slate-200 p-3 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   />
                 </div>
               )}
-              <DialogFooter className="-mx-6 -mb-6 rounded-b-2xl px-6">
+              <DialogFooter className="gap-2 sm:gap-0">
                 <Button
                   type="button"
                   variant="outline"
@@ -441,11 +518,11 @@ function ReservationsContent() {
                   disabled={actionBusy}
                   className="rounded-xl"
                 >
-                  Kembali
+                  Batal
                 </Button>
                 <Button
                   type="button"
-                  onClick={() => void confirmAction()}
+                  onClick={confirmAction}
                   disabled={actionBusy}
                   className={`rounded-xl text-white ${
                     pendingAction.action === 'cancel' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-indigo-600 hover:bg-indigo-700'
@@ -456,6 +533,32 @@ function ReservationsContent() {
                 </Button>
               </DialogFooter>
             </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Image Preview Lightbox */}
+      <Dialog open={previewImage !== null} onOpenChange={(open) => { if (!open) setPreviewImage(null); }}>
+        <DialogContent className="max-w-2xl w-[95vw] p-4 sm:p-6 rounded-2xl border-none shadow-2xl bg-white">
+          {previewImage && (
+            <div className="space-y-3">
+              <DialogHeader>
+                <DialogTitle className="text-base font-bold text-slate-900">
+                  {previewImage.title}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-500">
+                  Foto fasilitas dan ruangan dari SIMPEL UNIPDU
+                </DialogDescription>
+              </DialogHeader>
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={previewImage.url}
+                  alt={previewImage.title}
+                  className="max-h-[70vh] w-full object-contain"
+                />
+              </div>
+            </div>
           )}
         </DialogContent>
       </Dialog>

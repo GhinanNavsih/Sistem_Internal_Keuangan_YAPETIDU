@@ -28,6 +28,7 @@ import {
   reservationActionRefusal,
   reservationCreatedNotifications,
   reservationPhase,
+  resolveVenuePhoto,
   sakuBookingId,
   slotsOverlap,
   validateReservationRequest,
@@ -559,6 +560,73 @@ test('each building and room gets one cover photo, and gaps are null', () => {
   assert.deepEqual(photos.rooms['GDG-01'], { 'Meeting Room 1': jpg, 'Meeting Room 2': null }, 'a room without a name is skipped');
   assert.deepEqual(photos.rooms['GDG-02'], {});
   assert.deepEqual(photos.rooms['GDG-04'], {});
+});
+
+test('resolveVenuePhoto prefers room photo, falls back to building photo, and resolves by name and abbreviation', () => {
+  const bldgPng = 'data:image/png;base64,iVBORw0KGgo=';
+  const roomJpg = 'data:image/jpeg;base64,/9j/4AAQ';
+  const photos = buildVenuePhotos([
+    {
+      id: 'GDG-03',
+      data: {
+        nama: 'Gedung Kuliah Kampus Utama',
+        singkatan: 'Kampus Utama',
+        imageUrl: bldgPng,
+        ruanganList: [
+          { nama: 'Meeting Room 1', images: [roomJpg] },
+          { nama: 'Meeting Room 2', images: [] }, // no room photo: should fall back to building photo
+        ],
+      },
+    },
+    {
+      id: 'GDG-01',
+      data: {
+        nama: "Gelora Abi As'ad (GOR UNIPDU)",
+        singkatan: 'GELORA',
+        imageUrl: bldgPng,
+        ruanganList: [],
+      },
+    },
+  ]);
+
+  // 1. Room photo preferred over building photo
+  assert.equal(
+    resolveVenuePhoto(photos, 'Gedung Kuliah Kampus Utama', 'Meeting Room 1'),
+    roomJpg,
+    'Room with photo returns the room photo',
+  );
+
+  // 2. Case and whitespace insensitivity
+  assert.equal(
+    resolveVenuePhoto(photos, '  gedung kuliah kampus utama  ', 'meeting room 1'),
+    roomJpg,
+    'Handles case and whitespace differences',
+  );
+
+  // 3. Lookup using building abbreviation (singkatan)
+  assert.equal(
+    resolveVenuePhoto(photos, 'Kampus Utama', 'Meeting Room 1'),
+    roomJpg,
+    'Resolves using building abbreviation',
+  );
+
+  // 4. Fallback to building photo when room has no photo
+  assert.equal(
+    resolveVenuePhoto(photos, 'Gedung Kuliah Kampus Utama', 'Meeting Room 2'),
+    bldgPng,
+    'Falls back to building photo when room has no photo',
+  );
+
+  // 5. Whole building venue (no rooms) returns building photo
+  assert.equal(
+    resolveVenuePhoto(photos, "Gelora Abi As'ad (GOR UNIPDU)", 'Lapangan'),
+    bldgPng,
+    'Returns building photo for building venue',
+  );
+
+  // 6. Non-matching venue returns null
+  assert.equal(resolveVenuePhoto(photos, 'Gedung Tidak Ada', 'Ruang X'), null);
+  assert.equal(resolveVenuePhoto(null, 'Gedung Kuliah Kampus Utama'), null);
 });
 
 test('a new reservation notifies Pekarya and Biro Umum', () => {

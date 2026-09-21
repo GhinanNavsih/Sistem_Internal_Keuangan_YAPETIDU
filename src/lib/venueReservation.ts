@@ -260,27 +260,115 @@ export function pickVenuePhoto(...candidates: unknown[]): string | null {
   return null;
 }
 
-/** One cover photo per building and per room, keyed the way the form looks them up. */
+/** One cover photo per building and per room, keyed the way the form and cards look them up. */
 export interface VenuePhotos {
   buildings: Record<string, string | null>;
   /** building id → room name → photo */
   rooms: Record<string, Record<string, string | null>>;
+  /** normalized building name or abbreviation → building cover photo */
+  byBuildingName?: Record<string, string | null>;
+  /** normalized building name or abbreviation → normalized room name → room photo */
+  byRoomName?: Record<string, Record<string, string | null>>;
+}
+
+export function normVenueKey(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 export function buildVenuePhotos(docs: { id: string; data: unknown }[]): VenuePhotos {
-  const photos: VenuePhotos = { buildings: {}, rooms: {} };
+  const photos: VenuePhotos = {
+    buildings: {},
+    rooms: {},
+    byBuildingName: {},
+    byRoomName: {},
+  };
   for (const { id, data } of docs) {
     const doc = record(data);
-    photos.buildings[id] = pickVenuePhoto(doc.imageUrl, doc.images);
+    const buildingPhoto = pickVenuePhoto(doc.imageUrl, doc.images);
+    photos.buildings[id] = buildingPhoto;
+
+    const buildingName = text(doc.nama);
+    const buildingAbbr = text(doc.singkatan);
+    const buildingKeys = [
+      buildingName ? normVenueKey(buildingName) : '',
+      buildingAbbr ? normVenueKey(buildingAbbr) : '',
+    ].filter(Boolean);
+
+    for (const key of buildingKeys) {
+      photos.byBuildingName![key] = buildingPhoto;
+    }
+
     const rooms: Record<string, string | null> = {};
+    const normRooms: Record<string, string | null> = {};
     for (const entry of Array.isArray(doc.ruanganList) ? doc.ruanganList : []) {
       const room = record(entry);
       const name = text(room.nama);
-      if (name) rooms[name] = pickVenuePhoto(room.images);
+      if (name) {
+        const roomPhoto = pickVenuePhoto(room.images, room.imageUrl);
+        rooms[name] = roomPhoto;
+        normRooms[normVenueKey(name)] = roomPhoto;
+      }
     }
     photos.rooms[id] = rooms;
+    for (const key of buildingKeys) {
+      photos.byRoomName![key] = { ...normRooms };
+    }
   }
   return photos;
+}
+
+/**
+ * Resolves the best available photo for a venue reservation.
+ * Tries the specific room photo first, then falls back to the building cover photo.
+ */
+export function resolveVenuePhoto(
+  photos: VenuePhotos | null | undefined,
+  gedung: string,
+  ruangan?: string,
+): string | null {
+  if (!photos) return null;
+  const gKey = normVenueKey(gedung || '');
+  const rKey = ruangan ? normVenueKey(ruangan) : '';
+
+  // 1. Check room photo via building name or abbreviation
+  if (rKey && photos.byRoomName?.[gKey]?.[rKey]) {
+    return photos.byRoomName[gKey][rKey];
+  }
+
+  // 2. Check room photo via building ID
+  if (rKey && photos.rooms?.[gedung]?.[ruangan!]) {
+    return photos.rooms[gedung][ruangan!];
+  }
+
+  // 3. Fallback: search across buildings for the room name if building name slightly differs
+  if (rKey && photos.byRoomName) {
+    for (const [bKey, roomMap] of Object.entries(photos.byRoomName)) {
+      if ((bKey.includes(gKey) || gKey.includes(bKey)) && roomMap[rKey]) {
+        return roomMap[rKey];
+      }
+    }
+  }
+
+  // 4. Fallback: building photo via building name or abbreviation
+  if (photos.byBuildingName?.[gKey]) {
+    return photos.byBuildingName[gKey];
+  }
+
+  // 5. Fallback: partial match on building name
+  if (photos.byBuildingName) {
+    for (const [bKey, photo] of Object.entries(photos.byBuildingName)) {
+      if ((bKey.includes(gKey) || gKey.includes(bKey)) && photo) {
+        return photo;
+      }
+    }
+  }
+
+  // 6. Fallback: building photo via building ID
+  if (photos.buildings?.[gedung]) {
+    return photos.buildings[gedung];
+  }
+
+  return null;
 }
 
 // ─── Time ───────────────────────────────────────────────────────────────────

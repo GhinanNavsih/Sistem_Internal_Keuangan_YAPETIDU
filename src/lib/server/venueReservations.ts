@@ -114,7 +114,7 @@ export async function loadSimpelCatalog(
 export async function loadVenuePhotos(db: Firestore): Promise<VenuePhotos> {
   const snapshot = await db
     .collection(SIMPEL_BUILDINGS_COLLECTION)
-    .select('imageUrl', 'images', 'ruanganList')
+    .select('nama', 'singkatan', 'imageUrl', 'images', 'ruanganList')
     .get();
   return buildVenuePhotos(snapshot.docs.map((document) => ({ id: document.id, data: document.data() })));
 }

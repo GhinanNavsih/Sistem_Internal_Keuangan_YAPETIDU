@@ -112,6 +112,8 @@ interface Props {
   onCreated: (reservation: ReservationView) => void;
   /** Start over with an empty form (the parent re-mounts the dialog). */
   onRestart: () => void;
+  /** Pre-fetched photos if parent component already loaded them. */
+  initialPhotos?: VenuePhotos | null;
 }
 
 // ─── Remembering a half-filled form ─────────────────────────────────────────
@@ -317,13 +319,14 @@ export default function VenueReservationDialog({
   defaultPemohon,
   onCreated,
   onRestart,
+  initialPhotos,
 }: Props) {
   const [catalog, setCatalog] = useState<CatalogResponse | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   // Cover photos of the buildings and rooms, fetched once; a nicety, so a failure just leaves placeholders.
-  const [photos, setPhotos] = useState<VenuePhotos | null>(null);
-  const [photosLoading, setPhotosLoading] = useState(true);
+  const [photos, setPhotos] = useState<VenuePhotos | null>(initialPhotos ?? null);
+  const [photosLoading, setPhotosLoading] = useState(!initialPhotos);
   const latestRequest = useRef(0);
   const bodyRef = useRef<HTMLDivElement>(null);
   const roomsRef = useRef<HTMLDivElement>(null);
@@ -412,7 +415,14 @@ export default function VenueReservationDialog({
   }, [open, defaultPemohon]);
 
   useEffect(() => {
-    if (!open) return;
+    if (initialPhotos) {
+      setPhotos(initialPhotos);
+      setPhotosLoading(false);
+    }
+  }, [initialPhotos]);
+
+  useEffect(() => {
+    if (!open || photos) return;
     const timer = window.setTimeout(() => {
       authenticatedJson<VenuePhotos>('/api/venue-reservations/photos')
         .then(setPhotos)
@@ -420,7 +430,7 @@ export default function VenueReservationDialog({
         .finally(() => setPhotosLoading(false));
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [open]);
+  }, [open, photos]);
 
   // Save the progress a moment after each change, so closing the form loses nothing.
   useEffect(() => {
