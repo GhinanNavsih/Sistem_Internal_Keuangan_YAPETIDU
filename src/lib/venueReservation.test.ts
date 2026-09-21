@@ -14,10 +14,12 @@ import {
   findRoomConflicts,
   formatFacility,
   formatJam,
+  getDateRangeList,
   globalEquipmentFor,
   isValidDateString,
   isVenueReservationPath,
   jakartaNow,
+  MAX_MULTI_DAY_RANGE,
   normalizeSimpelBooking,
   parseClock,
   parseFacility,
@@ -30,7 +32,9 @@ import {
   reservationPhase,
   resolveVenuePhoto,
   sakuBookingId,
+  sakuGroupId,
   slotsOverlap,
+  toReservationView,
   validateReservationRequest,
   type AvailabilityContext,
   type BookingSlot,
@@ -426,6 +430,48 @@ test('the lifecycle follows the flags SIMPEL sets, in order', () => {
   assert.equal(reservationPhase({ status: 'ditolak', cancelledBy: 'biro_umum' }), 'dibatalkan');
 });
 
+test('reservations with dates before today evaluate to selesai unless rejected/cancelled', () => {
+  const today = '2026-09-21';
+  // Past approved booking that staff never checked in -> selesai
+  assert.equal(
+    reservationPhase(
+      { status: 'disetujui', waktu: '2026-08-16', serahTerimaSelesai: true, peminjamDiterima: true },
+      today,
+    ),
+    'selesai',
+  );
+  // Past pending booking that was never approved -> selesai
+  assert.equal(
+    reservationPhase({ status: 'menunggu_biro_umum', waktu: '2026-07-15' }, today),
+    'selesai',
+  );
+  // Past rejected booking stays ditolak
+  assert.equal(
+    reservationPhase({ status: 'ditolak', waktu: '2026-07-15' }, today),
+    'ditolak',
+  );
+  // Past cancelled booking stays dibatalkan
+  assert.equal(
+    reservationPhase({ status: 'ditolak', cancelledBy: 'pemohon', waktu: '2026-07-15' }, today),
+    'dibatalkan',
+  );
+  // Today's booking follows normal lifecycle
+  assert.equal(
+    reservationPhase({ status: 'disetujui', waktu: '2026-09-21' }, today),
+    'terjadwal',
+  );
+  // Future booking follows normal lifecycle
+  assert.equal(
+    reservationPhase({ status: 'disetujui', waktu: '2026-09-22' }, today),
+    'terjadwal',
+  );
+  // Allowed actions for past bookings are empty
+  assert.deepEqual(
+    allowedReservationActions({ status: 'disetujui', waktu: '2026-08-16' }, today),
+    [],
+  );
+});
+
 test('owner buttons appear only at the right step', () => {
   assert.deepEqual(allowedReservationActions({ status: 'disetujui' }), ['cancel']);
   assert.deepEqual(allowedReservationActions({ status: 'disetujui', fasilitasDiserahkan: ['1x Gawang'] }), []);
@@ -644,3 +690,165 @@ test('a new reservation notifies Pekarya and Biro Umum', () => {
     ['maintenance@unipdu.ac.id', 'biroumum@unipdu.ac.id'],
   );
 });
+
+test('getDateRangeList generates chronological dates within limits', () => {
+  // Single day
+  assert.deepEqual(getDateRangeList('2026-10-01', '2026-10-01'), ['2026-10-01']);
+
+  // Multi-day within same month
+  assert.deepEqual(getDateRangeList('2026-10-01', '2026-10-04'), [
+    '2026-10-01',
+    '2026-10-02',
+    '2026-10-03',
+    '2026-10-04',
+  ]);
+
+  // Crossing month boundary
+  assert.deepEqual(getDateRangeList('2026-10-30', '2026-11-02'), [
+    '2026-10-30',
+    '2026-10-31',
+    '2026-11-01',
+    '2026-11-02',
+  ]);
+
+  // Invalid date format
+  assert.deepEqual(getDateRangeList('invalid', '2026-10-04'), []);
+  assert.deepEqual(getDateRangeList('2026-10-01', 'invalid'), []);
+
+  // End date before start date
+  assert.deepEqual(getDateRangeList('2026-10-05', '2026-10-01'), []);
+
+  // Exceeding MAX_MULTI_DAY_RANGE (14 days)
+  assert.deepEqual(getDateRangeList('2026-10-01', '2026-10-15'), []); // 15 days -> empty
+  assert.equal(getDateRangeList('2026-10-01', '2026-10-14').length, 14); // 14 days -> valid
+});
+
+test('validateReservationRequest supports multi-day date range', () => {
+  const catalog = { buildings: BUILDINGS, equipment: EQUIPMENT };
+  const baseReq = request({
+    waktu: '2026-10-01',
+    waktuSelesai: '2026-10-03',
+    jamMulai: '08:00',
+    jamSelesai: '12:00',
+    kegiatan: 'Pekan Olahraga Mahasiswa',
+  });
+
+  const validation = validateReservationRequest(baseReq, catalog, NOW);
+  assert.equal(validation.ok, true);
+  if (validation.ok) {
+    assert.deepEqual(validation.value.dates, ['2026-10-01', '2026-10-02', '2026-10-03']);
+    assert.equal(validation.value.waktuSelesai, '2026-10-03');
+  }
+
+  // Range reversed
+  const reversed = validateReservationRequest(
+    request({ ...baseReq, waktuSelesai: '2026-09-30' }),
+    catalog,
+    NOW,
+  );
+  assert.equal(reversed.ok, false);
+  if (!reversed.ok) {
+    assert.match(reversed.error, /Tanggal selesai harus sama atau setelah tanggal mulai/);
+  }
+
+  // Range exceeds limit
+  const tooLong = validateReservationRequest(
+    request({ ...baseReq, waktuSelesai: '2026-10-20' }),
+    catalog,
+    NOW,
+  );
+  assert.equal(tooLong.ok, false);
+  if (!tooLong.ok) {
+    assert.match(tooLong.error, /Reservasi multi-hari maksimal 14 hari/);
+  }
+});
+
+test('buildSakuBooking supports multi-day series metadata', () => {
+  const catalog = { buildings: BUILDINGS, equipment: EQUIPMENT };
+  const baseReq = request({
+    waktu: '2026-10-01',
+    waktuSelesai: '2026-10-03',
+    jamMulai: '08:00',
+    jamSelesai: '12:00',
+    kegiatan: 'Pelatihan Multi-Hari',
+  });
+  const validation = validateReservationRequest(baseReq, catalog, NOW);
+  assert.equal(validation.ok, true);
+  if (!validation.ok) return;
+
+  const dates = validation.value.dates;
+  const groupId = sakuGroupId(1789900000000, 'abc');
+
+  const bookingDay2 = buildSakuBooking({
+    id: 'PJM-S-2',
+    reservation: validation.value,
+    actor: { uid: 'uid-123', role: 'satker_head_loyalis', email: null, displayName: 'SatKer Loyalis' },
+    nowIso: '2026-09-19T03:00:00.000Z',
+    today: '2026-09-19',
+    waktu: '2026-10-02',
+    kegiatan: 'Pelatihan Multi-Hari (Hari 2/3)',
+    group: {
+      id: groupId,
+      dates,
+      index: 2,
+      total: 3,
+    },
+  });
+
+  assert.equal(bookingDay2.id, 'PJM-S-2');
+  assert.equal(bookingDay2.waktu, '2026-10-02');
+  assert.equal(bookingDay2.kegiatan, 'Pelatihan Multi-Hari (Hari 2/3)');
+  assert.equal(bookingDay2.sakuGroupId, groupId);
+  assert.deepEqual(bookingDay2.sakuGroupDates, dates);
+  assert.equal(bookingDay2.sakuGroupIndex, 2);
+  assert.equal(bookingDay2.sakuGroupTotal, 3);
+
+  // Normalize preserves group fields
+  const normalized = normalizeSimpelBooking('PJM-S-2', bookingDay2);
+  assert.equal(normalized.sakuGroupId, groupId);
+  assert.deepEqual(normalized.sakuGroupDates, dates);
+  assert.equal(normalized.sakuGroupIndex, 2);
+  assert.equal(normalized.sakuGroupTotal, 3);
+
+  // toReservationView maps group fields
+  const view = toReservationView(normalized, 'satker_head_loyalis', 'uid-123');
+  assert.equal(view.groupId, groupId);
+  assert.deepEqual(view.groupDates, dates);
+  assert.equal(view.groupIndex, 2);
+  assert.equal(view.groupTotal, 3);
+  assert.equal(view.isOwner, true);
+  assert.ok(view.allowedActions.includes('cancel'));
+});
+
+test('toReservationView manages ownership and permissions for owner, other user, and super admin', () => {
+  const booking = normalizeSimpelBooking('PJM-S-TEST', {
+    kegiatan: 'Rapat Koordinasi',
+    pemohon: 'Biro Administrasi',
+    kontak: '081234567890',
+    gedung: 'GOR Unipdu',
+    ruangan: 'Lapangan Utama Futsal & Badminton',
+    waktu: '2026-10-01',
+    jam: '08:00 - 12:00',
+    status: 'disetujui',
+    source: 'saku',
+    sakuUid: 'owner-uid-1',
+    sakuDisplayName: 'Owner User',
+  });
+
+  // 1. Owner viewing their own reservation
+  const ownerView = toReservationView(booking, 'satker_head_loyalis', 'owner-uid-1');
+  assert.equal(ownerView.isOwner, true);
+  assert.equal(ownerView.allowedActions.length > 0, true);
+  assert.ok(ownerView.allowedActions.includes('cancel'));
+
+  // 2. Another Kepala SatKer viewing someone else's reservation
+  const otherView = toReservationView(booking, 'satker_head_loyalis', 'other-uid-2');
+  assert.equal(otherView.isOwner, false);
+  assert.equal(otherView.allowedActions.length, 0); // Must NOT be able to cancel or mutate someone else's reservation
+
+  // 3. Super admin viewing someone else's reservation
+  const adminView = toReservationView(booking, 'super_admin', 'admin-uid');
+  assert.equal(adminView.isOwner, false);
+  assert.equal(adminView.allowedActions.length > 0, true); // Admin retains ability to cancel
+});
+

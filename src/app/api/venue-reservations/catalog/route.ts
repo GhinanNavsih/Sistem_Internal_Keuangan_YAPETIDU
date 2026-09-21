@@ -6,11 +6,13 @@ import {
   requireAuthenticatedProfile,
   requireRole,
 } from '@/lib/server/auth';
-import { loadBookingsOn, loadSimpelCatalog } from '@/lib/server/venueReservations';
+import { loadBookingsOnDates, loadSimpelCatalog } from '@/lib/server/venueReservations';
 import { isSimpelAdminConfigured, simpelAdminDb } from '@/lib/simpel-admin';
 import {
+  getDateRangeList,
   isValidDateString,
   jakartaNow,
+  MAX_MULTI_DAY_RANGE,
   toScheduleEntry,
   type ScheduleEntry,
 } from '@/lib/venueReservation';
@@ -19,8 +21,9 @@ export const dynamic = 'force-dynamic';
 
 /**
  * What the reservation form needs: SIMPEL's buildings, rooms and equipment,
- * plus every booking on `?date=YYYY-MM-DD` so the page can show a room's
- * schedule and count remaining equipment with the same rules the server uses.
+ * plus every booking on `?date=YYYY-MM-DD` or multiple dates (`?dates=...` or
+ * `?startDate=...&endDate=...`) so the page can show a room's schedule and
+ * count remaining equipment with the same rules the server uses.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -33,15 +36,33 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const date = request.nextUrl.searchParams.get('date')?.trim() || '';
-    if (date && !isValidDateString(date)) {
-      throw new HttpError(400, 'Tanggal tidak valid.');
+    const singleDate = request.nextUrl.searchParams.get('date')?.trim() || '';
+    const datesParam = request.nextUrl.searchParams.get('dates')?.trim() || '';
+    const startDate = request.nextUrl.searchParams.get('startDate')?.trim() || '';
+    const endDate = request.nextUrl.searchParams.get('endDate')?.trim() || '';
+
+    let dates: string[] = [];
+    if (datesParam) {
+      dates = datesParam.split(',').map((d) => d.trim()).filter(Boolean);
+    } else if (startDate && endDate) {
+      dates = getDateRangeList(startDate, endDate);
+    } else if (singleDate) {
+      dates = [singleDate];
+    }
+
+    for (const d of dates) {
+      if (!isValidDateString(d)) {
+        throw new HttpError(400, `Tanggal tidak valid: ${d}`);
+      }
+    }
+    if (dates.length > MAX_MULTI_DAY_RANGE) {
+      throw new HttpError(400, `Maksimal ${MAX_MULTI_DAY_RANGE} tanggal dapat diperiksa sekaligus.`);
     }
 
     const db = simpelAdminDb();
     const [catalog, dayBookings] = await Promise.all([
       loadSimpelCatalog(db),
-      date ? loadBookingsOn(db, date) : Promise.resolve([]),
+      dates.length > 0 ? loadBookingsOnDates(db, dates) : Promise.resolve([]),
     ]);
     const schedule: ScheduleEntry[] = dayBookings.map(toScheduleEntry);
     const clock = jakartaNow();
@@ -49,7 +70,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       buildings: catalog.buildings,
       equipment: catalog.equipment,
-      date: date || null,
+      date: dates[0] || singleDate || null,
+      dates,
       schedule,
       today: clock.date,
       nowMinutes: clock.minutes,

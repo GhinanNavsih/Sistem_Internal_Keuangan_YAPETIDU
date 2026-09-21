@@ -14,6 +14,7 @@ import {
   firstInvalidStep,
   formatPhoneInput,
   formatReservationDate,
+  formatReservationDateRange,
   isBlankDraft,
   maskTimeInput,
   parseSavedDraft,
@@ -310,3 +311,84 @@ test('phone masking keeps its contract for local numbers', () => {
   assert.equal(formatPhoneInput(''), '');
   assert.equal(contactNumberError(formatPhoneInput('081234567890')), null);
 });
+
+test('formatReservationDateRange formats single-day, same month, crossing months and years correctly', () => {
+  // Same start and end date
+  assert.equal(
+    formatReservationDateRange('2026-10-01', '2026-10-01'),
+    formatReservationDate('2026-10-01'),
+  );
+
+  // Same month
+  assert.equal(
+    formatReservationDateRange('2026-10-01', '2026-10-04'),
+    'Kam, 1 Okt – Min, 4 Okt 2026 (4 hari)',
+  );
+
+  // Different month same year
+  assert.equal(
+    formatReservationDateRange('2026-10-30', '2026-11-02'),
+    'Jum, 30 Okt – Sen, 2 Nov 2026 (4 hari)',
+  );
+
+  // Different year
+  assert.equal(
+    formatReservationDateRange('2026-12-30', '2027-01-02'),
+    'Rab, 30 Des – Sab, 2 Jan 2027 (4 hari)',
+  );
+
+  // Fallback for null or invalid
+  assert.equal(formatReservationDateRange('2026-10-01', null), formatReservationDate('2026-10-01'));
+});
+
+test('step 1 validates multi-day date range requirements when isMultiDay is true', () => {
+  const baseMultiDay = draft({
+    isMultiDay: true,
+    waktu: '2026-10-01',
+    waktuSelesai: '2026-10-03',
+  });
+
+  // Valid multi-day draft
+  assert.deepEqual(validateStep('acara', baseMultiDay, context()), []);
+
+  // Missing waktuSelesai
+  assert.match(
+    messages('acara', { ...baseMultiDay, waktuSelesai: '' }, context())[0],
+    /^waktuSelesai: Pilih tanggal selesai/,
+  );
+
+  // waktuSelesai before waktu
+  assert.match(
+    messages('acara', { ...baseMultiDay, waktuSelesai: '2026-09-30' }, context())[0],
+    /^waktuSelesai: Tanggal selesai harus setelah tanggal mulai/,
+  );
+
+  // Range exceeds 14 days
+  assert.match(
+    messages('acara', { ...baseMultiDay, waktuSelesai: '2026-10-20' }, context())[0],
+    /^waktuSelesai: Rentang multi-hari maksimal 14 hari/,
+  );
+});
+
+test('draft serialization and parsing preserves isMultiDay and waktuSelesaiInput', () => {
+  const sampleDraft: SavedDraft = {
+    step: 0,
+    kegiatan: 'Pelatihan Multi-Hari',
+    waktuInput: '2026-10-01',
+    waktuSelesai: '2026-10-04',
+    isMultiDay: true,
+    jamMulai: '08:00',
+    jamSelesai: '12:00',
+    gedungId: 'GDG-03',
+    ruangan: 'Meeting Room 1',
+    quantities: {},
+  };
+
+  const serialized = serializeDraft(sampleDraft, new Date('2026-09-19T00:00:00Z'));
+  const parsed = parseSavedDraft(serialized, new Date('2026-09-19T00:00:00Z'));
+
+  assert.equal(parsed?.isMultiDay, true);
+  assert.equal(parsed?.waktuInput, '2026-10-01');
+  assert.equal(parsed?.waktuSelesai, '2026-10-04');
+});
+

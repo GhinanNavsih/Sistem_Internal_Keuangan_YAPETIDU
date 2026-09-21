@@ -18,6 +18,8 @@ import {
   describeShortages,
   findEquipmentShortages,
   findRoomConflicts,
+  isActivePhase,
+  isValidDateString,
   jakartaNow,
   jamRange,
   MAX_CANCEL_REASON_LENGTH,
@@ -28,7 +30,9 @@ import {
   reservationActionPatch,
   reservationActionRefusal,
   reservationCreatedNotifications,
+  reservationPhase,
   sakuBookingId,
+  sakuGroupId,
   toReservationView,
   validateReservationRequest,
   type NotificationDraft,
@@ -81,6 +85,10 @@ const BOOKING_FIELDS = [
   'cancelledAt',
   'peminjamDiterimaAt',
   'peminjamSiapKembaliAt',
+  'sakuGroupId',
+  'sakuGroupDates',
+  'sakuGroupIndex',
+  'sakuGroupTotal',
 ];
 
 const SAFE_BOOKING_ID = /^[A-Za-z0-9_-]{1,120}$/;
@@ -131,23 +139,49 @@ export async function loadBookingsOn(db: Firestore, waktu: string): Promise<Simp
   return snapshot.docs.map((document) => normalizeSimpelBooking(document.id, document.data()));
 }
 
-/** A Kepala SatKer sees their own reservations; Super Admin sees every one made through SAKU. */
+export async function loadBookingsOnDates(db: Firestore, dates: string[]): Promise<SimpelBooking[]> {
+  const uniqueDates = Array.from(new Set(dates.filter(isValidDateString)));
+  if (uniqueDates.length === 0) return [];
+  if (uniqueDates.length === 1) return loadBookingsOn(db, uniqueDates[0]);
+
+  const snapshot = await db
+    .collection(SIMPEL_BOOKINGS_COLLECTION)
+    .where('waktu', 'in', uniqueDates.slice(0, 30))
+    .select(...BOOKING_FIELDS)
+    .get();
+  return snapshot.docs.map((document) => normalizeSimpelBooking(document.id, document.data()));
+}
+
+/** A Kepala SatKer sees their own reservations and everyone else's active reservations; Super Admin sees all SAKU bookings and all active reservations. */
 export async function listReservations(
   db: Firestore,
   caller: Pick<ReservationActor, 'uid' | 'role'>,
 ): Promise<ReservationView[]> {
   const bookings = db.collection(SIMPEL_BOOKINGS_COLLECTION);
-  const query = caller.role === 'super_admin'
-    ? bookings.where('source', '==', 'saku')
-    : bookings.where('sakuUid', '==', caller.uid);
-  const snapshot = await query.select(...BOOKING_FIELDS).get();
-  return snapshot.docs
-    .map((document) => normalizeSimpelBooking(document.id, document.data()))
+  const snapshot = await bookings.select(...BOOKING_FIELDS).get();
+
+  const allBookings = snapshot.docs.map((document) => normalizeSimpelBooking(document.id, document.data()));
+
+  const visibleBookings = allBookings.filter((booking) => {
+    const isCallerOwner = Boolean(booking.sakuUid && booking.sakuUid === caller.uid);
+    const active = isActivePhase(reservationPhase(booking));
+
+    // Show all active reservations across the university
+    if (active) return true;
+    // Show caller's own historical reservations
+    if (isCallerOwner) return true;
+    // Super admin sees all historical SAKU reservations
+    if (caller.role === 'super_admin' && booking.source === 'saku') return true;
+
+    return false;
+  });
+
+  return visibleBookings
     .sort(
       (left, right) =>
         right.waktu.localeCompare(left.waktu) || jamRange(right.jam).start - jamRange(left.jam).start,
     )
-    .map(toReservationView);
+    .map((booking) => toReservationView(booking, caller.role, caller.uid));
 }
 
 function notificationWrites(drafts: NotificationDraft[], now: Date) {
@@ -156,16 +190,16 @@ function notificationWrites(drafts: NotificationDraft[], now: Date) {
 }
 
 /**
- * Checks and writes in one transaction on SIMPEL's database. The per-date lock
- * document makes concurrent SAKU reservations for the same day run one after
- * the other, so each sees the bookings the previous one wrote.
+ * Checks and writes in one transaction on SIMPEL's database. Supports single-day
+ * or multi-day batch reservations. The per-date lock documents make concurrent
+ * SAKU reservations run in serial order, preventing double bookings.
  */
 export async function createReservation(
   db: Firestore,
   caller: ReservationActor,
   request: VenueReservationRequest,
   now: Date = new Date(),
-): Promise<SimpelBooking> {
+): Promise<SimpelBooking[]> {
   const clock = jakartaNow(now);
   // The catalog changes rarely, so it is read outside the transaction to avoid
   // holding locks on SIMPEL's building documents.
@@ -173,84 +207,134 @@ export async function createReservation(
   const validation = validateReservationRequest(request, catalog, clock);
   if (!validation.ok) throw new HttpError(400, validation.error);
   const reservation = validation.value;
+  const dates = reservation.dates;
+  const isGroup = dates.length > 1;
+  const groupId = isGroup ? sakuGroupId(now.getTime(), randomBytes(3).toString('hex')) : undefined;
 
-  const bookingRef = db
-    .collection(SIMPEL_BOOKINGS_COLLECTION)
-    .doc(sakuBookingId(now.getTime(), randomBytes(3).toString('hex')));
-  const lockRef = db.collection(SIMPEL_RESERVATION_LOCKS_COLLECTION).doc(reservation.waktu);
-  const booking = buildSakuBooking({
-    id: bookingRef.id,
-    reservation,
-    actor: caller,
-    nowIso: now.toISOString(),
-    today: clock.date,
-  });
-  const notifications = notificationWrites(reservationCreatedNotifications(booking), now);
+  // Sorting dates chronologically avoids deadlock between concurrent multi-day locks
+  const sortedDates = [...dates].sort();
+  const createdBookings: SimpelBooking[] = [];
 
   await db.runTransaction(async (transaction) => {
-    await transaction.get(lockRef);
-    const daySnapshot = await transaction.get(bookingsOn(db, reservation.waktu));
-    const dayBookings = daySnapshot.docs.map((document) =>
-      normalizeSimpelBooking(document.id, document.data()),
-    );
+    // 1. Transaction reads: lock docs for all dates in sorted order
+    for (const date of sortedDates) {
+      const lockRef = db.collection(SIMPEL_RESERVATION_LOCKS_COLLECTION).doc(date);
+      await transaction.get(lockRef);
+    }
 
-    const conflicts = findRoomConflicts(dayBookings, {
-      waktu: reservation.waktu,
-      jam: reservation.jam,
-      building: reservation.building,
-      ruangan: reservation.room.nama,
-    });
-    if (conflicts.length > 0) {
-      const taken = conflicts
-        .map((conflict) => `${conflict.jam} (${conflict.kegiatan || 'kegiatan lain'})`)
-        .join('; ');
-      throw new HttpError(
-        409,
-        `Ruangan ${reservation.room.nama} sudah terpakai pada ${reservation.waktu} jam ${taken}. Pilih jam atau ruangan lain.`,
+    // 2. Transaction reads: existing bookings on all dates
+    const bookingsByDate = new Map<string, SimpelBooking[]>();
+    for (const date of sortedDates) {
+      const daySnapshot = await transaction.get(bookingsOn(db, date));
+      const dayBookings = daySnapshot.docs.map((document) =>
+        normalizeSimpelBooking(document.id, document.data()),
       );
+      bookingsByDate.set(date, dayBookings);
     }
 
-    const shortages = findEquipmentShortages(
-      {
-        buildings: catalog.buildings,
-        equipment: catalog.equipment,
-        bookings: dayBookings,
-        waktu: reservation.waktu,
+    // 3. Validation: check room conflicts and equipment shortages on every date
+    for (const date of dates) {
+      const dayBookings = bookingsByDate.get(date) || [];
+      const conflicts = findRoomConflicts(dayBookings, {
+        waktu: date,
         jam: reservation.jam,
-        gedung: reservation.building.nama,
+        building: reservation.building,
         ruangan: reservation.room.nama,
-      },
-      reservation.fasilitasTambahan,
-    );
-    if (shortages.length > 0) {
-      throw new HttpError(409, `Peralatan tidak mencukupi pada jam tersebut: ${describeShortages(shortages)}.`);
+      });
+      if (conflicts.length > 0) {
+        const taken = conflicts
+          .map((conflict) => `${conflict.jam} (${conflict.kegiatan || 'kegiatan lain'})`)
+          .join('; ');
+        throw new HttpError(
+          409,
+          `Ruangan ${reservation.room.nama} sudah terpakai pada ${date} jam ${taken}. Pilih jam atau ruangan lain.`,
+        );
+      }
+
+      const shortages = findEquipmentShortages(
+        {
+          buildings: catalog.buildings,
+          equipment: catalog.equipment,
+          bookings: dayBookings,
+          waktu: date,
+          jam: reservation.jam,
+          gedung: reservation.building.nama,
+          ruangan: reservation.room.nama,
+        },
+        reservation.fasilitasTambahan,
+      );
+      if (shortages.length > 0) {
+        throw new HttpError(
+          409,
+          `Peralatan tidak mencukupi pada ${date} jam tersebut: ${describeShortages(shortages)}.`,
+        );
+      }
     }
 
-    transaction.create(bookingRef, booking);
-    transaction.set(
-      lockRef,
-      { waktu: reservation.waktu, lastBookingId: booking.id, updatedAt: now.toISOString() },
-      { merge: true },
-    );
-    for (const notification of notifications) {
-      transaction.create(db.collection(SIMPEL_NOTIFICATIONS_COLLECTION).doc(notification.id), notification);
+    // 4. Writes: create booking, set lock, and create notifications for each date
+    for (let idx = 0; idx < dates.length; idx++) {
+      const date = dates[idx];
+      const bookingRef = db
+        .collection(SIMPEL_BOOKINGS_COLLECTION)
+        .doc(sakuBookingId(now.getTime() + idx, randomBytes(3).toString('hex')));
+      const lockRef = db.collection(SIMPEL_RESERVATION_LOCKS_COLLECTION).doc(date);
+
+      const activityTitle = isGroup
+        ? `${reservation.kegiatan} (Hari ${idx + 1}/${dates.length})`
+        : reservation.kegiatan;
+
+      const booking = buildSakuBooking({
+        id: bookingRef.id,
+        reservation,
+        actor: caller,
+        nowIso: now.toISOString(),
+        today: clock.date,
+        waktu: date,
+        kegiatan: activityTitle,
+        group: isGroup
+          ? {
+              id: groupId!,
+              dates,
+              index: idx + 1,
+              total: dates.length,
+            }
+          : undefined,
+      });
+      createdBookings.push(booking);
+
+      transaction.create(bookingRef, booking);
+      transaction.set(
+        lockRef,
+        { waktu: date, lastBookingId: booking.id, updatedAt: now.toISOString() },
+        { merge: true },
+      );
+
+      const notifications = notificationWrites(
+        reservationCreatedNotifications(booking),
+        new Date(now.getTime() + idx * 10),
+      );
+      for (const notification of notifications) {
+        transaction.create(db.collection(SIMPEL_NOTIFICATIONS_COLLECTION).doc(notification.id), notification);
+      }
     }
   });
 
-  return booking;
+  return createdBookings;
 }
 
 /**
  * Cancel, confirm receipt, or report ready-to-return. Reads the booking inside
  * the transaction, so a handover Pekarya recorded a moment ago is respected,
  * and writes only the fields the action owns.
+ * If cancelGroup is true, cancels all bookings in the same multi-day group whose
+ * handover has not started yet.
  */
 export async function performReservationAction(
   db: Firestore,
   caller: Pick<ReservationActor, 'uid' | 'role'>,
   bookingId: string,
   action: ReservationAction,
-  options: { cancelReason?: string } = {},
+  options: { cancelReason?: string; cancelGroup?: boolean } = {},
   now: Date = new Date(),
 ): Promise<SimpelBooking> {
   if (!SAFE_BOOKING_ID.test(bookingId)) throw new HttpError(400, 'ID reservasi tidak valid.');
@@ -276,6 +360,41 @@ export async function performReservationAction(
     if (!isOwner && caller.role !== 'super_admin') {
       throw new HttpError(403, 'Reservasi ini bukan milik Anda.');
     }
+
+    if (action === 'cancel' && options.cancelGroup && booking.sakuGroupId) {
+      // Find and cancel all bookings in the same multi-day group
+      const groupSnapshot = await transaction.get(
+        db.collection(SIMPEL_BOOKINGS_COLLECTION).where('sakuGroupId', '==', booking.sakuGroupId),
+      );
+      const patch = reservationActionPatch(action, {
+        nowIso: now.toISOString(),
+        cancelReason,
+        cancelledByAdmin: !isOwner,
+      });
+
+      let updatedPrimary = booking;
+      let writeIdx = 0;
+      for (const doc of groupSnapshot.docs) {
+        const member = normalizeSimpelBooking(doc.id, doc.data());
+        if (canPerformReservationAction(member, action)) {
+          const updated = normalizeSimpelBooking(member.id, { ...doc.data(), ...patch });
+          if (member.id === booking.id) {
+            updatedPrimary = updated;
+          }
+          transaction.update(doc.ref, patch);
+          const notifications = notificationWrites(
+            reservationActionNotifications(updated, action),
+            new Date(now.getTime() + writeIdx * 10),
+          );
+          for (const notification of notifications) {
+            transaction.create(db.collection(SIMPEL_NOTIFICATIONS_COLLECTION).doc(notification.id), notification);
+          }
+          writeIdx++;
+        }
+      }
+      return updatedPrimary;
+    }
+
     if (!canPerformReservationAction(booking, action)) {
       throw new HttpError(409, reservationActionRefusal(booking, action));
     }

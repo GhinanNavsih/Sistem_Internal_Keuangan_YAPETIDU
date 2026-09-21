@@ -69,19 +69,25 @@ export async function POST(request: NextRequest) {
     const db = simpelAdminDb();
 
     if (action === 'create') {
-      const booking = await createReservation(db, caller, parseReservationRequest(body));
-      await recordReservationAudit(caller, 'create', booking);
+      const bookings = await createReservation(db, caller, parseReservationRequest(body));
+      for (const booking of bookings) {
+        await recordReservationAudit(caller, 'create', booking);
+      }
       // Next time the form starts with this number, on any device.
-      await saveReservationContact(adminDb, caller.uid, { phone: booking.kontak, pemohon: booking.pemohon });
-      return NextResponse.json({ reservation: toReservationView(booking) }, { status: 201 });
+      await saveReservationContact(adminDb, caller.uid, { phone: bookings[0].kontak, pemohon: bookings[0].pemohon });
+      return NextResponse.json({
+        reservation: toReservationView(bookings[0], caller.role, caller.uid),
+        reservations: bookings.map((b) => toReservationView(b, caller.role, caller.uid)),
+      }, { status: 201 });
     }
 
     if (isReservationAction(action)) {
       const bookingId = typeof body?.bookingId === 'string' ? body.bookingId.trim() : '';
       const cancelReason = typeof body?.reason === 'string' ? body.reason : undefined;
-      const booking = await performReservationAction(db, caller, bookingId, action, { cancelReason });
+      const cancelGroup = body?.cancelGroup === true;
+      const booking = await performReservationAction(db, caller, bookingId, action, { cancelReason, cancelGroup });
       await recordReservationAudit(caller, action, booking);
-      return NextResponse.json({ reservation: toReservationView(booking) });
+      return NextResponse.json({ reservation: toReservationView(booking, caller.role, caller.uid) });
     }
 
     throw new HttpError(400, 'Aksi reservasi tidak dikenal.');

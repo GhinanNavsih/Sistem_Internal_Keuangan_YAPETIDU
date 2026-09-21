@@ -5,6 +5,8 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
+  CalendarCheck,
+  CalendarDays,
   CheckCircle2,
   Loader2,
   Minus,
@@ -34,15 +36,20 @@ import {
   findRoomConflicts,
   formatFacility,
   formatJam,
+  getDateRangeList,
   globalEquipmentFor,
   isValidDateString,
   jamRange,
   MAX_KEGIATAN_LENGTH,
+  MAX_MULTI_DAY_RANGE,
   MAX_PEMOHON_LENGTH,
   occupiesRoom,
   parseClock,
   RESERVATION_HORIZON_DAYS,
   slotsOverlap,
+  type AvailabilityContext,
+  type BookingSlot,
+  type EquipmentSource,
   type ReservationView,
   type ScheduleEntry,
   type SimpelBuilding,
@@ -57,6 +64,7 @@ import {
   firstInvalidStep,
   formatPhoneInput,
   formatReservationDate,
+  formatReservationDateRange,
   isBlankDraft,
   maskTimeInput,
   parseSavedDraft,
@@ -78,6 +86,7 @@ interface CatalogResponse {
   buildings: SimpelBuilding[];
   equipment: SimpelEquipment[];
   date: string | null;
+  dates?: string[];
   schedule: ScheduleEntry[];
   today: string;
   nowMinutes: number;
@@ -352,6 +361,8 @@ export default function VenueReservationDialog({
   const [kegiatan, setKegiatan] = useState(restored?.kegiatan ?? '');
   // null until the user picks a date themselves; until then the date is tomorrow.
   const [waktuInput, setWaktuInput] = useState<string | null>(restored?.waktuInput ?? null);
+  const [isMultiDay, setIsMultiDay] = useState(restored?.isMultiDay ?? false);
+  const [waktuSelesai, setWaktuSelesai] = useState(restored?.waktuSelesai ?? '');
   const [jamMulai, setJamMulai] = useState(restored?.jamMulai ?? '');
   const [jamSelesai, setJamSelesai] = useState(restored?.jamSelesai ?? '');
   const [gedungId, setGedungId] = useState(restored?.gedungId ?? '');
@@ -369,12 +380,27 @@ export default function VenueReservationDialog({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitConflict, setSubmitConflict] = useState(false);
 
-  const loadCatalog = useCallback(async (date: string) => {
+  const today = catalog?.today ?? '';
+  const waktu = waktuInput ?? defaultReservationDate(today);
+
+  const dates = useMemo(() => {
+    if (!isMultiDay) {
+      return isValidDateString(waktu) ? [waktu] : [];
+    }
+    return getDateRangeList(waktu, waktuSelesai);
+  }, [isMultiDay, waktu, waktuSelesai]);
+
+  const loadCatalog = useCallback(async (targetDates: string[]) => {
     const requestId = ++latestRequest.current;
     setCatalogLoading(true);
     setCatalogError(null);
     try {
-      const query = date ? `?date=${encodeURIComponent(date)}` : '';
+      let query = '';
+      if (targetDates.length === 1) {
+        query = `?date=${encodeURIComponent(targetDates[0])}`;
+      } else if (targetDates.length > 1) {
+        query = `?dates=${encodeURIComponent(targetDates.join(','))}`;
+      }
       const result = await authenticatedJson<CatalogResponse>(`/api/venue-reservations/catalog${query}`);
       if (requestId === latestRequest.current) setCatalog(result);
     } catch (error) {
@@ -386,15 +412,13 @@ export default function VenueReservationDialog({
     }
   }, []);
 
-  const today = catalog?.today ?? '';
-  const waktu = waktuInput ?? defaultReservationDate(today);
-
-  // Stock and the room schedule depend on the date, so reload whenever it changes.
+  // Stock and the room schedule depend on the dates, so reload whenever they change.
   useEffect(() => {
     if (!open) return;
-    const timer = window.setTimeout(() => void loadCatalog(isValidDateString(waktu) ? waktu : ''), 0);
+    const target = dates.length > 0 ? dates : (isValidDateString(waktu) ? [waktu] : []);
+    const timer = window.setTimeout(() => void loadCatalog(target), 0);
     return () => window.clearTimeout(timer);
-  }, [open, waktu, loadCatalog]);
+  }, [open, dates, waktu, loadCatalog]);
 
   // The WhatsApp number (and unit name) to start from. It is a convenience: if it
   // fails or arrives late, the form works the same, and it never overwrites what
@@ -444,10 +468,21 @@ export default function VenueReservationDialog({
   useEffect(() => {
     const timer = window.setTimeout(() => {
       if (submitted.current) return;
-      writeDraft(uid, { step, kegiatan, waktuInput, jamMulai, jamSelesai, gedungId, ruangan, quantities });
+      writeDraft(uid, {
+        step,
+        kegiatan,
+        waktuInput,
+        isMultiDay,
+        waktuSelesai: isMultiDay ? waktuSelesai : null,
+        jamMulai,
+        jamSelesai,
+        gedungId,
+        ruangan,
+        quantities,
+      });
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [uid, step, kegiatan, waktuInput, jamMulai, jamSelesai, gedungId, ruangan, quantities]);
+  }, [uid, step, kegiatan, waktuInput, isMultiDay, waktuSelesai, jamMulai, jamSelesai, gedungId, ruangan, quantities]);
 
   // Every step starts at the top.
   useEffect(() => {
@@ -467,7 +502,15 @@ export default function VenueReservationDialog({
 
   const buildings = useMemo(() => catalog?.buildings ?? [], [catalog]);
   const equipment = useMemo(() => catalog?.equipment ?? [], [catalog]);
-  const scheduleReady = !!catalog && isValidDateString(waktu) && catalog.date === waktu;
+
+  const scheduleReady = useMemo(() => {
+    if (!catalog || dates.length === 0) return false;
+    if (dates.length === 1) {
+      return catalog.date === dates[0] || (catalog.dates ? catalog.dates.includes(dates[0]) : false);
+    }
+    return dates.every((d) => catalog.dates?.includes(d) || catalog.date === d);
+  }, [catalog, dates]);
+
   const schedule = useMemo(() => (scheduleReady && catalog ? catalog.schedule : []), [catalog, scheduleReady]);
 
   // One building, or one bookable room, is picked for the user (a decision saved).
@@ -487,23 +530,23 @@ export default function VenueReservationDialog({
     if (!building || !room) return [];
     return schedule
       .filter((entry) => occupiesRoom(entry) && sameName(entry.ruangan, room.nama) && bookingInBuilding(entry.gedung, building))
-      .sort((left, right) => jamRange(left.jam).start - jamRange(right.jam).start);
+      .sort((left, right) => left.waktu.localeCompare(right.waktu) || jamRange(left.jam).start - jamRange(right.jam).start);
   }, [building, room, schedule]);
 
-  const conflicts = useMemo(
-    () =>
-      building && room && jam && scheduleReady
-        ? findRoomConflicts(schedule, { waktu, jam, building, ruangan: room.nama })
-        : [],
-    [building, room, jam, scheduleReady, schedule, waktu],
-  );
+  const conflictsByDate = useMemo(() => {
+    if (!building || !room || !jam || !scheduleReady || dates.length === 0) return [];
+    const list: { date: string; conflicts: ScheduleEntry[] }[] = [];
+    for (const d of dates) {
+      const dayBookings = schedule.filter((b) => b.waktu === d);
+      const c = findRoomConflicts(dayBookings, { waktu: d, jam, building, ruangan: room.nama });
+      if (c.length > 0) list.push({ date: d, conflicts: c });
+    }
+    return list;
+  }, [building, room, jam, scheduleReady, schedule, dates]);
 
-  const availabilityContext = useMemo(
-    () =>
-      building && room && jam && scheduleReady
-        ? { buildings, equipment, bookings: schedule, waktu, jam, gedung: building.nama, ruangan: room.nama }
-        : null,
-    [building, room, jam, scheduleReady, buildings, equipment, schedule, waktu],
+  const conflictCount = useMemo(
+    () => conflictsByDate.reduce((sum, item) => sum + item.conflicts.length, 0),
+    [conflictsByDate],
   );
 
   const equipmentOptions: EquipmentOption[] = useMemo(() => {
@@ -519,16 +562,34 @@ export default function VenueReservationDialog({
   }, [building, equipment]);
 
   const optionState = (option: EquipmentOption) => {
-    if (!availabilityContext) return { max: 0, note: 'Pilih tanggal, jam & ruangan dulu', disabled: true };
-    const availability = equipmentAvailability(availabilityContext, formatFacility(1, option.name));
-    if (!availability) return { max: 0, note: 'Tidak dikenali SIMPEL', disabled: true };
-    if (availability.source === 'room') {
-      return { max: option.total, note: 'Sudah ada di ruangan', disabled: option.total < 1 };
+    if (!building || !room || !jam || !scheduleReady || dates.length === 0) {
+      return { max: 0, note: 'Pilih tanggal, jam & ruangan dulu', disabled: true };
     }
-    const remaining = Math.max(0, availability.remaining);
+    let minRemaining = Number.POSITIVE_INFINITY;
+    let total = 0;
+    for (const d of dates) {
+      const dayBookings = schedule.filter((b) => b.waktu === d);
+      const ctx: AvailabilityContext = {
+        buildings,
+        equipment,
+        bookings: dayBookings,
+        waktu: d,
+        jam,
+        gedung: building.nama,
+        ruangan: room.nama,
+      };
+      const avail = equipmentAvailability(ctx, formatFacility(1, option.name));
+      if (!avail) return { max: 0, note: 'Tidak dikenali SIMPEL', disabled: true };
+      if (avail.source === 'room') {
+        return { max: option.total, note: 'Sudah ada di ruangan', disabled: option.total < 1 };
+      }
+      total = avail.total;
+      if (avail.remaining < minRemaining) minRemaining = avail.remaining;
+    }
+    const remaining = Math.max(0, minRemaining === Number.POSITIVE_INFINITY ? 0 : minRemaining);
     return {
       max: Math.min(remaining, option.total),
-      note: remaining > 0 ? `Sisa ${remaining} dari ${availability.total}` : 'Habis pada jam ini',
+      note: remaining > 0 ? `Sisa ${remaining} dari ${total}` : 'Habis pada rentang tanggal ini',
       disabled: remaining < 1,
     };
   };
@@ -537,9 +598,26 @@ export default function VenueReservationDialog({
   const selectedLines = Object.entries(quantities)
     .filter(([name, qty]) => qty > 0 && equipmentNames.has(name))
     .map(([name, qty]) => ({ name, qty }));
-  const shortages = availabilityContext
-    ? findEquipmentShortages(availabilityContext, selectedLines.map((line) => formatFacility(line.qty, line.name)))
-    : [];
+
+  const shortagesByDate = useMemo(() => {
+    if (!building || !room || !jam || !scheduleReady || dates.length === 0) return [];
+    const list: { date: string; shortages: ReturnType<typeof findEquipmentShortages> }[] = [];
+    for (const d of dates) {
+      const dayBookings = schedule.filter((b) => b.waktu === d);
+      const ctx: AvailabilityContext = {
+        buildings,
+        equipment,
+        bookings: dayBookings,
+        waktu: d,
+        jam,
+        gedung: building.nama,
+        ruangan: room.nama,
+      };
+      const s = findEquipmentShortages(ctx, selectedLines.map((line) => formatFacility(line.qty, line.name)));
+      if (s.length > 0) list.push({ date: d, shortages: s });
+    }
+    return list;
+  }, [building, room, jam, scheduleReady, schedule, dates, selectedLines, buildings, equipment]);
 
   // What the current step still needs.
   const stepId = RESERVATION_STEPS[step].id;
@@ -547,6 +625,8 @@ export default function VenueReservationDialog({
   const draft: ReservationDraft = {
     kegiatan,
     waktu,
+    isMultiDay,
+    waktuSelesai: isMultiDay ? waktuSelesai : undefined,
     jamMulai,
     jamSelesai,
     gedungId: effectiveGedungId,
@@ -560,8 +640,13 @@ export default function VenueReservationDialog({
     building,
     room,
     scheduleReady,
-    conflictCount: conflicts.length,
-    shortageText: shortages.length > 0 ? describeShortages(shortages) : null,
+    conflictCount,
+    shortageText:
+      shortagesByDate.length > 0
+        ? isMultiDay
+          ? shortagesByDate.map((item) => `${item.date}: ${describeShortages(item.shortages)}`).join('; ')
+          : describeShortages(shortagesByDate[0].shortages)
+        : null,
   };
   const issues = validateStep(stepId, draft, stepContext);
   const issueFor = (field: ReservationField) => issues.find((issue) => issue.field === field)?.message;
@@ -617,13 +702,14 @@ export default function VenueReservationDialog({
     setSubmitError(null);
     setSubmitConflict(false);
     try {
-      const result = await authenticatedJson<{ reservation: ReservationView }>('/api/venue-reservations', {
+      const result = await authenticatedJson<{ reservation: ReservationView; reservations?: ReservationView[] }>('/api/venue-reservations', {
         method: 'POST',
         body: JSON.stringify({
           action: 'create',
           gedungId: building.id,
           ruangan: room.nama,
           waktu,
+          waktuSelesai: isMultiDay ? waktuSelesai : undefined,
           jamMulai,
           jamSelesai,
           kegiatan: kegiatan.trim(),
@@ -640,7 +726,7 @@ export default function VenueReservationDialog({
       // Someone else may have taken the slot or the last items; show what is left now.
       if (error instanceof ApiError && error.status === 409) {
         setSubmitConflict(true);
-        void loadCatalog(waktu);
+        void loadCatalog(dates.length > 0 ? dates : [waktu]);
       }
     } finally {
       setSubmitting(false);
@@ -679,7 +765,10 @@ export default function VenueReservationDialog({
     { label: 'Kegiatan', value: kegiatan.trim(), step: stepIndex('acara') },
     {
       label: 'Waktu',
-      value: `${formatReservationDate(waktu)}, ${jamMulai}–${jamSelesai} WIB${duration ? ` (${duration})` : ''}`,
+      value:
+        isMultiDay && waktuSelesai
+          ? `${formatReservationDateRange(waktu, waktuSelesai)}, ${jamMulai}–${jamSelesai} WIB (${dates.length} hari berturut-turut, berlaku setiap hari)`
+          : `${formatReservationDate(waktu)}, ${jamMulai}–${jamSelesai} WIB${duration ? ` (${duration})` : ''}`,
       step: stepIndex('acara'),
     },
     { label: 'Tempat', value: [building?.nama, room?.nama].filter(Boolean).join(' · ') || '-', step: stepIndex('tempat') },
@@ -745,7 +834,7 @@ export default function VenueReservationDialog({
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => void loadCatalog(isValidDateString(waktu) ? waktu : '')}
+                    onClick={() => void loadCatalog(dates.length > 0 ? dates : (isValidDateString(waktu) ? [waktu] : []))}
                     className="rounded-lg border-rose-200 text-rose-700 hover:bg-rose-100"
                   >
                     Coba lagi
@@ -783,26 +872,130 @@ export default function VenueReservationDialog({
                       className={INPUT_CLASS}
                     />
                   </Field>
-                  <Field
-                    id="reservasi-tanggal"
-                    label="Tanggal"
-                    error={errorFor('waktu')}
-                    valid={!issueFor('waktu')}
-                  >
-                    <Input
-                      id="reservasi-tanggal"
-                      name="tanggal"
-                      type="date"
-                      value={waktu}
-                      min={today || undefined}
-                      max={today ? addDays(today, RESERVATION_HORIZON_DAYS) : undefined}
-                      aria-invalid={!!errorFor('waktu') || undefined}
-                      aria-describedby="reservasi-tanggal-message"
-                      onChange={(event) => setWaktuInput(event.target.value)}
-                      onBlur={() => touch('waktu')}
-                      className={INPUT_CLASS}
-                    />
-                  </Field>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <Label className={FIELD_LABEL}>Durasi Kegiatan</Label>
+                      <div className="inline-flex rounded-xl bg-slate-100 p-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsMultiDay(false);
+                            setWaktuSelesai('');
+                          }}
+                          className={cn(
+                            'rounded-lg px-3 py-1 text-xs font-bold transition-all cursor-pointer',
+                            !isMultiDay ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800',
+                          )}
+                        >
+                          Satu Hari
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsMultiDay(true);
+                            if (!waktuSelesai && waktu) {
+                              setWaktuSelesai(addDays(waktu, 1));
+                            }
+                          }}
+                          className={cn(
+                            'rounded-lg px-3 py-1 text-xs font-bold transition-all cursor-pointer',
+                            isMultiDay ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800',
+                          )}
+                        >
+                          Beberapa Hari
+                        </button>
+                      </div>
+                    </div>
+
+                    {!isMultiDay ? (
+                      <Field
+                        id="reservasi-tanggal"
+                        label="Tanggal"
+                        error={errorFor('waktu')}
+                        valid={!issueFor('waktu')}
+                      >
+                        <Input
+                          id="reservasi-tanggal"
+                          name="tanggal"
+                          type="date"
+                          value={waktu}
+                          min={today || undefined}
+                          max={today ? addDays(today, RESERVATION_HORIZON_DAYS) : undefined}
+                          aria-invalid={!!errorFor('waktu') || undefined}
+                          aria-describedby="reservasi-tanggal-message"
+                          onChange={(event) => setWaktuInput(event.target.value)}
+                          onBlur={() => touch('waktu')}
+                          className={INPUT_CLASS}
+                        />
+                      </Field>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-2 gap-3">
+                          <Field
+                            id="reservasi-tanggal-mulai"
+                            label="Tanggal Mulai"
+                            error={errorFor('waktu')}
+                            valid={!issueFor('waktu')}
+                          >
+                            <Input
+                              id="reservasi-tanggal-mulai"
+                              name="tanggal-mulai"
+                              type="date"
+                              value={waktu}
+                              min={today || undefined}
+                              max={today ? addDays(today, RESERVATION_HORIZON_DAYS) : undefined}
+                              aria-invalid={!!errorFor('waktu') || undefined}
+                              aria-describedby="reservasi-tanggal-mulai-message"
+                              onChange={(event) => {
+                                const newStart = event.target.value;
+                                setWaktuInput(newStart);
+                                if (waktuSelesai && newStart && waktuSelesai < newStart) {
+                                  setWaktuSelesai(newStart);
+                                }
+                              }}
+                              onBlur={() => touch('waktu')}
+                              className={INPUT_CLASS}
+                            />
+                          </Field>
+                          <Field
+                            id="reservasi-tanggal-selesai"
+                            label="Tanggal Selesai"
+                            error={errorFor('waktuSelesai')}
+                            valid={!issueFor('waktuSelesai')}
+                          >
+                            <Input
+                              id="reservasi-tanggal-selesai"
+                              name="tanggal-selesai"
+                              type="date"
+                              value={waktuSelesai}
+                              min={waktu || today || undefined}
+                              max={
+                                waktu
+                                  ? addDays(waktu, MAX_MULTI_DAY_RANGE - 1)
+                                  : today
+                                    ? addDays(today, RESERVATION_HORIZON_DAYS)
+                                    : undefined
+                              }
+                              aria-invalid={!!errorFor('waktuSelesai') || undefined}
+                              aria-describedby="reservasi-tanggal-selesai-message"
+                              onChange={(event) => setWaktuSelesai(event.target.value)}
+                              onBlur={() => touch('waktuSelesai')}
+                              className={INPUT_CLASS}
+                            />
+                          </Field>
+                        </div>
+                        {errorFor('waktuSelesai') && (
+                          <InlineError id="reservasi-tanggal-selesai-message">{errorFor('waktuSelesai')}</InlineError>
+                        )}
+                        {dates.length > 1 && (
+                          <p className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">
+                            <CalendarDays className="h-3.5 w-3.5" />
+                            {formatReservationDateRange(waktu, waktuSelesai)} berturut-turut
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   <div className="space-y-2">
                     <div className="grid grid-cols-2 gap-3">
@@ -936,7 +1129,11 @@ export default function VenueReservationDialog({
 
                     {room && !roomInMaintenance && (
                       <div className="space-y-2">
-                        <p className={SUBLABEL}>Jadwal ruangan ini pada tanggal tersebut</p>
+                        <p className={SUBLABEL}>
+                          {isMultiDay && dates.length > 1
+                            ? `Jadwal ruangan pada rentang ${formatReservationDateRange(waktu, waktuSelesai)}`
+                            : 'Jadwal ruangan ini pada tanggal tersebut'}
+                        </p>
                         {!scheduleReady || catalogLoading ? (
                           <p className="flex items-center gap-2 text-xs text-slate-400">
                             <Loader2 className="h-3.5 w-3.5 animate-spin" /> Memuat jadwal SIMPEL...
@@ -944,9 +1141,9 @@ export default function VenueReservationDialog({
                         ) : (
                           <>
                             {roomSchedule.length > 0 && (
-                              <ul className="space-y-1.5">
+                              <ul className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
                                 {roomSchedule.map((entry) => {
-                                  const clash = timeValid && slotsOverlap(entry.jam, jam);
+                                  const clash = timeValid && slotsOverlap(entry.jam, jam) && dates.includes(entry.waktu);
                                   return (
                                     <li
                                       key={entry.id}
@@ -956,6 +1153,11 @@ export default function VenueReservationDialog({
                                       )}
                                     >
                                       <span>
+                                        {isMultiDay && dates.length > 1 && (
+                                          <span className="block text-[11px] font-bold text-slate-500">
+                                            {formatReservationDate(entry.waktu)}
+                                          </span>
+                                        )}
                                         <span className="font-bold">{entry.jam} WIB</span> · {entry.kegiatan || 'Kegiatan'}
                                         <span className="block text-[11px] text-slate-500">{entry.pemohon}</span>
                                       </span>
@@ -967,14 +1169,18 @@ export default function VenueReservationDialog({
                                 })}
                               </ul>
                             )}
-                            {conflicts.length > 0 ? (
-                              <InlineError>Jam yang dipilih bentrok dengan jadwal di atas. Ganti jam atau pilih ruangan lain.</InlineError>
+                            {conflictCount > 0 ? (
+                              <InlineError>
+                                {isMultiDay && conflictsByDate.length > 0
+                                  ? `Jadwal bentrok pada ${conflictsByDate.map((c) => `${c.date} (${c.conflicts.map((b) => b.jam).join(', ')})`).join('; ')}. Ganti jam atau pilih ruangan lain.`
+                                  : 'Jam yang dipilih bentrok dengan jadwal di atas. Ganti jam atau pilih ruangan lain.'}
+                              </InlineError>
                             ) : (
                               <p className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 text-xs font-semibold text-emerald-700">
                                 <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
                                 {roomSchedule.length === 0
                                   ? 'Belum ada jadwal lain di ruangan ini.'
-                                  : 'Tidak bentrok dengan jadwal di atas.'}
+                                  : `Tidak bentrok dengan jadwal di atas${isMultiDay && dates.length > 1 ? ` pada seluruh ${dates.length} hari.` : '.'}`}
                               </p>
                             )}
                           </>
@@ -1034,8 +1240,8 @@ export default function VenueReservationDialog({
                         );
                       })
                     )}
-                    {shortages.length > 0 && (
-                      <InlineError>Tidak mencukupi pada jam ini: {describeShortages(shortages)}.</InlineError>
+                    {stepContext.shortageText && (
+                      <InlineError>Tidak mencukupi pada jam ini: {stepContext.shortageText}.</InlineError>
                     )}
                   </aside>
                 </div>
@@ -1081,6 +1287,18 @@ export default function VenueReservationDialog({
                       </div>
                     ))}
                   </dl>
+
+                  {isMultiDay && dates.length > 1 && (
+                    <div className="flex items-start gap-2.5 rounded-xl border border-indigo-100 bg-indigo-50/70 p-3.5 text-xs text-indigo-800">
+                      <CalendarCheck className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
+                      <div className="space-y-1">
+                        <p className="font-semibold">Reservasi Multi-Hari ({dates.length} Hari Kegiatan)</p>
+                        <p className="text-slate-600 leading-relaxed">
+                          Sistem akan otomatis membuat {dates.length} peminjaman terjadwal di SIMPEL UNIPDU untuk masing-masing hari ({dates.map((d) => formatReservationDate(d)).join(', ')}).
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   {editPemohon || issueFor('pemohon') ? (
                     <Field

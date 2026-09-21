@@ -36,6 +36,7 @@ export const MAX_PEMOHON_LENGTH = 120;
 export const MAX_CANCEL_REASON_LENGTH = 300;
 export const MAX_EQUIPMENT_LINES = 30;
 export const RESERVATION_HORIZON_DAYS = 366;
+export const MAX_MULTI_DAY_RANGE = 14;
 
 // ─── SIMPEL data shapes ─────────────────────────────────────────────────────
 
@@ -86,6 +87,10 @@ export interface SimpelBooking {
   cancelledAt?: string;
   peminjamDiterimaAt?: string;
   peminjamSiapKembaliAt?: string;
+  sakuGroupId?: string;
+  sakuGroupDates?: string[];
+  sakuGroupIndex?: number;
+  sakuGroupTotal?: number;
 }
 
 /** The fields the availability rules need from a booking. */
@@ -228,6 +233,10 @@ export function normalizeSimpelBooking(id: string, raw: unknown): SimpelBooking 
     cancelledAt: optionalText('cancelledAt'),
     peminjamDiterimaAt: optionalText('peminjamDiterimaAt'),
     peminjamSiapKembaliAt: optionalText('peminjamSiapKembaliAt'),
+    sakuGroupId: optionalText('sakuGroupId'),
+    sakuGroupDates: Array.isArray(data.sakuGroupDates) ? textList(data.sakuGroupDates) : undefined,
+    sakuGroupIndex: wholeNumber(data.sakuGroupIndex) ?? undefined,
+    sakuGroupTotal: wholeNumber(data.sakuGroupTotal) ?? undefined,
   };
 }
 
@@ -461,6 +470,30 @@ export function isValidDateString(value: string): boolean {
 export function addDays(dateString: string, days: number): string {
   const [year, month, day] = dateString.split('-').map(Number);
   return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
+
+/**
+ * Returns all dates from startDate to endDate (inclusive), formatted as YYYY-MM-DD.
+ * If endDate is not provided or equals startDate, returns [startDate].
+ * Returns an empty array if dates are invalid, endDate < startDate, or exceeds MAX_MULTI_DAY_RANGE.
+ */
+export function getDateRangeList(startDate: string, endDate?: string | null): string[] {
+  if (!isValidDateString(startDate)) return [];
+  if (!endDate || endDate === startDate) return [startDate];
+  if (!isValidDateString(endDate)) return [];
+  if (endDate < startDate) return [];
+
+  const dates: string[] = [];
+  let current = startDate;
+  for (let i = 0; i < MAX_MULTI_DAY_RANGE; i++) {
+    dates.push(current);
+    if (current === endDate) break;
+    current = addDays(current, 1);
+  }
+  if (dates[dates.length - 1] !== endDate) {
+    return [];
+  }
+  return dates;
 }
 
 // ─── Equipment lines ────────────────────────────────────────────────────────
@@ -712,6 +745,7 @@ export interface VenueReservationRequest {
   gedungId: string;
   ruangan: string;
   waktu: string;
+  waktuSelesai?: string;
   jamMulai: string;
   jamSelesai: string;
   kegiatan: string;
@@ -730,6 +764,7 @@ export function parseReservationRequest(body: unknown): VenueReservationRequest 
     gedungId: text(data.gedungId),
     ruangan: text(data.ruangan),
     waktu: text(data.waktu),
+    waktuSelesai: text(data.waktuSelesai) || undefined,
     jamMulai: text(data.jamMulai),
     jamSelesai: text(data.jamSelesai),
     kegiatan: text(data.kegiatan),
@@ -747,6 +782,8 @@ export interface ValidatedReservation {
   building: SimpelBuilding;
   room: SimpelRoom;
   waktu: string;
+  waktuSelesai?: string;
+  dates: string[];
   jam: string;
   kegiatan: string;
   pemohon: string;
@@ -794,6 +831,19 @@ export function validateReservationRequest(
   if (request.waktu < now.date) return fail('Tanggal reservasi sudah lewat.');
   if (request.waktu > addDays(now.date, RESERVATION_HORIZON_DAYS)) {
     return fail('Reservasi hanya dapat dibuat paling lama satu tahun ke depan.');
+  }
+
+  let dates = [request.waktu];
+  if (request.waktuSelesai && request.waktuSelesai !== request.waktu) {
+    if (!isValidDateString(request.waktuSelesai)) return fail('Tanggal selesai reservasi tidak valid.');
+    if (request.waktuSelesai < request.waktu) return fail('Tanggal selesai harus sama atau setelah tanggal mulai.');
+    if (request.waktuSelesai > addDays(now.date, RESERVATION_HORIZON_DAYS)) {
+      return fail('Reservasi hanya dapat dibuat paling lama satu tahun ke depan.');
+    }
+    dates = getDateRangeList(request.waktu, request.waktuSelesai);
+    if (dates.length === 0 || dates.length > MAX_MULTI_DAY_RANGE) {
+      return fail(`Reservasi multi-hari maksimal ${MAX_MULTI_DAY_RANGE} hari berturut-turut.`);
+    }
   }
 
   const start = parseClock(request.jamMulai);
@@ -856,6 +906,8 @@ export function validateReservationRequest(
       building,
       room,
       waktu: request.waktu,
+      waktuSelesai: request.waktuSelesai && request.waktuSelesai !== request.waktu ? request.waktuSelesai : undefined,
+      dates,
       jam: formatJam(request.jamMulai, request.jamSelesai),
       kegiatan: request.kegiatan,
       pemohon: request.pemohon,
@@ -881,6 +933,11 @@ export function sakuBookingId(nowMillis: number, randomSuffix: string): string {
   return `PJM-S-${nowMillis.toString(36).toUpperCase()}-${randomSuffix.toUpperCase()}`;
 }
 
+/** Group ID connecting all bookings created together in a multi-day reservation. */
+export function sakuGroupId(nowMillis: number, randomSuffix: string): string {
+  return `GRP-S-${nowMillis.toString(36).toUpperCase()}-${randomSuffix.toUpperCase()}`;
+}
+
 /** A normal SIMPEL booking, already approved, plus SAKU's extra fields. */
 export function buildSakuBooking(input: {
   id: string;
@@ -888,6 +945,14 @@ export function buildSakuBooking(input: {
   actor: ReservationActor;
   nowIso: string;
   today: string;
+  waktu?: string;
+  kegiatan?: string;
+  group?: {
+    id: string;
+    dates: string[];
+    index: number;
+    total: number;
+  };
 }): SimpelBooking {
   const { reservation, actor } = input;
   return withoutUndefined<SimpelBooking>({
@@ -899,9 +964,9 @@ export function buildSakuBooking(input: {
     kontak: reservation.kontak,
     gedung: reservation.building.nama,
     ruangan: reservation.room.nama,
-    waktu: reservation.waktu,
+    waktu: input.waktu || reservation.waktu,
     jam: reservation.jam,
-    kegiatan: reservation.kegiatan,
+    kegiatan: input.kegiatan || reservation.kegiatan,
     status: 'disetujui',
     fasilitasTambahan: reservation.fasilitasTambahan,
     tanggalDibuat: input.today,
@@ -913,6 +978,10 @@ export function buildSakuBooking(input: {
     sakuEventId: reservation.sakuEventId,
     autoApproved: true,
     createdAt: input.nowIso,
+    sakuGroupId: input.group?.id,
+    sakuGroupDates: input.group?.dates,
+    sakuGroupIndex: input.group?.index,
+    sakuGroupTotal: input.group?.total,
   });
 }
 
@@ -939,7 +1008,7 @@ export const RESERVATION_PHASE_LABELS: Record<ReservationPhase, string> = {
   ditolak: 'Ditolak',
 };
 
-type LifecycleFields = Pick<
+export type LifecycleFields = Pick<
   SimpelBooking,
   | 'status'
   | 'serahTerimaSelesai'
@@ -947,12 +1016,24 @@ type LifecycleFields = Pick<
   | 'peminjamSiapKembali'
   | 'fasilitasDiserahkan'
   | 'cancelledBy'
->;
+> & {
+  waktu?: string;
+};
 
 /** Where a booking stands, following SIMPEL's flags in the order SIMPEL sets them. */
-export function reservationPhase(booking: LifecycleFields): ReservationPhase {
+export function reservationPhase(
+  booking: LifecycleFields,
+  today: string = jakartaNow().date,
+): ReservationPhase {
   if (booking.status === 'selesai' || booking.status === 'dikembalikan') return 'selesai';
   if (booking.status === 'ditolak') return booking.cancelledBy ? 'dibatalkan' : 'ditolak';
+
+  // If the reservation date is strictly in the past (campus timezone), the event
+  // has already concluded, so its phase evaluates to 'selesai'.
+  if (booking.waktu && isValidDateString(booking.waktu) && booking.waktu < today) {
+    return 'selesai';
+  }
+
   if (booking.status !== 'disetujui') return 'menunggu';
   if (!booking.serahTerimaSelesai) return 'terjadwal';
   if (!booking.peminjamDiterima) return 'diserahkan';
@@ -979,8 +1060,9 @@ function handoverStarted(booking: LifecycleFields): boolean {
 export function canPerformReservationAction(
   booking: LifecycleFields,
   action: ReservationAction,
+  today: string = jakartaNow().date,
 ): boolean {
-  const phase = reservationPhase(booking);
+  const phase = reservationPhase(booking, today);
   switch (action) {
     case 'cancel':
       // Once Pekarya start handing things over, cancelling is Biro Umum's call.
@@ -992,16 +1074,20 @@ export function canPerformReservationAction(
   }
 }
 
-export function allowedReservationActions(booking: LifecycleFields): ReservationAction[] {
-  return RESERVATION_ACTIONS.filter((action) => canPerformReservationAction(booking, action));
+export function allowedReservationActions(
+  booking: LifecycleFields,
+  today: string = jakartaNow().date,
+): ReservationAction[] {
+  return RESERVATION_ACTIONS.filter((action) => canPerformReservationAction(booking, action, today));
 }
 
 /** Why an action was refused, for the 409 answer. */
 export function reservationActionRefusal(
   booking: LifecycleFields,
   action: ReservationAction,
+  today: string = jakartaNow().date,
 ): string {
-  const phase = reservationPhase(booking);
+  const phase = reservationPhase(booking, today);
   if (!isActivePhase(phase)) {
     return `Reservasi ini sudah ${RESERVATION_PHASE_LABELS[phase].toLowerCase()}.`;
   }
@@ -1065,9 +1151,22 @@ export interface ReservationView {
   ownerUid: string | null;
   ownerName: string | null;
   allowedActions: ReservationAction[];
+  groupId: string | null;
+  groupDates: string[] | null;
+  groupIndex: number | null;
+  groupTotal: number | null;
+  isOwner: boolean;
 }
 
-export function toReservationView(booking: SimpelBooking): ReservationView {
+export function toReservationView(
+  booking: SimpelBooking,
+  viewerRole?: string,
+  viewerUid?: string,
+  today: string = jakartaNow().date,
+): ReservationView {
+  const isOwner = Boolean(viewerUid && booking.sakuUid && booking.sakuUid === viewerUid);
+  const canAct = viewerRole === 'super_admin' || isOwner || (!viewerRole && !viewerUid);
+
   return {
     id: booking.id,
     kegiatan: booking.kegiatan,
@@ -1079,13 +1178,18 @@ export function toReservationView(booking: SimpelBooking): ReservationView {
     jam: booking.jam,
     fasilitasTambahan: booking.fasilitasTambahan,
     status: booking.status,
-    phase: reservationPhase(booking),
+    phase: reservationPhase(booking, today),
     handoverStarted: handoverStarted(booking),
     alasanPenolakan: booking.alasanPenolakan ?? null,
     createdAt: booking.createdAt ?? null,
     ownerUid: booking.sakuUid ?? null,
     ownerName: booking.sakuDisplayName ?? null,
-    allowedActions: allowedReservationActions(booking),
+    allowedActions: canAct ? allowedReservationActions(booking, today) : [],
+    groupId: booking.sakuGroupId ?? null,
+    groupDates: booking.sakuGroupDates ?? null,
+    groupIndex: booking.sakuGroupIndex ?? null,
+    groupTotal: booking.sakuGroupTotal ?? null,
+    isOwner: viewerUid ? isOwner : true,
   };
 }
 
@@ -1209,7 +1313,7 @@ export function buildSimpelNotification(
 }
 
 function bookingDetails(booking: SimpelBooking) {
-  return [
+  const items = [
     { label: 'Nomor PJM', value: booking.id },
     { label: 'Nama Pemohon', value: booking.pemohon },
     { label: 'Kontak', value: booking.kontak },
@@ -1218,6 +1322,13 @@ function bookingDetails(booking: SimpelBooking) {
     { label: 'Nama Kegiatan', value: booking.kegiatan },
     { label: 'Peralatan Tambahan', value: booking.fasilitasTambahan.join(', ') || 'Tidak ada' },
   ];
+  if (booking.sakuGroupTotal && booking.sakuGroupTotal > 1) {
+    items.push({
+      label: 'Rangkaian Multi-Hari',
+      value: `Hari ke-${booking.sakuGroupIndex || 1} dari ${booking.sakuGroupTotal} hari (${booking.sakuGroupDates?.join(', ') || '-'})`,
+    });
+  }
+  return items;
 }
 
 export function reservationCreatedNotifications(booking: SimpelBooking): NotificationDraft[] {

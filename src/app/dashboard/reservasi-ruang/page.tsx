@@ -64,6 +64,25 @@ const PHASE_TONES: Record<ReservationPhase, string> = {
 
 /** What happens next, in the words a Kepala SatKer needs. */
 function phaseHint(reservation: ReservationView): string | null {
+  if (!reservation.isOwner) {
+    switch (reservation.phase) {
+      case 'menunggu':
+        return 'Menunggu keputusan Biro Umum di SIMPEL.';
+      case 'terjadwal':
+        return reservation.handoverStarted
+          ? 'Pekarya sedang menyerahkan fasilitas di lokasi.'
+          : 'Terjadwal di kalender kampus. Pekarya akan menyiapkan fasilitas di lokasi.';
+      case 'diserahkan':
+        return 'Fasilitas sudah diserahkan oleh Pekarya kepada pemohon.';
+      case 'diterima':
+        return 'Fasilitas sedang digunakan untuk kegiatan.';
+      case 'menunggu_checkin':
+        return 'Kegiatan telah selesai. Menunggu Pekarya memeriksa dan menerima kembali fasilitas.';
+      default:
+        return null;
+    }
+  }
+
   switch (reservation.phase) {
     case 'menunggu':
       return 'Menunggu keputusan Biro Umum di SIMPEL.';
@@ -124,6 +143,7 @@ function ReservationsContent() {
   const [formKey, setFormKey] = useState(0);
   const [pendingAction, setPendingAction] = useState<{ reservation: ReservationView; action: ReservationAction } | null>(null);
   const [cancelReason, setCancelReason] = useState('');
+  const [cancelGroup, setCancelGroup] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
 
   // Cover photos of buildings and rooms for reservation cards and the dialog
@@ -171,6 +191,8 @@ function ReservationsContent() {
     void loadPhotos();
   };
 
+  const [activeScope, setActiveScope] = useState<'all' | 'mine'>('all');
+
   const { active, history } = useMemo(() => {
     const activeList = reservations.filter((reservation) => isActivePhase(reservation.phase)).sort(byDateAndTime);
     const historyList = reservations
@@ -178,7 +200,17 @@ function ReservationsContent() {
       .sort((left, right) => byDateAndTime(right, left));
     return { active: activeList, history: historyList };
   }, [reservations]);
-  const shown = tab === 'aktif' ? active : history;
+
+  const myActiveCount = useMemo(
+    () => active.filter((reservation) => reservation.isOwner).length,
+    [active],
+  );
+
+  const shown = useMemo(() => {
+    if (tab === 'riwayat') return history;
+    if (activeScope === 'mine') return active.filter((reservation) => reservation.isOwner);
+    return active;
+  }, [tab, activeScope, active, history]);
 
   const openForm = () => {
     setFormKey((key) => key + 1);
@@ -188,15 +220,19 @@ function ReservationsContent() {
   const handleCreated = (reservation: ReservationView) => {
     setFormOpen(false);
     setTab('aktif');
+    const label = reservation.groupTotal && reservation.groupTotal > 1
+      ? `${reservation.groupTotal} hari kegiatan (${reservation.kegiatan})`
+      : reservation.id;
     setMessage({
       type: 'success',
-      text: `Reservasi ${reservation.id} terjadwal. Pekarya akan menyiapkan serah terima di ${reservation.ruangan}.`,
+      text: `Reservasi ${label} terjadwal. Pekarya akan menyiapkan serah terima di ${reservation.ruangan}.`,
     });
     void loadReservations();
   };
 
   const openAction = (reservation: ReservationView, action: ReservationAction) => {
     setCancelReason('');
+    setCancelGroup(false);
     setPendingAction({ reservation, action });
   };
 
@@ -211,13 +247,16 @@ function ReservationsContent() {
           action,
           bookingId: reservation.id,
           ...(action === 'cancel' && cancelReason.trim() ? { reason: cancelReason.trim() } : {}),
+          ...(action === 'cancel' && cancelGroup ? { cancelGroup: true } : {}),
         }),
       });
       setMessage({
         type: 'success',
         text:
           action === 'cancel'
-            ? `Reservasi ${reservation.id} dibatalkan.`
+            ? cancelGroup
+              ? `Seluruh rangkaian reservasi (${reservation.kegiatan}) berhasil dibatalkan.`
+              : `Reservasi ${reservation.id} (${formatReservationDate(reservation.waktu)}) dibatalkan.`
             : action === 'confirm-receipt'
               ? 'Penerimaan fasilitas sudah dikonfirmasi ke Pekarya.'
               : 'Pekarya sudah diberi tahu untuk melakukan check-in pengembalian.',
@@ -311,7 +350,7 @@ function ReservationsContent() {
 
         {!loadError && (
           <>
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex gap-1 rounded-xl border border-slate-200/60 bg-slate-100/90 p-1">
                 <button type="button" onClick={() => setTab('aktif')} className={tabClass('aktif')}>
                   Aktif ({active.length})
@@ -320,6 +359,33 @@ function ReservationsContent() {
                   Riwayat ({history.length})
                 </button>
               </div>
+
+              {tab === 'aktif' && active.length > 0 && (
+                <div className="flex items-center gap-1 rounded-xl border border-slate-200/60 bg-slate-100/80 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setActiveScope('all')}
+                    className={`rounded-lg px-3 py-1 text-xs font-semibold transition-all cursor-pointer ${
+                      activeScope === 'all'
+                        ? 'bg-white text-indigo-700 shadow-sm font-bold'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Semua ({active.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveScope('mine')}
+                    className={`rounded-lg px-3 py-1 text-xs font-semibold transition-all cursor-pointer ${
+                      activeScope === 'mine'
+                        ? 'bg-white text-indigo-700 shadow-sm font-bold'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Milik Saya ({myActiveCount})
+                  </button>
+                </div>
+              )}
             </div>
 
             {loading ? (
@@ -329,7 +395,9 @@ function ReservationsContent() {
             ) : shown.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-white/70 p-10 text-center text-sm text-slate-500">
                 {tab === 'aktif'
-                  ? 'Belum ada reservasi aktif. Klik "Reservasi Baru" untuk memesan ruangan.'
+                  ? activeScope === 'mine' && active.length > 0
+                    ? 'Anda belum memiliki reservasi aktif. Beralih ke "Semua" untuk melihat reservasi dari peminjam lain.'
+                    : 'Belum ada reservasi aktif di kampus saat ini. Klik "Reservasi Baru" untuk memesan ruangan.'
                   : 'Belum ada riwayat reservasi.'}
               </div>
             ) : (
@@ -393,6 +461,20 @@ function ReservationsContent() {
                               >
                                 {RESERVATION_PHASE_LABELS[reservation.phase]}
                               </span>
+                              {Boolean(reservation.groupTotal && reservation.groupTotal > 1) && (
+                                <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
+                                  Hari {reservation.groupIndex || 1} dari {reservation.groupTotal}
+                                </span>
+                              )}
+                              {reservation.isOwner ? (
+                                <span className="rounded-full border border-indigo-200 bg-indigo-50/90 px-2 py-0.5 text-[10px] font-bold text-indigo-700">
+                                  Milik Saya
+                                </span>
+                              ) : (
+                                <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                                  Peminjam Lain
+                                </span>
+                              )}
                             </div>
                             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
                               <span className="inline-flex items-center gap-1.5">
@@ -421,13 +503,19 @@ function ReservationsContent() {
                                 ))}
                               </div>
                             )}
-                            <p className="flex flex-wrap items-center gap-x-2 text-[11px] text-slate-400">
-                              <span>{reservation.pemohon}</span>
-                              <span>·</span>
-                              <span>{reservation.kontak}</span>
-                              {viewerIsSuperAdmin && reservation.ownerName && (
+                            <p className="flex flex-wrap items-center gap-x-2 text-[11px] text-slate-500">
+                              <span className="font-semibold text-slate-700">
+                                {reservation.isOwner ? `Pemohon: ${reservation.pemohon} (Saya)` : `Pemohon: ${reservation.pemohon}`}
+                              </span>
+                              {reservation.kontak && (
+                                <>
+                                  <span>·</span>
+                                  <span>{reservation.kontak}</span>
+                                </>
+                              )}
+                              {reservation.ownerName && reservation.ownerName !== reservation.pemohon && (
                                 <span className="inline-flex items-center gap-1 text-slate-500">
-                                  · <UserRound className="h-3 w-3" /> dibuat oleh {reservation.ownerName}
+                                  · <UserRound className="h-3 w-3" /> PIC SAKU: {reservation.ownerName}
                                 </span>
                               )}
                             </p>
@@ -495,19 +583,53 @@ function ReservationsContent() {
                 </DialogDescription>
               </DialogHeader>
               {pendingAction.action === 'cancel' && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="alasan-batal" className="text-[11px] font-bold text-slate-500 uppercase">
-                    Alasan (opsional)
-                  </Label>
-                  <textarea
-                    id="alasan-batal"
-                    rows={3}
-                    maxLength={MAX_CANCEL_REASON_LENGTH}
-                    value={cancelReason}
-                    onChange={(event) => setCancelReason(event.target.value)}
-                    placeholder="Misal: kegiatan diundur ke pekan depan"
-                    className="w-full rounded-xl border border-slate-200 p-3 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  />
+                <div className="space-y-3">
+                  {Boolean(pendingAction.reservation.groupTotal && pendingAction.reservation.groupTotal > 1) && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-950 space-y-2">
+                      <p className="font-semibold text-amber-900">Cakupan Pembatalan Rangkaian Kegiatan</p>
+                      <div className="space-y-1.5">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="cancel-scope"
+                            checked={!cancelGroup}
+                            onChange={() => setCancelGroup(false)}
+                            className="text-rose-600 focus:ring-rose-500"
+                          />
+                          <span>
+                            Hanya hari ini ({formatReservationDate(pendingAction.reservation.waktu)})
+                          </span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="cancel-scope"
+                            checked={cancelGroup}
+                            onChange={() => setCancelGroup(true)}
+                            className="text-rose-600 focus:ring-rose-500"
+                          />
+                          <span>
+                            Seluruh rangkaian kegiatan ({pendingAction.reservation.groupTotal} hari)
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="alasan-batal" className="text-[11px] font-bold text-slate-500 uppercase">
+                      Alasan (opsional)
+                    </Label>
+                    <textarea
+                      id="alasan-batal"
+                      rows={3}
+                      maxLength={MAX_CANCEL_REASON_LENGTH}
+                      value={cancelReason}
+                      onChange={(event) => setCancelReason(event.target.value)}
+                      placeholder="Misal: kegiatan diundur ke pekan depan"
+                      className="w-full rounded-xl border border-slate-200 p-3 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
                 </div>
               )}
               <DialogFooter className="gap-2 sm:gap-0">
@@ -529,7 +651,13 @@ function ReservationsContent() {
                   }`}
                 >
                   {actionBusy && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {ACTION_COPY[pendingAction.action].confirm}
+                  {pendingAction.action === 'cancel'
+                    ? cancelGroup
+                      ? 'Batalkan Seluruh Rangkaian'
+                      : pendingAction.reservation.groupTotal && pendingAction.reservation.groupTotal > 1
+                        ? 'Batalkan Hari Ini Saja'
+                        : ACTION_COPY[pendingAction.action].confirm
+                    : ACTION_COPY[pendingAction.action].confirm}
                 </Button>
               </DialogFooter>
             </>

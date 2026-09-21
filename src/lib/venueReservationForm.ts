@@ -11,8 +11,10 @@
 import {
   addDays,
   contactNumberError,
+  getDateRangeList,
   isValidDateString,
   MAX_KEGIATAN_LENGTH,
+  MAX_MULTI_DAY_RANGE,
   MAX_PEMOHON_LENGTH,
   parseClock,
   RESERVATION_HORIZON_DAYS,
@@ -49,6 +51,8 @@ export function progressPercent(index: number): number {
 export interface ReservationDraft {
   kegiatan: string;
   waktu: string;
+  isMultiDay?: boolean;
+  waktuSelesai?: string;
   jamMulai: string;
   jamSelesai: string;
   gedungId: string;
@@ -60,6 +64,7 @@ export interface ReservationDraft {
 export type ReservationField =
   | 'kegiatan'
   | 'waktu'
+  | 'waktuSelesai'
   | 'jam'
   | 'gedung'
   | 'ruangan'
@@ -109,6 +114,23 @@ export function validateStep(
         add('waktu', 'Tanggal ini sudah lewat.');
       } else if (context.today && draft.waktu > addDays(context.today, RESERVATION_HORIZON_DAYS)) {
         add('waktu', 'Reservasi paling lama satu tahun ke depan.');
+      }
+
+      if (draft.isMultiDay) {
+        if (!draft.waktuSelesai) {
+          add('waktuSelesai', 'Pilih tanggal selesai kegiatan.');
+        } else if (!isValidDateString(draft.waktuSelesai)) {
+          add('waktuSelesai', 'Tanggal selesai tidak valid.');
+        } else if (draft.waktuSelesai < draft.waktu) {
+          add('waktuSelesai', 'Tanggal selesai harus setelah tanggal mulai.');
+        } else if (context.today && draft.waktuSelesai > addDays(context.today, RESERVATION_HORIZON_DAYS)) {
+          add('waktuSelesai', 'Reservasi paling lama satu tahun ke depan.');
+        } else {
+          const dates = getDateRangeList(draft.waktu, draft.waktuSelesai);
+          if (dates.length === 0 || dates.length > MAX_MULTI_DAY_RANGE) {
+            add('waktuSelesai', `Rentang multi-hari maksimal ${MAX_MULTI_DAY_RANGE} hari berturut-turut.`);
+          }
+        }
       }
 
       const start = parseClock(draft.jamMulai);
@@ -209,6 +231,33 @@ export function formatReservationDate(waktu: string): string {
   });
 }
 
+/**
+ * Formats a date range, e.g. "Kamis, 1 Okt – Sabtu, 3 Okt 2026 (3 hari)".
+ * If endDate is omitted or matches startDate, formats as a single date.
+ */
+export function formatReservationDateRange(startDate: string, endDate?: string | null): string {
+  if (!startDate) return '';
+  if (!endDate || endDate === startDate) return formatReservationDate(startDate);
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return `${startDate} – ${endDate}`;
+  const dates = getDateRangeList(startDate, endDate);
+  const count = dates.length > 0 ? dates.length : Math.max(1, Math.round((end.getTime() - start.getTime()) / (24 * 3600 * 1000)) + 1);
+
+  const startFormatted = start.toLocaleDateString('id-ID', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
+  const endFormatted = end.toLocaleDateString('id-ID', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+  return `${startFormatted} – ${endFormatted} (${count} hari)`;
+}
+
 // ─── Defaults that save taps and typing ─────────────────────────────────────
 
 /** The only room that can be booked in this building, so it can be picked for the user. */
@@ -228,6 +277,8 @@ export interface SavedDraft {
   kegiatan: string;
   /** null while the date is still the default (tomorrow). */
   waktuInput: string | null;
+  isMultiDay?: boolean;
+  waktuSelesai?: string | null;
   jamMulai: string;
   jamSelesai: string;
   gedungId: string;
@@ -245,6 +296,7 @@ export function isBlankDraft(draft: SavedDraft): boolean {
   return (
     !draft.kegiatan.trim() &&
     !draft.waktuInput &&
+    !draft.waktuSelesai &&
     !draft.jamMulai &&
     !draft.jamSelesai &&
     !draft.gedungId &&
@@ -253,8 +305,9 @@ export function isBlankDraft(draft: SavedDraft): boolean {
   );
 }
 
-export function serializeDraft(draft: SavedDraft, now: Date = new Date()): string {
-  return JSON.stringify({ v: DRAFT_VERSION, savedAt: now.toISOString(), ...draft });
+export function serializeDraft(draft: SavedDraft, now: Date | string = new Date()): string {
+  const dateObj = typeof now === 'string' ? new Date(now) : now;
+  return JSON.stringify({ v: DRAFT_VERSION, savedAt: dateObj.toISOString(), ...draft });
 }
 
 /**
@@ -298,6 +351,11 @@ export function parseSavedDraft(raw: string | null, now: Date = new Date()): Sav
     typeof entry.waktuInput === 'string' && (entry.waktuInput === '' || isValidDateString(entry.waktuInput))
       ? entry.waktuInput
       : null;
+  const isMultiDay = entry.isMultiDay === true ? true : undefined;
+  const waktuSelesai =
+    typeof entry.waktuSelesai === 'string' && (entry.waktuSelesai === '' || isValidDateString(entry.waktuSelesai))
+      ? entry.waktuSelesai
+      : null;
   const step =
     typeof entry.step === 'number' && Number.isInteger(entry.step) && entry.step >= 0 && entry.step < RESERVATION_STEPS.length
       ? entry.step
@@ -311,7 +369,18 @@ export function parseSavedDraft(raw: string | null, now: Date = new Date()): Sav
     }
   }
 
-  const draft: SavedDraft = { step, kegiatan, waktuInput, jamMulai, jamSelesai, gedungId, ruangan, quantities };
+  const draft: SavedDraft = {
+    step,
+    kegiatan,
+    waktuInput,
+    jamMulai,
+    jamSelesai,
+    gedungId,
+    ruangan,
+    quantities,
+    ...(isMultiDay ? { isMultiDay: true } : {}),
+    ...(waktuSelesai ? { waktuSelesai } : {}),
+  };
   return isBlankDraft(draft) ? null : draft;
 }
 
