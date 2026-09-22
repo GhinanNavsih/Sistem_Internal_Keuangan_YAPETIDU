@@ -29,6 +29,11 @@ import {
 } from '@/lib/payroll/pekaryaOfficialLeave';
 import { pekaryaPayrollPeriodForDate } from '@/lib/payroll/pekaryaSpj';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
+import {
+  readPekaryaLeaveDraft,
+  savePekaryaLeaveDraft,
+  clearPekaryaLeaveDraft,
+} from '@/lib/payroll/leaveDraft';
 import { ImageExifViewer } from '@/components/ImageExifViewer';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -78,8 +83,9 @@ export function PekaryaOfficialLeavePanel(props: {
   employeeId: string;
   openPeriods: OpenPeriod[];
   embedded?: boolean;
+  autoSaveDraft?: boolean;
 }) {
-  const { employeeId, openPeriods, embedded } = props;
+  const { employeeId, openPeriods, embedded, autoSaveDraft = true } = props;
   const availablePeriods = useMemo(
     () =>
       openPeriods.filter(
@@ -95,12 +101,57 @@ export function PekaryaOfficialLeavePanel(props: {
   const [reason, setReason] = useState('');
   const [evidence, setEvidence] = useState<PhotoEvidence | null>(null);
   const [evidenceUploading, setEvidenceUploading] = useState(false);
+  const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
+  const draftHydratedRef = useRef(false);
   const [selectedExifImage, setSelectedExifImage] = useState<{
     url: string;
     title: string;
     auditMetadata?: PhotoAuditMetadata | null;
   } | null>(null);
   const evidenceInputRef = useRef<HTMLInputElement>(null);
+
+  // Restore draft from localStorage upon mount
+  useEffect(() => {
+    if (!autoSaveDraft || draftHydratedRef.current || !employeeId) return;
+    const draft = readPekaryaLeaveDraft(employeeId);
+    if (draft) {
+      if (draft.date) setDate(draft.date);
+      if (draft.reportType) setReportType(draft.reportType);
+      if (draft.scanIn) setScanIn(draft.scanIn);
+      if (draft.scanOut) setScanOut(draft.scanOut);
+      if (draft.reason) setReason(draft.reason);
+      if (draft.evidence) setEvidence(draft.evidence);
+      setHasRestoredDraft(true);
+    }
+    draftHydratedRef.current = true;
+  }, [autoSaveDraft, employeeId]);
+
+  // Persist draft to localStorage as user types
+  useEffect(() => {
+    if (!autoSaveDraft || !draftHydratedRef.current || !employeeId) return;
+    savePekaryaLeaveDraft(employeeId, {
+      date,
+      reportType,
+      scanIn,
+      scanOut,
+      reason,
+      evidence,
+    });
+  }, [autoSaveDraft, date, reportType, scanIn, scanOut, reason, evidence, employeeId]);
+
+  const discardDraft = useCallback(() => {
+    clearPekaryaLeaveDraft(employeeId);
+    setDate('');
+    setReportType('izin_resmi');
+    setScanIn(DEFAULT_SCAN_IN);
+    setScanOut(DEFAULT_SCAN_OUT);
+    setReason('');
+    setEvidence(null);
+    setSelectedExifImage(null);
+    setHasRestoredDraft(false);
+    setMessage('Draft telah dibuang.');
+  }, [employeeId]);
+
   const defaultDate = availablePeriods[availablePeriods.length - 1]?.startDate || '';
   const effectiveDate = date || defaultDate;
   const period = effectiveDate ? pekaryaPayrollPeriodForDate(effectiveDate) : '';
@@ -222,6 +273,10 @@ export function PekaryaOfficialLeavePanel(props: {
           expectedRevision: previous?.revision || 0,
         }),
       });
+      if (autoSaveDraft) {
+        clearPekaryaLeaveDraft(employeeId);
+      }
+      setHasRestoredDraft(false);
       setReason('');
       setEvidence(null);
       setSelectedExifImage(null);
@@ -281,6 +336,21 @@ export function PekaryaOfficialLeavePanel(props: {
           }`}
         >
           {error || message}
+        </div>
+      )}
+      {hasRestoredDraft && (
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50/90 px-3.5 py-2.5 text-xs text-amber-900">
+          <div className="flex items-center gap-2">
+            <span className="flex h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+            <span className="font-semibold">Draft pengajuan sebelumnya dipulihkan otomatis.</span>
+          </div>
+          <button
+            type="button"
+            onClick={discardDraft}
+            className="shrink-0 font-bold text-amber-800 hover:text-rose-700 underline cursor-pointer"
+          >
+            Buang Draft
+          </button>
         </div>
       )}
       {availablePeriods.length === 0 ? (

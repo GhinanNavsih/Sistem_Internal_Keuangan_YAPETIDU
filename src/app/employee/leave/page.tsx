@@ -164,11 +164,13 @@ export default function EmployeeLeavePage() {
           <SatpamAbsencePanel
             employeeId={profile.linkedEmployeeId}
             openPeriods={openPeriods}
+            autoSaveDraft
           />
         ) : (
           <PekaryaOfficialLeavePanel
             employeeId={profile.linkedEmployeeId}
             openPeriods={openPeriods}
+            autoSaveDraft
           />
         )}
       </main>

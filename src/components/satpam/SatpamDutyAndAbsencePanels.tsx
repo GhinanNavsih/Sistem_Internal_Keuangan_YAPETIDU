@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Camera,
@@ -47,6 +47,11 @@ import {
 } from '@/lib/payroll/client';
 import { generateSatpamDutyPlanPdf } from '@/utils/generateSatpamDutyPlanPdf';
 import { compressProofImage } from '@/lib/photoEvidence';
+import {
+  readSatpamLeaveDraft,
+  saveSatpamLeaveDraft,
+  clearSatpamLeaveDraft,
+} from '@/lib/payroll/leaveDraft';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -1231,8 +1236,9 @@ export function SatpamAbsencePanel(props: {
   openPeriods: OpenPeriod[];
   /** Drop the Card chrome when a page or dialog already supplies its own. */
   embedded?: boolean;
+  autoSaveDraft?: boolean;
 }) {
-  const { employeeId, openPeriods, embedded } = props;
+  const { employeeId, openPeriods, embedded, autoSaveDraft = true } = props;
   const [selectedPeriod, setPeriod] = useState('');
   const defaultPeriod = useMemo(() => {
     const today = jakartaToday();
@@ -1256,6 +1262,60 @@ export function SatpamAbsencePanel(props: {
   const [absenceType, setAbsenceType] = useState('sakit');
   const [reason, setReason] = useState('');
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
+  const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
+  const draftHydratedRef = useRef(false);
+
+  // Restore draft from localStorage upon mount
+  useEffect(() => {
+    if (!autoSaveDraft || draftHydratedRef.current || !employeeId) return;
+    const draft = readSatpamLeaveDraft(employeeId);
+    if (draft) {
+      if (draft.period) setPeriod(draft.period);
+      if (draft.dutyDate) setDutyDate(draft.dutyDate);
+      if (draft.reportType) setReportType(draft.reportType);
+      if (draft.scanIn) setScanIn(draft.scanIn);
+      if (draft.scanOut) setScanOut(draft.scanOut);
+      if (draft.absenceType) setAbsenceType(draft.absenceType);
+      if (draft.reason) setReason(draft.reason);
+      setHasRestoredDraft(true);
+    }
+    draftHydratedRef.current = true;
+  }, [autoSaveDraft, employeeId]);
+
+  // Persist draft to localStorage as user types
+  useEffect(() => {
+    if (!autoSaveDraft || !draftHydratedRef.current || !employeeId) return;
+    saveSatpamLeaveDraft(employeeId, {
+      period: selectedPeriod,
+      dutyDate,
+      reportType,
+      scanIn,
+      scanOut,
+      absenceType,
+      reason,
+    });
+  }, [
+    autoSaveDraft,
+    selectedPeriod,
+    dutyDate,
+    reportType,
+    scanIn,
+    scanOut,
+    absenceType,
+    reason,
+    employeeId,
+  ]);
+
+  const discardDraft = useCallback(() => {
+    clearSatpamLeaveDraft(employeeId);
+    setReason('');
+    setEvidenceFile(null);
+    setReportType('izin_resmi');
+    setAbsenceType('sakit');
+    setHasRestoredDraft(false);
+    setMessage('Draft telah dibuang.');
+  }, [employeeId]);
+
   const [working, setWorking] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
@@ -1406,6 +1466,10 @@ export function SatpamAbsencePanel(props: {
           expectedRevision: previous?.revision || 0,
         }),
       });
+      if (autoSaveDraft) {
+        clearSatpamLeaveDraft(employeeId);
+      }
+      setHasRestoredDraft(false);
       setReason('');
       setEvidenceFile(null);
       setMessage(
@@ -1460,6 +1524,21 @@ export function SatpamAbsencePanel(props: {
             }`}
           >
             {error || message}
+          </div>
+        )}
+        {hasRestoredDraft && (
+          <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50/90 px-3.5 py-2.5 text-xs text-amber-900">
+            <div className="flex items-center gap-2">
+              <span className="flex h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+              <span className="font-semibold">Draft pengajuan sebelumnya dipulihkan otomatis.</span>
+            </div>
+            <button
+              type="button"
+              onClick={discardDraft}
+              className="shrink-0 font-bold text-amber-800 hover:text-rose-700 underline cursor-pointer"
+            >
+              Buang Draft
+            </button>
           </div>
         )}
         <div className="space-y-2">
