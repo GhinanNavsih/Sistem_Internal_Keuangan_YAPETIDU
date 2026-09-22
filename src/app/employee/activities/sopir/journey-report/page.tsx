@@ -82,6 +82,8 @@ import {
   normalizeDriverJourneyLocation,
   normalizeDriverJourneyLocations,
   normalizeDriverJourneyDestinations,
+  normalizeDriverJourneyStartPoint,
+  driverJourneyStartPointLabel,
   type DriverJourneyLocation,
   type FuelProcurementMode,
 } from '@/lib/payroll/driverJourney';
@@ -2008,8 +2010,8 @@ function JourneyReportContent() {
                     <div className="absolute -left-[20px] top-1 w-3 h-3 rounded-full bg-blue-600 border-2 border-white shadow-sm" />
                     <div className="space-y-0.5 min-w-0 flex-1">
                       <span className="text-[9px] text-blue-700 font-black block">Titik Keberangkatan</span>
-                      <div className="font-extrabold text-black truncate" title={activeReportingJourney.startPoint}>
-                        🏫 {activeReportingJourney.startPoint.split(',')[0]}
+                      <div className="font-extrabold text-black truncate" title={normalizeDriverJourneyStartPoint(activeReportingJourney.startPoint)}>
+                        🏫 {driverJourneyStartPointLabel(activeReportingJourney.startPoint)}
                       </div>
                     </div>
                     {canEditMainDestination && (
@@ -2168,8 +2170,8 @@ function JourneyReportContent() {
                     <div className="absolute -left-[20px] top-1 w-3 h-3 rounded-full bg-blue-600 border-2 border-white shadow-sm" />
                     <div className="space-y-0.5 min-w-0">
                       <span className="text-[9px] text-blue-700 font-black block">Titik Kepulangan</span>
-                      <div className="font-extrabold text-black truncate" title={activeReportingJourney.startPoint}>
-                        🏫 {activeReportingJourney.startPoint.split(',')[0]}
+                      <div className="font-extrabold text-black truncate" title={normalizeDriverJourneyStartPoint(activeReportingJourney.startPoint)}>
+                        🏫 {driverJourneyStartPointLabel(activeReportingJourney.startPoint)}
                       </div>
                       {currentStops.length > 0 ? (
                         <div className="text-[9px] text-slate-800 font-bold">

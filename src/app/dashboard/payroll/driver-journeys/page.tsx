@@ -88,6 +88,8 @@ import {
   normalizeDriverJourneyLocation,
   normalizeDriverJourneyLocations,
   normalizeDriverJourneyDestinations,
+  normalizeDriverJourneyStartPoint,
+  driverJourneyStartPointLabel,
   type DriverJourneyLocation,
   type FuelProcurementMode,
 } from '@/lib/payroll/driverJourney';
@@ -132,7 +134,7 @@ const VEHICLE_RATES = {
 };
 
 function fmtRp(val: number): string {
-  return 'Rp' + Math.round(val).toLocaleString('id-ID');
+  return 'Rp' + Math.round(val || 0).toLocaleString('id-ID');
 }
 
 function isReportedDriverJourney(journey: Record<string, unknown>): boolean {
@@ -193,6 +195,14 @@ function reportedDriverJourneyWage(journey: Record<string, unknown>): number {
 function formatRupiahInput(value: string): string {
   const digits = value.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
   return digits ? Number(digits).toLocaleString('id-ID') : '';
+}
+
+function journeyStartPoint(journey: any): string {
+  return normalizeDriverJourneyStartPoint(journey?.startPoint);
+}
+
+function journeyStartPointLabel(journey: any): string {
+  return driverJourneyStartPointLabel(journey?.startPoint);
 }
 
 function journeyDestinationLabel(journey: any): string {
@@ -1488,8 +1498,9 @@ function DriverJourneysContent() {
     return journeys.filter((j) => {
       const nameMatch = j.activityName?.toLowerCase().includes(searchQuery.toLowerCase());
       const destMatch = journeyDestinationLabel(j).toLowerCase().includes(searchQuery.toLowerCase());
+      const startMatch = journeyStartPoint(j).toLowerCase().includes(searchQuery.toLowerCase());
       const driverMatch = j.employeeName?.toLowerCase().includes(searchQuery.toLowerCase());
-      return nameMatch || destMatch || driverMatch;
+      return nameMatch || destMatch || startMatch || driverMatch;
     });
   }, [journeys, searchQuery]);
 
@@ -1753,9 +1764,9 @@ function DriverJourneysContent() {
                               <div className="font-bold text-slate-800 text-xs sm:text-sm truncate max-w-full" title={j.activityName}>{j.activityName}</div>
                               <div className="flex min-w-0 max-w-full items-center gap-1 mt-1 text-[10px] text-slate-500 font-semibold overflow-hidden">
                                 <MapPin className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                                <span className="truncate min-w-0 max-w-[45%]" title={j.startPoint}>{j.startPoint.split(',')[0]}</span>
+                                <span className="truncate min-w-0 max-w-[45%]" title={journeyStartPoint(j)}>{journeyStartPointLabel(j)}</span>
                                 <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
-                                <span className="truncate min-w-0 flex-1 font-extrabold text-slate-700" title={journeyDestinationLabel(j)}>{journeyDestinationLabel(j)}</span>
+                                <span className="truncate min-w-0 flex-1 font-extrabold text-slate-700" title={journeyDestinationLabel(j) || '—'}>{journeyDestinationLabel(j) || '—'}</span>
                               </div>
                             </TableCell>
                             <TableCell className="min-w-0 max-w-0 overflow-hidden">

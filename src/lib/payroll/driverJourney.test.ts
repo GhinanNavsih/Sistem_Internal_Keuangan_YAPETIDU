@@ -32,6 +32,8 @@ import {
   MAX_DRIVER_ROUTE_CALCULATION_POINTS,
   MAX_MAIN_DESTINATIONS,
   normalizeDriverJourneyDestinations,
+  normalizeDriverJourneyStartPoint,
+  driverJourneyStartPointLabel,
   normalizeDriverJourneyLocation,
   resolveDriverJourneyPointLocations,
   normalizeDriverJourneyLocations,
@@ -158,6 +160,18 @@ test('journey route points retain an editable start and return leg', () => {
     driverJourneyRoutePoints('Titik Baru', ['Tujuan A', 'Tujuan B'], undefined, false),
     ['Titik Baru', 'Tujuan A', 'Tujuan B'],
   );
+});
+
+test('driver journey start point falls back to default safely', () => {
+  assert.equal(normalizeDriverJourneyStartPoint(undefined), DEFAULT_DRIVER_JOURNEY_POINT);
+  assert.equal(normalizeDriverJourneyStartPoint(null), DEFAULT_DRIVER_JOURNEY_POINT);
+  assert.equal(normalizeDriverJourneyStartPoint('   '), DEFAULT_DRIVER_JOURNEY_POINT);
+  assert.equal(normalizeDriverJourneyStartPoint('Kantor Pusat, Surabaya'), 'Kantor Pusat, Surabaya');
+
+  assert.equal(driverJourneyStartPointLabel(undefined), 'UNIPDU Jombang');
+  assert.equal(driverJourneyStartPointLabel(null), 'UNIPDU Jombang');
+  assert.equal(driverJourneyStartPointLabel(''), 'UNIPDU Jombang');
+  assert.equal(driverJourneyStartPointLabel('Kantor Pusat, Surabaya'), 'Kantor Pusat');
 });
 
 test('a single-stop payable route measures the real return leg instead of doubling outbound', () => {

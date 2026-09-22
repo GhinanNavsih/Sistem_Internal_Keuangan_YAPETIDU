@@ -228,15 +228,23 @@ export function normalizeDriverJourneyDestinations(
     .slice(0, MAX_MAIN_DESTINATIONS);
 }
 
+export function normalizeDriverJourneyStartPoint(startPoint: unknown): string {
+  return typeof startPoint === 'string' && startPoint.trim()
+    ? startPoint.trim()
+    : DEFAULT_DRIVER_JOURNEY_POINT;
+}
+
+export function driverJourneyStartPointLabel(startPoint: unknown): string {
+  return normalizeDriverJourneyStartPoint(startPoint).split(',')[0].trim();
+}
+
 export function driverJourneyRoutePoints(
   startPoint: unknown,
   destinations: unknown,
   legacyEndPoint?: unknown,
   returnToStart = true,
 ): string[] {
-  const start = typeof startPoint === 'string' && startPoint.trim()
-    ? startPoint.trim()
-    : DEFAULT_DRIVER_JOURNEY_POINT;
+  const start = normalizeDriverJourneyStartPoint(startPoint);
   const mainDestinations = normalizeDriverJourneyDestinations(destinations, legacyEndPoint);
   if (mainDestinations.length === 0) return [start];
   return returnToStart
