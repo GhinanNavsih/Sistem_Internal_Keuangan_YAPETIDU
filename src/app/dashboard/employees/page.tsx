@@ -563,12 +563,11 @@ export default function EmployeesPage() {
 
   // Sisa Cuti is edited inline in the Jatah Cuti table, but a keystroke only
   // updates this draft — nothing is sent to the balances API until the user
-  // reviews and confirms the whole batch below, each entry with one shared
-  // reason (the API requires one per write, same as the manual-balance form
-  // in AnnualPaidLeaveReviewPanel).
+  // reviews and confirms the whole batch below. The API still requires a
+  // reason per write for its own audit trail (see handleConfirmLeaveChanges);
+  // this screen has no reason field, so it supplies one itself.
   const [leaveBalanceDrafts, setLeaveBalanceDrafts] = useState<Record<string, string>>({});
   const [isLeaveLogOpen, setIsLeaveLogOpen] = useState(false);
-  const [leaveConfirmReason, setLeaveConfirmReason] = useState('');
   const [leaveConfirming, setLeaveConfirming] = useState(false);
   const [leaveConfirmError, setLeaveConfirmError] = useState('');
 
@@ -606,18 +605,15 @@ export default function EmployeesPage() {
 
   const handleClearLeaveChanges = () => {
     setLeaveBalanceDrafts({});
-    setLeaveConfirmReason('');
     setLeaveConfirmError('');
     setIsLeaveLogOpen(false);
   };
 
   const handleConfirmLeaveChanges = async () => {
     if (pendingLeaveChanges.length === 0 || leaveConfirming) return;
-    const reason = leaveConfirmReason.trim();
-    if (reason.length < 8 || reason.length > 500) {
-      setLeaveConfirmError('Alasan perubahan wajib diisi antara 8 dan 500 karakter.');
-      return;
-    }
+    // The balances API requires a reason (8–500 chars) on every write for its
+    // own audit trail; this screen has no reason field, so it supplies one.
+    const reason = `Perubahan sisa cuti tahun ${leaveYear} via Data Pegawai.`;
     if (pendingLeaveChanges.some(change => !change.valid)) {
       setLeaveConfirmError('Perbaiki nilai yang berwarna merah sebelum mengonfirmasi.');
       return;
@@ -660,7 +656,6 @@ export default function EmployeesPage() {
     setLeaveConfirming(false);
 
     if (failed.length === 0) {
-      setLeaveConfirmReason('');
       setIsLeaveLogOpen(false);
       setMessage({ type: 'success', text: `Sisa cuti ${succeededIds.size} pegawai berhasil diperbarui.` });
     } else {
@@ -3575,7 +3570,7 @@ export default function EmployeesPage() {
               Konfirmasi Perubahan Sisa Cuti
             </DialogTitle>
             <DialogDescription className="text-slate-500">
-              Setiap baris akan dikirim sebagai perubahan saldo cuti {leaveYear} yang tercatat, memakai satu alasan yang sama di bawah.
+              Setiap baris di bawah akan dikirim sebagai perubahan saldo cuti {leaveYear} yang tercatat.
             </DialogDescription>
           </DialogHeader>
 
@@ -3597,21 +3592,6 @@ export default function EmployeesPage() {
                 </div>
               </div>
             ))}
-
-            <div className="space-y-2 pt-2">
-              <label htmlFor="leave-balance-reason" className="text-sm font-semibold text-slate-700">
-                Alasan perubahan (berlaku untuk semua pegawai di atas)
-              </label>
-              <textarea
-                id="leave-balance-reason"
-                value={leaveConfirmReason}
-                maxLength={500}
-                onChange={(event) => setLeaveConfirmReason(event.target.value)}
-                placeholder="Contoh: Penyesuaian berdasarkan catatan cuti manual tahun ini"
-                className="min-h-20 w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-              />
-              <p className="text-right text-xs text-slate-400">{leaveConfirmReason.length}/500</p>
-            </div>
 
             {leaveConfirmError && (
               <p className="text-sm text-rose-600 bg-rose-50 border border-rose-100 rounded-xl p-3">{leaveConfirmError}</p>
