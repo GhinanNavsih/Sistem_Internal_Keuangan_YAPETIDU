@@ -2,11 +2,12 @@ import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
-  ANNUAL_PAID_LEAVE_DAYS,
+  annualPaidLeaveBalanceEntitlementForYear,
   annualPaidLeaveAttendanceCorrection,
   annualPaidLeaveDecisionIssue,
   annualPaidLeaveIdempotencyState,
   annualPaidLeavePayType,
+  annualPaidLeaveQualifyingDate,
   isAnnualPaidLeaveEligible,
   type AnnualPaidLeaveRequest,
 } from '@/lib/payroll/annualPaidLeave';
@@ -68,7 +69,7 @@ export const dynamic = 'force-dynamic';
 const REVIEWER_ROLES = [
   'super_admin',
   'satker_head',
-  'loyalis_presence_admin',
+  'loyalis_admin',
 ] as const;
 const REVIEW_READER_ROLES = [...REVIEWER_ROLES, 'satker_head_loyalis'] as const;
 
@@ -135,6 +136,9 @@ export async function GET(request: NextRequest) {
       .map((document) => ({
         id: document.id,
         ...document.data(),
+        qualifyingDate: annualPaidLeaveQualifyingDate(
+          String(document.data()?.serviceDate || ''),
+        ),
       }) as AnnualPaidLeaveRequest)
       .filter((item) => {
         if (status !== 'all' && item.status !== status) return false;
@@ -509,6 +513,7 @@ export async function POST(request: NextRequest) {
       const after = {
         ...current,
         status: approving ? 'approved' : 'declined',
+        qualifyingDate: employee.qualifyingDate,
         revision,
         decisionReason,
         decidedAt: now,
@@ -527,7 +532,11 @@ export async function POST(request: NextRequest) {
           employeeKind: employee.kind,
           employeeCollection: employee.collection,
           year,
-          entitlementDays: ANNUAL_PAID_LEAVE_DAYS,
+          entitlementDays: annualPaidLeaveBalanceEntitlementForYear(
+            employee.serviceDate,
+            year,
+            jakartaToday(),
+          ),
           reservedDays: reservedDays - 1,
           usedDays: usedDays + (approving ? 1 : 0),
           serviceDate: employee.serviceDate,

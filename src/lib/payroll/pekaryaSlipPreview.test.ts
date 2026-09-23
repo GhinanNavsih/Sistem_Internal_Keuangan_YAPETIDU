@@ -642,7 +642,7 @@ test('an unlinked portal account is a conflict, not a forbidden', () => {
 });
 
 test('every other role is refused outright', () => {
-  for (const role of ['satker_head', 'employee_admin', 'loyalis_presence_admin']) {
+  for (const role of ['satker_head', 'loyalis_admin']) {
     const scope = resolveSlipPreviewScope({ role, financeRoles: FINANCE_ROLES });
     assert.equal(scope.kind, 'denied', role);
     assert.equal(scope.kind === 'denied' && scope.status, 403, role);

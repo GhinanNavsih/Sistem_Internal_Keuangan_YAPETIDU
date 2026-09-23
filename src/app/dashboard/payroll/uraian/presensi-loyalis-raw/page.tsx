@@ -2140,7 +2140,7 @@ export default function PresensiLoyalisRawPage() {
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       {/* Target Type Toggle */}
-      {profile?.role !== 'loyalis_presence_admin' && (
+      {profile?.role !== 'loyalis_admin' && (
         <div className="flex bg-white p-1 rounded-xl w-fit shadow-sm border border-slate-200/60">
           <button
             type="button"
@@ -2192,7 +2192,7 @@ export default function PresensiLoyalisRawPage() {
       )}
 
       {presensiTargetType === 'pekarya' &&
-      profile?.role !== 'loyalis_presence_admin' &&
+      profile?.role !== 'loyalis_admin' &&
       usesSharedImport ? (
         <Card className="rounded-[20px] border border-indigo-200 bg-indigo-50 p-6">
           <h3 className="font-bold text-indigo-950">Presensi Pekarya memakai data NIPY per pegawai</h3>
@@ -2208,7 +2208,7 @@ export default function PresensiLoyalisRawPage() {
             Buka Presensi Pekarya
           </Link>
         </Card>
-      ) : presensiTargetType === 'pekarya' && profile?.role !== 'loyalis_presence_admin' ? (
+      ) : presensiTargetType === 'pekarya' && profile?.role !== 'loyalis_admin' ? (
         <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
           <div className="flex justify-between items-center border-b border-slate-50 pb-4">
             <div>

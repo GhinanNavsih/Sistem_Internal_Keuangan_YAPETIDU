@@ -2,7 +2,9 @@ import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
-  ANNUAL_PAID_LEAVE_DAYS,
+  ANNUAL_PAID_LEAVE_MAX_DAYS,
+  annualPaidLeaveBalanceEntitlementForYear,
+  annualPaidLeaveBalanceReferenceDate,
   annualPaidLeaveIdempotencyState,
   type AnnualPaidLeaveEmployeeKind,
 } from '@/lib/payroll/annualPaidLeave';
@@ -30,7 +32,7 @@ export const dynamic = 'force-dynamic';
 const BALANCE_REVIEWER_ROLES = [
   'super_admin',
   'satker_head',
-  'loyalis_presence_admin',
+  'loyalis_admin',
 ] as const;
 
 function stableHash(value: unknown): string {
@@ -68,7 +70,9 @@ export async function GET(request: NextRequest) {
     const actor = await requireAuthenticatedProfile(request);
     requireRole(actor, BALANCE_REVIEWER_ROLES);
     const year = parseYear(request.nextUrl.searchParams.get('year'));
-    const kinds: AnnualPaidLeaveEmployeeKind[] = actor.role === 'loyalis_presence_admin'
+    const asOfDate = jakartaToday();
+    const balanceReferenceDate = annualPaidLeaveBalanceReferenceDate(year, asOfDate);
+    const kinds: AnnualPaidLeaveEmployeeKind[] = actor.role === 'loyalis_admin'
       ? ['loyalis']
       : actor.role === 'satker_head'
         ? ['blue_collar']
@@ -95,11 +99,18 @@ export async function GET(request: NextRequest) {
           kind,
           document.data(),
         );
+        const entitlementDays = employee
+          ? annualPaidLeaveBalanceEntitlementForYear(
+              employee.serviceDate,
+              year,
+              asOfDate,
+            )
+          : 0;
         if (
           !employee ||
           !employee.active ||
           !employee.category ||
-          employee.qualifyingDate > `${year}-12-31` ||
+          entitlementDays < 1 ||
           !reviewerCanAccessAnnualPaidLeave(actor, employee)
         ) {
           return [];
@@ -120,12 +131,17 @@ export async function GET(request: NextRequest) {
       : [];
     const rows = employees.map((employee, index) => {
       const balance = balanceSnapshots[index]?.data() || {};
+      const entitlementDays = annualPaidLeaveBalanceEntitlementForYear(
+        employee.serviceDate,
+        year,
+        asOfDate,
+      );
       const reservedDays = countDays(balance.reservedDays);
       const appUsedDays = countDays(balance.usedDays);
       const manualUsedDays = countDays(balance.manualUsedDays);
       const maxSettableRemainingDays = Math.max(
         0,
-        ANNUAL_PAID_LEAVE_DAYS - reservedDays - appUsedDays,
+        entitlementDays - reservedDays - appUsedDays,
       );
       return {
         employeeId: employee.id,
@@ -134,7 +150,7 @@ export async function GET(request: NextRequest) {
         category: employee.category,
         serviceDate: employee.serviceDate,
         qualifyingDate: employee.qualifyingDate,
-        entitlementDays: ANNUAL_PAID_LEAVE_DAYS,
+        entitlementDays,
         reservedDays,
         usedDays: appUsedDays + manualUsedDays,
         manualUsedDays,
@@ -148,7 +164,7 @@ export async function GET(request: NextRequest) {
     });
 
     return Response.json(
-      { year, employees: rows },
+      { year, balanceReferenceDate, employees: rows },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {
@@ -176,9 +192,9 @@ export async function POST(request: NextRequest) {
       typeof remainingDays !== 'number' ||
       !Number.isSafeInteger(remainingDays) ||
       remainingDays < 0 ||
-      remainingDays > ANNUAL_PAID_LEAVE_DAYS
+      remainingDays > ANNUAL_PAID_LEAVE_MAX_DAYS
     ) {
-      throw new HttpError(400, `Sisa cuti harus berupa bilangan bulat 0–${ANNUAL_PAID_LEAVE_DAYS}.`);
+      throw new HttpError(400, `Sisa cuti harus berupa bilangan bulat 0–${ANNUAL_PAID_LEAVE_MAX_DAYS}.`);
     }
     if (reason.length < 8 || reason.length > 500) {
       throw new HttpError(400, 'Alasan perubahan saldo wajib diisi antara 8 dan 500 karakter.');
@@ -202,8 +218,20 @@ export async function POST(request: NextRequest) {
     if (!reviewerCanAccessAnnualPaidLeave(actor, employee)) {
       throw new HttpError(403, 'Anda tidak berwenang mengatur saldo pegawai ini.');
     }
-    if (employee.qualifyingDate > `${year}-12-31`) {
+    const asOfDate = jakartaToday();
+    const entitlementDays = annualPaidLeaveBalanceEntitlementForYear(
+      employee.serviceDate,
+      year,
+      asOfDate,
+    );
+    if (entitlementDays < 1) {
       throw new HttpError(409, 'Pegawai belum berhak atas cuti tahunan pada tahun tersebut.');
+    }
+    if (remainingDays > entitlementDays) {
+      throw new HttpError(
+        409,
+        `Sisa cuti untuk tahun ${year} tidak dapat melebihi ${entitlementDays} hari.`,
+      );
     }
 
     const balanceRef = adminDb
@@ -265,7 +293,7 @@ export async function POST(request: NextRequest) {
       const reservedDays = countDays(currentBalance.reservedDays);
       const appUsedDays = countDays(currentBalance.usedDays);
       const previousManualUsedDays = countDays(currentBalance.manualUsedDays);
-      if (reservedDays + appUsedDays > ANNUAL_PAID_LEAVE_DAYS) {
+      if (reservedDays + appUsedDays > ANNUAL_PAID_LEAVE_MAX_DAYS) {
         throw new HttpError(
           409,
           'Saldo cuti tidak konsisten dengan jumlah pengajuan yang sudah disetujui atau menunggu.',
@@ -273,7 +301,7 @@ export async function POST(request: NextRequest) {
       }
       const maxSettableRemainingDays = Math.max(
         0,
-        ANNUAL_PAID_LEAVE_DAYS - reservedDays - appUsedDays,
+        entitlementDays - reservedDays - appUsedDays,
       );
       if (remainingDays > maxSettableRemainingDays) {
         throw new HttpError(
@@ -283,22 +311,22 @@ export async function POST(request: NextRequest) {
       }
 
       const manualUsedDays =
-        ANNUAL_PAID_LEAVE_DAYS - reservedDays - appUsedDays - remainingDays;
+        Math.max(0, entitlementDays - reservedDays - appUsedDays - remainingDays);
       const balanceRevision = currentRevision + 1;
       const now = admin.firestore.FieldValue.serverTimestamp();
       const before = {
-        entitlementDays: ANNUAL_PAID_LEAVE_DAYS,
+        entitlementDays,
         reservedDays,
         appUsedDays,
         manualUsedDays: previousManualUsedDays,
         usedDays: appUsedDays + previousManualUsedDays,
         availableDays: Math.max(
           0,
-          ANNUAL_PAID_LEAVE_DAYS - reservedDays - appUsedDays - previousManualUsedDays,
+          entitlementDays - reservedDays - appUsedDays - previousManualUsedDays,
         ),
       };
       const after = {
-        entitlementDays: ANNUAL_PAID_LEAVE_DAYS,
+        entitlementDays,
         reservedDays,
         appUsedDays,
         manualUsedDays,
@@ -317,7 +345,7 @@ export async function POST(request: NextRequest) {
           employeeCollection: employee.collection,
           category: employee.category,
           year,
-          entitlementDays: ANNUAL_PAID_LEAVE_DAYS,
+          entitlementDays,
           reservedDays,
           usedDays: appUsedDays,
           manualUsedDays,

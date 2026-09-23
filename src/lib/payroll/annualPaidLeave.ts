@@ -1,5 +1,9 @@
-export const ANNUAL_PAID_LEAVE_DAYS = 6 as const;
-export const ANNUAL_PAID_LEAVE_MIN_YEARS = 10 as const;
+export const ANNUAL_PAID_LEAVE_MAX_DAYS = 9 as const;
+export const ANNUAL_PAID_LEAVE_TIERS = [
+  { moreThanYears: 5, entitlementDays: 3 },
+  { moreThanYears: 10, entitlementDays: 6 },
+  { moreThanYears: 15, entitlementDays: 9 },
+] as const;
 export const ANNUAL_PAID_LEAVE_SCAN_IN = '07:30:00' as const;
 export const ANNUAL_PAID_LEAVE_SCAN_OUT = '14:00:00' as const;
 
@@ -37,6 +41,8 @@ export interface AnnualPaidLeaveBalance {
   usedDays: number;
   availableDays: number;
 }
+
+export type AnnualPaidLeaveTier = (typeof ANNUAL_PAID_LEAVE_TIERS)[number];
 
 export type AnnualPaidLeaveIdempotencyState = 'new' | 'replay' | 'conflict';
 
@@ -85,16 +91,66 @@ export function addCalendarYears(date: string, years: number): string {
 }
 
 export function annualPaidLeaveQualifyingDate(serviceDate: string): string {
-  return addCalendarYears(serviceDate, ANNUAL_PAID_LEAVE_MIN_YEARS);
+  return addCalendarDays(addCalendarYears(serviceDate, 5), 1);
+}
+
+function addCalendarDays(date: string, days: number): string {
+  assertAnnualPaidLeaveDate(date);
+  if (!Number.isInteger(days)) throw new Error('Jumlah hari harus berupa bilangan bulat.');
+  const value = new Date(`${date}T00:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return [
+    value.getUTCFullYear(),
+    String(value.getUTCMonth() + 1).padStart(2, '0'),
+    String(value.getUTCDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+export function annualPaidLeaveEntitlementDays(
+  serviceDate: string,
+  onDate: string,
+): number {
+  assertAnnualPaidLeaveDate(serviceDate);
+  assertAnnualPaidLeaveDate(onDate);
+  return ANNUAL_PAID_LEAVE_TIERS.reduce(
+    (days, tier) =>
+      onDate > addCalendarYears(serviceDate, tier.moreThanYears)
+        ? tier.entitlementDays
+        : days,
+    0,
+  );
+}
+
+export function annualPaidLeaveBalanceReferenceDate(
+  year: number,
+  asOfDate: string,
+): string {
+  assertAnnualPaidLeaveDate(asOfDate);
+  if (!Number.isInteger(year) || year < 1900 || year > 9999) {
+    throw new Error('Tahun hak cuti tidak valid.');
+  }
+  return Number(asOfDate.slice(0, 4)) === year ? asOfDate : `${year}-12-31`;
+}
+
+export function annualPaidLeaveBalanceEntitlementForYear(
+  serviceDate: string,
+  year: number,
+  asOfDate: string,
+): number {
+  return annualPaidLeaveEntitlementDays(
+    serviceDate,
+    annualPaidLeaveBalanceReferenceDate(year, asOfDate),
+  );
 }
 
 export function completedServiceYears(serviceDate: string, onDate: string): number {
   assertAnnualPaidLeaveDate(serviceDate);
   assertAnnualPaidLeaveDate(onDate);
+  if (onDate < serviceDate) return 0;
   const serviceYear = Number(serviceDate.slice(0, 4));
   const onYear = Number(onDate.slice(0, 4));
   let years = onYear - serviceYear;
-  if (onDate.slice(5) < serviceDate.slice(5)) years -= 1;
+  if (addCalendarYears(serviceDate, years) > onDate) years -= 1;
   return Math.max(0, years);
 }
 
@@ -102,7 +158,7 @@ export function isAnnualPaidLeaveEligible(
   serviceDate: string,
   leaveDate: string,
 ): boolean {
-  return leaveDate >= annualPaidLeaveQualifyingDate(serviceDate);
+  return annualPaidLeaveEntitlementDays(serviceDate, leaveDate) > 0;
 }
 
 export function annualPaidLeaveRequestId(
@@ -144,7 +200,7 @@ export function isAnnualPaidLeaveRequestOwner(
 
 export function calculateAnnualPaidLeaveBalance(
   requests: readonly Pick<AnnualPaidLeaveRequest, 'status'>[],
-  entitlementDays: number = ANNUAL_PAID_LEAVE_DAYS,
+  entitlementDays: number = ANNUAL_PAID_LEAVE_MAX_DAYS,
   manualUsedDays: number = 0,
 ): AnnualPaidLeaveBalance {
   const reservedDays = requests.filter((request) => request.status === 'pending').length;
@@ -180,7 +236,7 @@ export function canReviewAnnualPaidLeave(
 ): boolean {
   if (reviewer.role === 'super_admin') return true;
   if (employee.kind === 'loyalis') {
-    return reviewer.role === 'loyalis_presence_admin';
+    return reviewer.role === 'loyalis_admin';
   }
   return (
     reviewer.role === 'satker_head' &&

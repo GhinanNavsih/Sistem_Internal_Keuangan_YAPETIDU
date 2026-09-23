@@ -16,7 +16,7 @@ test('employee API ownership is confined to the authenticated employee', () => {
 test('review API scopes Loyalis and blue-collar decisions by role and category', () => {
   assert.equal(
     canReviewAnnualPaidLeave(
-      { role: 'loyalis_presence_admin', permittedCategories: [] },
+      { role: 'loyalis_admin', permittedCategories: [] },
       { kind: 'loyalis', category: 'LOYALIS' },
     ),
     true,

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { isUserRole } from '@/lib/payroll/roles';
+import { isLoyalisAdminPath, isUserRole, LOYALIS_ADMIN_HOME_PATH } from '@/lib/payroll/roles';
 import {
   getEmployeeRouteRedirect,
 } from '@/lib/employeeActivities';
@@ -87,10 +87,10 @@ export default function ProtectedRoute({
           ) {
             router.replace('/dashboard/payroll/uraian');
           }
-        } else if (currentProfile.role === 'employee_admin') {
-          // Employee Admins are ONLY allowed to access /dashboard/employees
-          if (pathname !== '/dashboard/employees') {
-            router.replace('/dashboard/employees');
+        } else if (currentProfile.role === 'loyalis_admin') {
+          // Loyalis Admins may open employee master data and Loyalis presence only
+          if (!isLoyalisAdminPath(pathname)) {
+            router.replace(LOYALIS_ADMIN_HOME_PATH);
           }
         } else if (
           currentProfile.role === 'honorer' ||
@@ -106,11 +106,6 @@ export default function ProtectedRoute({
           // Loyalis employees can access payslip, the shared leave page, and employee services.
           if (!LOYALIS_ROUTES.includes(pathname)) {
             router.replace('/employee/payslip');
-          }
-        } else if (currentProfile.role === 'loyalis_presence_admin') {
-          // PJ Presensi Loyalis can access raw presence and presence-corrections
-          if (pathname !== '/dashboard/payroll/uraian/presensi-loyalis-raw' && pathname !== '/dashboard/payroll/uraian/presence-corrections') {
-            router.replace('/dashboard/payroll/uraian/presensi-loyalis-raw');
           }
         }
       }
@@ -159,7 +154,7 @@ export default function ProtectedRoute({
   ) {
     return null;
   }
-  if (profile.role === 'employee_admin' && pathname !== '/dashboard/employees') {
+  if (profile.role === 'loyalis_admin' && !isLoyalisAdminPath(pathname)) {
     return null;
   }
   if (
@@ -177,9 +172,6 @@ export default function ProtectedRoute({
     return null;
   }
   if (profile.role === 'loyalis' && !LOYALIS_ROUTES.includes(pathname)) {
-    return null;
-  }
-  if (profile.role === 'loyalis_presence_admin' && pathname !== '/dashboard/payroll/uraian/presensi-loyalis-raw' && pathname !== '/dashboard/payroll/uraian/presence-corrections') {
     return null;
   }
 

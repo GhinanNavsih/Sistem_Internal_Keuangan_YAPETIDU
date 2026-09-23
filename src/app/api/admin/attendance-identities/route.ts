@@ -51,7 +51,7 @@ function parseCommand(value: unknown) {
 export async function PATCH(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin', 'employee_admin']);
+    requireRole(actor, ['super_admin', 'loyalis_admin']);
     const command = parseCommand(await request.json());
     if (command.employeeCollection === 'Employees_BlueCollar') {
       throw new HttpError(

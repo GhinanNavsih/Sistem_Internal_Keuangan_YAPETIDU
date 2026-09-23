@@ -30,6 +30,11 @@ import type {
   AnnualPaidLeaveBalance,
   AnnualPaidLeaveRequest,
 } from '@/lib/payroll/annualPaidLeave';
+import {
+  ANNUAL_PAID_LEAVE_TIERS,
+  annualPaidLeaveEntitlementDays,
+  isDateOnly,
+} from '@/lib/payroll/annualPaidLeave';
 
 interface PaidLeaveResponse {
   employee: {
@@ -44,9 +49,8 @@ interface PaidLeaveResponse {
   };
   policy: {
     year: number;
-    minimumCompletedYears: number;
-    annualEntitlementDays: number;
     eligibleFrom: string;
+    balanceReferenceDate: string;
   };
   balance: AnnualPaidLeaveBalance;
   requests: AnnualPaidLeaveRequest[];
@@ -127,13 +131,18 @@ export function PaidLeavePanel() {
       request.leaveDate === leaveDate &&
       (request.status === 'pending' || request.status === 'approved'),
   );
-  const eligibleForSelectedDate = Boolean(
-    data && leaveDate >= data.employee.qualifyingDate,
+  const selectedDateEntitlement = data && isDateOnly(leaveDate)
+    ? annualPaidLeaveEntitlementDays(data.employee.serviceDate, leaveDate)
+    : 0;
+  const eligibleForSelectedDate = selectedDateEntitlement > 0;
+  const underSelectedDateLimit = Boolean(
+    data &&
+      data.balance.reservedDays + data.balance.usedDays < selectedDateEntitlement,
   );
   const canSubmit = Boolean(
     data &&
-      data.balance.availableDays > 0 &&
       eligibleForSelectedDate &&
+      underSelectedDateLimit &&
       !activeDateRequest &&
       reason.trim().length <= 500,
   );
@@ -204,7 +213,9 @@ export function PaidLeavePanel() {
             Ambil Cuti
           </CardTitle>
           <p className="text-base text-slate-600">
-            Hak cuti tahunan adalah 6 hari setelah masa kerja mencapai 10 tahun.
+            Jatah cuti tahunan: {ANNUAL_PAID_LEAVE_TIERS.map((tier) =>
+              `lebih dari ${tier.moreThanYears} tahun: ${tier.entitlementDays} hari`,
+            ).join(' · ')}.
           </p>
         </CardHeader>
         <CardContent className="space-y-5 p-4 sm:p-5">
@@ -260,8 +271,8 @@ export function PaidLeavePanel() {
                     <p className="font-bold text-slate-900">{data.employee.name}</p>
                     <p className="mt-1 text-sm text-slate-600">
                       Masa kerja saat ini {data.employee.completedYearsToday} tahun, dihitung sejak{' '}
-                      {formatDate(data.employee.serviceDate)} · memenuhi syarat mulai{' '}
-                      {formatDate(data.employee.qualifyingDate)}.
+                      {formatDate(data.employee.serviceDate)}. Hak cuti pertama mulai{' '}
+                      {formatDate(data.employee.qualifyingDate)} setelah melewati masa kerja 5 tahun.
                     </p>
                   </div>
                 </div>
@@ -280,6 +291,9 @@ export function PaidLeavePanel() {
                   </div>
                 ))}
               </div>
+              <p className="text-xs text-slate-500">
+                Hak dan sisa dihitung per {formatDate(data.policy.balanceReferenceDate)}. Jatah untuk tanggal pengajuan mengikuti masa kerja pada tanggal tersebut dan bertambah saat melewati jenjang berikutnya.
+              </p>
 
               <div className="space-y-2">
                 <Label htmlFor="paid-leave-date">Tanggal cuti</Label>
@@ -295,9 +309,19 @@ export function PaidLeavePanel() {
                   }}
                   className="min-h-14 rounded-xl text-base font-mono"
                 />
+                {eligibleForSelectedDate && (
+                  <p className="text-sm font-semibold text-slate-600">
+                    Jatah berdasarkan masa kerja pada tanggal ini: {selectedDateEntitlement} hari per tahun.
+                  </p>
+                )}
                 {!eligibleForSelectedDate && (
                   <p className="text-sm font-semibold text-amber-700">
-                    Tanggal ini belum memenuhi masa kerja 10 tahun. Pilih tanggal mulai {data.employee.qualifyingDate}.
+                    Tanggal ini belum memenuhi masa kerja lebih dari 5 tahun. Hak cuti pertama mulai {data.employee.qualifyingDate}.
+                  </p>
+                )}
+                {eligibleForSelectedDate && !underSelectedDateLimit && !activeDateRequest && (
+                  <p className="text-sm font-semibold text-amber-700">
+                    Jatah {selectedDateEntitlement} hari untuk tingkat masa kerja pada tanggal ini sudah terpakai atau dicadangkan.
                   </p>
                 )}
                 {activeDateRequest && (

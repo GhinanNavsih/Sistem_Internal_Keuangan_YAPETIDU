@@ -219,7 +219,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!profile || !activeTab) return;
 
-    if (profile.role === 'loyalis_presence_admin') {
+    if (profile.role === 'loyalis_admin') {
       const params = new URLSearchParams(searchParams.toString());
       if (activeTab !== 'presensi_loyalis_raw' && activeTab !== 'presence_corrections') {
         params.delete('category');
@@ -504,7 +504,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
               </Select>
             )}
 
-            {profile?.role === 'loyalis_presence_admin' && (
+            {profile?.role === 'loyalis_admin' && (
               <Button
                 variant="outline"
                 onClick={logout}

@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
-import { isUserRole, UserRole } from '@/lib/payroll/roles';
+import { normalizeUserRole, UserRole } from '@/lib/payroll/roles';
 
 export interface AuthenticatedProfile {
   uid: string;
@@ -44,7 +44,8 @@ export async function requireAuthenticatedProfile(
 
   const profileSnapshot = await adminDb.collection('users').doc(decoded.uid).get();
   const profile = profileSnapshot.data();
-  if (!profileSnapshot.exists || !profile || !isUserRole(profile.role)) {
+  const role = normalizeUserRole(profile?.role);
+  if (!profileSnapshot.exists || !profile || !role) {
     throw new HttpError(403, 'Profil atau peran pengguna tidak valid.');
   }
   if (profile.disabled === true) {
@@ -54,7 +55,7 @@ export async function requireAuthenticatedProfile(
   return {
     uid: decoded.uid,
     email: decoded.email || null,
-    role: profile.role,
+    role,
     displayName: String(profile.displayName || decoded.name || ''),
     linkedEmployeeId:
       typeof profile.linkedEmployeeId === 'string' ? profile.linkedEmployeeId : undefined,

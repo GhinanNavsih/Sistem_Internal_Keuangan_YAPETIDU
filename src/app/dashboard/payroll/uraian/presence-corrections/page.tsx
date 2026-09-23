@@ -272,7 +272,7 @@ function requestMatchesPeriod(request: PresenceCorrectionRequest, period: string
 export default function PresenceCorrectionsAdminPage() {
   const { profile } = useAuth();
   const searchParams = useSearchParams();
-  const canAuditLoyalis = profile?.role === 'super_admin' || profile?.role === 'loyalis_presence_admin';
+  const canAuditLoyalis = profile?.role === 'super_admin' || profile?.role === 'loyalis_admin';
   const canAuditBlueCollar = profile?.role === 'super_admin' || profile?.role === 'satker_head';
   const monthParam = searchParams.get('month');
   const yearParam = searchParams.get('year');
@@ -2429,7 +2429,7 @@ export default function PresenceCorrectionsAdminPage() {
             <AlertCircle className="mb-3 h-10 w-10 text-amber-500" />
             <h2 className="font-bold text-slate-800">Akses audit tidak tersedia</h2>
             <p className="mt-1 max-w-md text-sm text-slate-500">
-              Halaman ini hanya dapat digunakan oleh Super Admin, Kepala SatKer, atau PJ Presensi Loyalis.
+              Halaman ini hanya dapat digunakan oleh Super Admin, Kepala SatKer, atau Loyalis Admin.
             </p>
           </CardContent>
         </Card>

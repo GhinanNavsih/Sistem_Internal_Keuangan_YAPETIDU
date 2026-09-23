@@ -63,7 +63,7 @@ import { usePayrollCacheInvalidation } from '@/lib/queries/hooks';
 import { collection, getDocsFromServer } from 'firebase/firestore';
 import { SUPPORTED_CATEGORIES } from '@/utils/rekapConfig';
 import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
-import { UserRole } from '@/lib/payroll/roles';
+import { LOYALIS_ADMIN_HOME_PATH, normalizeUserRole, UserRole } from '@/lib/payroll/roles';
 
 interface ManagedUser {
   uid: string;
@@ -141,10 +141,8 @@ export default function UserManagementPage() {
         router.push('/dashboard/payroll/activity-review');
       } else if (roleStr === 'satker_head_loyalis') {
         router.push('/dashboard/payroll/uraian');
-      } else if (roleStr === 'loyalis_presence_admin') {
-        router.push('/dashboard/payroll/uraian/presensi-loyalis-raw');
-      } else if (roleStr === 'employee_admin') {
-        router.push('/dashboard/employees');
+      } else if (roleStr === 'loyalis_admin') {
+        router.push(LOYALIS_ADMIN_HOME_PATH);
       } else {
         router.push('/dashboard/payroll');
       }
@@ -284,7 +282,11 @@ export default function UserManagementPage() {
       }
 
       const data = await res.json();
-      setUsers(data.users || []);
+      // Retired role ids (Employee Admin, PJ Presensi Loyalis) show and save as Loyalis Admin.
+      setUsers((data.users || []).map((item: ManagedUser) => ({
+        ...item,
+        role: normalizeUserRole(item.role) ?? item.role,
+      })));
 
       // 3. Fetch Satpam shift teams
       const shiftTeamsSnap = await getDocsFromServer(collection(db, 'SatpamShiftTeams'));
@@ -800,12 +802,11 @@ export default function UserManagementPage() {
                       >
                         <option value="satker_head">Kepala Satuan Kerja Pekarya (SatKer Pekarya)</option>
                         <option value="satker_head_loyalis">Kepala Satuan Kerja Loyalis (SatKer Loyalis)</option>
-                        <option value="employee_admin">Staf Master Data Pegawai (Employee Admin)</option>
+                        <option value="loyalis_admin">Loyalis Admin (Data Pegawai & Presensi Loyalis)</option>
                         <option value="super_admin">Super Administrator (BAK)</option>
                         <option value="finance_verifier">Badan Keuangan (Verifikator)</option>
                         <option value="honorer">Karyawan Honorer (Lapor Kegiatan)</option>
                         <option value="loyalis">Karyawan Loyalis (Lihat Slip Gaji)</option>
-                        <option value="loyalis_presence_admin">Penanggung Jawab Presensi Loyalis</option>
                         <option value="ketua_shift_satpam">Ketua Shift SATPAM (Lapor Shift Regu)</option>
                       </select>
                       
@@ -813,12 +814,11 @@ export default function UserManagementPage() {
                       <div className="mt-3 p-3.5 rounded-xl border border-slate-200 bg-slate-50/50">
                         {newRole === 'satker_head' && <span className="text-xs text-slate-600 leading-relaxed block">Dapat login dan melakukan scan presensi HANYA pada job category yang diberikan akses. Dilarang membuka menu dashboard lain.</span>}
                         {newRole === 'satker_head_loyalis' && <span className="text-xs text-slate-600 leading-relaxed block">Dapat login dan mengelola data vakasi/kehadiran Loyalis pada halaman Vakasi Tambahan. Dilarang membuka menu dashboard lain.</span>}
-                        {newRole === 'employee_admin' && <span className="text-xs text-slate-600 leading-relaxed block">Hanya memiliki wewenang untuk mengelola data induk pegawai (Master Data Pegawai). Dilarang membuka menu payroll/uraian/lainnya.</span>}
+                        {newRole === 'loyalis_admin' && <span className="text-xs text-slate-600 leading-relaxed block">Mengelola data induk pegawai (Master Data Pegawai) serta presensi Loyalis: kalkulator presensi bulanan, koreksi presensi, dan cuti Loyalis. Dilarang membuka menu dashboard lain.</span>}
                         {newRole === 'super_admin' && <span className="text-xs text-slate-600 leading-relaxed block">Akses penuh dan bebas ke semua fitur sistem payroll, Legalitas, dan manajemen user.</span>}
                         {newRole === 'finance_verifier' && <span className="text-xs text-slate-600 leading-relaxed block">Memverifikasi sekaligus mengunci draf payroll, lalu membuat instruksi pembayaran.</span>}
                         {newRole === 'honorer' && <span className="text-xs text-slate-600 leading-relaxed block">Akun untuk karyawan kebersihan yang hanya dapat mengakses halaman lapor kegiatan harian. Harus dihubungkan ke data pegawai.</span>}
                         {newRole === 'loyalis' && <span className="text-xs text-slate-600 leading-relaxed block">Akun untuk karyawan Loyalis (white collar) yang hanya dapat mengakses halaman slip gaji. Harus dihubungkan ke data pegawai.</span>}
-                        {newRole === 'loyalis_presence_admin' && <span className="text-xs text-slate-600 leading-relaxed block">Memiliki wewenang khusus HANYA untuk menghitung dan mengelola kehadiran Loyalis bulanan via raw daily logs. Dilarang membuka menu dashboard lain.</span>}
                         {newRole === 'ketua_shift_satpam' && <span className="text-xs text-slate-600 leading-relaxed block">Akun untuk Ketua Shift SATPAM. Memiliki wewenang untuk melaporkan kegiatan harian seluruh anggota shift regunya.</span>}
                       </div>
                     </div>
@@ -830,9 +830,8 @@ export default function UserManagementPage() {
                       newRole === 'honorer' ? 'Hubungkan Karyawan' :
                       newRole === 'loyalis' ? 'Hubungkan Karyawan' :
                       newRole === 'super_admin' ? 'Hak Akses' :
-                      newRole === 'employee_admin' ? 'Hak Akses' :
+                      newRole === 'loyalis_admin' ? 'Hak Akses' :
                       newRole === 'satker_head_loyalis' ? 'Hak Akses' :
-                      newRole === 'loyalis_presence_admin' ? 'Hak Akses' :
                       'Unit Kerja Diijinkan'
                     }</h3>
                     <div className="space-y-3">
@@ -840,26 +839,21 @@ export default function UserManagementPage() {
                         newRole === 'honorer' ? 'Pilih karyawan Pekarya yang akan dihubungkan' :
                         newRole === 'loyalis' ? 'Pilih karyawan Loyalis yang akan dihubungkan' :
                         newRole === 'super_admin' ? 'Akses otomatis ke seluruh sistem' :
-                        newRole === 'employee_admin' ? 'Akses otomatis ke data pegawai' :
+                        newRole === 'loyalis_admin' ? 'Akses otomatis ke data pegawai dan presensi Loyalis' :
                         newRole === 'satker_head_loyalis' ? 'Akses otomatis ke data Loyalis' :
-                        newRole === 'loyalis_presence_admin' ? 'Akses otomatis ke kalkulator presensi loyalis' :
                         'Pilih Satuan Kerja (Khusus Kepala SatKer)'
                       }</Label>
                       {newRole === 'super_admin' ? (
                         <div className="p-4 rounded-2xl bg-amber-50/50 border border-amber-100 text-amber-800 text-xs leading-relaxed font-medium">
                           Super Administrator secara otomatis memiliki akses penuh ke <strong>seluruh</strong> Satuan Kerja. Checkbox dinonaktifkan.
                         </div>
-                      ) : newRole === 'employee_admin' ? (
+                      ) : newRole === 'loyalis_admin' ? (
                         <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100 text-emerald-800 text-xs leading-relaxed font-medium">
-                          Employee Administrator secara otomatis memiliki akses penuh ke <strong>seluruh</strong> data pegawai (Master Data Pegawai). Checkbox dinonaktifkan.
+                          Loyalis Admin secara otomatis memiliki akses penuh ke <strong>seluruh</strong> data pegawai (Master Data Pegawai) dan ke presensi Loyalis (kalkulator presensi, koreksi presensi, cuti Loyalis). Checkbox dinonaktifkan.
                         </div>
                       ) : newRole === 'satker_head_loyalis' ? (
                         <div className="p-4 rounded-2xl bg-violet-50/50 border border-violet-100 text-violet-800 text-xs leading-relaxed font-medium">
                           Kepala Satuan Kerja Loyalis secara otomatis memiliki wewenang untuk <strong>seluruh</strong> data Loyalis. Checkbox dinonaktifkan.
-                        </div>
-                      ) : newRole === 'loyalis_presence_admin' ? (
-                        <div className="p-4 rounded-2xl bg-pink-50/50 border border-pink-100 text-pink-800 text-xs leading-relaxed font-medium">
-                          Penanggung Jawab Presensi Loyalis memiliki akses khusus ke halaman kalkulator presensi loyalis via raw daily logs. Checkbox dinonaktifkan.
                         </div>
                       ) : newRole === 'ketua_shift_satpam' ? (
                         <div className="space-y-4">
@@ -1172,7 +1166,7 @@ export default function UserManagementPage() {
                 Impersonasi & Akses Pengguna ("View-As")
               </h3>
               <p className="text-slate-300 text-xs md:text-sm leading-relaxed">
-                Super Admin dapat mensimulasikan tampilan aplikasi (UI/UX) atau melakukan switch sesi penuh ke akun pegawai manapun (seperti <em>Miftakhul Arif</em> - Honorer, <em>Teguh Priyo Utomo</em> - Karyawan Loyalis, atau <em>Hj. Suspa Hariati</em> - Employee Admin) tanpa perlu mengisi password.
+                Super Admin dapat mensimulasikan tampilan aplikasi (UI/UX) atau melakukan switch sesi penuh ke akun pegawai manapun (seperti <em>Miftakhul Arif</em> - Honorer, <em>Teguh Priyo Utomo</em> - Karyawan Loyalis, atau <em>Hj. Suspa Hariati</em> - Loyalis Admin) tanpa perlu mengisi password.
               </p>
             </div>
 
@@ -1259,10 +1253,9 @@ export default function UserManagementPage() {
                             <div className="flex items-center gap-3">
                               <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ${
                                 u.role === 'super_admin' ? 'bg-amber-100 text-amber-700' : 
-                                u.role === 'employee_admin' ? 'bg-emerald-100 text-emerald-700' : 
+                                u.role === 'loyalis_admin' ? 'bg-emerald-100 text-emerald-700' : 
                                 u.role === 'honorer' ? 'bg-teal-100 text-teal-700' : 
                                 u.role === 'loyalis' ? 'bg-sky-100 text-sky-700' : 
-                                u.role === 'loyalis_presence_admin' ? 'bg-pink-100 text-pink-700' :
                                 'bg-indigo-100 text-indigo-700'
                               }`}>
                                 {(u.displayName || u.email).substring(0, 2).toUpperCase()}
@@ -1284,9 +1277,9 @@ export default function UserManagementPage() {
                               <Badge variant="secondary" className="bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold px-2.5 py-0.5 rounded-full border-none">
                                 Super Admin
                               </Badge>
-                            ) : u.role === 'employee_admin' ? (
+                            ) : u.role === 'loyalis_admin' ? (
                               <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold px-2.5 py-0.5 rounded-full border-none">
-                                Employee Admin
+                                Loyalis Admin
                               </Badge>
                             ) : u.role === 'honorer' ? (
                               <Badge variant="secondary" className="bg-teal-50 text-teal-700 hover:bg-teal-100 font-bold px-2.5 py-0.5 rounded-full border-none">
@@ -1299,10 +1292,6 @@ export default function UserManagementPage() {
                             ) : u.role === 'loyalis' ? (
                               <Badge variant="secondary" className="bg-sky-50 text-sky-700 hover:bg-sky-100 font-bold px-2.5 py-0.5 rounded-full border-none">
                                 Karyawan Loyalis
-                              </Badge>
-                            ) : u.role === 'loyalis_presence_admin' ? (
-                              <Badge variant="secondary" className="bg-pink-50 text-pink-700 hover:bg-pink-100 font-bold px-2.5 py-0.5 rounded-full border-none">
-                                PJ Presensi Loyalis
                               </Badge>
                             ) : u.role === 'ketua_shift_satpam' ? (
                               <Badge variant="secondary" className="bg-purple-50 text-purple-700 hover:bg-purple-100 font-bold px-2.5 py-0.5 rounded-full border-none">
@@ -1317,12 +1306,10 @@ export default function UserManagementPage() {
                           <TableCell className="py-4.5">
                             {u.role === 'super_admin' ? (
                               <span className="text-xs text-amber-600 font-bold italic">Semua Unit (Akses Penuh)</span>
-                            ) : u.role === 'employee_admin' ? (
-                              <span className="text-xs text-emerald-600 font-bold italic">Pegawai (Akses Penuh)</span>
+                            ) : u.role === 'loyalis_admin' ? (
+                              <span className="text-xs text-emerald-600 font-bold italic">Data Pegawai & Presensi Loyalis</span>
                             ) : u.role === 'satker_head_loyalis' ? (
                               <span className="text-xs text-violet-600 font-bold italic">Loyalis (Akses Penuh)</span>
-                            ) : u.role === 'loyalis_presence_admin' ? (
-                              <span className="text-xs text-pink-600 font-bold italic">Presensi Loyalis Raw (Akses Khusus)</span>
                             ) : u.role === 'honorer' ? (
                               <span className="text-xs text-teal-600 font-bold">
                                 {u.linkedEmployeeId
@@ -1545,12 +1532,11 @@ export default function UserManagementPage() {
                     >
                       <option value="satker_head">Kepala Satuan Kerja Pekarya (SatKer Pekarya)</option>
                       <option value="satker_head_loyalis">Kepala Satuan Kerja Loyalis (SatKer Loyalis)</option>
-                      <option value="employee_admin">Staf Master Data Pegawai (Employee Admin)</option>
+                      <option value="loyalis_admin">Loyalis Admin (Data Pegawai & Presensi Loyalis)</option>
                       <option value="super_admin">Super Administrator (BAK)</option>
                       <option value="finance_verifier">Badan Keuangan (Verifikator)</option>
                       <option value="honorer">Karyawan Honorer (Lapor Kegiatan)</option>
                       <option value="loyalis">Karyawan Loyalis (Lihat Slip Gaji)</option>
-                      <option value="loyalis_presence_admin">Penanggung Jawab Presensi Loyalis</option>
                       <option value="ketua_shift_satpam">Ketua Shift SATPAM (Lapor Shift Regu)</option>
                     </select>
                   </div>
@@ -1560,12 +1546,11 @@ export default function UserManagementPage() {
                     <span className="font-bold text-slate-800 text-[11px] block">Ringkasan Hak Akses:</span>
                     {editRole === 'satker_head' && <span>Dapat melakukan scan presensi dan approval kegiatan pada unit kerja yang diizinkan.</span>}
                     {editRole === 'satker_head_loyalis' && <span>Mengelola data vakasi & laporan kehadiran Loyalis secara penuh.</span>}
-                    {editRole === 'employee_admin' && <span>Akses khusus pengelolaan Master Data Pegawai (White Collar & Blue Collar).</span>}
+                    {editRole === 'loyalis_admin' && <span>Mengelola Master Data Pegawai (White Collar & Blue Collar) serta presensi Loyalis: kalkulator presensi, koreksi presensi, dan cuti Loyalis.</span>}
                     {editRole === 'super_admin' && <span>Akses penuh bypass ke seluruh modul payroll, legalitas, dan pengaturan pengguna.</span>}
                     {editRole === 'finance_verifier' && <span>Memverifikasi dan mengunci draf payroll, lalu membuat instruksi pembayaran.</span>}
                     {editRole === 'honorer' && <span>Akun khusus karyawan Pekarya untuk pelaporan kegiatan harian di Portal Karyawan.</span>}
                     {editRole === 'loyalis' && <span>Akun khusus karyawan Loyalis untuk melihat slip gaji digital mandiri.</span>}
-                    {editRole === 'loyalis_presence_admin' && <span>Mengelola kalkulator presensi loyalis via raw daily logs.</span>}
                     {editRole === 'ketua_shift_satpam' && <span>Dapat melaporkan shift kehadiran harian seluruh anggota regunya.</span>}
                   </div>
                 </div>
@@ -1586,17 +1571,13 @@ export default function UserManagementPage() {
                     <div className="p-4 rounded-xl bg-amber-50/80 border border-amber-200/80 text-amber-900 text-xs font-medium leading-relaxed">
                       Super Administrator memiliki hak akses bypass ke <strong>seluruh unit kerja</strong>. Pilihan unit dinonaktifkan.
                     </div>
-                  ) : editRole === 'employee_admin' ? (
+                  ) : editRole === 'loyalis_admin' ? (
                     <div className="p-4 rounded-xl bg-emerald-50/80 border border-emerald-200/80 text-emerald-900 text-xs font-medium leading-relaxed">
-                      Employee Administrator memiliki hak akses penuh ke <strong>seluruh data pegawai</strong>. Pilihan unit dinonaktifkan.
+                      Loyalis Admin memiliki hak akses penuh ke <strong>seluruh data pegawai</strong> dan <strong>presensi Loyalis</strong>. Pilihan unit dinonaktifkan.
                     </div>
                   ) : editRole === 'satker_head_loyalis' ? (
                     <div className="p-4 rounded-xl bg-violet-50/80 border border-violet-200/80 text-violet-900 text-xs font-medium leading-relaxed">
                       Kepala Satuan Kerja Loyalis secara otomatis memiliki hak akses penuh ke <strong>seluruh unit Loyalis</strong>.
-                    </div>
-                  ) : editRole === 'loyalis_presence_admin' ? (
-                    <div className="p-4 rounded-xl bg-pink-50/80 border border-pink-200/80 text-pink-900 text-xs font-medium leading-relaxed">
-                      Penanggung Jawab Presensi Loyalis memiliki akses khusus ke kalkulator presensi loyalis via raw daily logs.
                     </div>
                   ) : editRole === 'ketua_shift_satpam' ? (
                     <div className="space-y-4 flex-1 flex flex-col">

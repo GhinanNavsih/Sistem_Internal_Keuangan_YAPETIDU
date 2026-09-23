@@ -108,7 +108,7 @@ function parseCommand(raw: unknown): PropagationCommand {
  * Finance roles and super_admin are unrestricted, matching the Uraian rules.
  */
 function assertCategoryAllowed(actor: AuthenticatedProfile, command: PropagationCommand): void {
-  if (actor.role === 'loyalis_presence_admin') {
+  if (actor.role === 'loyalis_admin') {
     if (command.scope !== 'loyalis') {
       throw new HttpError(403, 'Anda hanya berwenang atas presensi Loyalis.');
     }
@@ -263,7 +263,7 @@ async function collectLoyalisTargets(command: PropagationCommand): Promise<SlipT
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, [...URAIAN_EDITOR_ROLES, 'loyalis_presence_admin']);
+    requireRole(actor, [...URAIAN_EDITOR_ROLES, 'loyalis_admin']);
     const command = parseCommand(await request.json());
     assertCategoryAllowed(actor, command);
 

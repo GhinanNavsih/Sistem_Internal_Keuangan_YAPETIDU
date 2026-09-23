@@ -145,7 +145,7 @@ test('only Super Admin and Kepala SatKer Loyalis may reserve venues', () => {
   assert.deepEqual([...VENUE_RESERVATION_ROLES], ['super_admin', 'satker_head_loyalis']);
   assert.equal(canReserveVenues('super_admin'), true);
   assert.equal(canReserveVenues('satker_head_loyalis'), true);
-  for (const role of ['finance_verifier', 'satker_head', 'employee_admin', 'honorer', 'loyalis'] as const) {
+  for (const role of ['finance_verifier', 'satker_head', 'loyalis_admin', 'honorer', 'loyalis'] as const) {
     assert.equal(canReserveVenues(role), false, role);
   }
   assert.equal(canReserveVenues(null), false);

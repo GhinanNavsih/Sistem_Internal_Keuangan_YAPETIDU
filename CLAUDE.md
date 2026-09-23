@@ -91,10 +91,9 @@ Roles are defined in `src/lib/payroll/roles.ts` (`USER_ROLES`) and enforced by r
 - `finance_verifier`: Confined to `/dashboard/payroll*`. Can verify/operate payments alongside `super_admin` (`canVerifyPayroll`, `canOperatePayments`).
 - `satker_head`: Department head for blue collar (Pekarya) operations. Confined to `/dashboard/payroll/activity-review`, `/dashboard/payroll/uraian*`, `/dashboard/payroll/driver-journeys*`, `/dashboard/payroll/pekarya-dashboard*`, `/dashboard/payroll/facility-reports*`.
 - `satker_head_loyalis`: Department head for Loyalis operations. Confined to `/dashboard/payroll/uraian*` and `/dashboard/reservasi-ruang` (venue reservations, reached from the 4th tab of `SatkerPekaryaNavBar`; SatKer heads get no sidebar).
-- `employee_admin`: Confined to `/dashboard/employees`. Can edit employee profiles (`EMPLOYEE_PROFILE_EDITOR_ROLES`, alongside `super_admin`).
+- `loyalis_admin` (Loyalis Admin): the merger of the retired Employee Admin (`employee_admin`) and PJ Presensi Loyalis (`loyalis_presence_admin`) roles. Confined to `LOYALIS_ADMIN_PATHS` in `roles.ts`: `/dashboard/employees` (home), `/dashboard/payroll/uraian/presensi-loyalis-raw` and `/dashboard/payroll/uraian/presence-corrections`, linked together by a "Data Pegawai" tab in `UraianNavToggles` (no sidebar). Edits employee profiles (`EMPLOYEE_PROFILE_EDITOR_ROLES`) and attendance identities, issues Pekarya NIPY, uploads the monthly attendance workbook, runs the Loyalis presence calculator, reviews Loyalis presence corrections and Loyalis annual leave. `normalizeUserRole` reads a profile still stored with a retired id as `loyalis_admin`, and the Firestore/Storage rules' `isLoyalisAdmin()` accepts them, until `npm run migrate:loyalis-admin-role -- --apply` has rewritten every profile.
 - `honorer`: Generic honorer/blue-collar portal role. Confined to `/employee/*`, and further narrowed to a single activity workflow (see below). Also has Loyalis-style access to `/employee/facility-reports` and `/employee/simpan-pinjam` (Koperasi UNIPDU membership isn't Loyalis-exclusive — a blue-collar employee's `koperasiAuthUid` lives on their `Employees_BlueCollar` doc).
 - `loyalis`: Confined to a fixed Loyalis route set: `/employee/payslip`, `/employee/leave`, `/employee/facility-reports`, `/employee/simpan-pinjam`. The legacy `/employee/presensi-correction` URL redirects to `/employee/leave`.
-- `loyalis_presence_admin`: Confined to `/dashboard/payroll/uraian/presensi-loyalis-raw` and `/dashboard/payroll/uraian/presence-corrections`.
 - `ketua_shift_satpam`: Satpam shift lead. Confined to `/employee/activities/satpam`, `/employee/satpam-duty-plan`, `/employee/leave`, `/employee/payslip`, `/employee/facility-reports`, `/employee/simpan-pinjam` — reports daily work, maintains the once-per-period duty plan, views own payslip.
 
 `URAIAN_EDITOR_ROLES` (who may save an Uraian rekap / Loyalis presence calculator, triggering propagation to draft slips): `super_admin`, `finance_verifier`, `satker_head`, `satker_head_loyalis`.
@@ -216,7 +215,7 @@ Physical presence printouts are parsed via the [/api/parse-rekap](file:///Users/
 
 `scripts/` holds ~125 files; only the ones below are wired into `package.json`. The rest are ad hoc one-off migration/inspection scripts (`inspect*`, `check*`, `compare*`, `find*`, etc.) run directly via `tsx scripts/<file>.ts` — don't assume every script has an npm entry.
 
-- **Migration**: `migrate:salary-matrix`, `migrate:employees`, `migrate:employees-master`, `migrate:top-level`, `migrate:blue-collar`, `migrate:koperasi-rochmad`
+- **Migration**: `migrate:salary-matrix`, `migrate:employees`, `migrate:employees-master`, `migrate:top-level`, `migrate:blue-collar`, `migrate:koperasi-rochmad`, `migrate:loyalis-admin-role` (dry-run by default, `--apply` to write)
 - **Seed / one-off data patch**: `seed:white-collar-matrix`, `update:tunjangan-beras`, `reset:koperasi-rochmad`
 - **Audit (read-only, safe to run anytime)**: `audit:satpam-payroll`, `audit:pekarya-spj`, `audit:driver-seed-date`
 - **Reconcile**: `reconcile:satpam-flexible`, `recompute:driver-komponen-waktu`

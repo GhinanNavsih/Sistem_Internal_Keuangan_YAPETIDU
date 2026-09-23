@@ -4,6 +4,7 @@ import {
   addCalendarYears,
   annualPaidLeaveAttendanceCorrection,
   annualPaidLeaveDecisionIssue,
+  annualPaidLeaveEntitlementDays,
   annualPaidLeavePayType,
   annualPaidLeaveQualifyingDate,
   annualPaidLeaveRequestId,
@@ -15,18 +16,24 @@ import {
 } from './annualPaidLeave';
 import { pekaryaAttendanceAmount } from './attendance';
 
-test('annual paid leave requires ten completed years on the requested date', () => {
-  assert.equal(completedServiceYears('2016-09-22', '2026-09-21'), 9);
+test('annual entitlement increases only after passing the five, ten, and fifteen year marks', () => {
+  assert.equal(annualPaidLeaveEntitlementDays('2016-09-22', '2021-09-22'), 0);
+  assert.equal(annualPaidLeaveEntitlementDays('2016-09-22', '2021-09-23'), 3);
+  assert.equal(annualPaidLeaveEntitlementDays('2016-09-22', '2026-09-22'), 3);
+  assert.equal(annualPaidLeaveEntitlementDays('2016-09-22', '2026-09-23'), 6);
+  assert.equal(annualPaidLeaveEntitlementDays('2016-09-22', '2031-09-22'), 6);
+  assert.equal(annualPaidLeaveEntitlementDays('2016-09-22', '2031-09-23'), 9);
   assert.equal(completedServiceYears('2016-09-22', '2026-09-22'), 10);
-  assert.equal(isAnnualPaidLeaveEligible('2016-09-22', '2026-09-21'), false);
-  assert.equal(isAnnualPaidLeaveEligible('2016-09-22', '2026-09-22'), true);
-  assert.equal(annualPaidLeaveQualifyingDate('2016-09-22'), '2026-09-22');
+  assert.equal(isAnnualPaidLeaveEligible('2016-09-22', '2021-09-22'), false);
+  assert.equal(isAnnualPaidLeaveEligible('2016-09-22', '2021-09-23'), true);
+  assert.equal(annualPaidLeaveQualifyingDate('2016-09-22'), '2021-09-23');
 });
 
 test('calendar-year addition clamps leap-day anniversaries', () => {
   assert.equal(addCalendarYears('2016-02-29', 10), '2026-02-28');
-  assert.equal(isAnnualPaidLeaveEligible('2016-02-29', '2026-02-27'), false);
-  assert.equal(isAnnualPaidLeaveEligible('2016-02-29', '2026-02-28'), true);
+  assert.equal(annualPaidLeaveEntitlementDays('2016-02-29', '2021-02-28'), 0);
+  assert.equal(annualPaidLeaveEntitlementDays('2016-02-29', '2021-03-01'), 3);
+  assert.equal(annualPaidLeaveQualifyingDate('2016-02-29'), '2021-03-01');
 });
 
 test('date-only validation rejects impossible dates', () => {
@@ -43,7 +50,7 @@ test('pending days reserve balance and approved days consume it', () => {
     { status: 'approved' },
     { status: 'declined' },
     { status: 'withdrawn' },
-  ]);
+  ], 6);
   assert.deepEqual(balance, {
     entitlementDays: 6,
     reservedDays: 2,
@@ -55,6 +62,7 @@ test('pending days reserve balance and approved days consume it', () => {
 test('six active dates exhaust the annual entitlement while declined and withdrawn dates release it', () => {
   const exhausted = calculateAnnualPaidLeaveBalance(
     Array.from({ length: 6 }, () => ({ status: 'pending' as const })),
+    6,
   );
   assert.equal(exhausted.availableDays, 0);
   assert.equal(exhausted.reservedDays, 6);
@@ -63,7 +71,7 @@ test('six active dates exhaust the annual entitlement while declined and withdra
     { status: 'approved' },
     { status: 'declined' },
     { status: 'withdrawn' },
-  ]);
+  ], 6);
   assert.deepEqual(released, {
     entitlementDays: 6,
     reservedDays: 0,
@@ -73,8 +81,8 @@ test('six active dates exhaust the annual entitlement while declined and withdra
 });
 
 test('eligibility and balances do not leak across calendar-year boundaries', () => {
-  assert.equal(isAnnualPaidLeaveEligible('2017-01-01', '2026-12-31'), false);
-  assert.equal(isAnnualPaidLeaveEligible('2017-01-01', '2027-01-01'), true);
+  assert.equal(isAnnualPaidLeaveEligible('2021-12-31', '2026-12-31'), false);
+  assert.equal(isAnnualPaidLeaveEligible('2021-12-31', '2027-01-01'), true);
   assert.equal(calculateAnnualPaidLeaveBalance([], 0).availableDays, 0);
   assert.equal(calculateAnnualPaidLeaveBalance([], 6).availableDays, 6);
 });
@@ -116,14 +124,14 @@ test('approved leave uses existing normal and premium attendance classifications
 test('review scope follows employee kind and permitted blue-collar category', () => {
   assert.equal(
     canReviewAnnualPaidLeave(
-      { role: 'loyalis_presence_admin', permittedCategories: [] },
+      { role: 'loyalis_admin', permittedCategories: [] },
       { kind: 'loyalis', category: 'LOYALIS' },
     ),
     true,
   );
   assert.equal(
     canReviewAnnualPaidLeave(
-      { role: 'loyalis_presence_admin', permittedCategories: [] },
+      { role: 'loyalis_admin', permittedCategories: [] },
       { kind: 'blue_collar', category: 'TEKNISI' },
     ),
     false,

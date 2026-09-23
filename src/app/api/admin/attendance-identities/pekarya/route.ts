@@ -188,7 +188,7 @@ function assignmentRecord(
 export async function GET(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin', 'employee_admin']);
+    requireRole(actor, ['super_admin', 'loyalis_admin']);
     return Response.json(await currentPreview());
   } catch (error) {
     return errorResponse(error);
@@ -198,7 +198,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin', 'employee_admin']);
+    requireRole(actor, ['super_admin', 'loyalis_admin']);
     const body = (await request.json()) as Record<string, unknown>;
     const operation = String(body.operation || '');
     const requestId = requestIdFrom(body);

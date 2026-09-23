@@ -288,7 +288,7 @@ export async function GET(request: NextRequest) {
     requireRole(actor, [
       'super_admin',
       'finance_verifier',
-      'loyalis_presence_admin',
+      'loyalis_admin',
     ]);
     const period = request.nextUrl.searchParams.get('period') || '';
     const includeDownload =
@@ -350,7 +350,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin', 'loyalis_presence_admin']);
+    requireRole(actor, ['super_admin', 'loyalis_admin']);
     const form = await request.formData();
     const file = form.get('file');
     const period = String(form.get('period') || '');
@@ -632,7 +632,7 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin', 'loyalis_presence_admin']);
+    requireRole(actor, ['super_admin', 'loyalis_admin']);
     const period = request.nextUrl.searchParams.get('period') || '';
     const revisionId = request.nextUrl.searchParams.get('revisionId') || '';
     assertPeriod(period);

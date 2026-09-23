@@ -13,12 +13,14 @@ import {
   FileText,
   UsersRound,
   Wrench,
+  Contact,
 } from 'lucide-react';
 
 /**
  * Shared navigation toggles for Loyalis & Pekarya uraian-related payroll pages.
  * Renders two rows:
- *   1. Loyalis row – visible to super_admin and loyalis_presence_admin
+ *   1. Loyalis row – visible to super_admin and loyalis_admin (who also gets
+ *      a Data Pegawai tab, since it has no sidebar to reach that page)
  *   2. Pekarya row – visible to super_admin only
  *
  * This component is self-contained: it reads the current pathname and
@@ -32,6 +34,7 @@ export default function UraianNavToggles() {
 
   // Derive the active tab from the current pathname
   const activeTab = useMemo(() => {
+    if (pathname.startsWith('/dashboard/employees')) return 'employees';
     if (pathname.includes('/presensi-pekarya')) return 'presensi_pekarya';
     if (pathname.includes('/rekap-pekarya')) return 'presensi';
     if (pathname.includes('/vakasi-loyalis')) return 'vakasi_loyalis';
@@ -79,7 +82,7 @@ export default function UraianNavToggles() {
   if (!profile) return null;
   if (
     profile.role !== 'super_admin' &&
-    profile.role !== 'loyalis_presence_admin' &&
+    profile.role !== 'loyalis_admin' &&
     profile.role !== 'satker_head_loyalis' &&
     profile.role !== 'satker_head' &&
     profile.role !== 'finance_verifier'
@@ -102,6 +105,16 @@ export default function UraianNavToggles() {
           Loyalis
         </span>
         <div className="flex bg-white p-1 rounded-xl w-fit shadow-sm border border-slate-200/60 overflow-x-auto max-w-full">
+          {profile.role === 'loyalis_admin' && (
+            <button
+              onClick={() => router.push('/dashboard/employees')}
+              className={btnCls(activeTab === 'employees')}
+            >
+              <Contact className="w-4 h-4" />
+              Data Pegawai
+            </button>
+          )}
+
           {profile.role === 'super_admin' && (
             <>
               <button onClick={() => router.push(`/dashboard/payroll/uraian/kjm${getCleanParamsString('kjm')}`)} className={btnCls(activeTab === 'kjm')}>
@@ -132,7 +145,7 @@ export default function UraianNavToggles() {
           )}
 
           {(profile.role === 'super_admin' ||
-            profile.role === 'loyalis_presence_admin' ||
+            profile.role === 'loyalis_admin' ||
             profile.role === 'satker_head_loyalis' ||
             profile.role === 'satker_head') && (
             <button
@@ -144,7 +157,7 @@ export default function UraianNavToggles() {
             </button>
           )}
 
-          {(profile.role === 'super_admin' || profile.role === 'loyalis_presence_admin') && (
+          {(profile.role === 'super_admin' || profile.role === 'loyalis_admin') && (
             <button
               onClick={() => router.push(`/dashboard/payroll/uraian/presence-corrections${getCleanParamsString('presence_corrections')}`)}
               className={btnCls(activeTab === 'presence_corrections')}

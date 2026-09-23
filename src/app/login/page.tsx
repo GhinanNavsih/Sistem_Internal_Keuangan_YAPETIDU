@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { auth } from '@/lib/firebase';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
+import { LOYALIS_ADMIN_HOME_PATH } from '@/lib/payroll/roles';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -90,8 +91,8 @@ export default function LoginPage() {
         router.replace('/dashboard/payroll/activity-review');
       } else if (roleStr === 'satker_head_loyalis') {
         router.replace('/dashboard/payroll/uraian');
-      } else if (roleStr === 'loyalis_presence_admin') {
-        router.replace('/dashboard/payroll/uraian/presensi-loyalis-raw');
+      } else if (roleStr === 'loyalis_admin') {
+        router.replace(LOYALIS_ADMIN_HOME_PATH);
       } else {
         router.replace('/dashboard/payroll');
       }

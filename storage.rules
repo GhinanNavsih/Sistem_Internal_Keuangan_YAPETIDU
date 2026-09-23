@@ -12,11 +12,14 @@ service firebase.storage {
         'finance_verifier',
         'satker_head',
         'satker_head_loyalis',
-        'employee_admin',
+        'loyalis_admin',
         'honorer',
         'loyalis',
-        'loyalis_presence_admin',
-        'ketua_shift_satpam'
+        'ketua_shift_satpam',
+        // Retired ids merged into loyalis_admin; kept until every profile is
+        // migrated (npm run migrate:loyalis-admin-role -- --apply).
+        'employee_admin',
+        'loyalis_presence_admin'
       ];
     }
 
@@ -39,6 +42,13 @@ service firebase.storage {
 
     function roleIs(role) {
       return hasActiveProfile() && profile().role == role;
+    }
+
+    // Employee master data plus Loyalis presence. The retired ids it replaced
+    // still count until every profile is migrated.
+    function isLoyalisAdmin() {
+      return roleIs('loyalis_admin') || roleIs('employee_admin') ||
+        roleIs('loyalis_presence_admin');
     }
 
     function isFinance() {
@@ -78,7 +88,7 @@ service firebase.storage {
     }
 
     match /presence_corrections/{employeeId}/{filename} {
-      allow read: if isFinance() || roleIs('loyalis_presence_admin') ||
+      allow read: if isFinance() || isLoyalisAdmin() ||
         (hasActiveProfile() && profile().linkedEmployeeId == employeeId);
       allow create, update: if false;
       allow delete: if false;

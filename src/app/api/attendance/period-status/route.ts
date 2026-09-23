@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic';
  *
  * Deliberately open to every authenticated profile: `AttendanceImports` is
  * readable under Firestore rules only by finance roles and
- * `loyalis_presence_admin`, but satker heads and employees need this same
+ * `loyalis_admin`, but satker heads and employees need this same
  * fact to know whether their submission is still waiting on the monthly
  * upload. Only the three derived booleans/numbers below are exposed.
  */

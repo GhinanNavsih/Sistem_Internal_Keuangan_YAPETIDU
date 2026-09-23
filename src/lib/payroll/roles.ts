@@ -3,14 +3,42 @@ export const USER_ROLES = [
   'finance_verifier',
   'satker_head',
   'satker_head_loyalis',
-  'employee_admin',
+  'loyalis_admin',
   'honorer',
   'loyalis',
-  'loyalis_presence_admin',
   'ketua_shift_satpam',
 ] as const;
 
 export type UserRole = (typeof USER_ROLES)[number];
+
+/**
+ * Role ids retired when Employee Admin and PJ Presensi Loyalis were merged into
+ * `loyalis_admin`. A profile still carrying one is read as `loyalis_admin`
+ * until `npm run migrate:loyalis-admin-role -- --apply` rewrites it; the
+ * Firestore and Storage rules accept them for the same transition. New
+ * profiles can never be saved with one, because `isUserRole` rejects them.
+ */
+export const LEGACY_ROLE_ALIASES: Readonly<Record<string, UserRole>> = {
+  employee_admin: 'loyalis_admin',
+  loyalis_presence_admin: 'loyalis_admin',
+};
+
+/**
+ * Loyalis Admin keeps master data of employees and runs Loyalis presence:
+ * the monthly import/calculator, presence corrections and Loyalis leave.
+ * These are the only pages the role may open; the first is its home.
+ */
+export const LOYALIS_ADMIN_PATHS = [
+  '/dashboard/employees',
+  '/dashboard/payroll/uraian/presensi-loyalis-raw',
+  '/dashboard/payroll/uraian/presence-corrections',
+] as const;
+
+export const LOYALIS_ADMIN_HOME_PATH = LOYALIS_ADMIN_PATHS[0];
+
+export function isLoyalisAdminPath(pathname: string): boolean {
+  return (LOYALIS_ADMIN_PATHS as readonly string[]).includes(pathname);
+}
 
 export const FINANCE_ROLES: readonly UserRole[] = [
   'super_admin',
@@ -25,7 +53,7 @@ export const FINANCE_ROLES: readonly UserRole[] = [
  */
 export const EMPLOYEE_PROFILE_EDITOR_ROLES: readonly UserRole[] = [
   'super_admin',
-  'employee_admin',
+  'loyalis_admin',
 ];
 
 /**
@@ -59,6 +87,15 @@ export function canReserveVenues(role: UserRole | null | undefined): boolean {
 
 export function isUserRole(value: unknown): value is UserRole {
   return typeof value === 'string' && (USER_ROLES as readonly string[]).includes(value);
+}
+
+/** A stored role as the app should treat it, mapping retired ids to their successor. */
+export function normalizeUserRole(value: unknown): UserRole | null {
+  if (isUserRole(value)) return value;
+  if (typeof value === 'string' && Object.hasOwn(LEGACY_ROLE_ALIASES, value)) {
+    return LEGACY_ROLE_ALIASES[value];
+  }
+  return null;
 }
 
 export function canVerifyPayroll(role: UserRole): boolean {

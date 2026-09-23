@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { Suspense, useState, useEffect, useMemo, useRef } from 'react';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import GlobalHeader from '@/components/GlobalHeader';
+import UraianNavToggles from '@/components/UraianNavToggles';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
@@ -461,23 +462,23 @@ export default function EmployeesPage() {
   const router = useRouter();
   const { user, profile, loading: authLoading, logout } = useAuth();
   const { employeesLoyalis, employeesBlueCollar, gradeCodesBlue, gradeCodesWhite, loading: contextLoading, refreshData, kepangkatanAllowanceMap } = useDashboardData();
-  const isEmployeeAdmin = profile?.role === 'employee_admin';
-  const employeeAdminLoyalisQuery = useEmployeesLoyalis(isEmployeeAdmin);
-  const employeeAdminBlueCollarQuery = useEmployeesBlueCollar(isEmployeeAdmin);
-  const pageEmployeesLoyalis = isEmployeeAdmin
-    ? employeeAdminLoyalisQuery.data ?? EMPTY_EMPLOYEE_LIST
+  const isLoyalisAdmin = profile?.role === 'loyalis_admin';
+  const loyalisAdminLoyalisQuery = useEmployeesLoyalis(isLoyalisAdmin);
+  const loyalisAdminBlueCollarQuery = useEmployeesBlueCollar(isLoyalisAdmin);
+  const pageEmployeesLoyalis = isLoyalisAdmin
+    ? loyalisAdminLoyalisQuery.data ?? EMPTY_EMPLOYEE_LIST
     : employeesLoyalis;
-  const pageEmployeesBlueCollar = isEmployeeAdmin
-    ? employeeAdminBlueCollarQuery.data ?? EMPTY_EMPLOYEE_LIST
+  const pageEmployeesBlueCollar = isLoyalisAdmin
+    ? loyalisAdminBlueCollarQuery.data ?? EMPTY_EMPLOYEE_LIST
     : employeesBlueCollar;
 
   const [activeTab, setActiveTab] = useState('loyalis');
   const [tableViewMode, setTableViewMode] = useState<'default' | 'debug' | 'constant'>('default');
   const [employees, setEmployees] = useState<any[]>([]);
   const [localLoading, setLocalLoading] = useState(false);
-  const employeeAdminDataLoading = isEmployeeAdmin &&
-    (employeeAdminLoyalisQuery.isPending || employeeAdminBlueCollarQuery.isPending);
-  const loading = contextLoading || localLoading || employeeAdminDataLoading;
+  const loyalisAdminDataLoading = isLoyalisAdmin &&
+    (loyalisAdminLoyalisQuery.isPending || loyalisAdminBlueCollarQuery.isPending);
+  const loading = contextLoading || localLoading || loyalisAdminDataLoading;
   const [searchQuery, setSearchQuery] = useState('');
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' | null }>({ key: '', direction: null });
 
@@ -528,7 +529,7 @@ export default function EmployeesPage() {
     functionalVersion,
   );
   // Loaded independent of the role-gated dashboard-wide context (which only
-  // populates for super_admin/finance_verifier) so employee_admin can also
+  // populates for super_admin/finance_verifier) so loyalis_admin can also
   // preview the Kepangkatan impact of a Kredit Kumulatif edit below.
   const { data: kepangkatanVersion } = useMatrixActiveVersion('SalaryMatrix_Kepangkatan');
   const { data: kepangkatanRows } = useMatrixRows<{ credit_score?: number; allowance?: number }>(
@@ -572,7 +573,7 @@ export default function EmployeesPage() {
 
   // Redirect if unauthorized
   useEffect(() => {
-    if (!authLoading && (!user || (profile?.role !== 'super_admin' && profile?.role !== 'employee_admin'))) {
+    if (!authLoading && (!user || (profile?.role !== 'super_admin' && profile?.role !== 'loyalis_admin'))) {
       router.replace('/login');
     }
   }, [user, profile, authLoading, router]);
@@ -603,7 +604,7 @@ export default function EmployeesPage() {
   }, []);
 
   const currentTab = COLLAR_TABS.find(t => t.key === activeTab)!;
-  const canEditNipy = profile?.role === 'super_admin' || profile?.role === 'employee_admin';
+  const canEditNipy = profile?.role === 'super_admin' || profile?.role === 'loyalis_admin';
 
   const resetForm = (tab: string): any => {
     if (tab === 'loyalis') {
@@ -1655,7 +1656,7 @@ export default function EmployeesPage() {
             <Button onClick={handleOpenAdd} className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-200 px-6 cursor-pointer">
               <UserPlus className="w-4 h-4 mr-2" /> Tambah Pegawai
             </Button>
-            {profile?.role === 'employee_admin' && (
+            {isLoyalisAdmin && (
               <Button
                 variant="outline"
                 onClick={logout}
@@ -1667,6 +1668,15 @@ export default function EmployeesPage() {
             )}
           </div>
         </div>
+
+        {/* Loyalis Admin has no sidebar; this row links its three pages together */}
+        {isLoyalisAdmin && (
+          <div className="mb-6">
+            <Suspense fallback={null}>
+              <UraianNavToggles />
+            </Suspense>
+          </div>
+        )}
 
         {/* Collar type tabs and Search Box */}
         <div className="flex items-center gap-4 mb-6">

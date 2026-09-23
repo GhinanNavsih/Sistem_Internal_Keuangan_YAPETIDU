@@ -12,7 +12,7 @@ import {
 } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { doc, getDocFromCache, getDocFromServer } from 'firebase/firestore';
-import { isUserRole, UserRole } from '@/lib/payroll/roles';
+import { LOYALIS_ADMIN_HOME_PATH, normalizeUserRole, UserRole } from '@/lib/payroll/roles';
 import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
 
 export interface UserProfile {
@@ -93,9 +93,8 @@ async function getUserProfile(uid: string): Promise<UserProfile | null> {
 
     if (docSnap.exists()) {
       const data = docSnap.data();
-      return isUserRole(data.role)
-        ? ({ uid, ...data, role: data.role } as UserProfile)
-        : null;
+      const role = normalizeUserRole(data.role);
+      return role ? ({ uid, ...data, role } as UserProfile) : null;
     }
     return null;
   } catch (err) {
@@ -118,9 +117,8 @@ async function getUserProfile(uid: string): Promise<UserProfile | null> {
       );
       if (cacheSnap.exists()) {
         const data = cacheSnap.data();
-        return isUserRole(data.role)
-          ? ({ uid, ...data, role: data.role } as UserProfile)
-          : null;
+        const role = normalizeUserRole(data.role);
+        return role ? ({ uid, ...data, role } as UserProfile) : null;
       }
     } catch (cacheErr) {
       console.warn('Profile cache fallback unavailable:', cacheErr);
@@ -146,7 +144,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const storedUiUser = sessionStorage.getItem(UI_IMPERSONATION_KEY);
       if (storedUiUser) {
-        setImpersonatedUiProfile(JSON.parse(storedUiUser));
+        const storedProfile = JSON.parse(storedUiUser);
+        setImpersonatedUiProfile({
+          ...storedProfile,
+          role: normalizeUserRole(storedProfile?.role) ?? storedProfile?.role,
+        });
         setUiPreviewRevision((revision) => revision + 1);
       }
       const storedSession = localStorage.getItem(CUSTOM_TOKEN_SESSION_KEY);
@@ -204,22 +206,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const activeProfile = isImpersonatingUi ? impersonatedUiProfile : profile;
 
   const startUiImpersonation = async (targetUser: UserProfile) => {
-    if (!isSuperAdmin || !isUserRole(targetUser.role)) return null;
+    const targetRole = normalizeUserRole(targetUser.role);
+    if (!isSuperAdmin || !targetRole) return null;
 
     // The users page normally passes a fresh API result, but refresh the
     // profile at the hand-off as well. This prevents a previously loaded user
     // row or sessionStorage snapshot from carrying an old role/linkage into
     // the preview.
-    let latestTarget = targetUser;
+    let latestTarget: UserProfile = { ...targetUser, role: targetRole };
     try {
       const targetSnapshot = await getDocFromServer(doc(db, 'users', targetUser.uid));
       if (targetSnapshot.exists()) {
         const targetData = targetSnapshot.data();
-        if (!isUserRole(targetData.role)) return null;
+        const latestRole = normalizeUserRole(targetData.role);
+        if (!latestRole) return null;
         latestTarget = {
           ...targetUser,
           ...targetData,
-          role: targetData.role,
+          role: latestRole,
           uid: targetUser.uid,
         } as UserProfile;
       }
@@ -275,7 +279,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await signInWithCustomToken(auth, data.customToken);
 
       // Redirect target user to their appropriate role home page
-      const roleStr = data.targetProfile.role;
+      const roleStr = normalizeUserRole(data.targetProfile.role);
       if (roleStr === 'honorer' || roleStr === 'ketua_shift_satpam') {
         window.location.href = getEmployeeActivitiesPath(data.targetProfile);
       } else if (roleStr === 'loyalis') {
@@ -284,10 +288,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         window.location.href = '/dashboard/payroll/activity-review';
       } else if (roleStr === 'satker_head_loyalis') {
         window.location.href = '/dashboard/payroll/uraian';
-      } else if (roleStr === 'employee_admin') {
-        window.location.href = '/dashboard/employees';
-      } else if (roleStr === 'loyalis_presence_admin') {
-        window.location.href = '/dashboard/payroll/uraian/presensi-loyalis-raw';
+      } else if (roleStr === 'loyalis_admin') {
+        window.location.href = LOYALIS_ADMIN_HOME_PATH;
       } else {
         window.location.href = '/dashboard/payroll';
       }

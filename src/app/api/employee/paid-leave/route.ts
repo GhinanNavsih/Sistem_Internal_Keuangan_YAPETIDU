@@ -2,7 +2,9 @@ import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
-  ANNUAL_PAID_LEAVE_DAYS,
+  annualPaidLeaveBalanceEntitlementForYear,
+  annualPaidLeaveBalanceReferenceDate,
+  annualPaidLeaveEntitlementDays,
   annualPaidLeaveIdempotencyState,
   annualPaidLeaveYear,
   assertAnnualPaidLeaveDate,
@@ -78,9 +80,13 @@ export async function GET(request: NextRequest) {
         .doc(annualPaidLeaveBalanceDocumentId(employee.id, year))
         .get(),
     ]);
-    const entitlementDays = employee.qualifyingDate <= `${year}-12-31`
-      ? ANNUAL_PAID_LEAVE_DAYS
-      : 0;
+    const today = jakartaToday();
+    const balanceReferenceDate = annualPaidLeaveBalanceReferenceDate(year, today);
+    const entitlementDays = annualPaidLeaveBalanceEntitlementForYear(
+      employee.serviceDate,
+      year,
+      today,
+    );
     const manualUsedDays = nonNegativeDayCount(
       balanceSnapshot.data()?.manualUsedDays,
     );
@@ -89,8 +95,6 @@ export async function GET(request: NextRequest) {
       entitlementDays,
       manualUsedDays,
     );
-    const today = jakartaToday();
-
     return Response.json(
       {
         employee: {
@@ -105,9 +109,8 @@ export async function GET(request: NextRequest) {
         },
         policy: {
           year,
-          minimumCompletedYears: 10,
-          annualEntitlementDays: ANNUAL_PAID_LEAVE_DAYS,
           eligibleFrom: employee.qualifyingDate,
+          balanceReferenceDate,
         },
         balance,
         requests,
@@ -149,6 +152,15 @@ export async function POST(request: NextRequest) {
     const expectedRevision = parseExpectedRevision(body.expectedRevision);
     const reason = parseReason(body.reason);
     const year = annualPaidLeaveYear(leaveDate);
+    const leaveDateEntitlementDays = annualPaidLeaveEntitlementDays(
+      employee.serviceDate,
+      leaveDate,
+    );
+    const yearEntitlementDays = annualPaidLeaveBalanceEntitlementForYear(
+      employee.serviceDate,
+      year,
+      jakartaToday(),
+    );
     const period = annualPaidLeavePeriod(employee.kind, leaveDate);
     const requestDocumentId = annualPaidLeaveDocumentId(employee.id, leaveDate);
     const balanceDocumentId = annualPaidLeaveBalanceDocumentId(employee.id, year);
@@ -247,14 +259,19 @@ export async function POST(request: NextRequest) {
         if (!isAnnualPaidLeaveEligible(employee.serviceDate, leaveDate)) {
           throw new HttpError(
             409,
-            `Hak cuti baru berlaku mulai ${employee.qualifyingDate}.`,
+            `Hak cuti pertama berlaku mulai ${employee.qualifyingDate}, setelah masa kerja lebih dari 5 tahun.`,
           );
         }
         if (current?.status === 'pending' || current?.status === 'approved') {
           throw new HttpError(409, 'Tanggal ini sudah memiliki pengajuan cuti aktif.');
         }
-        if (reservedDays + usedDays + manualUsedDays >= ANNUAL_PAID_LEAVE_DAYS) {
-          throw new HttpError(409, 'Sisa cuti tahunan sudah habis atau sedang menunggu keputusan.');
+        if (
+          reservedDays + usedDays + manualUsedDays >= leaveDateEntitlementDays
+        ) {
+          throw new HttpError(
+            409,
+            `Jatah cuti ${leaveDateEntitlementDays} hari pada tanggal tersebut sudah terpakai atau sedang menunggu keputusan.`,
+          );
         }
         const revision = currentRevision + 1;
         const after = {
@@ -291,7 +308,7 @@ export async function POST(request: NextRequest) {
             employeeKind: employee.kind,
             employeeCollection: employee.collection,
             year,
-            entitlementDays: ANNUAL_PAID_LEAVE_DAYS,
+            entitlementDays: yearEntitlementDays,
             reservedDays: reservedDays + 1,
             usedDays,
             serviceDate: employee.serviceDate,

@@ -209,10 +209,14 @@ export async function loadEmployeeAnnualPaidLeaveRequests(
     .where('employeeId', '==', employeeId)
     .get();
   return snapshot.docs
-    .map((document) => ({
-      id: document.id,
-      ...document.data(),
-    }) as AnnualPaidLeaveRequest)
+    .map((document) => {
+      const data = document.data();
+      return {
+        id: document.id,
+        ...data,
+        qualifyingDate: annualPaidLeaveQualifyingDate(String(data.serviceDate || '')),
+      } as AnnualPaidLeaveRequest;
+    })
     .filter((request) => request.year === year)
     .sort((left, right) => right.leaveDate.localeCompare(left.leaveDate));
 }

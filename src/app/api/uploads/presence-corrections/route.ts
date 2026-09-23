@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     assertValidProofFile(file, 5 * 1024 * 1024);
 
     const isOwner = Boolean(actor.linkedEmployeeId) && actor.linkedEmployeeId === employeeId;
-    if (actor.role !== 'loyalis_presence_admin' && !isOwner) {
+    if (actor.role !== 'loyalis_admin' && !isOwner) {
       throw new HttpError(403, 'Anda tidak memiliki kewenangan untuk mengunggah berkas ini.');
     }
 

@@ -28,6 +28,7 @@
     "update:tunjangan-beras": "tsx scripts/addTunjanganBeras.ts",
     "reset:koperasi-rochmad": "tsx scripts/resetKoperasiRochmad.ts",
     "migrate:koperasi-rochmad": "tsx scripts/migrateKoperasiRochmad.ts",
+    "migrate:loyalis-admin-role": "tsx scripts/migrateLoyalisAdminRole.ts",
     "seed:white-collar-matrix": "tsx scripts/seedWhiteCollarSalaryMatrix.ts",
     "preview:loyalis-type": "tsx scripts/previewLoyalisTypeCategorization.ts",
     "run:loyalis-type": "tsx scripts/runLoyalisTypeCategorization.ts"

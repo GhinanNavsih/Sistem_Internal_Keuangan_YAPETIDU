@@ -58,6 +58,7 @@ interface ManagedBalanceEmployee {
 }
 
 interface BalanceRosterResponse {
+  balanceReferenceDate: string;
   employees: ManagedBalanceEmployee[];
 }
 
@@ -98,6 +99,7 @@ export default function AnnualPaidLeaveReviewPanel() {
   const [items, setItems] = useState<ReviewRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [balanceEmployees, setBalanceEmployees] = useState<ManagedBalanceEmployee[]>([]);
+  const [balanceReferenceDate, setBalanceReferenceDate] = useState('');
   const [balanceLoading, setBalanceLoading] = useState(true);
   const [balanceError, setBalanceError] = useState('');
   const [balanceSearch, setBalanceSearch] = useState('');
@@ -120,9 +122,9 @@ export default function AnnualPaidLeaveReviewPanel() {
 
   const allowed = Boolean(
     profile &&
-      ['super_admin', 'satker_head', 'loyalis_presence_admin'].includes(profile.role),
+      ['super_admin', 'satker_head', 'loyalis_admin'].includes(profile.role),
   );
-  const balanceScopeDescription = profile?.role === 'loyalis_presence_admin'
+  const balanceScopeDescription = profile?.role === 'loyalis_admin'
     ? 'Anda dapat mengatur sisa cuti pegawai Loyalis.'
     : profile?.role === 'satker_head'
       ? `Anda dapat mengatur sisa cuti pegawai Pekarya pada kategori: ${(profile.permittedCategories || []).join(', ') || 'belum ada kategori yang ditetapkan pada akun Anda'}.`
@@ -156,6 +158,7 @@ export default function AnnualPaidLeaveReviewPanel() {
         `/api/payroll/paid-leave/balances?year=${year}`,
       );
       setBalanceEmployees(response.employees || []);
+      setBalanceReferenceDate(response.balanceReferenceDate || '');
       return true;
     } catch (error) {
       setBalanceError(
@@ -462,7 +465,7 @@ export default function AnnualPaidLeaveReviewPanel() {
                         Alasan: {item.reason || 'Tidak ada alasan tambahan.'}
                       </div>
                       <div className="mt-1 text-xs text-slate-500">
-                        Mulai kerja {formatDate(item.serviceDate)} · berhak sejak {formatDate(item.qualifyingDate)}
+                        Mulai kerja {formatDate(item.serviceDate)} · hak pertama mulai {formatDate(item.qualifyingDate)}
                       </div>
                       {item.status === 'approved' ? (
                         <div className="mt-2 text-sm font-semibold text-emerald-700">
@@ -513,6 +516,11 @@ export default function AnnualPaidLeaveReviewPanel() {
             <p className="mt-1 text-sm text-slate-500">
               Catat sisa cuti berdasarkan pemakaian sebelum aplikasi digunakan. Cuti yang sudah disetujui atau sedang menunggu di aplikasi tetap diperhitungkan.
             </p>
+            {balanceReferenceDate ? (
+              <p className="mt-1 text-xs text-slate-500">
+                Hak dan sisa dihitung per {formatDate(balanceReferenceDate)}. Jatah bertambah setelah masa kerja melewati 10 atau 15 tahun.
+              </p>
+            ) : null}
             <p className="mt-1 text-sm font-medium text-slate-600">{balanceScopeDescription}</p>
           </div>
 
@@ -605,7 +613,7 @@ export default function AnnualPaidLeaveReviewPanel() {
                     <p className="mt-1 text-sm text-slate-600">
                       {selectedBalanceEmployee.employeeKind === 'loyalis' ? 'Loyalis' : selectedBalanceEmployee.category}
                       {' · ID '}{selectedBalanceEmployee.employeeId}
-                      {' · Berhak sejak '}{formatDate(selectedBalanceEmployee.qualifyingDate)}
+                      {' · Hak pertama mulai '}{formatDate(selectedBalanceEmployee.qualifyingDate)}
                     </p>
                   </div>
 

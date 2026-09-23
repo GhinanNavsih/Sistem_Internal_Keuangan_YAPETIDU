@@ -154,7 +154,7 @@ calendar edits.
 
 ## Shared Attendance Import (August 2026 onward)
 
-`loyalis_presence_admin` or Superadmin uploads one monthly XLS/XLSX for Loyalis
+`loyalis_admin` (Loyalis Admin) or Superadmin uploads one monthly XLS/XLSX for Loyalis
 and Pekarya. A dedicated `NIPY` column is authoritative; `PIN` is used only
 when `NIPY` is absent. If both values disagree, the row is invalid.
 For existing Loyalis records, `personal_info.employee_id_niy` is accepted as
@@ -183,7 +183,7 @@ Satpam uses `15`; and Teknisi uses `16`. Initial sequences follow numeric
 `BC_###` order within each grouped category. Future issuance uses a
 transactional category counter and never renumbers an issued employee.
 
-Superadmin and Employee Admin may issue formula-generated NIPYs. Missing start
+Superadmin and Loyalis Admin may issue formula-generated NIPYs. Missing start
 dates block the final NIPY but may retain an audited sequence reservation.
 Category or start-date changes do not silently alter an issued NIPY. Only
 Superadmin may explicitly reissue it from corrected source data, retaining the
@@ -250,8 +250,8 @@ independently create or remove Satpam pay.
 |---|---|
 | Configure holiday calendar | `super_admin` |
 | Edit an open period calendar | `super_admin` |
-| Upload/replace shared attendance workbook | `super_admin`, `loyalis_presence_admin` |
-| Issue formula-based Pekarya NIPY | `super_admin`, `employee_admin` |
+| Upload/replace shared attendance workbook | `super_admin`, `loyalis_admin` |
+| Issue formula-based Pekarya NIPY | `super_admin`, `loyalis_admin` |
 | Reissue an incorrect Pekarya NIPY | `super_admin` |
 | Review, correct, and publish Pekarya attendance | scoped `satker_head` |
 | Publish/edit future Satpam duty plan | `ketua_shift_satpam` |

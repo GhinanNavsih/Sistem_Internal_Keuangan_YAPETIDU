@@ -92,7 +92,7 @@ async function loadActiveRows(collectionName: string) {
  * profile-owned subset onto any draft slip in an open payroll period.
  *
  * The request carries no amounts — every rupiah is computed here from the
- * employee document and the salary matrices — so an employee_admin editing a
+ * employee document and the salary matrices — so a loyalis_admin editing a
  * profile can never post an arbitrary figure onto a payslip.
  */
 export async function POST(request: NextRequest) {

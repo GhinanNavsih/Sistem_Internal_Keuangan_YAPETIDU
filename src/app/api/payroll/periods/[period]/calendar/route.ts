@@ -177,7 +177,7 @@ export async function GET(
       'super_admin',
       'finance_verifier',
       'satker_head',
-      'loyalis_presence_admin',
+      'loyalis_admin',
     ]);
     const { period } = await context.params;
     assertPeriod(period);

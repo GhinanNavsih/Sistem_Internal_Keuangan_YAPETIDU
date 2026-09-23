@@ -12,11 +12,14 @@ service cloud.firestore {
         'finance_verifier',
         'satker_head',
         'satker_head_loyalis',
-        'employee_admin',
+        'loyalis_admin',
         'honorer',
         'loyalis',
-        'loyalis_presence_admin',
-        'ketua_shift_satpam'
+        'ketua_shift_satpam',
+        // Retired ids merged into loyalis_admin; kept until every profile is
+        // migrated (npm run migrate:loyalis-admin-role -- --apply).
+        'employee_admin',
+        'loyalis_presence_admin'
       ];
     }
 
@@ -44,8 +47,11 @@ service cloud.firestore {
       return roleIs('super_admin');
     }
 
-    function isEmployeeAdmin() {
-      return roleIs('employee_admin');
+    // Employee master data plus Loyalis presence. The retired ids it replaced
+    // still count until every profile is migrated.
+    function isLoyalisAdmin() {
+      return roleIs('loyalis_admin') || roleIs('employee_admin') ||
+        roleIs('loyalis_presence_admin');
     }
 
     function isFinanceVerifier() {
@@ -120,9 +126,9 @@ service cloud.firestore {
     // their own record. Ketua Shift receives a redacted directory from the API.
     match /Employees_BlueCollar/{employeeId} {
       allow read: if hasProfile();
-      allow create: if (isSuperAdmin() || isEmployeeAdmin()) &&
+      allow create: if (isSuperAdmin() || isLoyalisAdmin()) &&
         !request.resource.data.keys().hasAny(['nipy', 'nipyAssignment']);
-      allow update: if (isSuperAdmin() || isEmployeeAdmin()) &&
+      allow update: if (isSuperAdmin() || isLoyalisAdmin()) &&
         request.resource.data.get('nipy', null) == resource.data.get('nipy', null) &&
         request.resource.data.get('nipyAssignment', null) ==
           resource.data.get('nipyAssignment', null);
@@ -131,20 +137,20 @@ service cloud.firestore {
 
     match /Employees_WhiteCollar/{employeeId} {
       allow read: if hasProfile();
-      allow create: if (isSuperAdmin() || isEmployeeAdmin()) &&
+      allow create: if (isSuperAdmin() || isLoyalisAdmin()) &&
         !request.resource.data.keys().hasAny(['nipy']);
-      allow update: if (isSuperAdmin() || isEmployeeAdmin()) &&
+      allow update: if (isSuperAdmin() || isLoyalisAdmin()) &&
         request.resource.data.get('nipy', null) == resource.data.get('nipy', null);
       allow delete: if false;
     }
 
     match /Employees_Loyalis/{employeeId} {
       allow read: if hasProfile();
-      allow create: if (isSuperAdmin() || isEmployeeAdmin()) &&
+      allow create: if (isSuperAdmin() || isLoyalisAdmin()) &&
         !request.resource.data.keys().hasAny(['nipy']) &&
         request.resource.data.get('personal_info', {})
           .get('employee_id_niy', null) == null;
-      allow update: if (isSuperAdmin() || isEmployeeAdmin()) &&
+      allow update: if (isSuperAdmin() || isLoyalisAdmin()) &&
         request.resource.data.get('nipy', null) == resource.data.get('nipy', null) &&
         request.resource.data.get('personal_info', {})
           .get('employee_id_niy', null) ==
@@ -153,55 +159,55 @@ service cloud.firestore {
     }
 
     match /SalaryMatrix/{version} {
-      allow read: if isFinanceRole() || isEmployeeAdmin() || isSatkerRole();
+      allow read: if isFinanceRole() || isLoyalisAdmin() || isSatkerRole();
       allow create, update: if isSuperAdmin();
       allow delete: if false;
       match /rows/{rowId} {
-        allow read: if isFinanceRole() || isEmployeeAdmin() || isSatkerRole();
+        allow read: if isFinanceRole() || isLoyalisAdmin() || isSatkerRole();
         allow create, update: if isSuperAdmin();
         allow delete: if false;
       }
     }
 
     match /SalaryMatrix_WhiteCollar/{version} {
-      allow read: if isFinanceRole() || isEmployeeAdmin() || roleIs('satker_head_loyalis');
+      allow read: if isFinanceRole() || isLoyalisAdmin() || roleIs('satker_head_loyalis');
       allow create, update: if isSuperAdmin();
       allow delete: if false;
       match /rows/{rowId} {
-        allow read: if isFinanceRole() || isEmployeeAdmin() || roleIs('satker_head_loyalis');
+        allow read: if isFinanceRole() || isLoyalisAdmin() || roleIs('satker_head_loyalis');
         allow create, update: if isSuperAdmin();
         allow delete: if false;
       }
     }
 
     match /SalaryMatrix_Functional/{version} {
-      allow read: if isFinanceRole() || isEmployeeAdmin() || roleIs('satker_head_loyalis');
+      allow read: if isFinanceRole() || isLoyalisAdmin() || roleIs('satker_head_loyalis');
       allow create, update: if isSuperAdmin();
       allow delete: if false;
       match /rows/{rowId} {
-        allow read: if isFinanceRole() || isEmployeeAdmin() || roleIs('satker_head_loyalis');
+        allow read: if isFinanceRole() || isLoyalisAdmin() || roleIs('satker_head_loyalis');
         allow create, update: if isSuperAdmin();
         allow delete: if false;
       }
     }
 
     match /SalaryMatrix_Kepangkatan/{version} {
-      allow read: if isFinanceRole() || isEmployeeAdmin() || roleIs('satker_head_loyalis');
+      allow read: if isFinanceRole() || isLoyalisAdmin() || roleIs('satker_head_loyalis');
       allow create, update: if isSuperAdmin();
       allow delete: if false;
       match /rows/{rowId} {
-        allow read: if isFinanceRole() || isEmployeeAdmin() || roleIs('satker_head_loyalis');
+        allow read: if isFinanceRole() || isLoyalisAdmin() || roleIs('satker_head_loyalis');
         allow create, update: if isSuperAdmin();
         allow delete: if false;
       }
     }
 
     match /SalaryMatrix_ExcessAttendance/{version} {
-      allow read: if isFinanceRole() || isEmployeeAdmin() || roleIs('satker_head_loyalis');
+      allow read: if isFinanceRole() || isLoyalisAdmin() || roleIs('satker_head_loyalis');
       allow create, update: if isSuperAdmin();
       allow delete: if false;
       match /rows/{rowId} {
-        allow read: if isFinanceRole() || isEmployeeAdmin() || roleIs('satker_head_loyalis');
+        allow read: if isFinanceRole() || isLoyalisAdmin() || roleIs('satker_head_loyalis');
         allow create, update: if isSuperAdmin();
         allow delete: if false;
       }
@@ -268,7 +274,7 @@ service cloud.firestore {
     // was already verified or locked. Written only by
     // /api/payroll/employee-profile-propagation via the Admin SDK.
     match /PayrollProfileDriftNotices/{docId} {
-      allow read: if isFinanceRole() || isEmployeeAdmin();
+      allow read: if isFinanceRole() || isLoyalisAdmin();
       allow write: if false;
     }
 
@@ -312,12 +318,12 @@ service cloud.firestore {
     // Shared attendance state is exposed through scoped APIs. Detailed scan
     // rows and correction overlays are never mutated directly by a browser.
     match /AttendanceImports/{period} {
-      allow read: if isFinanceRole() || roleIs('loyalis_presence_admin');
+      allow read: if isFinanceRole() || isLoyalisAdmin();
       allow write: if false;
     }
 
     match /AttendanceImportRevisions/{revisionId} {
-      allow read: if isFinanceRole() || roleIs('loyalis_presence_admin');
+      allow read: if isFinanceRole() || isLoyalisAdmin();
       allow write: if false;
     }
 
@@ -415,11 +421,11 @@ service cloud.firestore {
 
     match /LoyalisPresence/{docId} {
       allow read: if isFinanceRole() || roleIs('satker_head_loyalis') ||
-        roleIs('loyalis_presence_admin');
+        isLoyalisAdmin();
       allow create: if (isFinanceVerifier() || isSuperAdmin() ||
-        roleIs('loyalis_presence_admin')) && createsOpenPeriodRecord();
+        isLoyalisAdmin()) && createsOpenPeriodRecord();
       allow update: if (isFinanceVerifier() || isSuperAdmin() ||
-        roleIs('loyalis_presence_admin')) && updatesOpenPeriodRecord();
+        isLoyalisAdmin()) && updatesOpenPeriodRecord();
       allow delete: if false;
     }
 
@@ -442,8 +448,8 @@ service cloud.firestore {
     }
 
     match /EmpEditLog/{docId} {
-      allow read: if isSuperAdmin() || isEmployeeAdmin();
-      allow create: if isSuperAdmin() || isEmployeeAdmin();
+      allow read: if isSuperAdmin() || isLoyalisAdmin();
+      allow create: if isSuperAdmin() || isLoyalisAdmin();
       allow update, delete: if false;
     }
 
@@ -474,7 +480,7 @@ service cloud.firestore {
     }
 
     match /LoyalisPresenceCorrections/{requestId} {
-      allow read: if isFinanceRole() || roleIs('loyalis_presence_admin') ||
+      allow read: if isFinanceRole() || isLoyalisAdmin() ||
         ownsEmployee(resource.data.employeeId);
       allow create: if roleIs('loyalis') &&
         ownsEmployee(request.resource.data.employeeId) &&
@@ -489,7 +495,7 @@ service cloud.firestore {
           request.resource.data.date == resource.data.date
         ) &&
         (
-          roleIs('loyalis_presence_admin') &&
+          isLoyalisAdmin() &&
           resource.data.status == 'pending' &&
           request.resource.data.status in ['approved', 'rejected']
         ) ||
@@ -520,20 +526,20 @@ service cloud.firestore {
     }
 
     match /JabatanStruktural/{docId} {
-      allow read: if isFinanceRole() || isEmployeeAdmin();
+      allow read: if isFinanceRole() || isLoyalisAdmin();
       allow create, update: if isSuperAdmin();
       allow delete: if false;
     }
 
     match /Settings/{docId} {
-      allow read: if isFinanceRole() || isEmployeeAdmin() || isSatkerRole() ||
-        roleIs('loyalis_presence_admin');
-      allow create, update: if isSuperAdmin() || isEmployeeAdmin();
+      allow read: if isFinanceRole() || isLoyalisAdmin() || isSatkerRole() ||
+        isLoyalisAdmin();
+      allow create, update: if isSuperAdmin() || isLoyalisAdmin();
       allow delete: if false;
     }
 
     match /SatpamShiftTeams/{teamId} {
-      allow read: if isFinanceRole() || isEmployeeAdmin() || isSatkerRole();
+      allow read: if isFinanceRole() || isLoyalisAdmin() || isSatkerRole();
       allow write: if false;
     }
 
