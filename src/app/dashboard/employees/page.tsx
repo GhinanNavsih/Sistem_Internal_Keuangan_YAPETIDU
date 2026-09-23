@@ -66,6 +66,7 @@ import {
   ChevronUp,
   ChevronDown,
   Fingerprint,
+  CalendarDays,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
@@ -77,7 +78,7 @@ import {
   serverTimestamp,
   Timestamp,
 } from 'firebase/firestore';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { db } from '@/lib/firebase';
 import { useDashboardData } from '@/lib/DashboardDataContext';
 import {
@@ -93,6 +94,7 @@ import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/clien
 import { normalizeNipy } from '@/lib/payroll/attendance';
 import { getPayImpactLabels } from '@/lib/payroll/slipPropagation';
 import { matchFunctionalAllowance } from '@/lib/payroll/salaryMatrix';
+import { annualPaidLeaveTableFigures } from '@/lib/payroll/annualPaidLeave';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 
 const JOB_CATEGORIES = ['SATPAM', 'SOPIR', 'KEBERSIHAN', 'TEKNISI', 'KEBERSIHAN_PONTI'];
@@ -203,6 +205,39 @@ const getEmpRecognizedDate = (emp: any) => {
   }
   return '';
 };
+
+// Date-only (YYYY-MM-DD) form of a stored date, matching how the leave API reads it.
+const toDateOnly = (value: unknown): string => {
+  const text = String(value || '').trim();
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(text);
+  if (match) return match[1];
+  const parsed = text ? new Date(text) : null;
+  return parsed && Number.isFinite(parsed.getTime()) ? parsed.toISOString().slice(0, 10) : '';
+};
+
+const formatDateOnly = (value: string): string =>
+  value
+    ? new Date(`${value}T00:00:00Z`).toLocaleDateString('id-ID', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        timeZone: 'UTC',
+      })
+    : '-';
+
+const jakartaToday = (): string =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+
+interface LeaveBalanceRow {
+  employeeId: string;
+  entitlementDays: number;
+  availableDays: number;
+}
 
 const getEmpMasaKerja = (emp: any): string => {
   const tmtVal = emp.employment_profile?.date_recognized;
@@ -473,7 +508,35 @@ export default function EmployeesPage() {
     : employeesBlueCollar;
 
   const [activeTab, setActiveTab] = useState('loyalis');
-  const [tableViewMode, setTableViewMode] = useState<'default' | 'debug' | 'constant'>('default');
+  const [tableViewMode, setTableViewMode] = useState<'default' | 'debug' | 'constant' | 'cuti'>('default');
+
+  // Jatah Cuti view: the balances API is the source of truth for Sisa Cuti.
+  // It returns only active, entitled employees the viewer may review, so any
+  // other row falls back to the tier entitlement (see annualPaidLeaveTableFigures).
+  const leaveAsOfDate = jakartaToday();
+  const leaveYear = Number(leaveAsOfDate.slice(0, 4));
+  const leaveBalancesQuery = useQuery({
+    queryKey: ['employees', 'paid-leave-balances', leaveYear],
+    queryFn: () =>
+      authenticatedJson<{ employees: LeaveBalanceRow[] }>(
+        `/api/payroll/paid-leave/balances?year=${leaveYear}`,
+      ),
+    enabled: tableViewMode === 'cuti' && !!profile,
+  });
+  const leaveBalanceById = useMemo(
+    () => new Map((leaveBalancesQuery.data?.employees || []).map(row => [row.employeeId, row])),
+    [leaveBalancesQuery.data],
+  );
+  // Leave accrues from Tanggal Diakui for Loyalis and from Mulai Kerja for Pekarya.
+  const getLeaveServiceDate = (emp: Record<string, unknown>) =>
+    toDateOnly(activeTab === 'loyalis' ? getEmpRecognizedDate(emp) : getEmpStartDate(emp));
+  const getLeaveFigures = (emp: Record<string, unknown>) =>
+    annualPaidLeaveTableFigures({
+      serviceDate: getLeaveServiceDate(emp),
+      year: leaveYear,
+      asOfDate: leaveAsOfDate,
+      balance: leaveBalanceById.get(getEmpId(emp)),
+    });
   const [employees, setEmployees] = useState<any[]>([]);
   const [localLoading, setLocalLoading] = useState(false);
   const loyalisAdminDataLoading = isLoyalisAdmin &&
@@ -1432,6 +1495,18 @@ export default function EmployeesPage() {
           bVal = -bTime;
           break;
         }
+        case 'recognizedDate':
+          aVal = toDateOnly(getEmpRecognizedDate(a));
+          bVal = toDateOnly(getEmpRecognizedDate(b));
+          break;
+        case 'leaveEntitlement':
+          aVal = getLeaveFigures(a).entitlementDays ?? -1;
+          bVal = getLeaveFigures(b).entitlementDays ?? -1;
+          break;
+        case 'leaveRemaining':
+          aVal = getLeaveFigures(a).remainingDays ?? -1;
+          bVal = getLeaveFigures(b).remainingDays ?? -1;
+          break;
         case 't_bpjs_tk':
           aVal = a.bpjs?.t_bpjs_tk || 0;
           bVal = b.bpjs?.t_bpjs_tk || 0;
@@ -1757,8 +1832,31 @@ export default function EmployeesPage() {
               <SlidersHorizontal className="w-3.5 h-3.5" />
               Nilai Konstanta
             </button>
+            <button
+              onClick={() => setTableViewMode('cuti')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${tableViewMode === 'cuti'
+                ? 'bg-sky-600 text-white shadow-sm'
+                : 'text-slate-600 hover:bg-slate-50'
+                }`}
+            >
+              <CalendarDays className="w-3.5 h-3.5" />
+              Jatah Cuti
+            </button>
           </div>
         </div>
+
+        {tableViewMode === 'cuti' && (
+          <p className="-mt-2 mb-4 px-2 text-xs text-slate-500">
+            Cuti tahunan {leaveYear}, dihitung per {formatDateOnly(leaveAsOfDate)} dari{' '}
+            {activeTab === 'loyalis' ? 'Tanggal Diakui' : 'Mulai Kerja'}.
+            {leaveBalancesQuery.isError && (
+              <span className="text-rose-600"> Sisa cuti gagal dimuat.</span>
+            )}
+            {isLoyalisAdmin && activeTab === 'blue' && (
+              <span> Sisa cuti Pekarya dikelola Kepala SatKer, sehingga tidak tampil di sini.</span>
+            )}
+          </p>
+        )}
 
         {/* Table */}
         <Card className="bg-white rounded-[24px] shadow-[0_8px_40px_-12px_rgba(0,0,0,0.06)] border-none overflow-hidden">
@@ -1767,10 +1865,7 @@ export default function EmployeesPage() {
               <TableHeader className="bg-slate-50/50">
                 {tableViewMode === 'default' && (
                   <TableRow className="border-slate-100">
-                    <TableHead onClick={() => handleSort('id')} className="w-24 font-semibold text-slate-900 pl-8 cursor-pointer hover:text-indigo-600 transition-colors">
-                      <div className="flex items-center">ID <SortIcon active={sortConfig.key === 'id'} direction={sortConfig.direction} /></div>
-                    </TableHead>
-                    <TableHead onClick={() => handleSort('name')} className="font-semibold text-slate-900 w-[320px] cursor-pointer hover:text-indigo-600 transition-colors">
+                    <TableHead onClick={() => handleSort('name')} className="font-semibold text-slate-900 w-[320px] pl-8 cursor-pointer hover:text-indigo-600 transition-colors">
                       <div className="flex items-center">Nama Lengkap <SortIcon active={sortConfig.key === 'name'} direction={sortConfig.direction} /></div>
                     </TableHead>
                     <TableHead onClick={() => handleSort('category')} className="font-semibold text-slate-900 w-[320px] cursor-pointer hover:text-indigo-600 transition-colors">
@@ -1795,10 +1890,7 @@ export default function EmployeesPage() {
                 )}
                 {tableViewMode === 'debug' && (
                   <TableRow className="border-slate-100">
-                    <TableHead onClick={() => handleSort('id')} className="w-24 font-semibold text-slate-900 pl-8 cursor-pointer hover:text-indigo-600 transition-colors">
-                      <div className="flex items-center">ID <SortIcon active={sortConfig.key === 'id'} direction={sortConfig.direction} /></div>
-                    </TableHead>
-                    <TableHead onClick={() => handleSort('name')} className="font-semibold text-slate-900 w-[300px] cursor-pointer hover:text-indigo-600 transition-colors">
+                    <TableHead onClick={() => handleSort('name')} className="font-semibold text-slate-900 w-[300px] pl-8 cursor-pointer hover:text-indigo-600 transition-colors">
                       <div className="flex items-center">Nama Lengkap <SortIcon active={sortConfig.key === 'name'} direction={sortConfig.direction} /></div>
                     </TableHead>
                     <TableHead onClick={() => handleSort('debugJabatan')} className="font-semibold text-slate-900 w-[300px] cursor-pointer hover:text-indigo-600 transition-colors">
@@ -1813,13 +1905,32 @@ export default function EmployeesPage() {
                     <TableHead className="font-semibold text-slate-900 text-right pr-8 select-none">Aksi</TableHead>
                   </TableRow>
                 )}
+                {tableViewMode === 'cuti' && (
+                  <TableRow className="border-slate-100">
+                    <TableHead onClick={() => handleSort('name')} className="font-semibold text-slate-900 w-[320px] pl-8 cursor-pointer hover:text-indigo-600 transition-colors">
+                      <div className="flex items-center">Nama Lengkap <SortIcon active={sortConfig.key === 'name'} direction={sortConfig.direction} /></div>
+                    </TableHead>
+                    <TableHead onClick={() => handleSort('startDate')} className="font-semibold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors">
+                      <div className="flex items-center">Mulai Kerja <SortIcon active={sortConfig.key === 'startDate'} direction={sortConfig.direction} /></div>
+                    </TableHead>
+                    <TableHead onClick={() => handleSort('recognizedDate')} className="font-semibold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors">
+                      <div className="flex items-center">Tanggal Diakui <SortIcon active={sortConfig.key === 'recognizedDate'} direction={sortConfig.direction} /></div>
+                    </TableHead>
+                    <TableHead onClick={() => handleSort('masaKerja')} className="font-semibold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors">
+                      <div className="flex items-center">Masa Kerja <SortIcon active={sortConfig.key === 'masaKerja'} direction={sortConfig.direction} /></div>
+                    </TableHead>
+                    <TableHead onClick={() => handleSort('leaveEntitlement')} className="font-semibold text-slate-900 text-right cursor-pointer hover:text-indigo-600 transition-colors">
+                      <div className="flex items-center justify-end">Jatah Cuti <SortIcon active={sortConfig.key === 'leaveEntitlement'} direction={sortConfig.direction} /></div>
+                    </TableHead>
+                    <TableHead onClick={() => handleSort('leaveRemaining')} className="font-semibold text-slate-900 text-right pr-8 cursor-pointer hover:text-indigo-600 transition-colors">
+                      <div className="flex items-center justify-end">Sisa Cuti <SortIcon active={sortConfig.key === 'leaveRemaining'} direction={sortConfig.direction} /></div>
+                    </TableHead>
+                  </TableRow>
+                )}
                 {tableViewMode === 'constant' && (
                   activeTab === 'loyalis' ? (
                     <TableRow className="border-slate-100">
-                      <TableHead onClick={() => handleSort('id')} className="w-24 font-semibold text-slate-900 pl-8 cursor-pointer hover:text-indigo-600 transition-colors">
-                        <div className="flex items-center">ID <SortIcon active={sortConfig.key === 'id'} direction={sortConfig.direction} /></div>
-                      </TableHead>
-                      <TableHead onClick={() => handleSort('name')} className="font-semibold text-slate-900 w-[200px] cursor-pointer hover:text-indigo-600 transition-colors">
+                      <TableHead onClick={() => handleSort('name')} className="font-semibold text-slate-900 w-[200px] pl-8 cursor-pointer hover:text-indigo-600 transition-colors">
                         <div className="flex items-center">Nama Lengkap <SortIcon active={sortConfig.key === 'name'} direction={sortConfig.direction} /></div>
                       </TableHead>
                       <TableHead onClick={() => handleSort('t_bpjs_tk')} className="font-semibold text-emerald-800 bg-emerald-50/40 text-right cursor-pointer hover:text-indigo-800 transition-colors">
@@ -1859,10 +1970,7 @@ export default function EmployeesPage() {
                     </TableRow>
                   ) : (
                     <TableRow className="border-slate-100">
-                      <TableHead onClick={() => handleSort('id')} className="w-24 font-semibold text-slate-900 pl-8 cursor-pointer hover:text-indigo-600 transition-colors">
-                        <div className="flex items-center">ID <SortIcon active={sortConfig.key === 'id'} direction={sortConfig.direction} /></div>
-                      </TableHead>
-                      <TableHead onClick={() => handleSort('name')} className="font-semibold text-slate-900 w-[250px] cursor-pointer hover:text-indigo-600 transition-colors">
+                      <TableHead onClick={() => handleSort('name')} className="font-semibold text-slate-900 w-[250px] pl-8 cursor-pointer hover:text-indigo-600 transition-colors">
                         <div className="flex items-center">Nama Lengkap <SortIcon active={sortConfig.key === 'name'} direction={sortConfig.direction} /></div>
                       </TableHead>
                       <TableHead onClick={() => handleSort('bpjs_pekarya')} className="font-semibold text-emerald-800 bg-emerald-50/40 text-right cursor-pointer hover:text-indigo-800 transition-colors">
@@ -1882,7 +1990,7 @@ export default function EmployeesPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={tableViewMode === 'default' ? (isLoyalisAdmin ? 7 : 8) : (tableViewMode === 'debug' ? 6 : (activeTab === 'loyalis' ? 14 : 6))} className="h-64 text-center">
+                    <TableCell colSpan={tableViewMode === 'default' ? (isLoyalisAdmin ? 6 : 7) : tableViewMode === 'debug' ? 5 : tableViewMode === 'cuti' ? 6 : (activeTab === 'loyalis' ? 13 : 5)} className="h-64 text-center">
                       <div className="flex flex-col items-center gap-3 text-slate-400">
                         <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
                         <p>Memuat data pegawai...</p>
@@ -1891,15 +1999,14 @@ export default function EmployeesPage() {
                   </TableRow>
                 ) : filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={tableViewMode === 'default' ? (isLoyalisAdmin ? 7 : 8) : (tableViewMode === 'debug' ? 6 : (activeTab === 'loyalis' ? 14 : 6))} className="h-64 text-center">
+                    <TableCell colSpan={tableViewMode === 'default' ? (isLoyalisAdmin ? 6 : 7) : tableViewMode === 'debug' ? 5 : tableViewMode === 'cuti' ? 6 : (activeTab === 'loyalis' ? 13 : 5)} className="h-64 text-center">
                       <p className="text-slate-400">Tidak ada pegawai yang ditemukan.</p>
                     </TableCell>
                   </TableRow>
                 ) : tableViewMode === 'default' ? (
                   filtered.map(emp => (
                     <TableRow key={getEmpId(emp)} className="hover:bg-slate-50/30 transition-colors border-slate-50">
-                      <TableCell className="font-bold text-slate-400 pl-8 font-mono text-xs">{getEmpId(emp)}</TableCell>
-                      <TableCell className="w-[320px] max-w-[320px]">
+                      <TableCell className="w-[320px] max-w-[320px] pl-8">
                         <div className="flex flex-col">
                           <span className="font-bold text-slate-900 block truncate" title={getEmpName(emp)}>{getEmpName(emp)}</span>
                           {activeTab === 'loyalis' ? (
@@ -1958,11 +2065,53 @@ export default function EmployeesPage() {
                       </TableCell>
                     </TableRow>
                   ))
+                ) : tableViewMode === 'cuti' ? (
+                  filtered.map(emp => {
+                    const leave = getLeaveFigures(emp);
+                    const recognizedDate = toDateOnly(getEmpRecognizedDate(emp));
+                    return (
+                      <TableRow key={getEmpId(emp)} className="hover:bg-slate-50/30 transition-colors border-slate-50">
+                        <TableCell className="w-[320px] max-w-[320px] pl-8">
+                          <span className="font-bold text-slate-900 block truncate" title={getEmpName(emp)}>{getEmpName(emp)}</span>
+                        </TableCell>
+                        <TableCell className="text-slate-600 text-sm whitespace-nowrap">
+                          {formatDateOnly(toDateOnly(getEmpStartDate(emp)))}
+                        </TableCell>
+                        <TableCell className="text-slate-600 text-sm whitespace-nowrap">
+                          {formatDateOnly(recognizedDate)}
+                        </TableCell>
+                        <TableCell className="text-slate-500 text-sm whitespace-nowrap">
+                          {getEmpMasaKerja(emp)}
+                        </TableCell>
+                        <TableCell className="text-right text-sm whitespace-nowrap">
+                          {leave.entitlementDays === null ? (
+                            <span className="text-slate-300">-</span>
+                          ) : leave.entitlementDays === 0 ? (
+                            <span className="text-slate-400" title={leave.qualifyingDate ? `Berhak mulai ${formatDateOnly(leave.qualifyingDate)}` : undefined}>
+                              Belum berhak
+                            </span>
+                          ) : (
+                            <span className="font-semibold text-slate-800">{leave.entitlementDays} hari</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right pr-8 text-sm whitespace-nowrap">
+                          {leave.remainingDays !== null ? (
+                            <span className={`font-bold ${leave.remainingDays > 0 ? 'text-sky-700' : 'text-slate-400'}`}>
+                              {leave.remainingDays} hari
+                            </span>
+                          ) : leaveBalancesQuery.isFetching ? (
+                            <Loader2 className="ml-auto h-3.5 w-3.5 animate-spin text-slate-300" />
+                          ) : (
+                            <span className="text-slate-300">-</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 ) : tableViewMode === 'debug' ? (
                   getSortedDebugRows(getDebugRows(filtered, activeTab)).map(empRow => (
                     <TableRow key={empRow.rowKey} className="hover:bg-slate-50/30 transition-colors border-slate-50">
-                      <TableCell className="font-bold text-slate-400 pl-8 font-mono text-xs">{getEmpId(empRow)}</TableCell>
-                      <TableCell className="w-[320px] max-w-[320px]">
+                      <TableCell className="w-[320px] max-w-[320px] pl-8">
                         <div className="flex flex-col">
                           <span className="font-bold text-slate-900 block truncate" title={getEmpName(empRow)}>{getEmpName(empRow)}</span>
                           <span className="text-xs text-slate-400 font-mono">
@@ -1996,8 +2145,7 @@ export default function EmployeesPage() {
                 ) : (
                   filtered.map(emp => (
                     <TableRow key={getEmpId(emp)} className="hover:bg-slate-50/30 transition-colors border-slate-50">
-                      <TableCell className="font-bold text-slate-400 pl-8 font-mono text-xs">{getEmpId(emp)}</TableCell>
-                      <TableCell className="w-[180px] max-w-[180px]">
+                      <TableCell className="w-[180px] max-w-[180px] pl-8">
                         <div className="flex flex-col">
                           <span className="font-bold text-slate-900 block truncate" title={getEmpName(emp)}>{getEmpName(emp)}</span>
                           <span className="text-[10px] text-slate-400 font-mono">

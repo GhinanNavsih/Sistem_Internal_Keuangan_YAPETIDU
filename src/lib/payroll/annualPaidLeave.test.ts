@@ -8,6 +8,7 @@ import {
   annualPaidLeavePayType,
   annualPaidLeaveQualifyingDate,
   annualPaidLeaveRequestId,
+  annualPaidLeaveTableFigures,
   calculateAnnualPaidLeaveBalance,
   canReviewAnnualPaidLeave,
   completedServiceYears,
@@ -205,5 +206,33 @@ test('review decision guard blocks unsafe approvals while still allowing a decli
       attendanceConflict: true,
     }),
     null,
+  );
+});
+
+test('employee table leave figures prefer the stored balance and never guess a remainder', () => {
+  const base = { serviceDate: '2016-09-22', year: 2026, asOfDate: '2026-09-23' };
+  assert.deepEqual(
+    annualPaidLeaveTableFigures({ ...base, balance: { entitlementDays: 6, availableDays: 2 } }),
+    { entitlementDays: 6, remainingDays: 2, qualifyingDate: '2021-09-23' },
+  );
+  // Entitled but no readable balance (inactive, or outside the viewer's scope).
+  assert.deepEqual(
+    annualPaidLeaveTableFigures(base),
+    { entitlementDays: 6, remainingDays: null, qualifyingDate: '2021-09-23' },
+  );
+  // Not yet past five years: nothing to take, so the remainder is known to be zero.
+  assert.deepEqual(
+    annualPaidLeaveTableFigures({ ...base, serviceDate: '2023-01-10' }),
+    { entitlementDays: 0, remainingDays: 0, qualifyingDate: '2028-01-11' },
+  );
+  // A past year is judged at 31 December of that year.
+  assert.equal(
+    annualPaidLeaveTableFigures({ ...base, serviceDate: '2021-06-01', year: 2025, asOfDate: '2026-09-23' })
+      .entitlementDays,
+    0,
+  );
+  assert.deepEqual(
+    annualPaidLeaveTableFigures({ ...base, serviceDate: '' }),
+    { entitlementDays: null, remainingDays: null, qualifyingDate: null },
   );
 });

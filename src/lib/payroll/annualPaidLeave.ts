@@ -217,6 +217,52 @@ export function calculateAnnualPaidLeaveBalance(
   };
 }
 
+export interface AnnualPaidLeaveTableFigures {
+  /** Jatah Cuti for the year; null when the service date is missing. */
+  entitlementDays: number | null;
+  /** Sisa Cuti; null when no balance could be read for this employee. */
+  remainingDays: number | null;
+  /** First day the employee is entitled to leave; null without a service date. */
+  qualifyingDate: string | null;
+}
+
+/**
+ * One employee's leave figures for the employee master table. The balances
+ * API is authoritative for every employee it returns. The rest (not yet
+ * entitled, inactive, or outside the viewer's review scope) get the same tier
+ * entitlement and a remainder only when that is necessarily zero.
+ */
+export function annualPaidLeaveTableFigures(input: {
+  serviceDate: string;
+  year: number;
+  asOfDate: string;
+  balance?: { entitlementDays: number; availableDays: number } | null;
+}): AnnualPaidLeaveTableFigures {
+  const qualifyingDate = isDateOnly(input.serviceDate)
+    ? annualPaidLeaveQualifyingDate(input.serviceDate)
+    : null;
+  if (input.balance) {
+    return {
+      entitlementDays: input.balance.entitlementDays,
+      remainingDays: input.balance.availableDays,
+      qualifyingDate,
+    };
+  }
+  if (!qualifyingDate) {
+    return { entitlementDays: null, remainingDays: null, qualifyingDate: null };
+  }
+  const entitlementDays = annualPaidLeaveBalanceEntitlementForYear(
+    input.serviceDate,
+    input.year,
+    input.asOfDate,
+  );
+  return {
+    entitlementDays,
+    remainingDays: entitlementDays === 0 ? 0 : null,
+    qualifyingDate,
+  };
+}
+
 export function annualPaidLeavePayType(isPremiumDate: boolean): AnnualPaidLeavePayType {
   return isPremiumDate ? 'Jumat & Libur' : 'Harian';
 }
