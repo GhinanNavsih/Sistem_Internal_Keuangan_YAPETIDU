@@ -22,6 +22,7 @@ import {
   HttpError,
   requireAuthenticatedProfile,
 } from '@/lib/server/auth';
+import { applyApprovedPaidLeavePostsToLoyalisPresence } from '@/lib/server/annualPaidLeave';
 
 export const dynamic = 'force-dynamic';
 
@@ -151,9 +152,13 @@ export async function GET(request: NextRequest) {
     const presenceSnapshot = canonicalPresenceSnapshot.exists
       ? canonicalPresenceSnapshot
       : legacyPresenceSnapshot;
-    const presence = presenceSnapshot.exists
+    const rawPresence = presenceSnapshot.exists
       ? (presenceSnapshot.data() as LoyalisPresenceDocument)
       : null;
+    const presence = await applyApprovedPaidLeavePostsToLoyalisPresence(
+      period,
+      rawPresence as (LoyalisPresenceDocument & Record<string, unknown>) | null,
+    );
     const presenceAmounts = loyalisPresenceAmounts(presence, employeeId);
 
     const vakasiTambahanList: { eventName: string; payGiven: number }[] = [];

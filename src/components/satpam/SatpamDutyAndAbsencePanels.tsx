@@ -1237,8 +1237,15 @@ export function SatpamAbsencePanel(props: {
   /** Drop the Card chrome when a page or dialog already supplies its own. */
   embedded?: boolean;
   autoSaveDraft?: boolean;
+  workflowMode?: 'all' | 'presence_correction' | 'sick_leave';
 }) {
-  const { employeeId, openPeriods, embedded, autoSaveDraft = true } = props;
+  const {
+    employeeId,
+    openPeriods,
+    embedded,
+    autoSaveDraft = true,
+    workflowMode = 'all',
+  } = props;
   const [selectedPeriod, setPeriod] = useState('');
   const defaultPeriod = useMemo(() => {
     const today = jakartaToday();
@@ -1264,6 +1271,12 @@ export function SatpamAbsencePanel(props: {
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
   const draftHydratedRef = useRef(false);
+  const activeReportType = workflowMode === 'presence_correction'
+    ? 'scan'
+    : workflowMode === 'sick_leave'
+      ? 'izin_resmi'
+      : reportType;
+  const activeAbsenceType = workflowMode === 'sick_leave' ? 'sakit' : absenceType;
 
   // Restore draft from localStorage upon mount
   useEffect(() => {
@@ -1288,20 +1301,20 @@ export function SatpamAbsencePanel(props: {
     saveSatpamLeaveDraft(employeeId, {
       period: selectedPeriod,
       dutyDate,
-      reportType,
+      reportType: activeReportType,
       scanIn,
       scanOut,
-      absenceType,
+      absenceType: activeAbsenceType,
       reason,
     });
   }, [
     autoSaveDraft,
     selectedPeriod,
     dutyDate,
-    reportType,
+    activeReportType,
     scanIn,
     scanOut,
-    absenceType,
+    activeAbsenceType,
     reason,
     employeeId,
   ]);
@@ -1330,7 +1343,7 @@ export function SatpamAbsencePanel(props: {
     [dutyDate, scheduledDuties],
   );
   const scanRangeInvalid = Boolean(
-    reportType === 'scan' &&
+    activeReportType === 'scan' &&
       selectedDuty &&
       !isValidSatpamAttendanceScanRange(
         scanIn,
@@ -1425,11 +1438,11 @@ export function SatpamAbsencePanel(props: {
       setError('Pilih tanggal kewajiban dinas terlebih dahulu.');
       return;
     }
-    if (isUnassignedSatpam && reportType !== 'izin_resmi') {
+    if (isUnassignedSatpam && activeReportType !== 'izin_resmi') {
       setError('Satpam tanpa regu hanya dapat mengajukan izin resmi.');
       return;
     }
-    if (reportType === 'scan' && scanRangeInvalid) {
+    if (activeReportType === 'scan' && scanRangeInvalid) {
       setError(
         selectedDuty?.shiftName === 'Malam'
           ? 'Jam scan Shift Malam harus membentuk rentang dinas yang valid hingga hari berikutnya.'
@@ -1445,7 +1458,7 @@ export function SatpamAbsencePanel(props: {
         const compressed = await compressProofImage(evidenceFile);
         evidenceUrl = await uploadProofFile('/api/uploads/activity-proofs', compressed, {
           employeeId,
-          filenameHint: `${reportType === 'scan' ? 'presensi' : 'izin'}_${dutyDate}`,
+          filenameHint: `${activeReportType === 'scan' ? 'presensi' : 'izin'}_${dutyDate}`,
         });
       }
       const previous = requests.find(
@@ -1457,10 +1470,10 @@ export function SatpamAbsencePanel(props: {
           action: 'submit',
           requestId: createFinancialRequestId('satpam-absence'),
           dutyDate,
-          reportType,
-          scanIn: reportType === 'scan' ? scanIn : null,
-          scanOut: reportType === 'scan' ? scanOut : null,
-          absenceType: reportType === 'izin_resmi' ? absenceType : null,
+          reportType: activeReportType,
+          scanIn: activeReportType === 'scan' ? scanIn : null,
+          scanOut: activeReportType === 'scan' ? scanOut : null,
+          absenceType: activeReportType === 'izin_resmi' ? activeAbsenceType : null,
           reason,
           evidenceUrl,
           expectedRevision: previous?.revision || 0,
@@ -1473,9 +1486,11 @@ export function SatpamAbsencePanel(props: {
       setReason('');
       setEvidenceFile(null);
       setMessage(
-        reportType === 'scan'
+        activeReportType === 'scan'
           ? 'Laporan scan dikirim kepada Kepala SatKer.'
-          : 'Pengajuan izin dikirim kepada Kepala SatKer. Pengajuan terlambat tetap diterima dan akan diberi tanda.',
+          : workflowMode === 'sick_leave'
+            ? 'Pengajuan izin sakit dikirim kepada Kepala SatKer.'
+            : 'Pengajuan izin dikirim kepada Kepala SatKer. Pengajuan terlambat tetap diterima dan akan diberi tanda.',
       );
       await load();
     } catch (cause) {
@@ -1608,7 +1623,7 @@ export function SatpamAbsencePanel(props: {
                 />
               </div>
             )}
-            {!isUnassignedSatpam && (
+            {!isUnassignedSatpam && workflowMode === 'all' && (
               <div className="space-y-2">
                 <Label htmlFor="satpam-report-type">Jenis pengajuan</Label>
                 <LargeSelect
@@ -1625,7 +1640,7 @@ export function SatpamAbsencePanel(props: {
                 />
               </div>
             )}
-            {reportType === 'scan' && !isUnassignedSatpam ? (
+            {activeReportType === 'scan' && !isUnassignedSatpam ? (
               <>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
@@ -1662,6 +1677,15 @@ export function SatpamAbsencePanel(props: {
                   </p>
                 )}
               </>
+            ) : activeReportType === 'scan' ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                Koreksi presensi tersedia untuk tanggal saat Anda terdaftar pada jadwal dinas.
+              </div>
+            ) : workflowMode === 'sick_leave' ? (
+              <div className="rounded-xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-900">
+                <p className="font-bold">Jenis alasan: Sakit</p>
+                <p className="mt-1">Pengajuan sakit tidak mengurangi hak cuti tahunan.</p>
+              </div>
             ) : (
               <div className="space-y-2">
                 <Label htmlFor="absence-type">Jenis alasan</Label>
@@ -1676,6 +1700,9 @@ export function SatpamAbsencePanel(props: {
                     { value: 'lainnya', label: 'Lainnya' },
                   ]}
                 />
+                <p className="text-xs text-slate-500">
+                  Pengajuan sakit atau izin ini tidak mengurangi hak cuti tahunan.
+                </p>
               </div>
             )}
             <div className="space-y-2">
@@ -1687,7 +1714,7 @@ export function SatpamAbsencePanel(props: {
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
                 placeholder={
-                  reportType === 'scan'
+                  activeReportType === 'scan'
                     ? 'Contoh: Lupa melakukan finger scan saat mulai dan selesai dinas.'
                     : 'Contoh: Sakit dengan Surat Dokter'
                 }
@@ -1731,7 +1758,8 @@ export function SatpamAbsencePanel(props: {
               disabled={
                 working ||
                 reason.trim().length > 500 ||
-                (reportType === 'scan' && scanRangeInvalid)
+                (activeReportType === 'scan' && scanRangeInvalid) ||
+                (workflowMode === 'presence_correction' && isUnassignedSatpam)
               }
               onClick={() => void submit()}
             >
@@ -1832,14 +1860,22 @@ export function SatpamAbsencePanel(props: {
       <CardHeader className="border-b border-amber-100 bg-amber-50/70 p-5">
         <CardTitle className="flex items-center gap-2 text-xl">
           <ShieldCheck className="h-6 w-6 text-amber-700" />
-          {isUnassignedSatpam
-            ? 'Ajukan Izin Satpam Tanpa Regu'
-            : 'Ajukan Izin & Presensi Satpam'}
+          {workflowMode === 'presence_correction'
+            ? 'Koreksi Presensi Satpam'
+            : workflowMode === 'sick_leave'
+              ? 'Izin Sakit Satpam'
+              : isUnassignedSatpam
+                ? 'Ajukan Izin Satpam Tanpa Regu'
+                : 'Ajukan Izin & Presensi Satpam'}
         </CardTitle>
         <p className="text-base text-slate-600">
-          {isUnassignedSatpam
-            ? 'Pilih tanggal untuk mengajukan izin administratif. Pengajuan tanpa regu tidak menghasilkan tambahan Harian.'
-            : 'Laporkan scan masuk & keluar yang terlupa atau ajukan izin untuk kewajiban dinas yang terjadwal. Izin yang tumpang tindih dengan shift terdaftar tidak menambah Harian.'}
+          {workflowMode === 'presence_correction'
+            ? 'Laporkan scan masuk atau scan keluar yang perlu diperbaiki pada jadwal dinas.'
+            : workflowMode === 'sick_leave'
+              ? 'Ajukan izin sakit pada tanggal kewajiban dinas. Pengajuan ini tidak mengurangi hak cuti tahunan.'
+              : isUnassignedSatpam
+                ? 'Pilih tanggal untuk mengajukan izin administratif. Pengajuan tanpa regu tidak menghasilkan tambahan Harian.'
+                : 'Laporkan scan masuk & keluar yang terlupa atau ajukan izin untuk kewajiban dinas yang terjadwal. Izin yang tumpang tindih dengan shift terdaftar tidak menambah Harian.'}
         </p>
       </CardHeader>
       {body}

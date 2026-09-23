@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AlertCircle, ChevronLeft, LogOut, ShieldCheck } from 'lucide-react';
 import EmployeeNavigationMenu from '@/components/EmployeeNavigationMenu';
+import { LoyalisPresenceCorrectionPanel } from '@/components/employee/LoyalisPresenceCorrectionPanel';
+import { PaidLeavePanel } from '@/components/employee/PaidLeavePanel';
 import { PekaryaOfficialLeavePanel } from '@/components/pekarya/PekaryaOfficialLeavePanel';
 import { SatpamAbsencePanel } from '@/components/satpam/SatpamDutyAndAbsencePanels';
 import { Button } from '@/components/ui/button';
@@ -13,6 +15,13 @@ import { authenticatedJson } from '@/lib/payroll/client';
 import { isPekaryaOfficialLeaveCategory } from '@/lib/payroll/pekaryaOfficialLeave';
 import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
 import { LeavePageSkeleton, LeaveCardSkeleton } from '@/components/LeaveSkeleton';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 type OpenPeriod = {
   period: string;
@@ -31,6 +40,11 @@ export default function EmployeeLeavePage() {
   const [openPeriods, setOpenPeriods] = useState<OpenPeriod[]>([]);
   const [loadingPeriods, setLoadingPeriods] = useState(true);
   const [periodError, setPeriodError] = useState('');
+  const isLoyalis = profile?.role === 'loyalis';
+  const [workflow, setWorkflow] = useState<
+    'presence_correction' | 'sick_leave' | 'paid_leave'
+  >('paid_leave');
+  const effectiveWorkflow = workflow;
 
   const isSatpam = Boolean(
     profile?.role === 'ketua_shift_satpam' ||
@@ -40,14 +54,21 @@ export default function EmployeeLeavePage() {
   );
   const jobCategory =
     profile?.permittedCategories?.[0]?.trim().toUpperCase() || '';
+  const workflowLabels = {
+    presence_correction: 'Koreksi Presensi',
+    sick_leave: 'Izin Sakit',
+    paid_leave: 'Ambil Cuti',
+  } as const;
+  const selectedWorkflowLabel = workflowLabels[effectiveWorkflow];
   const isSupportedEmployee = Boolean(
     profile &&
-      ['honorer', 'ketua_shift_satpam'].includes(profile.role) &&
-      (isSatpam || isPekaryaOfficialLeaveCategory(jobCategory)),
+      (profile.role === 'loyalis' ||
+        (['honorer', 'ketua_shift_satpam'].includes(profile.role) &&
+          (isSatpam || isPekaryaOfficialLeaveCategory(jobCategory)))),
   );
 
   const loadOpenPeriods = useCallback(async () => {
-    if (!profile?.linkedEmployeeId || !isSupportedEmployee) {
+    if (!profile?.linkedEmployeeId || !isSupportedEmployee || isLoyalis) {
       setLoadingPeriods(false);
       return;
     }
@@ -68,7 +89,7 @@ export default function EmployeeLeavePage() {
     } finally {
       setLoadingPeriods(false);
     }
-  }, [isSupportedEmployee, profile?.linkedEmployeeId]);
+  }, [isLoyalis, isSupportedEmployee, profile?.linkedEmployeeId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadOpenPeriods(), 0);
@@ -127,7 +148,7 @@ export default function EmployeeLeavePage() {
               <ShieldCheck className="h-4.5 w-4.5" />
             </div>
             <div className="min-w-0">
-              <h1 className="truncate text-sm font-bold leading-tight">Ajukan Izin</h1>
+              <h1 className="truncate text-sm font-bold leading-tight">Izin &amp; Cuti</h1>
               <p className="truncate text-[11px] font-medium text-slate-400">
                 {profile.displayName || profile.email}
               </p>
@@ -149,7 +170,60 @@ export default function EmployeeLeavePage() {
       </header>
 
       <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
-        {loadingPeriods ? (
+        <div className="mb-4 space-y-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <label htmlFor="leave-workflow" className="text-sm font-bold text-slate-700">
+            Jenis pengajuan
+          </label>
+          <Select
+            value={effectiveWorkflow}
+            onValueChange={(value) => {
+              if (
+                value === 'presence_correction' ||
+                value === 'sick_leave' ||
+                value === 'paid_leave'
+              ) {
+                setWorkflow(value);
+              }
+            }}
+          >
+            <SelectTrigger
+              id="leave-workflow"
+              className="h-14 w-full rounded-xl px-4 text-base font-bold"
+            >
+              <SelectValue>{selectedWorkflowLabel}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem
+                value="presence_correction"
+                className="min-h-12 px-3 py-3 text-base font-semibold"
+              >
+                Koreksi Presensi
+              </SelectItem>
+              <SelectItem
+                value="sick_leave"
+                className="min-h-12 px-3 py-3 text-base font-semibold"
+              >
+                Izin Sakit
+              </SelectItem>
+              <SelectItem
+                value="paid_leave"
+                className="min-h-12 px-3 py-3 text-base font-semibold"
+              >
+                Ambil Cuti
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {effectiveWorkflow === 'paid_leave' ? (
+          <PaidLeavePanel />
+        ) : isLoyalis ? (
+          <LoyalisPresenceCorrectionPanel
+            key={effectiveWorkflow}
+            embedded
+            workflowMode={effectiveWorkflow}
+          />
+        ) : loadingPeriods ? (
           <LeaveCardSkeleton variant={isSatpam ? 'satpam' : 'pekarya'} />
         ) : periodError ? (
           <Card className="rounded-3xl border-rose-200 bg-rose-50 shadow-sm">
@@ -165,12 +239,14 @@ export default function EmployeeLeavePage() {
             employeeId={profile.linkedEmployeeId}
             openPeriods={openPeriods}
             autoSaveDraft
+            workflowMode={effectiveWorkflow}
           />
         ) : (
           <PekaryaOfficialLeavePanel
             employeeId={profile.linkedEmployeeId}
             openPeriods={openPeriods}
             autoSaveDraft
+            workflowMode={effectiveWorkflow}
           />
         )}
       </main>

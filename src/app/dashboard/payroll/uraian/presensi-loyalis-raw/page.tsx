@@ -46,6 +46,7 @@ import {
   autoFillLoyalisScan,
   calculateLoyalisDailyDuration,
 } from '@/lib/payroll/loyalisPresenceWindow';
+import { applyApprovedPaidLeaveToLoyalisEntry } from '@/lib/payroll/loyalisPaidLeave';
 import {
   authenticatedFormData,
   authenticatedJson,
@@ -237,6 +238,27 @@ const recalculateSummary = (
   };
 };
 
+const applyApprovedPaidLeavesToRows = (
+  rows: any[],
+  paidLeaves: readonly { employeeId: string; leaveDate: string }[],
+  expectedHours: number,
+  workingDays: number,
+  isOffDay: (date: string) => boolean,
+) => rows.map((row) => {
+  let next = row;
+  for (const leave of paidLeaves) {
+    if (!row.employeeId || leave.employeeId !== row.employeeId) continue;
+    next = applyApprovedPaidLeaveToLoyalisEntry({
+      entry: next,
+      leaveDate: leave.leaveDate,
+      expectedHours,
+      workingDays,
+      isOffDay: isOffDay(leave.leaveDate),
+    });
+  }
+  return next;
+});
+
 /**
  * Builds the `LoyalisPresence.entries` map from the working table. Shared by
  * the manual "Simpan Data Presensi" save and the background autosave so both
@@ -251,6 +273,8 @@ const buildPresenceEntries = (
   calculateStratum: (minutes: number, mode: 'worked' | 'absent', days: number, hours: number) => {
     absenceMinutes: number; stratum: number; deduction: number; netBonus: number;
   },
+  approvedPaidLeaves: readonly { employeeId: string; leaveDate: string }[] = [],
+  isOffDayIso: (date: string) => boolean = () => false,
 ) => {
   const entriesMap: Record<string, any> = {};
 
@@ -297,6 +321,18 @@ const buildPresenceEntries = (
         dailyLogs: [],
       };
     }
+  });
+
+  approvedPaidLeaves.forEach((leave) => {
+    const entry = entriesMap[leave.employeeId];
+    if (!entry) return;
+    entriesMap[leave.employeeId] = applyApprovedPaidLeaveToLoyalisEntry({
+      entry,
+      leaveDate: leave.leaveDate,
+      expectedHours,
+      workingDays: activeWorkingDays,
+      isOffDay: isOffDayIso(leave.leaveDate),
+    });
   });
 
   return entriesMap;
@@ -359,6 +395,9 @@ export default function PresensiLoyalisRawPage() {
   const [workingDays, setWorkingDays] = useState<number | ''>(25);
   const activeWorkingDays = Number(workingDays) || 0;
   const [expectedHours, setExpectedHours] = useState<number>(6.5);
+  const [approvedPaidLeaves, setApprovedPaidLeaves] = useState<
+    Array<{ employeeId: string; leaveDate: string }>
+  >([]);
   const [savingPresence, setSavingPresence] = useState(false);
   const [existingPresence, setExistingPresence] = useState<any>(null);
   const [loadingPresence, setLoadingPresence] = useState(false);
@@ -488,6 +527,37 @@ export default function PresensiLoyalisRawPage() {
     [offDaySet],
   );
 
+  const isOffDayIso = useCallback(
+    (date: string) => offDaySet.has(date) || isFridayDate(date),
+    [offDaySet],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void authenticatedJson<{
+      requests: Array<{
+        employeeId: string;
+        employeeKind: string;
+        leaveDate: string;
+        period: string;
+      }>;
+    }>(`/api/payroll/paid-leave/review?year=${year}&status=approved&period=${canonicalPeriod}`)
+      .then((response) => {
+        if (cancelled) return;
+        setApprovedPaidLeaves(
+          response.requests
+            .filter((item) => item.employeeKind === 'loyalis')
+            .map((item) => ({ employeeId: item.employeeId, leaveDate: item.leaveDate })),
+        );
+      })
+      .catch((error) => {
+        console.error('Gagal memuat overlay cuti tahunan Loyalis:', error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canonicalPeriod, year]);
+
   // The calendar resolves after the table can already be on screen, and the
   // Tanggal Merah editor can change it mid-session. Re-derive every row's
   // totals from its own logs whenever the off-day set (or the daily target)
@@ -496,12 +566,25 @@ export default function PresensiLoyalisRawPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setUploadedData(prev => {
       if (!prev) return prev;
-      return prev.map(emp => ({
+      const recalculated = prev.map(emp => ({
         ...emp,
         ...recalculateSummary(emp.dailyLogs || [], expectedHours, isOffDayTanggal),
       }));
+      return applyApprovedPaidLeavesToRows(
+        recalculated,
+        approvedPaidLeaves,
+        expectedHours,
+        activeWorkingDays,
+        isOffDayIso,
+      );
     });
-  }, [isOffDayTanggal, expectedHours]);
+  }, [
+    activeWorkingDays,
+    approvedPaidLeaves,
+    expectedHours,
+    isOffDayIso,
+    isOffDayTanggal,
+  ]);
 
   const fetchActiveImport = useCallback(async () => {
     if (!usesSharedImport) {
@@ -706,14 +789,28 @@ export default function PresensiLoyalisRawPage() {
         dailyLogs: Array<{ Tanggal: string; 'Jam kerja': string; 'Scan masuk': string; 'Scan pulang': string }>;
       }>;
     }>(`/api/attendance/imports?period=${encodeURIComponent(canonicalPeriod)}&scope=loyalis`);
-    return (result.loyalisRows || []).map((entry) => ({
+    const rows = (result.loyalisRows || []).map((entry) => ({
       excelName: entry.excelName,
       nipy: entry.nipy,
       employeeId: entry.employeeId,
       employeeName: entry.employeeName,
       ...recalculateSummary(entry.dailyLogs, expectedHours, isOffDayTanggal),
     }));
-  }, [canonicalPeriod, expectedHours, isOffDayTanggal]);
+    return applyApprovedPaidLeavesToRows(
+      rows,
+      approvedPaidLeaves,
+      expectedHours,
+      activeWorkingDays,
+      isOffDayIso,
+    );
+  }, [
+    activeWorkingDays,
+    approvedPaidLeaves,
+    canonicalPeriod,
+    expectedHours,
+    isOffDayIso,
+    isOffDayTanggal,
+  ]);
 
   useEffect(() => {
     if (!usesSharedImport) return;
@@ -1103,6 +1200,8 @@ export default function PresensiLoyalisRawPage() {
         expectedHoursRef.current,
         loyalisEmployees,
         calculatePresenceStratum,
+        approvedPaidLeaves,
+        isOffDayIso,
       );
       const payload = buildPresencePayload({
         periodToken,
@@ -1146,6 +1245,8 @@ export default function PresensiLoyalisRawPage() {
     periodToken,
     presenceDocId,
     loyalisEmployees,
+    approvedPaidLeaves,
+    isOffDayIso,
     calculatePresenceStratum,
     serializeWorkingTable,
     scheduleAutosave,
@@ -1253,10 +1354,25 @@ export default function PresensiLoyalisRawPage() {
       ...recalculateSummary(entry.dailyLogs || [], expectedHours, isOffDayTanggal),
     }));
     hydratingRef.current = true;
-    setUploadedData(entriesList);
+    setUploadedData(
+      applyApprovedPaidLeavesToRows(
+        entriesList,
+        approvedPaidLeaves,
+        expectedHours,
+        activeWorkingDays,
+        isOffDayIso,
+      ),
+    );
     setBulkFillSnapshots({});
     setMessage({ type: 'success', text: 'Mode edit diaktifkan. Anda sekarang dapat mengubah data logs presensi dan menghubungkan pegawai.' });
-  }, [existingPresence, expectedHours, isOffDayTanggal]);
+  }, [
+    activeWorkingDays,
+    approvedPaidLeaves,
+    existingPresence,
+    expectedHours,
+    isOffDayIso,
+    isOffDayTanggal,
+  ]);
 
   // True while the page still has a reason to expect data but hasn't shown
   // any yet, so the table area can say so instead of just sitting empty.
@@ -1351,7 +1467,7 @@ export default function PresensiLoyalisRawPage() {
       return [...matched, ...unmatched].map((row, idx) => ({ ...row, idx }));
     }
     return null;
-  }, [uploadedData, loyalisEmployees, existingPresence, calcMode, workingDays, expectedHours, calculatePresenceStratum, corrections]);
+  }, [uploadedData, loyalisEmployees, existingPresence, calcMode, workingDays, activeWorkingDays, expectedHours, calculatePresenceStratum, corrections]);
 
   const filteredDisplayRows = useMemo(() => {
     if (!displayRows) return null;
@@ -1642,7 +1758,9 @@ export default function PresensiLoyalisRawPage() {
     matchExcelName,
     usesSharedImport,
     fetchActiveImportLoyalisRows,
+    invalidateAttendanceImportStatus,
     isOffDayTanggal,
+    periodToken,
   ]);
 
   const handleUpdateDailyLog = useCallback((excelName: string, dateStr: string, field: string, value: any) => {
@@ -1866,6 +1984,8 @@ export default function PresensiLoyalisRawPage() {
         expectedHours,
         loyalisEmployees,
         calculatePresenceStratum,
+        approvedPaidLeaves,
+        isOffDayIso,
       );
       const payload = buildPresencePayload({
         periodToken,

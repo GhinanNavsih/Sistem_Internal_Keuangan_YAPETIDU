@@ -9,7 +9,7 @@ export function LeaveHeaderShell({ displayName }: { displayName?: string | null 
           <ShieldCheck className="h-6 w-6" />
         </div>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-lg font-extrabold">Ajukan Izin</h1>
+          <h1 className="truncate text-lg font-extrabold">Izin &amp; Cuti</h1>
           {displayName ? (
             <p className="truncate text-sm text-slate-500">{displayName}</p>
           ) : (

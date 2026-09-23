@@ -58,7 +58,7 @@ const DEFAULT_SCAN_OUT = '14:00';
 const CLOCK_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const REPORT_TYPE_LABELS: Record<PekaryaAttendanceReportType, string> = {
   scan: 'Scan Masuk & Scan Keluar',
-  izin_resmi: 'Izin Resmi (Hari Penuh)',
+  izin_resmi: 'Izin Resmi / Sakit (Hari Penuh)',
 };
 
 function statusLabel(status: PekaryaOfficialLeaveRequest['status']): string {
@@ -84,8 +84,15 @@ export function PekaryaOfficialLeavePanel(props: {
   openPeriods: OpenPeriod[];
   embedded?: boolean;
   autoSaveDraft?: boolean;
+  workflowMode?: 'all' | 'presence_correction' | 'sick_leave';
 }) {
-  const { employeeId, openPeriods, embedded, autoSaveDraft = true } = props;
+  const {
+    employeeId,
+    openPeriods,
+    embedded,
+    autoSaveDraft = true,
+    workflowMode = 'all',
+  } = props;
   const availablePeriods = useMemo(
     () =>
       openPeriods.filter(
@@ -95,6 +102,11 @@ export function PekaryaOfficialLeavePanel(props: {
   );
   const [date, setDate] = useState('');
   const [reportType, setReportType] = useState<PekaryaAttendanceReportType>('izin_resmi');
+  const activeReportType = workflowMode === 'presence_correction'
+    ? 'scan'
+    : workflowMode === 'sick_leave'
+      ? 'izin_resmi'
+      : reportType;
   const [scanIn, setScanIn] = useState(DEFAULT_SCAN_IN);
   const [scanOut, setScanOut] = useState(DEFAULT_SCAN_OUT);
   const [requests, setRequests] = useState<PekaryaOfficialLeaveRequest[]>([]);
@@ -131,13 +143,13 @@ export function PekaryaOfficialLeavePanel(props: {
     if (!autoSaveDraft || !draftHydratedRef.current || !employeeId) return;
     savePekaryaLeaveDraft(employeeId, {
       date,
-      reportType,
+      reportType: activeReportType,
       scanIn,
       scanOut,
       reason,
       evidence,
     });
-  }, [autoSaveDraft, date, reportType, scanIn, scanOut, reason, evidence, employeeId]);
+  }, [autoSaveDraft, date, activeReportType, scanIn, scanOut, reason, evidence, employeeId]);
 
   const discardDraft = useCallback(() => {
     clearPekaryaLeaveDraft(employeeId);
@@ -170,7 +182,7 @@ export function PekaryaOfficialLeavePanel(props: {
   const [error, setError] = useState('');
 
   const scanRangeInvalid =
-    reportType === 'scan' &&
+    activeReportType === 'scan' &&
     CLOCK_TIME_PATTERN.test(scanIn) &&
     CLOCK_TIME_PATTERN.test(scanOut) &&
     timeToMinutes(scanOut) <= timeToMinutes(scanIn);
@@ -239,7 +251,7 @@ export function PekaryaOfficialLeavePanel(props: {
       return;
     }
     if (
-      reportType === 'scan' &&
+      activeReportType === 'scan' &&
       (!CLOCK_TIME_PATTERN.test(scanIn) ||
         !CLOCK_TIME_PATTERN.test(scanOut) ||
         scanRangeInvalid)
@@ -264,9 +276,9 @@ export function PekaryaOfficialLeavePanel(props: {
           requestId: createFinancialRequestId('pekarya-attendance'),
           period,
           date: effectiveDate,
-          reportType,
-          scanIn: reportType === 'scan' ? scanIn : null,
-          scanOut: reportType === 'scan' ? scanOut : null,
+          reportType: activeReportType,
+          scanIn: activeReportType === 'scan' ? scanIn : null,
+          scanOut: activeReportType === 'scan' ? scanOut : null,
           reason: reason.trim(),
           evidenceUrl: evidence?.url || null,
           evidenceAuditMetadata: evidence?.auditMetadata || null,
@@ -281,9 +293,11 @@ export function PekaryaOfficialLeavePanel(props: {
       setEvidence(null);
       setSelectedExifImage(null);
       setMessage(
-        reportType === 'scan'
+        activeReportType === 'scan'
           ? 'Laporan scan dikirim kepada Kepala SatKer.'
-          : 'Pengajuan izin resmi dikirim kepada Kepala SatKer.',
+          : workflowMode === 'sick_leave'
+            ? 'Pengajuan izin sakit dikirim kepada Kepala SatKer.'
+            : 'Pengajuan izin resmi dikirim kepada Kepala SatKer.',
       );
       await load();
     } catch (cause) {
@@ -381,7 +395,7 @@ export function PekaryaOfficialLeavePanel(props: {
               </p>
             )}
           </div>
-          <div className="space-y-2">
+          {workflowMode === 'all' && <div className="space-y-2">
             <Label htmlFor="official-leave-report-type">Jenis pengajuan</Label>
             <Select
               value={reportType}
@@ -395,7 +409,7 @@ export function PekaryaOfficialLeavePanel(props: {
                 id="official-leave-report-type"
                 className="min-h-14 w-full rounded-xl border-slate-300 bg-white px-4 text-base font-bold text-slate-800 shadow-none hover:bg-slate-50"
               >
-                <SelectValue>{REPORT_TYPE_LABELS[reportType]}</SelectValue>
+              <SelectValue>{REPORT_TYPE_LABELS[reportType]}</SelectValue>
               </SelectTrigger>
               <SelectContent
                 side="top"
@@ -413,12 +427,12 @@ export function PekaryaOfficialLeavePanel(props: {
                   value="izin_resmi"
                   className="min-h-12 rounded-lg px-3 py-3 text-base font-semibold"
                 >
-                  Izin Resmi (Hari Penuh)
+                  Izin Resmi / Sakit (Hari Penuh)
                 </SelectItem>
               </SelectContent>
             </Select>
-          </div>
-          {reportType === 'scan' ? (
+          </div>}
+          {activeReportType === 'scan' ? (
             <>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
@@ -447,13 +461,18 @@ export function PekaryaOfficialLeavePanel(props: {
             <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 text-sm text-indigo-900">
               <p className="flex items-center gap-2 font-bold">
                 <CalendarDays className="h-4 w-4" />
-                Izin resmi dihitung sebagai hari penuh
+                {workflowMode === 'sick_leave'
+                  ? 'Izin sakit dicatat sebagai izin hari penuh'
+                  : 'Izin resmi dihitung sebagai hari penuh'}
               </p>
               <p className="mt-1">
                 Jika disetujui, presensi akan dicatat otomatis pukul{' '}
                 <strong>{PEKARYA_OFFICIAL_LEAVE_SCAN_IN.slice(0, 5)}</strong>–
                 <strong>{PEKARYA_OFFICIAL_LEAVE_SCAN_OUT.slice(0, 5)}</strong>{' '}
                 dan masuk perhitungan upah sesuai kalender payroll.
+              </p>
+              <p className="mt-2 font-semibold">
+                Pengajuan ini tidak mengurangi hak cuti tahunan.
               </p>
             </div>
           )}
@@ -465,9 +484,11 @@ export function PekaryaOfficialLeavePanel(props: {
               value={reason}
               onChange={(event) => setReason(event.target.value)}
               placeholder={
-                reportType === 'scan'
+                activeReportType === 'scan'
                   ? 'Contoh: Scan masuk dan scan keluar tidak terbaca pada rekap presensi.'
-                  : 'Contoh: Sakit dengan Surat Dokter'
+                  : workflowMode === 'sick_leave'
+                    ? 'Jelaskan kondisi sakit dan tanggal izin.'
+                    : 'Contoh: Keperluan izin resmi'
               }
             />
           </div>
@@ -543,7 +564,7 @@ export function PekaryaOfficialLeavePanel(props: {
               !effectiveDate ||
               !dateIsOpen ||
               reason.trim().length < 8 ||
-              (reportType === 'scan' &&
+              (activeReportType === 'scan' &&
                 (!CLOCK_TIME_PATTERN.test(scanIn) ||
                   !CLOCK_TIME_PATTERN.test(scanOut) ||
                   scanRangeInvalid))
@@ -666,10 +687,18 @@ export function PekaryaOfficialLeavePanel(props: {
         <CardHeader className="border-b border-indigo-100 bg-indigo-50/70 p-5">
           <CardTitle className="flex items-center gap-2 text-xl">
             <ShieldCheck className="h-6 w-6 text-indigo-700" />
-            Ajukan Izin Resmi
+            {workflowMode === 'presence_correction'
+              ? 'Koreksi Presensi'
+              : workflowMode === 'sick_leave'
+                ? 'Izin Sakit'
+                : 'Ajukan Izin Resmi'}
           </CardTitle>
           <p className="text-base text-slate-600">
-            Kirim laporan scan masuk &amp; scan keluar atau izin resmi kepada Kepala SatKer.
+            {workflowMode === 'presence_correction'
+              ? 'Laporkan scan masuk atau scan keluar yang perlu diperbaiki kepada Kepala SatKer.'
+              : workflowMode === 'sick_leave'
+                ? 'Ajukan izin sakit kepada Kepala SatKer. Pengajuan ini tidak mengurangi hak cuti tahunan.'
+                : 'Kirim laporan scan masuk &amp; scan keluar atau izin resmi kepada Kepala SatKer.'}
           </p>
         </CardHeader>
         {body}

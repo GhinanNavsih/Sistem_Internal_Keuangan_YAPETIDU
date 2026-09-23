@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
+import AnnualPaidLeaveReviewPanel from '@/components/payroll/AnnualPaidLeaveReviewPanel';
 import { useAuth } from '@/lib/AuthContext';
 import { db } from '@/lib/firebase';
 import { useQueryClient } from '@tanstack/react-query';
@@ -749,6 +750,19 @@ export default function PresenceCorrectionsAdminPage() {
       throw new Error('Tanggal koreksi tidak valid.');
     }
 
+    const annualPaidLeave = await authenticatedJson<{
+      requests: Array<{ employeeId: string; leaveDate: string; status: string }>;
+    }>(
+      `/api/payroll/paid-leave/review?year=${encodeURIComponent(req.date.slice(0, 4))}&status=approved`,
+    );
+    if (
+      annualPaidLeave.requests.some(
+        (item) => item.employeeId === req.employeeId && item.leaveDate === req.date,
+      )
+    ) {
+      throw new Error('Cuti tahunan berbayar sudah disetujui pada tanggal ini.');
+    }
+
     const periodToken = req.date.slice(0, 7).replace('-', '_'); // e.g. "2026_06"
 
     // 1. Retrieve the existing monthly raw presence log document
@@ -1399,6 +1413,8 @@ export default function PresenceCorrectionsAdminPage() {
   return (
     <div className="space-y-6">
       <FloatingSnackbar message={message} />
+
+      <AnnualPaidLeaveReviewPanel />
 
       {/* ── Filters Row ────────────────────────────────────────────── */}
       <Card className="bg-white rounded-2xl shadow-sm border-none">

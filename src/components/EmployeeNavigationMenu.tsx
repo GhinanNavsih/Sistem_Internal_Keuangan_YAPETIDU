@@ -145,15 +145,6 @@ export default function EmployeeNavigationMenu() {
               Jadwal Regu
             </DropdownMenuItem>
           )}
-          {isLoyalis && pathname !== '/employee/presensi-correction' && (
-            <DropdownMenuItem
-              className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
-              render={<Link href="/employee/presensi-correction" />}
-            >
-              <CalendarCheck className="text-indigo-500" />
-              Ajukan Izin Presensi
-            </DropdownMenuItem>
-          )}
           {(isLoyalis || isBlueCollarHonorer) && pathname !== facilityReportsHref && (
             <DropdownMenuItem
               className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
@@ -174,7 +165,7 @@ export default function EmployeeNavigationMenu() {
               Simpan Pinjam
             </DropdownMenuItem>
           )}
-          {!isLoyalis && pathname !== leaveHref && (
+          {pathname !== leaveHref && (
             <>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -186,7 +177,7 @@ export default function EmployeeNavigationMenu() {
                 ) : (
                   <CalendarCheck className="text-indigo-500" />
                 )}
-                Ajukan Izin
+                Izin &amp; Cuti
               </DropdownMenuItem>
             </>
           )}

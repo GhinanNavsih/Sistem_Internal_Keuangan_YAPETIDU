@@ -678,6 +678,66 @@ test('approved absence fulfills duty at fixed pay, while a work conflict blocks 
   assert.equal(conflict.eligibleForBonus, false);
 });
 
+test('annual paid leave can fulfill scheduled duty without becoming a worked or bonus shift', () => {
+  const employeeId = roster[0];
+  const dutyDate = '2026-08-01';
+  const key = satpamDutyKey(employeeId, dutyDate);
+  const planDays: SatpamDutyPlanDay[] = [{
+    dutyDate,
+    shiftName: 'Pagi',
+    assignments: [{ postId: 'Pos 1', employeeId }],
+    offDutyEmployeeId: roster[1],
+    sourceSeedDate: dutyDate,
+    sourceSeedIndex: 0,
+    cycleNumber: 1,
+  }];
+  const result = reconcileSatpamDuties({
+    employeeIds: [employeeId],
+    planDays,
+    fulfilledWorkKeys: new Set(),
+    approvedAbsenceKeys: new Set([key]),
+    pendingDutyKeys: new Set(),
+    unfinishedDutyKeys: new Set(),
+    extraDutyKeys: new Set(),
+    workedShiftCountsByEmployee: new Map([[employeeId, 0]]),
+    periodComplete: true,
+  })[0];
+  assert.equal(result.fulfilledByAbsence, 1);
+  assert.equal(result.fulfilledDuties, 1);
+  assert.equal(result.workedShiftCount, 0);
+  assert.equal(result.eligibleForBonus, false);
+  assert.equal(result.bonusAmount, 0);
+});
+
+test('off-duty annual paid leave does not create a duty or worked shift', () => {
+  const employeeId = roster[1];
+  const result = reconcileSatpamDuties({
+    employeeIds: [employeeId],
+    planDays: [{
+      dutyDate: '2026-08-01',
+      shiftName: 'Pagi',
+      assignments: [{ postId: 'Pos 1', employeeId: roster[0] }],
+      offDutyEmployeeId: employeeId,
+      sourceSeedDate: '2026-08-01',
+      sourceSeedIndex: 0,
+      cycleNumber: 1,
+    }],
+    fulfilledWorkKeys: new Set(),
+    approvedAbsenceKeys: new Set([
+      satpamDutyKey(employeeId, '2026-08-01'),
+    ]),
+    pendingDutyKeys: new Set(),
+    unfinishedDutyKeys: new Set(),
+    extraDutyKeys: new Set(),
+    workedShiftCountsByEmployee: new Map([[employeeId, 0]]),
+    periodComplete: true,
+  })[0];
+  assert.equal(result.requiredDuties, 0);
+  assert.equal(result.fulfilledDuties, 0);
+  assert.equal(result.workedShiftCount, 0);
+  assert.equal(result.bonusAmount, 0);
+});
+
 test('only payable approved Satpam leave is added to the Harian count used by payroll', () => {
   assert.equal(satpamHarianCountWithApprovedAbsences(8, 1), 9);
   assert.equal(satpamHarianCountWithApprovedAbsences(0, 2), 2);

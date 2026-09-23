@@ -9,7 +9,6 @@ import { LeavePageSkeleton } from '@/components/LeaveSkeleton';
 import { FacilityReportsPageSkeleton } from '@/components/FacilityReportsSkeleton';
 import { DriverHistoryPageSkeleton } from '@/components/DriverHistorySkeleton';
 import { SatpamDutyPlanPageSkeleton } from '@/components/SatpamDutyPlanSkeleton';
-import { PresensiCorrectionPageSkeleton } from '@/components/PresensiCorrectionSkeleton';
 import { JourneyReportPageSkeleton } from '@/components/JourneyReportSkeleton';
 import {
   EMPLOYEE_ACTIVITY_PATHS,
@@ -41,8 +40,6 @@ export default function EmployeeLayout({ children }: { children: React.ReactNode
     fallback = <DriverHistoryPageSkeleton />;
   } else if (pathname === '/employee/satpam-duty-plan') {
     fallback = <SatpamDutyPlanPageSkeleton />;
-  } else if (pathname === '/employee/presensi-correction') {
-    fallback = <PresensiCorrectionPageSkeleton />;
   } else if (pathname === '/employee/leave') {
     // Role (Satpam vs Pekarya) isn't known yet at this pre-profile phase —
     // see LeaveCardSkeleton's "unknown" variant.

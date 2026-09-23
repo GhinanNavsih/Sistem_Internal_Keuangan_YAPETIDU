@@ -93,7 +93,7 @@ Roles are defined in `src/lib/payroll/roles.ts` (`USER_ROLES`) and enforced by r
 - `satker_head_loyalis`: Department head for Loyalis operations. Confined to `/dashboard/payroll/uraian*` and `/dashboard/reservasi-ruang` (venue reservations, reached from the 4th tab of `SatkerPekaryaNavBar`; SatKer heads get no sidebar).
 - `employee_admin`: Confined to `/dashboard/employees`. Can edit employee profiles (`EMPLOYEE_PROFILE_EDITOR_ROLES`, alongside `super_admin`).
 - `honorer`: Generic honorer/blue-collar portal role. Confined to `/employee/*`, and further narrowed to a single activity workflow (see below). Also has Loyalis-style access to `/employee/facility-reports` and `/employee/simpan-pinjam` (Koperasi UNIPDU membership isn't Loyalis-exclusive — a blue-collar employee's `koperasiAuthUid` lives on their `Employees_BlueCollar` doc).
-- `loyalis`: Confined to a fixed Loyalis route set: `/employee/payslip`, `/employee/presensi-correction`, `/employee/facility-reports`, `/employee/simpan-pinjam`.
+- `loyalis`: Confined to a fixed Loyalis route set: `/employee/payslip`, `/employee/leave`, `/employee/facility-reports`, `/employee/simpan-pinjam`. The legacy `/employee/presensi-correction` URL redirects to `/employee/leave`.
 - `loyalis_presence_admin`: Confined to `/dashboard/payroll/uraian/presensi-loyalis-raw` and `/dashboard/payroll/uraian/presence-corrections`.
 - `ketua_shift_satpam`: Satpam shift lead. Confined to `/employee/activities/satpam`, `/employee/satpam-duty-plan`, `/employee/leave`, `/employee/payslip`, `/employee/facility-reports`, `/employee/simpan-pinjam` — reports daily work, maintains the once-per-period duty plan, views own payslip.
 

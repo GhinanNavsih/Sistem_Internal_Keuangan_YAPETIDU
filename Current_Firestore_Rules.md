@@ -563,6 +563,29 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Annual paid leave is server-owned end to end. Employees and reviewers
+    // use authenticated APIs so balances, decisions, payroll posts, and the
+    // immutable revision trail cannot be forged from a browser client.
+    match /AnnualPaidLeaveRequests/{requestId} {
+      allow read, write: if false;
+    }
+
+    match /AnnualPaidLeaveBalances/{balanceId} {
+      allow read, write: if false;
+    }
+
+    match /AnnualPaidLeaveRequestRevisions/{revisionId} {
+      allow read, write: if false;
+    }
+
+    match /AnnualPaidLeaveBalanceRevisions/{revisionId} {
+      allow read, write: if false;
+    }
+
+    match /AnnualPaidLeavePayrollPosts/{postId} {
+      allow read, write: if false;
+    }
+
     // Everything not explicitly listed is denied.
     match /{document=**} {
       allow read, write: if false;

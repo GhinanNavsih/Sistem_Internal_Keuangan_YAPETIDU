@@ -5,6 +5,12 @@ import {
   HttpError,
   requireAuthenticatedProfile,
 } from '@/lib/server/auth';
+import {
+  loadAnnualPaidLeaveHolidayDates,
+  loadApprovedAnnualPaidLeavePosts,
+} from '@/lib/server/annualPaidLeave';
+import { applyApprovedPaidLeaveToLoyalisEntry } from '@/lib/payroll/loyalisPaidLeave';
+import { isFridayDate } from '@/lib/payroll/attendance';
 
 export const dynamic = 'force-dynamic';
 
@@ -169,23 +175,72 @@ export async function GET(request: NextRequest) {
       period.replace('-', '_'),
       period,
     ]));
-    const presenceSnapshots = await Promise.all(
-      documentIds.map((documentId) => adminDb.collection('LoyalisPresence').doc(documentId).get()),
-    );
+    const [presenceSnapshots, paidLeavePosts, paidLeaveHolidays] = await Promise.all([
+      Promise.all(
+        documentIds.map((documentId) =>
+          adminDb.collection('LoyalisPresence').doc(documentId).get(),
+        ),
+      ),
+      loadApprovedAnnualPaidLeavePosts(period, employeeId),
+      loadAnnualPaidLeaveHolidayDates(Number(period.slice(0, 4))),
+    ]);
+
+    const overlayPaidLeave = (
+      entry: PresenceEntry,
+      presenceData: PresenceEntry,
+    ): PresenceEntry => {
+      let effective = entry;
+      for (const post of paidLeavePosts.filter(
+        (item) => item.employeeKind === 'loyalis',
+      )) {
+        effective = applyApprovedPaidLeaveToLoyalisEntry({
+          entry: effective,
+          leaveDate: post.leaveDate,
+          expectedHours: Number(presenceData.expectedHours || 6.5),
+          workingDays: Number(presenceData.workingDays || 25),
+          isOffDay:
+            isFridayDate(post.leaveDate) || paidLeaveHolidays.has(post.leaveDate),
+        });
+      }
+      return effective;
+    };
 
     for (const snapshot of presenceSnapshots) {
       if (!snapshot.exists) continue;
-      const entry = findEmployeeEntry(snapshot.data() as PresenceEntry, {
+      const presenceData = snapshot.data() as PresenceEntry;
+      const entry = findEmployeeEntry(presenceData, {
         employeeId,
         nipys,
         name,
       });
       if (hasDailyLogs(entry)) {
+        const effectiveEntry = overlayPaidLeave(entry, presenceData);
         return Response.json(
-          { period, dailyLogs: serializableDailyLogs(entry.dailyLogs) },
+          {
+            period,
+            dailyLogs: serializableDailyLogs(
+              Array.isArray(effectiveEntry.dailyLogs) ? effectiveEntry.dailyLogs : [],
+            ),
+          },
           { headers: { 'Cache-Control': 'no-store' } },
         );
       }
+    }
+
+    if (paidLeavePosts.some((post) => post.employeeKind === 'loyalis')) {
+      const effectiveEntry = overlayPaidLeave(
+        { employeeId, dailyLogs: [] },
+        { workingDays: 25, expectedHours: 6.5 },
+      );
+      return Response.json(
+        {
+          period,
+          dailyLogs: serializableDailyLogs(
+            Array.isArray(effectiveEntry.dailyLogs) ? effectiveEntry.dailyLogs : [],
+          ),
+        },
+        { headers: { 'Cache-Control': 'no-store' } },
+      );
     }
 
     return Response.json(

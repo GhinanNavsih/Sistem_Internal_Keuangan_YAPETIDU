@@ -33,6 +33,10 @@ import {
   requireRole,
 } from '@/lib/server/auth';
 import { assertPeriodAcceptsInput } from '@/lib/server/payrollPeriod';
+import {
+  ANNUAL_PAID_LEAVE_REQUESTS_COLLECTION,
+  annualPaidLeaveDocumentId,
+} from '@/lib/server/annualPaidLeave';
 
 export const dynamic = 'force-dynamic';
 
@@ -153,6 +157,9 @@ export async function POST(request: NextRequest) {
     const importRef = adminDb
       .collection(ATTENDANCE_IMPORTS_COLLECTION)
       .doc(period);
+    const annualPaidLeaveRef = adminDb
+      .collection(ANNUAL_PAID_LEAVE_REQUESTS_COLLECTION)
+      .doc(annualPaidLeaveDocumentId(employeeId, date));
     const requestHash = createHash('sha256')
       .update(
         JSON.stringify({
@@ -179,6 +186,7 @@ export async function POST(request: NextRequest) {
         uraianSnapshot,
         slipSnapshot,
         importSnapshot,
+        annualPaidLeaveSnapshot,
       ] =
         await Promise.all([
           transaction.get(adminDb.collection('PayrollPeriods').doc(period)),
@@ -188,6 +196,7 @@ export async function POST(request: NextRequest) {
           transaction.get(uraianRef),
           transaction.get(slipRef),
           transaction.get(importRef),
+          transaction.get(annualPaidLeaveRef),
         ]);
       if (idempotencySnapshot.exists) {
         if (idempotencySnapshot.data()?.requestHash !== requestHash) {
@@ -208,6 +217,12 @@ export async function POST(request: NextRequest) {
         throw new HttpError(
           409,
           'Slip pegawai sudah immutable; gunakan koreksi finansial.',
+        );
+      }
+      if (present && annualPaidLeaveSnapshot.data()?.status === 'approved') {
+        throw new HttpError(
+          409,
+          'Cuti tahunan berbayar sudah disetujui pada tanggal ini.',
         );
       }
       if (

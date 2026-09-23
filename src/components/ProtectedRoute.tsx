@@ -11,12 +11,14 @@ import { isVenueReservationPath } from '@/lib/venueReservation';
 import { Loader2 } from 'lucide-react';
 
 /**
- * Loyalis staff see their own payslip, request presence corrections, and
- * report broken campus facilities to the Kepala SatKer.
+ * Loyalis staff see their own payslip, use the shared leave page, and report
+ * broken campus facilities to the Kepala SatKer.
  */
 const LOYALIS_ROUTES = [
   '/employee/payslip',
+  // Keep the legacy URL reachable so its page can redirect old bookmarks.
   '/employee/presensi-correction',
+  '/employee/leave',
   '/employee/facility-reports',
   '/employee/simpan-pinjam',
 ];
@@ -101,7 +103,7 @@ export default function ProtectedRoute({
             router.replace('/dashboard/payroll');
           }
         } else if (currentProfile.role === 'loyalis') {
-          // Loyalis employees can access payslip, presensi-correction, and broken-facility reporting
+          // Loyalis employees can access payslip, the shared leave page, and employee services.
           if (!LOYALIS_ROUTES.includes(pathname)) {
             router.replace('/employee/payslip');
           }

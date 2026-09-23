@@ -44,6 +44,10 @@ import {
   SATPAM_DUTY_PLANS_COLLECTION,
   syncSatpamDutyReconciliation,
 } from '@/lib/server/satpamDutyPlan';
+import {
+  ANNUAL_PAID_LEAVE_REQUESTS_COLLECTION,
+  annualPaidLeaveDocumentId,
+} from '@/lib/server/annualPaidLeave';
 
 export const dynamic = 'force-dynamic';
 
@@ -432,6 +436,16 @@ export async function POST(request: NextRequest) {
             ).replaceAll('-', ''),
           ),
       );
+      const annualPaidLeaveRefs = reports.map((report) =>
+        adminDb
+          .collection(ANNUAL_PAID_LEAVE_REQUESTS_COLLECTION)
+          .doc(
+            annualPaidLeaveDocumentId(
+              String(report.employeeId || ''),
+              String(occurrence.dutyDate || ''),
+            ),
+          ),
+      );
       const secondarySnapshots = await Promise.all([
         transaction.get(periodRef),
         ...slipRefs.map((reference) => transaction.get(reference)),
@@ -440,6 +454,7 @@ export async function POST(request: NextRequest) {
         ...guardIndexRefs.map((reference) => transaction.get(reference)),
         transaction.get(dutyPlanRef),
         ...absenceRefs.map((reference) => transaction.get(reference)),
+        ...annualPaidLeaveRefs.map((reference) => transaction.get(reference)),
       ]);
       const periodSnapshot = secondarySnapshots[0];
       const slipSnapshots = secondarySnapshots.slice(1, 1 + reports.length);
@@ -457,6 +472,10 @@ export async function POST(request: NextRequest) {
         secondarySnapshots[guardIndexStart + reports.length];
       const absenceSnapshots = secondarySnapshots.slice(
         guardIndexStart + reports.length + 1,
+        guardIndexStart + reports.length + 1 + reports.length,
+      );
+      const annualPaidLeaveSnapshots = secondarySnapshots.slice(
+        guardIndexStart + reports.length + 1 + reports.length,
       );
 
       assertPeriodAcceptsInput(periodSnapshot.data());
@@ -645,6 +664,12 @@ export async function POST(request: NextRequest) {
             throw new HttpError(
               409,
               `${String(before.employeeName || before.employeeId)} memiliki izin dibayar pada tanggal ini. Selesaikan konflik izin terlebih dahulu.`,
+            );
+          }
+          if (annualPaidLeaveSnapshots[index]?.data()?.status === 'approved') {
+            throw new HttpError(
+              409,
+              `${String(before.employeeName || before.employeeId)} memiliki cuti tahunan berbayar pada tanggal ini.`,
             );
           }
           if (
@@ -1159,6 +1184,11 @@ export async function PUT(request: NextRequest) {
       const employeeRefs = employeeIds.map((employeeId) =>
         adminDb.collection('Employees_BlueCollar').doc(employeeId),
       );
+      const annualPaidLeaveRefs = employeeIds.map((employeeId) =>
+        adminDb
+          .collection(ANNUAL_PAID_LEAVE_REQUESTS_COLLECTION)
+          .doc(annualPaidLeaveDocumentId(employeeId, command.dutyDate)),
+      );
       const secondarySnapshots = await Promise.all([
         transaction.get(periodRef),
         transaction.get(holidayRef),
@@ -1167,6 +1197,7 @@ export async function PUT(request: NextRequest) {
         transaction.get(pos9PlansQuery),
         ...oldReportRefs.map((reference) => transaction.get(reference)),
         ...employeeRefs.map((reference) => transaction.get(reference)),
+        ...annualPaidLeaveRefs.map((reference) => transaction.get(reference)),
       ]);
       const periodSnapshot = secondarySnapshots[0] as FirebaseFirestore.DocumentSnapshot;
       const holidaySnapshot = secondarySnapshots[1] as FirebaseFirestore.DocumentSnapshot;
@@ -1179,6 +1210,10 @@ export async function PUT(request: NextRequest) {
       ) as FirebaseFirestore.DocumentSnapshot[];
       const employeeSnapshots = secondarySnapshots.slice(
         5 + oldReportRefs.length,
+        5 + oldReportRefs.length + employeeRefs.length,
+      ) as FirebaseFirestore.DocumentSnapshot[];
+      const annualPaidLeaveSnapshots = secondarySnapshots.slice(
+        5 + oldReportRefs.length + employeeRefs.length,
       ) as FirebaseFirestore.DocumentSnapshot[];
 
       assertPeriodAcceptsInput(periodSnapshot.data());
@@ -1232,6 +1267,23 @@ export async function PUT(request: NextRequest) {
           })
           .map((snapshot) => snapshot.id),
       );
+      const annualPaidLeaveByEmployeeId = new Map(
+        annualPaidLeaveSnapshots.map((snapshot) => [snapshot.id, snapshot.data()]),
+      );
+      if (isApprovedEditBranch) {
+        for (const assignment of command.assignments) {
+          const annualId = annualPaidLeaveDocumentId(
+            assignment.employeeId,
+            command.dutyDate,
+          );
+          if (annualPaidLeaveByEmployeeId.get(annualId)?.status === 'approved') {
+            throw new HttpError(
+              409,
+              'Cuti tahunan berbayar sudah disetujui untuk salah satu petugas pada tanggal ini.',
+            );
+          }
+        }
+      }
       const oldReportById = new Map(
         (isApprovedEditBranch ? oldApprovedReportSnapshots : oldReportSnapshots)
           .filter((snapshot) => snapshot.exists)

@@ -119,6 +119,9 @@ export interface UraianEntry {
     planId?: string;
     planRevision?: number;
     approvedAbsenceCount?: number;
+    annualPaidLeaveCount?: number;
+    annualPaidLeaveHarianCount?: number;
+    annualPaidLeavePremiumCount?: number;
     requiredDuties?: number;
     bonusTargetDuties?: number;
     workedShiftCount?: number;

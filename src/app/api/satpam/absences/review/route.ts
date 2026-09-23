@@ -41,6 +41,10 @@ import {
   requireRole,
 } from '@/lib/server/auth';
 import { assertPeriodAcceptsInput } from '@/lib/server/payrollPeriod';
+import {
+  ANNUAL_PAID_LEAVE_REQUESTS_COLLECTION,
+  annualPaidLeaveDocumentId,
+} from '@/lib/server/annualPaidLeave';
 
 export const dynamic = 'force-dynamic';
 
@@ -107,6 +111,10 @@ export async function POST(request: NextRequest) {
     const absence = beforeSnapshot.data()!;
     const period = String(absence.period || '');
     const employeeId = String(absence.employeeId || '');
+    const dutyDate = String(absence.dutyDate || '');
+    const annualPaidLeaveRef = adminDb
+      .collection(ANNUAL_PAID_LEAVE_REQUESTS_COLLECTION)
+      .doc(annualPaidLeaveDocumentId(employeeId, dutyDate));
     const reportType = satpamAttendanceReportType(absence);
     const absenceTeamId = String(absence.teamId || '').trim();
     const isUnassignedSatpam =
@@ -505,6 +513,7 @@ export async function POST(request: NextRequest) {
           latestEmployee,
           latestHead,
           latestImport,
+          annualPaidLeaveSnapshot,
           idempotencySnapshot,
         ] = await Promise.all([
           transaction.get(absenceRef),
@@ -514,6 +523,7 @@ export async function POST(request: NextRequest) {
           transaction.get(employeeRef),
           transaction.get(scanHeadRef),
           transaction.get(scanImportRef),
+          transaction.get(annualPaidLeaveRef),
           transaction.get(scanIdempotencyRef),
         ]);
         if (idempotencySnapshot.exists) {
@@ -541,6 +551,12 @@ export async function POST(request: NextRequest) {
           throw new HttpError(
             409,
             'Slip pegawai sudah immutable; gunakan koreksi finansial.',
+          );
+        }
+        if (action === 'approve' && annualPaidLeaveSnapshot.data()?.status === 'approved') {
+          throw new HttpError(
+            409,
+            'Cuti tahunan berbayar sudah disetujui pada tanggal ini.',
           );
         }
         const latestEmployeeData = latestEmployee.data();
@@ -758,6 +774,7 @@ export async function POST(request: NextRequest) {
         latestEmployee,
         idempotencySnapshot,
         shiftReportsSnapshot,
+        annualPaidLeaveSnapshot,
       ] = await Promise.all([
         transaction.get(absenceRef),
         planRef ? transaction.get(planRef) : Promise.resolve(null),
@@ -766,6 +783,7 @@ export async function POST(request: NextRequest) {
         transaction.get(employeeRef),
         transaction.get(idempotencyRef),
         transaction.get(employeeShiftReportsQuery),
+        transaction.get(annualPaidLeaveRef),
       ]);
       if (idempotencySnapshot.exists) {
         if (idempotencySnapshot.data()?.requestHash !== requestHash) {
@@ -793,6 +811,12 @@ export async function POST(request: NextRequest) {
         isImmutablePayrollStatus(slipSnapshot.data()?.status)
       ) {
         throw new HttpError(409, 'Slip pegawai sudah immutable; gunakan koreksi finansial.');
+      }
+      if (approving && annualPaidLeaveSnapshot.data()?.status === 'approved') {
+        throw new HttpError(
+          409,
+          'Cuti tahunan berbayar sudah disetujui pada tanggal ini.',
+        );
       }
       const latestEmployeeData = latestEmployee.data();
       if (

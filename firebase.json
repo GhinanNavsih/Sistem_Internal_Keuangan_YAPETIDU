@@ -7,6 +7,7 @@
     "rules": "storage.rules"
   },
   "firestore": {
-    "rules": "Current_Firestore_Rules.md"
+    "rules": "Current_Firestore_Rules.md",
+    "indexes": "firestore.indexes.json"
   }
 }
