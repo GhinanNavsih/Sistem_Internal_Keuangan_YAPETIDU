@@ -124,11 +124,25 @@ service cloud.firestore {
 
     // Employee documents contain bank and salary data. Employees can read only
     // their own record. Ketua Shift receives a redacted directory from the API.
+    // Golongan (salary grade — academic_and_tier.level_code / salaryProfile.
+    // salaryGradeCode) is base-salary-sensitive: Loyalis Admin keeps full
+    // write access to these collections but may never set or change it, only
+    // super_admin may. Reads stay whole-document (Firestore rules cannot
+    // redact one field), so this pins the write side only.
     match /Employees_BlueCollar/{employeeId} {
       allow read: if hasProfile();
-      allow create: if (isSuperAdmin() || isLoyalisAdmin()) &&
+      allow create: if (
+        isSuperAdmin() ||
+        (isLoyalisAdmin() &&
+          request.resource.data.get('salaryProfile', {}).get('salaryGradeCode', '') == '')
+      ) &&
         !request.resource.data.keys().hasAny(['nipy', 'nipyAssignment']);
-      allow update: if (isSuperAdmin() || isLoyalisAdmin()) &&
+      allow update: if (
+        isSuperAdmin() ||
+        (isLoyalisAdmin() &&
+          request.resource.data.get('salaryProfile', {}).get('salaryGradeCode', null) ==
+            resource.data.get('salaryProfile', {}).get('salaryGradeCode', null))
+      ) &&
         request.resource.data.get('nipy', null) == resource.data.get('nipy', null) &&
         request.resource.data.get('nipyAssignment', null) ==
           resource.data.get('nipyAssignment', null);
@@ -137,20 +151,38 @@ service cloud.firestore {
 
     match /Employees_WhiteCollar/{employeeId} {
       allow read: if hasProfile();
-      allow create: if (isSuperAdmin() || isLoyalisAdmin()) &&
+      allow create: if (
+        isSuperAdmin() ||
+        (isLoyalisAdmin() &&
+          request.resource.data.get('academic_and_tier', {}).get('level_code', '') == '')
+      ) &&
         !request.resource.data.keys().hasAny(['nipy']);
-      allow update: if (isSuperAdmin() || isLoyalisAdmin()) &&
+      allow update: if (
+        isSuperAdmin() ||
+        (isLoyalisAdmin() &&
+          request.resource.data.get('academic_and_tier', {}).get('level_code', null) ==
+            resource.data.get('academic_and_tier', {}).get('level_code', null))
+      ) &&
         request.resource.data.get('nipy', null) == resource.data.get('nipy', null);
       allow delete: if false;
     }
 
     match /Employees_Loyalis/{employeeId} {
       allow read: if hasProfile();
-      allow create: if (isSuperAdmin() || isLoyalisAdmin()) &&
+      allow create: if (
+        isSuperAdmin() ||
+        (isLoyalisAdmin() &&
+          request.resource.data.get('academic_and_tier', {}).get('level_code', '') == '')
+      ) &&
         !request.resource.data.keys().hasAny(['nipy']) &&
         request.resource.data.get('personal_info', {})
           .get('employee_id_niy', null) == null;
-      allow update: if (isSuperAdmin() || isLoyalisAdmin()) &&
+      allow update: if (
+        isSuperAdmin() ||
+        (isLoyalisAdmin() &&
+          request.resource.data.get('academic_and_tier', {}).get('level_code', null) ==
+            resource.data.get('academic_and_tier', {}).get('level_code', null))
+      ) &&
         request.resource.data.get('nipy', null) == resource.data.get('nipy', null) &&
         request.resource.data.get('personal_info', {})
           .get('employee_id_niy', null) ==

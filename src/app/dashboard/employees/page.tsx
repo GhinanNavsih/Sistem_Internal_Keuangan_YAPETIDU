@@ -1551,7 +1551,7 @@ export default function EmployeesPage() {
           'Email': emp.personal_info?.email || '',
           'Jabatan': getEmpCategory(emp),
           'Departemen/Unit': emp.employment_profile?.department_unit || '',
-          'Golongan / Level': getEmpGrade(emp),
+          ...(isLoyalisAdmin ? {} : { 'Golongan / Level': getEmpGrade(emp) }),
           'Mulai Kerja': getEmpStartDate(emp),
           'Tgl Diakui': getEmpRecognizedDate(emp),
           'Nama Bank': emp.banking_info?.bank_name || '',
@@ -1578,7 +1578,7 @@ export default function EmployeesPage() {
           'Nomor Telepon': emp.phoneNumber || '',
           'Email': emp.email || '',
           'Kategori': getEmpCategory(emp),
-          'Golongan': getEmpGrade(emp),
+          ...(isLoyalisAdmin ? {} : { 'Golongan': getEmpGrade(emp) }),
           'Mulai Kerja': getEmpStartDate(emp),
           'Nama Bank': emp.bankAccount?.bankName || '',
           'Nomor Rekening': emp.bankAccount?.accountNumber || '',
@@ -1776,9 +1776,11 @@ export default function EmployeesPage() {
                     <TableHead onClick={() => handleSort('category')} className="font-semibold text-slate-900 w-[320px] cursor-pointer hover:text-indigo-600 transition-colors">
                       <div className="flex items-center">Kategori <SortIcon active={sortConfig.key === 'category'} direction={sortConfig.direction} /></div>
                     </TableHead>
-                    <TableHead onClick={() => handleSort('grade')} className="font-semibold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors">
-                      <div className="flex items-center">Gol. <SortIcon active={sortConfig.key === 'grade'} direction={sortConfig.direction} /></div>
-                    </TableHead>
+                    {!isLoyalisAdmin && (
+                      <TableHead onClick={() => handleSort('grade')} className="font-semibold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors">
+                        <div className="flex items-center">Gol. <SortIcon active={sortConfig.key === 'grade'} direction={sortConfig.direction} /></div>
+                      </TableHead>
+                    )}
                     <TableHead onClick={() => handleSort('status')} className="font-semibold text-slate-900 text-center cursor-pointer hover:text-indigo-600 transition-colors">
                       <div className="flex items-center justify-center">Status <SortIcon active={sortConfig.key === 'status'} direction={sortConfig.direction} /></div>
                     </TableHead>
@@ -1880,7 +1882,7 @@ export default function EmployeesPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={tableViewMode === 'default' ? 8 : (tableViewMode === 'debug' ? 6 : (activeTab === 'loyalis' ? 14 : 6))} className="h-64 text-center">
+                    <TableCell colSpan={tableViewMode === 'default' ? (isLoyalisAdmin ? 7 : 8) : (tableViewMode === 'debug' ? 6 : (activeTab === 'loyalis' ? 14 : 6))} className="h-64 text-center">
                       <div className="flex flex-col items-center gap-3 text-slate-400">
                         <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
                         <p>Memuat data pegawai...</p>
@@ -1889,7 +1891,7 @@ export default function EmployeesPage() {
                   </TableRow>
                 ) : filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={tableViewMode === 'default' ? 8 : (tableViewMode === 'debug' ? 6 : (activeTab === 'loyalis' ? 14 : 6))} className="h-64 text-center">
+                    <TableCell colSpan={tableViewMode === 'default' ? (isLoyalisAdmin ? 7 : 8) : (tableViewMode === 'debug' ? 6 : (activeTab === 'loyalis' ? 14 : 6))} className="h-64 text-center">
                       <p className="text-slate-400">Tidak ada pegawai yang ditemukan.</p>
                     </TableCell>
                   </TableRow>
@@ -1922,12 +1924,14 @@ export default function EmployeesPage() {
                           <span className="truncate" title={getEmpCategory(emp)}>{getEmpCategory(emp)}</span>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        {getEmpGrade(emp)
-                          ? <span className="font-bold text-indigo-600">{getEmpGrade(emp)}</span>
-                          : <span className="text-slate-300">-</span>
-                        }
-                      </TableCell>
+                      {!isLoyalisAdmin && (
+                        <TableCell>
+                          {getEmpGrade(emp)
+                            ? <span className="font-bold text-indigo-600">{getEmpGrade(emp)}</span>
+                            : <span className="text-slate-300">-</span>
+                          }
+                        </TableCell>
+                      )}
                       <TableCell className="text-center">
                         <Badge className={`rounded-full px-3 font-normal border-none ${getEmpIsActive(emp) ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'
                           }`}>
@@ -2523,37 +2527,40 @@ export default function EmployeesPage() {
                           </div>
                         </div>
                       </div>
-                      <div className="space-y-2">
-                        <Label>Golongan</Label>
-                        <Select
-                          value={formData.academic_and_tier?.level_code || ''}
-                          onValueChange={(val) => updateNestedField('academic_and_tier', 'level_code', val)}
-                        >
-                          <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-10 w-full">
-                            <SelectValue placeholder="Pilih Golongan" />
-                          </SelectTrigger>
-                          <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
-                            {(() => {
-                              const defaultWhiteGrades = [
-                                'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L',
-                                'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
-                                'Y', 'Z', 'AA', 'AB', 'AC', 'AD'
-                              ];
-                              const whiteGrades = gradeCodesWhite && gradeCodesWhite.length > 0 ? gradeCodesWhite : defaultWhiteGrades;
-                              const currentVal = formData.academic_and_tier?.level_code;
-                              const options = currentVal && !whiteGrades.includes(currentVal)
-                                ? [...whiteGrades, currentVal]
-                                : whiteGrades;
-                              return options.map(code => (
-                                <SelectItem key={code} value={code} className="text-xs">
-                                  {code}
-                                </SelectItem>
-                              ));
-                            })()}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
+                      {/* Golongan is base-salary-grade information: super_admin only, per product decision. */}
+                      {!isLoyalisAdmin && (
+                        <div className="space-y-2">
+                          <Label>Golongan</Label>
+                          <Select
+                            value={formData.academic_and_tier?.level_code || ''}
+                            onValueChange={(val) => updateNestedField('academic_and_tier', 'level_code', val)}
+                          >
+                            <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-10 w-full">
+                              <SelectValue placeholder="Pilih Golongan" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
+                              {(() => {
+                                const defaultWhiteGrades = [
+                                  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L',
+                                  'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
+                                  'Y', 'Z', 'AA', 'AB', 'AC', 'AD'
+                                ];
+                                const whiteGrades = gradeCodesWhite && gradeCodesWhite.length > 0 ? gradeCodesWhite : defaultWhiteGrades;
+                                const currentVal = formData.academic_and_tier?.level_code;
+                                const options = currentVal && !whiteGrades.includes(currentVal)
+                                  ? [...whiteGrades, currentVal]
+                                  : whiteGrades;
+                                return options.map(code => (
+                                  <SelectItem key={code} value={code} className="text-xs">
+                                    {code}
+                                  </SelectItem>
+                                ));
+                              })()}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                      <div className={isLoyalisAdmin ? "col-span-2 space-y-2" : "space-y-2"}>
                         <Label>Beban Kerja</Label>
                         <Select
                           value={formData.academic_and_tier?.functional_tier !== undefined && formData.academic_and_tier?.functional_tier !== null && formData.academic_and_tier?.functional_tier !== '' ? String(formData.academic_and_tier.functional_tier) : ''}
@@ -3016,38 +3023,41 @@ export default function EmployeesPage() {
                       </Select>
                     </div>
                     <div className="space-y-2"><Label>Tanggal Mulai</Label><Input type="date" required={!editingEmployee && formData.flags?.isActive !== false} value={formData.employment?.startDate || ''} onChange={e => setFormData((prev: any) => ({ ...prev, employment: { ...(prev.employment || { status: 'active', jobCategory: 'OTHER', endDate: null }), startDate: e.target.value } as any }))} className="rounded-xl border-slate-200" /></div>
-                    <div className="space-y-2">
-                      <Label>Golongan (Grade)</Label>
-                      <Select
-                        value={formData.salaryProfile?.salaryGradeCode || ''}
-                        onValueChange={(val) => setFormData((prev: any) => ({
-                          ...prev,
-                          salaryProfile: {
-                            ...(prev.salaryProfile || { baseSalaryAmount: 0, salaryMatrixVersion: '2026_v1' }),
-                            salaryGradeCode: val
-                          } as any
-                        }))}
-                      >
-                        <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-10 w-full">
-                          <SelectValue placeholder="Pilih Golongan" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
-                          {(() => {
-                            const defaultBlueGrades = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R'];
-                            const blueGrades = gradeCodesBlue && gradeCodesBlue.length > 0 ? gradeCodesBlue : defaultBlueGrades;
-                            const currentVal = formData.salaryProfile?.salaryGradeCode;
-                            const options = currentVal && !blueGrades.includes(currentVal)
-                              ? [...blueGrades, currentVal]
-                              : blueGrades;
-                            return options.map(code => (
-                              <SelectItem key={code} value={code} className="text-xs">
-                                {code}
-                              </SelectItem>
-                            ));
-                          })()}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    {/* Golongan is base-salary-grade information: super_admin only, per product decision. */}
+                    {!isLoyalisAdmin && (
+                      <div className="space-y-2">
+                        <Label>Golongan (Grade)</Label>
+                        <Select
+                          value={formData.salaryProfile?.salaryGradeCode || ''}
+                          onValueChange={(val) => setFormData((prev: any) => ({
+                            ...prev,
+                            salaryProfile: {
+                              ...(prev.salaryProfile || { baseSalaryAmount: 0, salaryMatrixVersion: '2026_v1' }),
+                              salaryGradeCode: val
+                            } as any
+                          }))}
+                        >
+                          <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-10 w-full">
+                            <SelectValue placeholder="Pilih Golongan" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
+                            {(() => {
+                              const defaultBlueGrades = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R'];
+                              const blueGrades = gradeCodesBlue && gradeCodesBlue.length > 0 ? gradeCodesBlue : defaultBlueGrades;
+                              const currentVal = formData.salaryProfile?.salaryGradeCode;
+                              const options = currentVal && !blueGrades.includes(currentVal)
+                                ? [...blueGrades, currentVal]
+                                : blueGrades;
+                              return options.map(code => (
+                                <SelectItem key={code} value={code} className="text-xs">
+                                  {code}
+                                </SelectItem>
+                              ));
+                            })()}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                   </div>
                   <div className="space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Finansial</h3>
