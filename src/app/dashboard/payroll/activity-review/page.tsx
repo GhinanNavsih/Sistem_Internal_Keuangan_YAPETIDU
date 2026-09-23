@@ -167,6 +167,8 @@ interface ActivityReport {
   procuredAccumulatedAmount?: number;
   fuelAllowanceForSettlement?: number;
   fuelTotalAllocation?: number;
+  fuelReservationBalanceFlagged?: boolean;
+  fuelReservationBalanceShortfall?: number;
   mealAllowance?: number;
   preAuthorizedMeal?: number;
   preAuthorizedToll?: number;

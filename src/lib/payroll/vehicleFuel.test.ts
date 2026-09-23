@@ -90,23 +90,30 @@ test('hold authorization consumes available balance and approval moves it to acc
   assert.equal(context.events.length, eventCount);
 });
 
-test('hold authorization rejects an insufficient available balance without mutating it', async () => {
+test('hold authorization allows an insufficient available balance but flags it for audit', async () => {
   const context = await createContext({
     Bis: { vehicleName: 'Bis', availableBalance: 20_000 },
   });
-  assert.throws(
-    () => reserveFuel(context, {
-      journeyId: 'JRN-INSUFFICIENT',
-      reservationId: 'FUEL-INSUFFICIENT',
-      vehicleName: 'Bis',
-      mode: 'hold_accumulate',
-      baseFuelAllowance: 25_000,
-      reason: 'Saldo tidak mencukupi',
-    }),
-    VehicleFuelConflictError,
-  );
-  assert.equal(getBalanceFromContext(context, 'Bis').availableBalance, 20_000);
-  assert.equal(context.events.length, 0);
+  const reservation = reserveFuel(context, {
+    journeyId: 'JRN-INSUFFICIENT',
+    reservationId: 'FUEL-INSUFFICIENT',
+    vehicleName: 'Bis',
+    mode: 'hold_accumulate',
+    baseFuelAllowance: 25_000,
+    reason: 'Saldo tidak mencukupi',
+  });
+  assert.equal(reservation.fuelReservationBalanceFlagged, true);
+  assert.equal(reservation.fuelReservationBalanceShortfall, 5_000);
+  assert.equal(getBalanceFromContext(context, 'Bis').availableBalance, -5_000);
+  assert.equal(getBalanceFromContext(context, 'Bis').pendingHoldAmount, 25_000);
+  assert.equal(context.events.length, 1);
+  assert.equal(context.events[0].input.flagged, true);
+  assert.equal(context.events[0].input.shortfallAmount, 5_000);
+
+  // The flag carries through commit/release like the rest of the reservation.
+  const committed = commitFuelReservation(context, reservation, 'JRN-INSUFFICIENT');
+  assert.equal(committed.fuelReservationBalanceFlagged, true);
+  assert.equal(committed.fuelReservationBalanceShortfall, 5_000);
 });
 
 test('new fuel ledger balances omit undefined metadata and capture correct audit snapshots', async () => {
@@ -426,6 +433,8 @@ test('journey reservation fields include a version marker and preserve legacy st
     procuredAccumulatedAmount: 0,
     fuelAllowanceForSettlement: 200_000,
     fuelTotalAllocation: 200_000,
+    fuelReservationBalanceFlagged: false,
+    fuelReservationBalanceShortfall: 0,
   });
 });
 
@@ -452,5 +461,32 @@ test('hold reservations expose no cash fuel allocation', async () => {
     procuredAccumulatedAmount: 0,
     fuelAllowanceForSettlement: 0,
     fuelTotalAllocation: 0,
+    fuelReservationBalanceFlagged: false,
+    fuelReservationBalanceShortfall: 0,
   });
+});
+
+test('flagged reservations round-trip through the journey document', async () => {
+  const context = await createContext({
+    Bis: { vehicleName: 'Bis', availableBalance: 20_000 },
+  });
+  const reservation = reserveFuel(context, {
+    journeyId: 'JRN-ROUNDTRIP',
+    reservationId: 'FUEL-ROUNDTRIP',
+    vehicleName: 'Bis',
+    mode: 'hold_accumulate',
+    baseFuelAllowance: 25_000,
+    reason: 'Uji round-trip flag audit',
+  });
+  const fields = reservationFields(reservation);
+  assert.equal(fields.fuelReservationBalanceFlagged, true);
+  assert.equal(fields.fuelReservationBalanceShortfall, 5_000);
+
+  const parsed = reservationFromJourney({
+    ...fields,
+    baseOperationalCost: reservation.baseFuelAllowance,
+  });
+  assert.ok(parsed);
+  assert.equal(parsed!.fuelReservationBalanceFlagged, true);
+  assert.equal(parsed!.fuelReservationBalanceShortfall, 5_000);
 });

@@ -547,6 +547,8 @@ export async function POST(request: NextRequest) {
             baseFuelAllowance: Math.ceil(baseOperationalCost),
             heldFuelAmount: 0,
             procuredAccumulatedAmount: 0,
+            fuelReservationBalanceFlagged: false,
+            fuelReservationBalanceShortfall: 0,
           };
           const journeyId = String(before.journeyId || item.reportId);
           const auditedBaseFuelAllowance = Math.ceil(baseOperationalCost);

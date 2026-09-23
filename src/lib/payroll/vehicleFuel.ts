@@ -37,6 +37,16 @@ export interface FuelReservationRecord {
   baseFuelAllowance: number;
   heldFuelAmount: number;
   procuredAccumulatedAmount: number;
+  /**
+   * True when a hold was allowed to proceed even though the vehicle's
+   * tracked ledger balance was lower than the amount held. The balance is
+   * often stale rather than the vehicle actually being short of fuel, so
+   * this no longer blocks the driver's submission/authorization/claim — it
+   * is carried through to the journey record for the auditor to review.
+   */
+  fuelReservationBalanceFlagged: boolean;
+  /** How much the available balance fell short of the held amount at reservation time (0 when not flagged). */
+  fuelReservationBalanceShortfall: number;
 }
 
 export interface FuelLedgerActor {
@@ -66,6 +76,10 @@ interface FuelLedgerEventInput {
   pendingReleaseDelta: number;
   reason: string;
   actor: FuelLedgerActor;
+  /** True when this event is a hold reservation that exceeded the tracked available balance. */
+  flagged?: boolean;
+  /** The amount the available balance fell short by, when `flagged` is true. */
+  shortfallAmount?: number;
 }
 
 export class VehicleFuelConflictError extends Error {
@@ -181,14 +195,20 @@ function snapshotForEvent(balance: MutableVehicleFuelBalance): VehicleFuelBalanc
   return serializeVehicleFuelBalance(publicBalance(balance));
 }
 
-function assertBalanceInvariant(balance: MutableVehicleFuelBalance): void {
+function assertBalanceInvariant(
+  balance: MutableVehicleFuelBalance,
+  options: { allowNegativeAvailable?: boolean } = {},
+): void {
   for (const [field, value] of [
     ['availableBalance', balance.availableBalance],
     ['pendingHoldAmount', balance.pendingHoldAmount],
     ['accumulatedHoldAmount', balance.accumulatedHoldAmount],
     ['pendingReleaseAmount', balance.pendingReleaseAmount],
   ] as const) {
-    if (!Number.isSafeInteger(value) || value < 0) {
+    if (!Number.isSafeInteger(value)) {
+      throw new Error(`Saldo BBM ${field} tidak boleh negatif.`);
+    }
+    if (value < 0 && !(field === 'availableBalance' && options.allowNegativeAvailable)) {
       throw new Error(`Saldo BBM ${field} tidak boleh negatif.`);
     }
   }
@@ -263,6 +283,8 @@ export function reserveFuel(
       baseFuelAllowance,
       heldFuelAmount: 0,
       procuredAccumulatedAmount: 0,
+      fuelReservationBalanceFlagged: false,
+      fuelReservationBalanceShortfall: 0,
     };
   }
   assertAccumulationVehicle(input.vehicleName);
@@ -272,12 +294,16 @@ export function reserveFuel(
   const procuredAccumulatedAmount = input.mode === 'procure_release'
     ? balance.accumulatedHoldAmount
     : 0;
+  // A hold that exceeds the tracked balance is not blocked: the balance is
+  // frequently stale rather than the vehicle actually lacking fuel, and
+  // blocking here cost drivers their pay whenever it was wrong. The hold
+  // proceeds (letting availableBalance run negative) and is flagged so the
+  // journey auditor can see and reconcile it instead.
+  const shortfall = input.mode === 'hold_accumulate'
+    ? Math.max(0, heldFuelAmount - balance.availableBalance)
+    : 0;
+  const flagged = shortfall > 0;
   if (input.mode === 'hold_accumulate') {
-    if (balance.availableBalance < heldFuelAmount) {
-      throw new VehicleFuelConflictError(
-        `Saldo BBM ${input.vehicleName} tidak mencukupi. Tersedia Rp${balance.availableBalance.toLocaleString('id-ID')}, kebutuhan hold Rp${heldFuelAmount.toLocaleString('id-ID')}.`,
-      );
-    }
     balance.availableBalance -= heldFuelAmount;
     balance.pendingHoldAmount += heldFuelAmount;
   } else {
@@ -285,7 +311,7 @@ export function reserveFuel(
     balance.pendingReleaseAmount += procuredAccumulatedAmount;
   }
   balance.schemaVersion = CURRENT_FUEL_LEDGER_VERSION;
-  assertBalanceInvariant(balance);
+  assertBalanceInvariant(balance, { allowNegativeAvailable: flagged });
   context.balances.set(input.vehicleName, balance);
   queueEvent(context, input.vehicleName, {
     eventId: `${input.reservationId}__reserve`,
@@ -299,8 +325,12 @@ export function reserveFuel(
     pendingHoldDelta: balance.pendingHoldAmount - before.pendingHoldAmount,
     accumulatedHoldDelta: balance.accumulatedHoldAmount - before.accumulatedHoldAmount,
     pendingReleaseDelta: balance.pendingReleaseAmount - before.pendingReleaseAmount,
-    reason: input.reason,
+    reason: flagged
+      ? `${input.reason} (Saldo BBM tidak mencukupi — ditandai untuk audit, kekurangan Rp${shortfall.toLocaleString('id-ID')})`
+      : input.reason,
     actor: context.actor,
+    flagged,
+    shortfallAmount: shortfall,
   }, before, balance);
   return {
     fuelReservationVersion: CURRENT_FUEL_RESERVATION_VERSION,
@@ -311,6 +341,8 @@ export function reserveFuel(
     baseFuelAllowance,
     heldFuelAmount,
     procuredAccumulatedAmount,
+    fuelReservationBalanceFlagged: flagged,
+    fuelReservationBalanceShortfall: shortfall,
   };
 }
 
@@ -370,7 +402,11 @@ function transitionReservation(
     }
   }
   balance.schemaVersion = CURRENT_FUEL_LEDGER_VERSION;
-  assertBalanceInvariant(balance);
+  // Commit/release only ever increases or leaves availableBalance unchanged
+  // (it never subtracts from it), so a deficit left behind by a flagged
+  // reservation can only shrink here, never worsen — safe to let it persist
+  // through this step rather than blocking commit/release entirely.
+  assertBalanceInvariant(balance, { allowNegativeAvailable: true });
   context.balances.set(vehicleName, balance);
   const eventType = reservation.fuelProcurementMode === 'hold_accumulate'
     ? (transition === 'commit' ? 'commit_hold' : 'release_hold')
@@ -532,6 +568,8 @@ export function flushFuelLedger(context: FuelLedgerContext): void {
         accumulatedHoldDelta: event.input.accumulatedHoldDelta,
         pendingReleaseDelta: event.input.pendingReleaseDelta,
         reason: event.input.reason,
+        flagged: event.input.flagged || false,
+        shortfallAmount: event.input.shortfallAmount || 0,
         actorUid: event.input.actor.uid,
         actorRole: event.input.actor.role || null,
         actorName: event.input.actor.displayName || '',
@@ -602,6 +640,12 @@ export function reservationFromJourney(data: FirebaseFirestore.DocumentData): Fu
     baseFuelAllowance: integerMoney(Number(data.baseOperationalCost || data.baseFuelAllowance || 0), 'Jatah BBM dasar', Number.MAX_SAFE_INTEGER),
     heldFuelAmount: integerMoney(Number(data.heldFuelAmount || 0), 'BBM ditahan', Number.MAX_SAFE_INTEGER),
     procuredAccumulatedAmount: integerMoney(Number(data.procuredAccumulatedAmount || 0), 'BBM akumulasi dicairkan', Number.MAX_SAFE_INTEGER),
+    fuelReservationBalanceFlagged: data.fuelReservationBalanceFlagged === true,
+    fuelReservationBalanceShortfall: integerMoney(
+      Number(data.fuelReservationBalanceShortfall || 0),
+      'Kekurangan saldo BBM',
+      Number.MAX_SAFE_INTEGER,
+    ),
   };
 }
 
@@ -622,5 +666,7 @@ export function reservationFields(reservation: FuelReservationRecord): Record<st
       reservation.fuelProcurementMode === 'hold_accumulate'
         ? 0
         : reservation.baseFuelAllowance + reservation.procuredAccumulatedAmount,
+    fuelReservationBalanceFlagged: reservation.fuelReservationBalanceFlagged,
+    fuelReservationBalanceShortfall: reservation.fuelReservationBalanceShortfall,
   };
 }

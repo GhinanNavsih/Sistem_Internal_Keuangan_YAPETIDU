@@ -188,6 +188,10 @@ export interface DriverAuditReport {
   procuredAccumulatedAmount?: number;
   fuelAllowanceForSettlement?: number;
   fuelTotalAllocation?: number;
+  /** True when the hold was let through despite the vehicle's tracked balance being short — needs auditor review. */
+  fuelReservationBalanceFlagged?: boolean;
+  /** How much the tracked balance fell short by when the hold was flagged. */
+  fuelReservationBalanceShortfall?: number;
   preAuthorizedMeal?: number;
   /** Stamped by the server; absent on records predating the policy. */
   mealAccountingMode?: string;
@@ -1572,6 +1576,18 @@ export function DriverJourneyAuditDialog({
                     )}
                     {auditCalc.fuelProcurementMode === 'procure_release' && auditVehicleType !== report.vehicleType && <p className="mt-1 text-indigo-800">Penggantian kendaraan akan menghitung ulang Akumulasi kendaraan pengganti di server.</p>}
                   </div>
+
+                  {report.fuelReservationBalanceFlagged && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-[10px] font-bold text-red-900 flex items-start gap-2">
+                      <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-red-600" />
+                      <div>
+                        <p>Saldo BBM kendaraan tidak mencukupi saat hold direservasi (kekurangan {fmtRp(report.fuelReservationBalanceShortfall || 0)}).</p>
+                        <p className="mt-1 font-semibold text-red-800">
+                          Perjalanan tetap diizinkan agar sopir tidak kehilangan gaji, tapi cek saldo BBM kendaraan ini — data ledger kemungkinan tidak akurat.
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   {/* RUTE PERJALANAN TIMELINE EDITOR */}
                   <div className="space-y-3 pt-1.5 border-t border-slate-200/60">

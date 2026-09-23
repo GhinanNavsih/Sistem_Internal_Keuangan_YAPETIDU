@@ -449,6 +449,8 @@ export async function POST(request: NextRequest) {
             baseFuelAllowance: Math.ceil(baseOperationalCosts.baseOperationalCost),
             heldFuelAmount: 0,
             procuredAccumulatedAmount: 0,
+            fuelReservationBalanceFlagged: false,
+            fuelReservationBalanceShortfall: 0,
           };
         } else if (fuelContext) {
           reservation = reserveFuel(fuelContext, {
@@ -626,6 +628,8 @@ export async function POST(request: NextRequest) {
           baseFuelAllowance: 0,
           heldFuelAmount: 0,
           procuredAccumulatedAmount: 0,
+          fuelReservationBalanceFlagged: false,
+          fuelReservationBalanceShortfall: 0,
         };
 
         const now = admin.firestore.FieldValue.serverTimestamp();
@@ -757,6 +761,8 @@ export async function POST(request: NextRequest) {
             baseFuelAllowance,
             heldFuelAmount: 0,
             procuredAccumulatedAmount: 0,
+            fuelReservationBalanceFlagged: false,
+            fuelReservationBalanceShortfall: 0,
           };
         } else if (fuelContext) {
           reservation = reserveFuel(fuelContext, {

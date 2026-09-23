@@ -951,6 +951,8 @@ export async function POST(request: NextRequest) {
             baseFuelAllowance: baseOperationalCost,
             heldFuelAmount: 0,
             procuredAccumulatedAmount: 0,
+            fuelReservationBalanceFlagged: false,
+            fuelReservationBalanceShortfall: 0,
           };
         } else {
           fuelReservationAfterSubmission = existingReservation;
