@@ -67,6 +67,7 @@ import {
   ChevronDown,
   Fingerprint,
   CalendarDays,
+  X,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
@@ -235,8 +236,23 @@ const jakartaToday = (): string =>
 
 interface LeaveBalanceRow {
   employeeId: string;
+  employeeName: string;
+  employeeKind: 'loyalis' | 'blue_collar';
   entitlementDays: number;
   availableDays: number;
+  maxSettableRemainingDays: number;
+  revision: number;
+}
+
+interface PendingLeaveChange {
+  employeeId: string;
+  employeeName: string;
+  employeeKind: 'loyalis' | 'blue_collar';
+  oldValue: number;
+  newValue: number;
+  maxSettableRemainingDays: number;
+  revision: number;
+  valid: boolean;
 }
 
 const getEmpMasaKerja = (emp: any): string => {
@@ -537,6 +553,124 @@ export default function EmployeesPage() {
       asOfDate: leaveAsOfDate,
       balance: leaveBalanceById.get(getEmpId(emp)),
     });
+  const employeeNameById = useMemo(
+    () =>
+      new Map(
+        [...pageEmployeesLoyalis, ...pageEmployeesBlueCollar].map(emp => [getEmpId(emp), getEmpName(emp)]),
+      ),
+    [pageEmployeesLoyalis, pageEmployeesBlueCollar],
+  );
+
+  // Sisa Cuti is edited inline in the Jatah Cuti table, but a keystroke only
+  // updates this draft — nothing is sent to the balances API until the user
+  // reviews and confirms the whole batch below, each entry with one shared
+  // reason (the API requires one per write, same as the manual-balance form
+  // in AnnualPaidLeaveReviewPanel).
+  const [leaveBalanceDrafts, setLeaveBalanceDrafts] = useState<Record<string, string>>({});
+  const [isLeaveLogOpen, setIsLeaveLogOpen] = useState(false);
+  const [leaveConfirmReason, setLeaveConfirmReason] = useState('');
+  const [leaveConfirming, setLeaveConfirming] = useState(false);
+  const [leaveConfirmError, setLeaveConfirmError] = useState('');
+
+  const pendingLeaveChanges: PendingLeaveChange[] = useMemo(() => {
+    return Object.entries(leaveBalanceDrafts).flatMap(([employeeId, raw]) => {
+      const row = leaveBalanceById.get(employeeId);
+      const trimmed = raw.trim();
+      if (!row || trimmed === '') return [];
+      const parsed = Number(trimmed);
+      if (parsed === row.availableDays) return [];
+      return [{
+        employeeId,
+        employeeName: employeeNameById.get(employeeId) || row.employeeName || employeeId,
+        employeeKind: row.employeeKind,
+        oldValue: row.availableDays,
+        newValue: parsed,
+        maxSettableRemainingDays: row.maxSettableRemainingDays,
+        revision: row.revision,
+        valid: Number.isInteger(parsed) && parsed >= 0 && parsed <= row.maxSettableRemainingDays,
+      }];
+    });
+  }, [leaveBalanceDrafts, leaveBalanceById, employeeNameById]);
+  const pendingLeaveById = useMemo(
+    () => new Map(pendingLeaveChanges.map(change => [change.employeeId, change])),
+    [pendingLeaveChanges],
+  );
+
+  const handleResetLeaveDraft = (employeeId: string) => {
+    setLeaveBalanceDrafts(prev => {
+      const next = { ...prev };
+      delete next[employeeId];
+      return next;
+    });
+  };
+
+  const handleClearLeaveChanges = () => {
+    setLeaveBalanceDrafts({});
+    setLeaveConfirmReason('');
+    setLeaveConfirmError('');
+    setIsLeaveLogOpen(false);
+  };
+
+  const handleConfirmLeaveChanges = async () => {
+    if (pendingLeaveChanges.length === 0 || leaveConfirming) return;
+    const reason = leaveConfirmReason.trim();
+    if (reason.length < 8 || reason.length > 500) {
+      setLeaveConfirmError('Alasan perubahan wajib diisi antara 8 dan 500 karakter.');
+      return;
+    }
+    if (pendingLeaveChanges.some(change => !change.valid)) {
+      setLeaveConfirmError('Perbaiki nilai yang berwarna merah sebelum mengonfirmasi.');
+      return;
+    }
+    setLeaveConfirming(true);
+    setLeaveConfirmError('');
+    const outcomes = await Promise.allSettled(
+      pendingLeaveChanges.map(change =>
+        authenticatedJson('/api/payroll/paid-leave/balances', {
+          method: 'POST',
+          body: JSON.stringify({
+            employeeId: change.employeeId,
+            employeeKind: change.employeeKind,
+            year: leaveYear,
+            remainingDays: change.newValue,
+            expectedRevision: change.revision,
+            reason,
+            requestId: createFinancialRequestId('leave-balance'),
+          }),
+        }).then(() => change.employeeId),
+      ),
+    );
+    const succeededIds = new Set(
+      outcomes
+        .filter((outcome): outcome is PromiseFulfilledResult<string> => outcome.status === 'fulfilled')
+        .map(outcome => outcome.value),
+    );
+    const failed = pendingLeaveChanges
+      .map((change, idx) => ({ change, outcome: outcomes[idx] }))
+      .filter((entry): entry is { change: PendingLeaveChange; outcome: PromiseRejectedResult } =>
+        entry.outcome.status === 'rejected',
+      );
+
+    setLeaveBalanceDrafts(prev => {
+      const next = { ...prev };
+      succeededIds.forEach(id => delete next[id]);
+      return next;
+    });
+    await leaveBalancesQuery.refetch();
+    setLeaveConfirming(false);
+
+    if (failed.length === 0) {
+      setLeaveConfirmReason('');
+      setIsLeaveLogOpen(false);
+      setMessage({ type: 'success', text: `Sisa cuti ${succeededIds.size} pegawai berhasil diperbarui.` });
+    } else {
+      setLeaveConfirmError(
+        `${succeededIds.size} berhasil, ${failed.length} gagal: ${failed
+          .map(({ change, outcome }) => `${change.employeeName} (${outcome.reason instanceof Error ? outcome.reason.message : 'gagal disimpan'})`)
+          .join('; ')}`,
+      );
+    }
+  };
   const [employees, setEmployees] = useState<any[]>([]);
   const [localLoading, setLocalLoading] = useState(false);
   const loyalisAdminDataLoading = isLoyalisAdmin &&
@@ -2095,15 +2229,52 @@ export default function EmployeesPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-right pr-8 text-sm whitespace-nowrap">
-                          {leave.remainingDays !== null ? (
-                            <span className={`font-bold ${leave.remainingDays > 0 ? 'text-sky-700' : 'text-slate-400'}`}>
-                              {leave.remainingDays} hari
-                            </span>
-                          ) : leaveBalancesQuery.isFetching ? (
-                            <Loader2 className="ml-auto h-3.5 w-3.5 animate-spin text-slate-300" />
-                          ) : (
-                            <span className="text-slate-300">-</span>
-                          )}
+                          {(() => {
+                            const empId = getEmpId(emp);
+                            const balanceRow = leaveBalanceById.get(empId);
+                            // Only a row the balances API actually returned has the
+                            // revision/cap a write needs, so only those are editable —
+                            // the "-" / "Belum berhak" rows stay read-only, same as before.
+                            if (!balanceRow) {
+                              return leaveBalancesQuery.isFetching ? (
+                                <Loader2 className="ml-auto h-3.5 w-3.5 animate-spin text-slate-300" />
+                              ) : (
+                                <span className="text-slate-300">-</span>
+                              );
+                            }
+                            const pending = pendingLeaveById.get(empId);
+                            const draftValue = leaveBalanceDrafts[empId] ?? String(balanceRow.availableDays);
+                            return (
+                              <div className="flex items-center justify-end gap-1.5">
+                                {pending && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleResetLeaveDraft(empId)}
+                                    title="Batalkan perubahan"
+                                    className="text-slate-300 hover:text-rose-500 transition-colors cursor-pointer"
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  max={balanceRow.maxSettableRemainingDays}
+                                  value={draftValue}
+                                  disabled={leaveConfirming}
+                                  onChange={(event) =>
+                                    setLeaveBalanceDrafts(prev => ({ ...prev, [empId]: event.target.value }))
+                                  }
+                                  className={`h-8 w-16 rounded-lg text-right text-sm font-bold px-2 ${pending
+                                    ? pending.valid
+                                      ? 'border-sky-400 ring-1 ring-sky-200 text-sky-700'
+                                      : 'border-rose-400 ring-1 ring-rose-200 text-rose-700'
+                                    : 'border-slate-200 text-slate-800'
+                                    }`}
+                                />
+                              </div>
+                            );
+                          })()}
                         </TableCell>
                       </TableRow>
                     );
@@ -3354,6 +3525,119 @@ export default function EmployeesPage() {
               >
                 {confirming ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardCheck className="w-4 h-4" />}
                 Konfirmasi & Simpan Log
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Sticky floating banner for pending Sisa Cuti edits — separate from the
+          profile-edit log above: a profile edit is already written by the time
+          it appears there, this one is not written until Konfirmasi below. */}
+      {pendingLeaveChanges.length > 0 && (
+        <div className={`fixed left-1/2 -translate-x-1/2 z-40 bg-sky-950/95 text-white backdrop-blur-md rounded-2xl shadow-2xl border border-sky-900 px-6 py-4.5 flex items-center justify-between gap-8 max-w-xl w-[90vw] animate-in slide-in-from-bottom-5 duration-300 ${pendingEdits.length > 0 ? 'bottom-28' : 'bottom-6'}`}>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400 flex items-center justify-center shrink-0">
+              <CalendarDays className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-slate-100">Perubahan Sisa Cuti Belum Disimpan</p>
+              <p className="text-xs text-slate-400 mt-0.5">Terdapat <span className="font-semibold text-sky-400">{pendingLeaveChanges.length}</span> perubahan sisa cuti menunggu konfirmasi.</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              variant="ghost"
+              onClick={() => setIsLeaveLogOpen(true)}
+              className="text-xs font-bold text-slate-300 hover:text-white rounded-xl hover:bg-sky-900"
+            >
+              Lihat Detail
+            </Button>
+            <Button
+              onClick={() => setIsLeaveLogOpen(true)}
+              className="bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-sky-500/10 flex items-center gap-1.5 px-4"
+            >
+              <ClipboardCheck className="w-3.5 h-3.5" />
+              Konfirmasi
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Sisa Cuti confirmation dialog: nothing above was written to the
+          balances API — this Konfirmasi button is what actually sends it. */}
+      <Dialog open={isLeaveLogOpen} onOpenChange={setIsLeaveLogOpen}>
+        <DialogContent className="sm:max-w-lg max-w-full rounded-[28px] border-none shadow-2xl p-0 overflow-hidden bg-white">
+          <DialogHeader className="p-6 bg-slate-50/50 border-b border-slate-100">
+            <DialogTitle className="text-xl font-bold flex items-center gap-2 text-slate-900">
+              <CalendarDays className="w-5.5 h-5.5 text-sky-500" />
+              Konfirmasi Perubahan Sisa Cuti
+            </DialogTitle>
+            <DialogDescription className="text-slate-500">
+              Setiap baris akan dikirim sebagai perubahan saldo cuti {leaveYear} yang tercatat, memakai satu alasan yang sama di bawah.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-6 max-h-[45vh] overflow-y-auto space-y-2">
+            {pendingLeaveChanges.map((change) => (
+              <div key={change.employeeId} className="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-150 bg-slate-50/30 text-sm">
+                <span className="font-semibold text-slate-800 truncate">{change.employeeName}</span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-rose-600 bg-rose-50 px-2 py-0.5 rounded line-through">{change.oldValue} hari</span>
+                  <span className="text-slate-400">➔</span>
+                  <span className={`px-2 py-0.5 rounded font-semibold ${change.valid ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50'}`}>
+                    {change.newValue} hari
+                  </span>
+                  {!change.valid && (
+                    <span className="text-[11px] text-rose-600" title={`Maksimal ${change.maxSettableRemainingDays} hari`}>
+                      Tidak valid
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            <div className="space-y-2 pt-2">
+              <label htmlFor="leave-balance-reason" className="text-sm font-semibold text-slate-700">
+                Alasan perubahan (berlaku untuk semua pegawai di atas)
+              </label>
+              <textarea
+                id="leave-balance-reason"
+                value={leaveConfirmReason}
+                maxLength={500}
+                onChange={(event) => setLeaveConfirmReason(event.target.value)}
+                placeholder="Contoh: Penyesuaian berdasarkan catatan cuti manual tahun ini"
+                className="min-h-20 w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+              />
+              <p className="text-right text-xs text-slate-400">{leaveConfirmReason.length}/500</p>
+            </div>
+
+            {leaveConfirmError && (
+              <p className="text-sm text-rose-600 bg-rose-50 border border-rose-100 rounded-xl p-3">{leaveConfirmError}</p>
+            )}
+          </div>
+
+          <DialogFooter className="p-6 bg-slate-50/50 border-t border-slate-100 flex justify-between gap-4 w-full">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={handleClearLeaveChanges}
+              className="rounded-xl font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 flex items-center gap-1.5"
+            >
+              <Trash2 className="w-4 h-4" />
+              Buang Semua
+            </Button>
+
+            <div className="flex gap-2">
+              <Button type="button" variant="ghost" onClick={() => setIsLeaveLogOpen(false)} className="rounded-xl">Tutup</Button>
+              <Button
+                onClick={handleConfirmLeaveChanges}
+                disabled={leaveConfirming}
+                className="rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold px-6 flex items-center gap-1.5"
+              >
+                {leaveConfirming ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardCheck className="w-4 h-4" />}
+                Konfirmasi & Simpan
               </Button>
             </div>
           </DialogFooter>
