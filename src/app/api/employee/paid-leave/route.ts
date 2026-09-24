@@ -12,6 +12,7 @@ import {
   completedServiceYears,
   isAnnualPaidLeaveEligible,
   isAnnualPaidLeaveRequestOwner,
+  nextAnnualPaidLeaveBalanceRevision,
 } from '@/lib/payroll/annualPaidLeave';
 import { assertRequestId, isImmutablePayrollStatus } from '@/lib/payroll/domain';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
@@ -329,6 +330,7 @@ export async function POST(request: NextRequest) {
             entitlementDays: yearEntitlementDays,
             reservedDays: reservedDays + 1,
             usedDays,
+            balanceRevision: nextAnnualPaidLeaveBalanceRevision(balanceData.balanceRevision),
             serviceDate: employee.serviceDate,
             qualifyingDate: employee.qualifyingDate,
             updatedAt: now,
@@ -400,6 +402,7 @@ export async function POST(request: NextRequest) {
         {
           reservedDays: Math.max(0, reservedDays - 1),
           usedDays,
+          balanceRevision: nextAnnualPaidLeaveBalanceRevision(balanceData.balanceRevision),
           updatedAt: now,
         },
         { merge: true },

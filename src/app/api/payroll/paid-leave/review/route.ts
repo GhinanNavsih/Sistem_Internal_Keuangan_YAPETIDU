@@ -9,6 +9,7 @@ import {
   annualPaidLeavePayType,
   annualPaidLeaveQualifyingDate,
   isAnnualPaidLeaveEligible,
+  nextAnnualPaidLeaveBalanceRevision,
   type AnnualPaidLeaveRequest,
 } from '@/lib/payroll/annualPaidLeave';
 import {
@@ -550,6 +551,7 @@ export async function POST(request: NextRequest) {
           ),
           reservedDays: reservedDays - 1,
           usedDays: usedDays + (approving ? 1 : 0),
+          balanceRevision: nextAnnualPaidLeaveBalanceRevision(balance.balanceRevision),
           serviceDate: employee.serviceDate,
           qualifyingDate: employee.qualifyingDate,
           updatedAt: now,

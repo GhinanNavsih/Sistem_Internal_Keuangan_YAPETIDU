@@ -5,6 +5,7 @@ import {
   annualPaidLeaveIdempotencyState,
   canReviewAnnualPaidLeave,
   isAnnualPaidLeaveRequestOwner,
+  nextAnnualPaidLeaveBalanceRevision,
 } from './annualPaidLeave';
 
 test('employee API ownership is confined to the authenticated employee', () => {
@@ -86,4 +87,13 @@ test('review API guard rejects cross-workflow pay conflicts only on approval', (
     annualPaidLeaveDecisionIssue({ ...conflict, approving: false }),
     null,
   );
+});
+
+test('every balance write moves the revision on by one, whatever is stored', () => {
+  assert.equal(nextAnnualPaidLeaveBalanceRevision(undefined), 1);
+  assert.equal(nextAnnualPaidLeaveBalanceRevision(0), 1);
+  assert.equal(nextAnnualPaidLeaveBalanceRevision(4), 5);
+  assert.equal(nextAnnualPaidLeaveBalanceRevision('7'), 8);
+  assert.equal(nextAnnualPaidLeaveBalanceRevision(-3), 1);
+  assert.equal(nextAnnualPaidLeaveBalanceRevision(Number.NaN), 1);
 });

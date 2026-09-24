@@ -180,6 +180,18 @@ export function annualPaidLeaveBalanceId(employeeId: string, year: number): stri
   return `${employeeId}__${year}`;
 }
 
+/**
+ * The balance document's revision after one more change to it. Every write that
+ * moves reserved, used or manual days (a submit, a withdrawal, a decision, an
+ * admin's Sisa Cuti edit) must bump it: the admin's edit is checked against the
+ * revision it was loaded at, and a bump-less write in between would let a stale
+ * edit through and hand the employee a day the admin never meant to give.
+ */
+export function nextAnnualPaidLeaveBalanceRevision(currentRevision: unknown): number {
+  const revision = Number(currentRevision || 0);
+  return (Number.isSafeInteger(revision) && revision > 0 ? revision : 0) + 1;
+}
+
 export function annualPaidLeaveIdempotencyState(
   storedRequestHash: unknown,
   requestHash: string,
