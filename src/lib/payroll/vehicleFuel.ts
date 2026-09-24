@@ -141,7 +141,15 @@ function normalizeBalance(
   const value = emptyBalance(vehicleName);
   if (!data) return value;
   value.exists = true;
-  value.availableBalance = integerMoney(Number(data.availableBalance || 0), 'Saldo tersedia', Number.MAX_SAFE_INTEGER);
+  // availableBalance may legitimately be stored negative: a flagged hold
+  // (see reserveFuel) lets it run into deficit until an auditor reconciles
+  // it. Rejecting that here made every read of the vehicle throw, which
+  // broke loading any journey that uses it.
+  const availableBalance = Number(data.availableBalance || 0);
+  if (!Number.isFinite(availableBalance) || Math.abs(availableBalance) > Number.MAX_SAFE_INTEGER) {
+    throw new Error('Saldo tersedia tidak valid.');
+  }
+  value.availableBalance = Math.ceil(availableBalance);
   value.pendingHoldAmount = integerMoney(Number(data.pendingHoldAmount || 0), 'Saldo hold tertunda', Number.MAX_SAFE_INTEGER);
   value.accumulatedHoldAmount = integerMoney(Number(data.accumulatedHoldAmount || 0), 'Saldo hold terakumulasi', Number.MAX_SAFE_INTEGER);
   value.pendingReleaseAmount = integerMoney(Number(data.pendingReleaseAmount || 0), 'Saldo pencairan tertunda', Number.MAX_SAFE_INTEGER);
@@ -311,7 +319,11 @@ export function reserveFuel(
     balance.pendingReleaseAmount += procuredAccumulatedAmount;
   }
   balance.schemaVersion = CURRENT_FUEL_LEDGER_VERSION;
-  assertBalanceInvariant(balance, { allowNegativeAvailable: flagged });
+  // A deficit left by an earlier flagged hold must not block a reservation
+  // that doesn't deepen it (e.g. procure_release never touches availableBalance).
+  assertBalanceInvariant(balance, {
+    allowNegativeAvailable: flagged || balance.availableBalance >= before.availableBalance,
+  });
   context.balances.set(input.vehicleName, balance);
   queueEvent(context, input.vehicleName, {
     eventId: `${input.reservationId}__reserve`,

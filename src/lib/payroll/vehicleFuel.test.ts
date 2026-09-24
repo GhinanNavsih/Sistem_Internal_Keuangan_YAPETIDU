@@ -116,6 +116,27 @@ test('hold authorization allows an insufficient available balance but flags it f
   assert.equal(committed.fuelReservationBalanceShortfall, 5_000);
 });
 
+test('a deficit left by a flagged hold can be read back and does not block later reservations', async () => {
+  // Reloading the stored negative balance used to throw "Saldo tersedia tidak
+  // valid.", which broke every journey load for that vehicle.
+  const context = await createContext({
+    Bis: { vehicleName: 'Bis', availableBalance: -5_000, pendingHoldAmount: 25_000, accumulatedHoldAmount: 40_000 },
+  });
+  assert.equal(getBalanceFromContext(context, 'Bis').availableBalance, -5_000);
+
+  const release = reserveFuel(context, {
+    journeyId: 'JRN-AFTER-DEFICIT',
+    reservationId: 'FUEL-AFTER-DEFICIT',
+    vehicleName: 'Bis',
+    mode: 'procure_release',
+    baseFuelAllowance: 25_000,
+    reason: 'Pencairan akumulasi',
+  });
+  assert.equal(release.fuelReservationBalanceFlagged, false);
+  assert.equal(getBalanceFromContext(context, 'Bis').availableBalance, -5_000);
+  assert.equal(getBalanceFromContext(context, 'Bis').pendingReleaseAmount, 40_000);
+});
+
 test('new fuel ledger balances omit undefined metadata and capture correct audit snapshots', async () => {
   const createdDocuments: Array<Record<string, unknown>> = [];
   const transaction = {
