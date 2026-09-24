@@ -96,6 +96,7 @@ import { normalizeNipy } from '@/lib/payroll/attendance';
 import { getPayImpactLabels } from '@/lib/payroll/slipPropagation';
 import { matchFunctionalAllowance } from '@/lib/payroll/salaryMatrix';
 import { annualPaidLeaveTableFigures } from '@/lib/payroll/annualPaidLeave';
+import StructuralPositionPicker from '@/components/employee/StructuralPositionPicker';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 
 const JOB_CATEGORIES = ['SATPAM', 'SOPIR', 'KEBERSIHAN', 'TEKNISI', 'KEBERSIHAN_PONTI'];
@@ -487,6 +488,27 @@ function getObjectDiff(oldObj: any, newObj: any, prefix = ''): FieldChange[] {
   });
 
   return diffs;
+}
+
+const STRUCTURAL_POSITIONS_FIELD = 'employment_profile.structural_positions';
+
+/**
+ * Loyalis Admin may not see what a position pays, but the raw diff of a
+ * structural_positions edit carries every entry's `allowance`. Collapse those
+ * rows into a single names-only row (an unchanged list leaves none).
+ */
+function redactStructuralPositionDiffs(diffs: FieldChange[], oldProfile: any, newProfile: any): FieldChange[] {
+  const kept = diffs.filter(diff => !diff.field.startsWith(STRUCTURAL_POSITIONS_FIELD));
+  if (kept.length === diffs.length) return diffs;
+
+  const describe = (profile: any) =>
+    (Array.isArray(profile?.employment_profile?.structural_positions) ? profile.employment_profile.structural_positions : [])
+      .map((pos: any) => [pos?.name, pos?.satker ? `(${pos.satker})` : ''].filter(Boolean).join(' '))
+      .join(', ');
+  const oldNames = describe(oldProfile);
+  const newNames = describe(newProfile);
+  if (oldNames === newNames) return kept;
+  return [...kept, { field: STRUCTURAL_POSITIONS_FIELD, oldValue: oldNames || null, newValue: newNames || null }];
 }
 
 function getLocalISOString(): string {
@@ -1260,7 +1282,8 @@ export default function EmployeesPage() {
 
       let changedFields: string[] = [];
       if (editingEmployee) {
-        const diffs = getObjectDiff(editingEmployee, final);
+        const rawDiffs = getObjectDiff(editingEmployee, final);
+        const diffs = isLoyalisAdmin ? redactStructuralPositionDiffs(rawDiffs, editingEmployee, final) : rawDiffs;
         changedFields = diffs.map(diff => diff.field);
         // Loyalis-only: point out changes to a field whose money shows up under a
         // differently-named earning (e.g. Pendidikan -> Tunjangan Fungsional), since
@@ -1852,11 +1875,14 @@ export default function EmployeesPage() {
                 Buat NIPY Pekarya
               </Button>
             )}
-            <Link href="/dashboard/payroll/master">
-              <Button variant="outline" className="rounded-xl border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm px-4 cursor-pointer">
-                <FileText className="w-4 h-4 mr-2 text-indigo-600" /> Master Gaji Pokok
-              </Button>
-            </Link>
+            {/* Loyalis Admin is confined to LOYALIS_ADMIN_PATHS, so the salary matrix is not theirs to open */}
+            {!isLoyalisAdmin && (
+              <Link href="/dashboard/payroll/master">
+                <Button variant="outline" className="rounded-xl border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm px-4 cursor-pointer">
+                  <FileText className="w-4 h-4 mr-2 text-indigo-600" /> Master Gaji Pokok
+                </Button>
+              </Link>
+            )}
             <Button onClick={handleOpenAdd} className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-200 px-6 cursor-pointer">
               <UserPlus className="w-4 h-4 mr-2" /> Tambah Pegawai
             </Button>
@@ -2028,9 +2054,11 @@ export default function EmployeesPage() {
                     <TableHead onClick={() => handleSort('debugSatker')} className="font-semibold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors">
                       <div className="flex items-center">SatKer (department_unit) <SortIcon active={sortConfig.key === 'debugSatker'} direction={sortConfig.direction} /></div>
                     </TableHead>
-                    <TableHead onClick={() => handleSort('debugTunjangan')} className="font-semibold text-slate-900 text-right cursor-pointer hover:text-indigo-600 transition-colors">
-                      <div className="flex items-center justify-end">Tunjangan Jabatan <SortIcon active={sortConfig.key === 'debugTunjangan'} direction={sortConfig.direction} /></div>
-                    </TableHead>
+                    {!isLoyalisAdmin && (
+                      <TableHead onClick={() => handleSort('debugTunjangan')} className="font-semibold text-slate-900 text-right cursor-pointer hover:text-indigo-600 transition-colors">
+                        <div className="flex items-center justify-end">Tunjangan Jabatan <SortIcon active={sortConfig.key === 'debugTunjangan'} direction={sortConfig.direction} /></div>
+                      </TableHead>
+                    )}
                     <TableHead className="font-semibold text-slate-900 text-right pr-8 select-none">Aksi</TableHead>
                   </TableRow>
                 )}
@@ -2071,9 +2099,11 @@ export default function EmployeesPage() {
                       <TableHead onClick={() => handleSort('t_beras')} className="font-semibold text-emerald-800 bg-emerald-50/40 text-right cursor-pointer hover:text-indigo-800 transition-colors">
                         <div className="flex items-center justify-end">T. Beras <SortIcon active={sortConfig.key === 't_beras'} direction={sortConfig.direction} /></div>
                       </TableHead>
-                      <TableHead onClick={() => handleSort('t_jabatan')} className="font-semibold text-emerald-800 bg-emerald-50/40 text-right cursor-pointer hover:text-indigo-800 transition-colors">
-                        <div className="flex items-center justify-end">T. Jabatan <SortIcon active={sortConfig.key === 't_jabatan'} direction={sortConfig.direction} /></div>
-                      </TableHead>
+                      {!isLoyalisAdmin && (
+                        <TableHead onClick={() => handleSort('t_jabatan')} className="font-semibold text-emerald-800 bg-emerald-50/40 text-right cursor-pointer hover:text-indigo-800 transition-colors">
+                          <div className="flex items-center justify-end">T. Jabatan <SortIcon active={sortConfig.key === 't_jabatan'} direction={sortConfig.direction} /></div>
+                        </TableHead>
+                      )}
                       <TableHead onClick={() => handleSort('t_kepangkatan')} className="font-semibold text-emerald-800 bg-emerald-50/40 text-right cursor-pointer hover:text-indigo-800 transition-colors">
                         <div className="flex items-center justify-end">T. Kepangkatan <SortIcon active={sortConfig.key === 't_kepangkatan'} direction={sortConfig.direction} /></div>
                       </TableHead>
@@ -2119,7 +2149,7 @@ export default function EmployeesPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={tableViewMode === 'default' ? (isLoyalisAdmin ? 6 : 7) : tableViewMode === 'debug' ? 5 : tableViewMode === 'cuti' ? 6 : (activeTab === 'loyalis' ? 13 : 5)} className="h-64 text-center">
+                    <TableCell colSpan={tableViewMode === 'default' ? (isLoyalisAdmin ? 6 : 7) : tableViewMode === 'debug' ? (isLoyalisAdmin ? 4 : 5) : tableViewMode === 'cuti' ? 6 : (activeTab === 'loyalis' ? (isLoyalisAdmin ? 12 : 13) : 5)} className="h-64 text-center">
                       <div className="flex flex-col items-center gap-3 text-slate-400">
                         <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
                         <p>Memuat data pegawai...</p>
@@ -2128,7 +2158,7 @@ export default function EmployeesPage() {
                   </TableRow>
                 ) : filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={tableViewMode === 'default' ? (isLoyalisAdmin ? 6 : 7) : tableViewMode === 'debug' ? 5 : tableViewMode === 'cuti' ? 6 : (activeTab === 'loyalis' ? 13 : 5)} className="h-64 text-center">
+                    <TableCell colSpan={tableViewMode === 'default' ? (isLoyalisAdmin ? 6 : 7) : tableViewMode === 'debug' ? (isLoyalisAdmin ? 4 : 5) : tableViewMode === 'cuti' ? 6 : (activeTab === 'loyalis' ? (isLoyalisAdmin ? 12 : 13) : 5)} className="h-64 text-center">
                       <p className="text-slate-400">Tidak ada pegawai yang ditemukan.</p>
                     </TableCell>
                   </TableRow>
@@ -2293,9 +2323,11 @@ export default function EmployeesPage() {
                       <TableCell className="text-slate-500 text-sm">
                         {empRow.debugSatker}
                       </TableCell>
-                      <TableCell className="text-right font-semibold text-slate-700 text-sm whitespace-nowrap">
-                        {empRow.debugTunjanganLabel}
-                      </TableCell>
+                      {!isLoyalisAdmin && (
+                        <TableCell className="text-right font-semibold text-slate-700 text-sm whitespace-nowrap">
+                          {empRow.debugTunjanganLabel}
+                        </TableCell>
+                      )}
                       <TableCell className="text-right pr-8">
                         <div className="flex justify-end gap-1">
                           <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(empRow)} className="h-8 w-8 text-slate-400 hover:text-indigo-600 rounded-lg">
@@ -2324,9 +2356,11 @@ export default function EmployeesPage() {
                           <TableCell className="text-right font-medium text-slate-700 text-xs bg-emerald-50/10">{formatIDR(emp.bpjs?.t_bpjs_tk || 0)}</TableCell>
                           <TableCell className="text-right font-medium text-slate-700 text-xs bg-emerald-50/10">{formatIDR(emp.bpjs?.t_bpjs_kes || 0)}</TableCell>
                           <TableCell className="text-right font-medium text-slate-700 text-xs bg-emerald-50/10">{formatIDR(emp.salaryProfile?.tunjanganBeras || 0)}</TableCell>
-                          <TableCell className="text-right font-medium text-slate-700 text-xs bg-emerald-50/10">
-                            {formatIDR((emp.employment_profile?.structural_positions || []).reduce((sum: number, pos: any) => sum + (Number(pos.allowance) || 0), 0))}
-                          </TableCell>
+                          {!isLoyalisAdmin && (
+                            <TableCell className="text-right font-medium text-slate-700 text-xs bg-emerald-50/10">
+                              {formatIDR((emp.employment_profile?.structural_positions || []).reduce((sum: number, pos: any) => sum + (Number(pos.allowance) || 0), 0))}
+                            </TableCell>
+                          )}
                           <TableCell className="text-right font-medium text-slate-700 text-xs bg-emerald-50/10">{formatIDR(kepangkatanAllowanceMap[emp.id] || 0)}</TableCell>
                           <TableCell className="text-right font-medium text-slate-700 text-xs bg-emerald-50/10">{formatIDR(emp.t_instruksional || 0)}</TableCell>
                           <TableCell className="text-right font-medium text-slate-700 text-xs bg-rose-50/10">{formatIDR(emp.bpjs?.deductionAmount || 0)}</TableCell>
@@ -3101,7 +3135,10 @@ export default function EmployeesPage() {
                       {(() => {
                         const positions = formData.employment_profile?.structural_positions || [];
                         const positionsWithIndex = positions.map((pos: any, idx: number) => ({ ...pos, originalIndex: idx }));
-                        const sorted = [...positionsWithIndex].sort((a: any, b: any) => (Number(b.allowance) || 0) - (Number(a.allowance) || 0));
+                        // Loyalis Admin sees no pay, so the pay-ranked order (which would reveal it) is skipped for them.
+                        const sorted = isLoyalisAdmin
+                          ? positionsWithIndex
+                          : [...positionsWithIndex].sort((a: any, b: any) => (Number(b.allowance) || 0) - (Number(a.allowance) || 0));
                         return sorted.map((pos: any, posIdx: number) => {
                           const originalAllowance = Number(pos.allowance) || 0;
                           const halvedAllowance = posIdx === 0 ? originalAllowance : Math.round(originalAllowance / 2);
@@ -3112,6 +3149,7 @@ export default function EmployeesPage() {
                                 {pos.name}
                               </div>
                               <div className="w-36 text-xs text-slate-600">{pos.satker}</div>
+                              {!isLoyalisAdmin && (
                               <div className="w-64 text-right font-bold text-indigo-600 text-xs">
                                 {posIdx === 0 ? (
                                   <span>Rp {originalAllowance.toLocaleString('id-ID')}</span>
@@ -3125,6 +3163,7 @@ export default function EmployeesPage() {
                                   </span>
                                 )}
                               </div>
+                              )}
                               <Button
                                 type="button"
                                 variant="ghost"
@@ -3145,7 +3184,22 @@ export default function EmployeesPage() {
                       )}
                     </div>
 
-                    {/* Form to add a new position */}
+                    {/* Loyalis Admin picks from the existing positions (no free text, no pay); Super Admin can also define one */}
+                    {isLoyalisAdmin ? (
+                      <StructuralPositionPicker
+                        options={dbPositions.map(({ id, name, satker }) => ({ id, name, satker }))}
+                        taken={formData.employment_profile?.structural_positions || []}
+                        onPick={(id) => {
+                          const picked = dbPositions.find(pos => pos.id === id);
+                          if (!picked) return;
+                          const current = formData.employment_profile?.structural_positions || [];
+                          updateStructuralPositions([
+                            ...current,
+                            { name: picked.name, allowance: picked.allowance, satker: picked.satker },
+                          ]);
+                        }}
+                      />
+                    ) : (
                     <div className="flex flex-wrap md:flex-nowrap gap-3 items-end bg-slate-50/50 p-4 rounded-[20px] border border-slate-100">
                       <div className="flex-1 space-y-1.5 min-w-[200px] relative" ref={suggestionRef}>
                         <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Nama Jabatan</Label>
@@ -3256,6 +3310,7 @@ export default function EmployeesPage() {
                         <Plus className="w-4 h-4 mr-1.5" /> Tambah
                       </Button>
                     </div>
+                    )}
                   </div>
                 </div>
               ) : (
