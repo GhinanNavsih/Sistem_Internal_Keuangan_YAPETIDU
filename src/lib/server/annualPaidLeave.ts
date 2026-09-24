@@ -15,6 +15,7 @@ import {
   applyApprovedPaidLeaveToLoyalisEntry,
   type LoyalisPaidLeaveEntry,
 } from '@/lib/payroll/loyalisPaidLeave';
+import { loadApprovedGantiLiburDayOffs } from '@/lib/server/gantiLibur';
 
 export const ANNUAL_PAID_LEAVE_REQUESTS_COLLECTION =
   'AnnualPaidLeaveRequests';
@@ -270,23 +271,42 @@ export async function loadAnnualPaidLeaveHolidayDates(
   );
 }
 
-export async function applyApprovedPaidLeavePostsToLoyalisPresence<
+/**
+ * Overlays every approved full-day credit of the period onto a saved Loyalis
+ * presence document: annual leave (CUTI) and ganti libur days off.
+ */
+export async function applyApprovedLoyalisDayCreditsToPresence<
   T extends Record<string, unknown>,
 >(period: string, presence: T | null): Promise<T | null> {
   if (!presence) return null;
-  const posts = (await loadApprovedAnnualPaidLeavePosts(period)).filter(
-    (post) => post.employeeKind === 'loyalis',
-  );
-  if (posts.length === 0) return presence;
+  const [posts, gantiLiburDayOffs] = await Promise.all([
+    loadApprovedAnnualPaidLeavePosts(period),
+    loadApprovedGantiLiburDayOffs(period),
+  ]);
+  const credits = [
+    ...posts
+      .filter((post) => post.employeeKind === 'loyalis')
+      .map((post) => ({
+        employeeId: post.employeeId,
+        date: post.leaveDate,
+        kind: 'annual_leave' as const,
+      })),
+    ...gantiLiburDayOffs.map((dayOff) => ({
+      employeeId: dayOff.employeeId,
+      date: dayOff.dayOffDate,
+      kind: 'ganti_libur' as const,
+    })),
+  ];
+  if (credits.length === 0) return presence;
   const holidays = await loadAnnualPaidLeaveHolidayDates(Number(period.slice(0, 4)));
   const entries = presence.entries && typeof presence.entries === 'object'
     ? { ...(presence.entries as Record<string, LoyalisPaidLeaveEntry>) }
     : {};
   const workingDays = Number(presence.workingDays || 25);
   const expectedHours = Number(presence.expectedHours || 6.5);
-  for (const post of posts) {
-    const entry = entries[post.employeeId] || {
-      employeeId: post.employeeId,
+  for (const credit of credits) {
+    const entry = entries[credit.employeeId] || {
+      employeeId: credit.employeeId,
       minutes: 0,
       absenceMinutes: workingDays * expectedHours * 60,
       stratum: 5,
@@ -297,12 +317,13 @@ export async function applyApprovedPaidLeavePostsToLoyalisPresence<
       absentDaysCount: 0,
       dailyLogs: [],
     };
-    entries[post.employeeId] = applyApprovedPaidLeaveToLoyalisEntry({
+    entries[credit.employeeId] = applyApprovedPaidLeaveToLoyalisEntry({
       entry,
-      leaveDate: post.leaveDate,
+      leaveDate: credit.date,
       expectedHours,
       workingDays,
-      isOffDay: isFridayDate(post.leaveDate) || holidays.has(post.leaveDate),
+      isOffDay: isFridayDate(credit.date) || holidays.has(credit.date),
+      kind: credit.kind,
     });
   }
   return { ...presence, entries };

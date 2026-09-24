@@ -35,7 +35,7 @@ import {
   requireRole,
   type AuthenticatedProfile,
 } from '@/lib/server/auth';
-import { applyApprovedPaidLeavePostsToLoyalisPresence } from '@/lib/server/annualPaidLeave';
+import { applyApprovedLoyalisDayCreditsToPresence } from '@/lib/server/annualPaidLeave';
 
 export const dynamic = 'force-dynamic';
 
@@ -206,7 +206,7 @@ async function collectLoyalisTargets(command: PropagationCommand): Promise<SlipT
   const presenceData = canonicalPresenceSnapshot.exists
     ? canonicalPresenceSnapshot.data()
     : legacyPresenceSnapshot.data();
-  const presence = await applyApprovedPaidLeavePostsToLoyalisPresence(
+  const presence = await applyApprovedLoyalisDayCreditsToPresence(
     command.periodToken,
     (presenceData || null) as (LoyalisPresenceDocument & Record<string, unknown>) | null,
   );

@@ -624,6 +624,16 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Loyalis ganti libur is server-owned the same way: submission,
+    // attendance-verified decisions, and the revision trail go through APIs.
+    match /GantiLiburRequests/{requestId} {
+      allow read, write: if false;
+    }
+
+    match /GantiLiburRequestRevisions/{revisionId} {
+      allow read, write: if false;
+    }
+
     // Everything not explicitly listed is denied.
     match /{document=**} {
       allow read, write: if false;

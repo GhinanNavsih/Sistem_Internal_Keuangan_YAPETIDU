@@ -9,6 +9,7 @@ import {
   loadAnnualPaidLeaveHolidayDates,
   loadApprovedAnnualPaidLeavePosts,
 } from '@/lib/server/annualPaidLeave';
+import { loadApprovedGantiLiburDayOffs } from '@/lib/server/gantiLibur';
 import { applyApprovedPaidLeaveToLoyalisEntry } from '@/lib/payroll/loyalisPaidLeave';
 import { isFridayDate } from '@/lib/payroll/attendance';
 
@@ -175,31 +176,41 @@ export async function GET(request: NextRequest) {
       period.replace('-', '_'),
       period,
     ]));
-    const [presenceSnapshots, paidLeavePosts, paidLeaveHolidays] = await Promise.all([
-      Promise.all(
-        documentIds.map((documentId) =>
-          adminDb.collection('LoyalisPresence').doc(documentId).get(),
+    const [presenceSnapshots, paidLeavePosts, gantiLiburDayOffs, paidLeaveHolidays] =
+      await Promise.all([
+        Promise.all(
+          documentIds.map((documentId) =>
+            adminDb.collection('LoyalisPresence').doc(documentId).get(),
+          ),
         ),
-      ),
-      loadApprovedAnnualPaidLeavePosts(period, employeeId),
-      loadAnnualPaidLeaveHolidayDates(Number(period.slice(0, 4))),
-    ]);
+        loadApprovedAnnualPaidLeavePosts(period, employeeId),
+        loadApprovedGantiLiburDayOffs(period, employeeId),
+        loadAnnualPaidLeaveHolidayDates(Number(period.slice(0, 4))),
+      ]);
+    const dayCredits = [
+      ...paidLeavePosts
+        .filter((item) => item.employeeKind === 'loyalis')
+        .map((post) => ({ date: post.leaveDate, kind: 'annual_leave' as const })),
+      ...gantiLiburDayOffs.map((dayOff) => ({
+        date: dayOff.dayOffDate,
+        kind: 'ganti_libur' as const,
+      })),
+    ];
 
     const overlayPaidLeave = (
       entry: PresenceEntry,
       presenceData: PresenceEntry,
     ): PresenceEntry => {
       let effective = entry;
-      for (const post of paidLeavePosts.filter(
-        (item) => item.employeeKind === 'loyalis',
-      )) {
+      for (const credit of dayCredits) {
         effective = applyApprovedPaidLeaveToLoyalisEntry({
           entry: effective,
-          leaveDate: post.leaveDate,
+          leaveDate: credit.date,
           expectedHours: Number(presenceData.expectedHours || 6.5),
           workingDays: Number(presenceData.workingDays || 25),
           isOffDay:
-            isFridayDate(post.leaveDate) || paidLeaveHolidays.has(post.leaveDate),
+            isFridayDate(credit.date) || paidLeaveHolidays.has(credit.date),
+          kind: credit.kind,
         });
       }
       return effective;
@@ -227,7 +238,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    if (paidLeavePosts.some((post) => post.employeeKind === 'loyalis')) {
+    if (dayCredits.length > 0) {
       const effectiveEntry = overlayPaidLeave(
         { employeeId, dailyLogs: [] },
         { workingDays: 25, expectedHours: 6.5 },

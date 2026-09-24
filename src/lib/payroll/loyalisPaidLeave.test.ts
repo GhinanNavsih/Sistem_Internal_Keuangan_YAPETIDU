@@ -107,3 +107,57 @@ test('a later Loyalis scanner import is replaced by CUTI without double-counting
   assert.equal(result.activeDaysCount, 1);
   assert.equal(result.dailyLogs?.[0]?.['Jam kerja'], 'CUTI');
 });
+
+test('an approved ganti libur credits its day off as a full day, labelled GANTI LIBUR', () => {
+  const result = applyApprovedPaidLeaveToLoyalisEntry({
+    entry: {
+      minutes: 1_000,
+      absenceMinutes: 390,
+      deduction: 250_000,
+      netBonus: 0,
+      absentDaysCount: 1,
+      dailyLogs: [{
+        Tanggal: '28-09-2026',
+        'Jam kerja': 'TIDAK HADIR',
+        'Scan masuk': '',
+        'Scan pulang': '',
+      }],
+    },
+    leaveDate: '2026-09-28',
+    expectedHours: 6.5,
+    workingDays: 25,
+    isOffDay: false,
+    kind: 'ganti_libur',
+  });
+  assert.equal(result.absenceMinutes, 0);
+  assert.equal(result.absentDaysCount, 0);
+  assert.equal(result.dailyLogs?.[0]?.['Jam kerja'], 'GANTI LIBUR');
+  assert.equal(result.dailyLogs?.[0]?.gantiLibur, true);
+  assert.equal(result.dailyLogs?.[0]?.annualPaidLeave, undefined);
+  assert.deepEqual(result.approvedGantiLiburDates, ['2026-09-28']);
+  assert.equal(result.approvedPaidLeaveDates, undefined);
+  assert.equal(
+    loyalisHasPayableAttendance(result, '2026-09-28'),
+    false,
+  );
+});
+
+test('a date already credited as CUTI is not credited again by ganti libur', () => {
+  const leave = applyApprovedPaidLeaveToLoyalisEntry({
+    entry: { minutes: 0, absenceMinutes: 780, dailyLogs: [] },
+    leaveDate: '2026-09-28',
+    expectedHours: 6.5,
+    workingDays: 25,
+    isOffDay: false,
+  });
+  const both = applyApprovedPaidLeaveToLoyalisEntry({
+    entry: leave,
+    leaveDate: '2026-09-28',
+    expectedHours: 6.5,
+    workingDays: 25,
+    isOffDay: false,
+    kind: 'ganti_libur',
+  });
+  assert.equal(both.minutes, leave.minutes);
+  assert.equal(both.absenceMinutes, leave.absenceMinutes);
+});

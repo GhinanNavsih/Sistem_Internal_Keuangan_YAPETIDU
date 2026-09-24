@@ -25,8 +25,22 @@ export interface LoyalisPaidLeaveEntry {
   absentDaysCount?: number;
   dailyLogs?: LoyalisPaidLeaveDailyLog[];
   approvedPaidLeaveDates?: string[];
+  approvedGantiLiburDates?: string[];
   [key: string]: unknown;
 }
+
+/**
+ * A working day credited as a full paid day: an approved annual leave (CUTI)
+ * or an approved ganti libur, the day off earned by working a full holiday.
+ */
+export type LoyalisDayCreditKind = 'annual_leave' | 'ganti_libur';
+
+export const LOYALIS_DAY_CREDIT_WORK_STATUS: Record<LoyalisDayCreditKind, string> = {
+  annual_leave: 'CUTI',
+  ganti_libur: 'GANTI LIBUR',
+};
+
+const DAY_CREDIT_WORK_STATUSES = new Set(Object.values(LOYALIS_DAY_CREDIT_WORK_STATUS));
 
 export function paidLeaveIsoToLoyalisDate(date: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
@@ -46,7 +60,7 @@ export function loyalisHasPayableAttendance(
   const row = (entry?.dailyLogs || []).find((item) => item.Tanggal === dateKey);
   if (!row) return false;
   const status = String(row['Jam kerja'] || '').trim().toUpperCase();
-  if (status === 'TIDAK HADIR' || status === 'CUTI') return false;
+  if (status === 'TIDAK HADIR' || DAY_CREDIT_WORK_STATUSES.has(status)) return false;
   return Boolean(
     String(row['Scan masuk'] || '').trim() ||
       String(row['Scan pulang'] || '').trim(),
@@ -76,21 +90,34 @@ export function applyApprovedPaidLeaveToLoyalisEntry(input: {
   expectedHours: number;
   workingDays: number;
   isOffDay: boolean;
+  /** Defaults to an annual leave, the only kind that existed before. */
+  kind?: LoyalisDayCreditKind;
 }): LoyalisPaidLeaveEntry {
+  const kind = input.kind || 'annual_leave';
   const dateKey = paidLeaveIsoToLoyalisDate(input.leaveDate);
-  if (!dateKey) throw new Error('Tanggal cuti Loyalis tidak valid.');
+  if (!dateKey) {
+    throw new Error(
+      kind === 'ganti_libur'
+        ? 'Tanggal ganti libur Loyalis tidak valid.'
+        : 'Tanggal cuti Loyalis tidak valid.',
+    );
+  }
   const dailyLogs = [...(input.entry.dailyLogs || [])];
   const existingIndex = dailyLogs.findIndex((row) => row.Tanggal === dateKey);
   const existing = existingIndex >= 0 ? dailyLogs[existingIndex] : null;
-  const wasAlreadyApplied = String(existing?.['Jam kerja'] || '').toUpperCase() === 'CUTI';
+  // Either kind already credited this date; a second credit would pay it twice.
+  const wasAlreadyApplied = DAY_CREDIT_WORK_STATUSES.has(
+    String(existing?.['Jam kerja'] || '').trim().toUpperCase(),
+  );
   const nextRow: LoyalisPaidLeaveDailyLog = {
     ...(existing || {}),
     Tanggal: dateKey,
-    'Jam kerja': 'CUTI',
+    'Jam kerja': LOYALIS_DAY_CREDIT_WORK_STATUS[kind],
     'Scan masuk': ANNUAL_PAID_LEAVE_SCAN_IN.slice(0, 5),
     'Scan pulang': ANNUAL_PAID_LEAVE_SCAN_OUT.slice(0, 5),
-    annualPaidLeave: true,
-    annualPaidLeaveDate: input.leaveDate,
+    ...(kind === 'ganti_libur'
+      ? { gantiLibur: true, gantiLiburDate: input.leaveDate }
+      : { annualPaidLeave: true, annualPaidLeaveDate: input.leaveDate }),
     isOffDay: input.isOffDay,
   };
   if (existingIndex >= 0) dailyLogs[existingIndex] = nextRow;
@@ -99,11 +126,19 @@ export function applyApprovedPaidLeaveToLoyalisEntry(input: {
     dateSortValue(left.Tanggal).localeCompare(dateSortValue(right.Tanggal)),
   );
 
-  const approvedPaidLeaveDates = Array.from(
-    new Set([...(input.entry.approvedPaidLeaveDates || []), input.leaveDate]),
-  ).sort();
+  const creditedDates = kind === 'ganti_libur'
+    ? {
+        approvedGantiLiburDates: Array.from(
+          new Set([...(input.entry.approvedGantiLiburDates || []), input.leaveDate]),
+        ).sort(),
+      }
+    : {
+        approvedPaidLeaveDates: Array.from(
+          new Set([...(input.entry.approvedPaidLeaveDates || []), input.leaveDate]),
+        ).sort(),
+      };
   if (wasAlreadyApplied || input.isOffDay) {
-    return { ...input.entry, dailyLogs, approvedPaidLeaveDates };
+    return { ...input.entry, dailyLogs, ...creditedDates };
   }
 
   const expectedMinutes = Math.max(0, input.expectedHours * 60);
@@ -149,6 +184,6 @@ export function applyApprovedPaidLeaveToLoyalisEntry(input: {
       Number(input.entry.incompleteDaysCount || 0) - (wasIncomplete ? 1 : 0),
     ),
     dailyLogs,
-    approvedPaidLeaveDates,
+    ...creditedDates,
   };
 }

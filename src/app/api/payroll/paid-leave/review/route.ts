@@ -63,6 +63,8 @@ import {
   SATPAM_ABSENCE_REQUESTS_COLLECTION,
   syncSatpamDutyReconciliation,
 } from '@/lib/server/satpamDutyPlan';
+import { employeeGantiLiburQuery } from '@/lib/server/gantiLibur';
+import { isActiveGantiLiburStatus } from '@/lib/payroll/gantiLibur';
 
 export const dynamic = 'force-dynamic';
 
@@ -113,7 +115,7 @@ function decisionIssueMessage(issue: NonNullable<ReturnType<typeof annualPaidLea
     not_pending: 'Pengajuan ini sudah pernah diputuskan atau ditarik.',
     reserved_balance_missing: 'Saldo reservasi cuti tidak konsisten. Hubungi administrator.',
     payroll_post_exists: 'Posting payroll cuti tanggal ini sudah ada.',
-    attendance_conflict: 'Presensi, izin, koreksi, atau laporan kerja berbayar sudah ada pada tanggal ini.',
+    attendance_conflict: 'Presensi, izin, koreksi, ganti libur, atau laporan kerja berbayar sudah ada pada tanggal ini.',
   }[issue];
 }
 
@@ -350,6 +352,7 @@ export async function POST(request: NextRequest) {
         publicationSnapshot,
         uraianSnapshot,
         importSnapshot,
+        gantiLiburSnapshot,
       ] = await Promise.all([
         transaction.get(leaveRef),
         transaction.get(balanceRef),
@@ -367,6 +370,7 @@ export async function POST(request: NextRequest) {
         transaction.get(publicationRef),
         transaction.get(uraianRef),
         transaction.get(importRef),
+        transaction.get(employeeGantiLiburQuery(employee.id)),
       ]);
 
       if (idempotencySnapshot.exists) {
@@ -414,6 +418,13 @@ export async function POST(request: NextRequest) {
         loyalisCorrectionsSnapshot.docs.some((document) =>
           isApprovedCorrection(document.data(), leaveDate),
         ) ||
+        gantiLiburSnapshot.docs.some((document) => {
+          const gantiLibur = document.data();
+          return (
+            gantiLibur.dayOffDate === leaveDate &&
+            isActiveGantiLiburStatus(gantiLibur.status)
+          );
+        }) ||
         activityReportsSnapshot.docs.some((document) => {
           const report = document.data();
           return (

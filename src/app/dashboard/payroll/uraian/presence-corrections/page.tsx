@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import AnnualPaidLeaveReviewPanel from '@/components/payroll/AnnualPaidLeaveReviewPanel';
+import GantiLiburReviewPanel from '@/components/payroll/GantiLiburReviewPanel';
 import { useAuth } from '@/lib/AuthContext';
 import { db } from '@/lib/firebase';
 import { useQueryClient } from '@tanstack/react-query';
@@ -763,6 +764,19 @@ export default function PresenceCorrectionsAdminPage() {
       throw new Error('Cuti tahunan berbayar sudah disetujui pada tanggal ini.');
     }
 
+    const gantiLibur = await authenticatedJson<{
+      requests: Array<{ employeeId: string; dayOffDate: string }>;
+    }>(
+      `/api/payroll/ganti-libur/review?status=approved&dayOffPeriod=${encodeURIComponent(req.date.slice(0, 7))}`,
+    );
+    if (
+      gantiLibur.requests.some(
+        (item) => item.employeeId === req.employeeId && item.dayOffDate === req.date,
+      )
+    ) {
+      throw new Error('Ganti libur sudah disetujui pada tanggal ini.');
+    }
+
     const periodToken = req.date.slice(0, 7).replace('-', '_'); // e.g. "2026_06"
 
     // 1. Retrieve the existing monthly raw presence log document
@@ -1415,6 +1429,8 @@ export default function PresenceCorrectionsAdminPage() {
       <FloatingSnackbar message={message} />
 
       <AnnualPaidLeaveReviewPanel />
+
+      <GantiLiburReviewPanel />
 
       {/* ── Filters Row ────────────────────────────────────────────── */}
       <Card className="bg-white rounded-2xl shadow-sm border-none">

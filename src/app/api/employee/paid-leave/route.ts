@@ -32,6 +32,8 @@ import {
   requireSelfAnnualPaidLeaveEmployee,
 } from '@/lib/server/annualPaidLeave';
 import { assertPeriodAcceptsInput, jakartaToday } from '@/lib/server/payrollPeriod';
+import { employeeGantiLiburQuery } from '@/lib/server/gantiLibur';
+import { isActiveGantiLiburStatus } from '@/lib/payroll/gantiLibur';
 
 export const dynamic = 'force-dynamic';
 
@@ -195,6 +197,7 @@ export async function POST(request: NextRequest) {
         slipSnapshot,
         latestEmployeeSnapshot,
         idempotencySnapshot,
+        gantiLiburSnapshot,
       ] =
         await Promise.all([
           transaction.get(leaveRef),
@@ -203,6 +206,10 @@ export async function POST(request: NextRequest) {
           transaction.get(slipRef),
           transaction.get(employeeRef),
           transaction.get(idempotencyRef),
+          // Only Loyalis can take ganti libur.
+          employee.kind === 'loyalis' && action === 'submit'
+            ? transaction.get(employeeGantiLiburQuery(employee.id))
+            : Promise.resolve(null),
         ]);
 
       if (idempotencySnapshot.exists) {
@@ -264,6 +271,17 @@ export async function POST(request: NextRequest) {
         }
         if (current?.status === 'pending' || current?.status === 'approved') {
           throw new HttpError(409, 'Tanggal ini sudah memiliki pengajuan cuti aktif.');
+        }
+        if (
+          gantiLiburSnapshot?.docs.some((document) => {
+            const gantiLibur = document.data();
+            return (
+              gantiLibur.dayOffDate === leaveDate &&
+              isActiveGantiLiburStatus(gantiLibur.status)
+            );
+          })
+        ) {
+          throw new HttpError(409, 'Tanggal ini sudah diajukan sebagai ganti libur.');
         }
         if (
           reservedDays + usedDays + manualUsedDays >= leaveDateEntitlementDays

@@ -22,7 +22,7 @@ import {
   HttpError,
   requireAuthenticatedProfile,
 } from '@/lib/server/auth';
-import { applyApprovedPaidLeavePostsToLoyalisPresence } from '@/lib/server/annualPaidLeave';
+import { applyApprovedLoyalisDayCreditsToPresence } from '@/lib/server/annualPaidLeave';
 
 export const dynamic = 'force-dynamic';
 
@@ -155,7 +155,7 @@ export async function GET(request: NextRequest) {
     const rawPresence = presenceSnapshot.exists
       ? (presenceSnapshot.data() as LoyalisPresenceDocument)
       : null;
-    const presence = await applyApprovedPaidLeavePostsToLoyalisPresence(
+    const presence = await applyApprovedLoyalisDayCreditsToPresence(
       period,
       rawPresence as (LoyalisPresenceDocument & Record<string, unknown>) | null,
     );

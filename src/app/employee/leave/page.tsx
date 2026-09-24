@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AlertCircle, ChevronLeft, LogOut, ShieldCheck } from 'lucide-react';
 import EmployeeNavigationMenu from '@/components/EmployeeNavigationMenu';
+import { GantiLiburPanel } from '@/components/employee/GantiLiburPanel';
 import { LoyalisPresenceCorrectionPanel } from '@/components/employee/LoyalisPresenceCorrectionPanel';
 import { PaidLeavePanel } from '@/components/employee/PaidLeavePanel';
 import { PekaryaOfficialLeavePanel } from '@/components/pekarya/PekaryaOfficialLeavePanel';
@@ -42,9 +43,11 @@ export default function EmployeeLeavePage() {
   const [periodError, setPeriodError] = useState('');
   const isLoyalis = profile?.role === 'loyalis';
   const [workflow, setWorkflow] = useState<
-    'presence_correction' | 'sick_leave' | 'paid_leave'
+    'presence_correction' | 'sick_leave' | 'paid_leave' | 'ganti_libur'
   >('paid_leave');
-  const effectiveWorkflow = workflow;
+  // Ganti libur is a Loyalis-only privilege.
+  const effectiveWorkflow =
+    workflow === 'ganti_libur' && !isLoyalis ? 'paid_leave' : workflow;
 
   const isSatpam = Boolean(
     profile?.role === 'ketua_shift_satpam' ||
@@ -58,6 +61,7 @@ export default function EmployeeLeavePage() {
     presence_correction: 'Koreksi Presensi',
     sick_leave: 'Izin Sakit',
     paid_leave: 'Ambil Cuti',
+    ganti_libur: 'Ganti Libur',
   } as const;
   const selectedWorkflowLabel = workflowLabels[effectiveWorkflow];
   const isSupportedEmployee = Boolean(
@@ -180,7 +184,8 @@ export default function EmployeeLeavePage() {
               if (
                 value === 'presence_correction' ||
                 value === 'sick_leave' ||
-                value === 'paid_leave'
+                value === 'paid_leave' ||
+                (value === 'ganti_libur' && isLoyalis)
               ) {
                 setWorkflow(value);
               }
@@ -211,12 +216,22 @@ export default function EmployeeLeavePage() {
               >
                 Ambil Cuti
               </SelectItem>
+              {isLoyalis && (
+                <SelectItem
+                  value="ganti_libur"
+                  className="min-h-12 px-3 py-3 text-base font-semibold"
+                >
+                  Ganti Libur
+                </SelectItem>
+              )}
             </SelectContent>
           </Select>
         </div>
 
         {effectiveWorkflow === 'paid_leave' ? (
           <PaidLeavePanel />
+        ) : effectiveWorkflow === 'ganti_libur' ? (
+          <GantiLiburPanel />
         ) : isLoyalis ? (
           <LoyalisPresenceCorrectionPanel
             key={effectiveWorkflow}

@@ -21,6 +21,15 @@ export function assertValidProofFile(
   }
 }
 
+/** The permanent token-based download URL of a stored object. */
+export function storageDownloadUrl(
+  bucketName: string,
+  storagePath: string,
+  token: string,
+): string {
+  return `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucketName)}/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`;
+}
+
 /**
  * Saves a file via the Admin SDK and returns a permanent token-based download
  * URL identical in shape to what the client SDK's getDownloadURL() returns
@@ -34,7 +43,17 @@ export async function saveUploadedFile(
   storagePath: string,
   file: File,
   uploadedBy: string,
-  { cacheControl }: { cacheControl?: string } = {},
+  {
+    cacheControl,
+    contentType,
+    customMetadata,
+  }: {
+    cacheControl?: string;
+    /** Overrides file.type, which browsers leave empty for some formats (HEIC). */
+    contentType?: string;
+    /** Extra metadata stored with the object; never overrides the token or uploader. */
+    customMetadata?: Record<string, string>;
+  } = {},
 ): Promise<string> {
   const buffer = Buffer.from(await file.arrayBuffer());
   const token = randomUUID();
@@ -44,15 +63,16 @@ export async function saveUploadedFile(
     resumable: false,
     validation: 'crc32c',
     metadata: {
-      contentType: file.type || 'application/octet-stream',
+      contentType: contentType || file.type || 'application/octet-stream',
       ...(cacheControl ? { cacheControl } : {}),
       metadata: {
+        ...customMetadata,
         firebaseStorageDownloadTokens: token,
         uploadedBy,
       },
     },
   });
-  return `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket.name)}/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`;
+  return storageDownloadUrl(bucket.name, storagePath, token);
 }
 
 export async function isPayrollPeriodOpen(period: string): Promise<boolean> {

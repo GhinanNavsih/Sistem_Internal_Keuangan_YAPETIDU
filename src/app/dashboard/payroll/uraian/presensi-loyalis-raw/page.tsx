@@ -46,7 +46,10 @@ import {
   autoFillLoyalisScan,
   calculateLoyalisDailyDuration,
 } from '@/lib/payroll/loyalisPresenceWindow';
-import { applyApprovedPaidLeaveToLoyalisEntry } from '@/lib/payroll/loyalisPaidLeave';
+import {
+  applyApprovedPaidLeaveToLoyalisEntry,
+  type LoyalisDayCreditKind,
+} from '@/lib/payroll/loyalisPaidLeave';
 import {
   authenticatedFormData,
   authenticatedJson,
@@ -238,9 +241,16 @@ const recalculateSummary = (
   };
 };
 
+/** An approved full-day credit: annual leave (CUTI) or a ganti libur day off. */
+interface ApprovedDayCredit {
+  employeeId: string;
+  leaveDate: string;
+  kind: LoyalisDayCreditKind;
+}
+
 const applyApprovedPaidLeavesToRows = (
   rows: any[],
-  paidLeaves: readonly { employeeId: string; leaveDate: string }[],
+  paidLeaves: readonly ApprovedDayCredit[],
   expectedHours: number,
   workingDays: number,
   isOffDay: (date: string) => boolean,
@@ -254,6 +264,7 @@ const applyApprovedPaidLeavesToRows = (
       expectedHours,
       workingDays,
       isOffDay: isOffDay(leave.leaveDate),
+      kind: leave.kind,
     });
   }
   return next;
@@ -273,7 +284,7 @@ const buildPresenceEntries = (
   calculateStratum: (minutes: number, mode: 'worked' | 'absent', days: number, hours: number) => {
     absenceMinutes: number; stratum: number; deduction: number; netBonus: number;
   },
-  approvedPaidLeaves: readonly { employeeId: string; leaveDate: string }[] = [],
+  approvedPaidLeaves: readonly ApprovedDayCredit[] = [],
   isOffDayIso: (date: string) => boolean = () => false,
 ) => {
   const entriesMap: Record<string, any> = {};
@@ -332,6 +343,7 @@ const buildPresenceEntries = (
       expectedHours,
       workingDays: activeWorkingDays,
       isOffDay: isOffDayIso(leave.leaveDate),
+      kind: leave.kind,
     });
   });
 
@@ -395,9 +407,7 @@ export default function PresensiLoyalisRawPage() {
   const [workingDays, setWorkingDays] = useState<number | ''>(25);
   const activeWorkingDays = Number(workingDays) || 0;
   const [expectedHours, setExpectedHours] = useState<number>(6.5);
-  const [approvedPaidLeaves, setApprovedPaidLeaves] = useState<
-    Array<{ employeeId: string; leaveDate: string }>
-  >([]);
+  const [approvedPaidLeaves, setApprovedPaidLeaves] = useState<ApprovedDayCredit[]>([]);
   const [savingPresence, setSavingPresence] = useState(false);
   const [existingPresence, setExistingPresence] = useState<any>(null);
   const [loadingPresence, setLoadingPresence] = useState(false);
@@ -532,27 +542,49 @@ export default function PresensiLoyalisRawPage() {
     [offDaySet],
   );
 
+  // Approved full-day credits of the period: annual leave and ganti libur.
+  // Either list failing to load only drops that list, so the other still shows.
   useEffect(() => {
     let cancelled = false;
-    void authenticatedJson<{
-      requests: Array<{
-        employeeId: string;
-        employeeKind: string;
-        leaveDate: string;
-        period: string;
-      }>;
-    }>(`/api/payroll/paid-leave/review?year=${year}&status=approved&period=${canonicalPeriod}`)
-      .then((response) => {
-        if (cancelled) return;
-        setApprovedPaidLeaves(
-          response.requests
-            .filter((item) => item.employeeKind === 'loyalis')
-            .map((item) => ({ employeeId: item.employeeId, leaveDate: item.leaveDate })),
-        );
-      })
-      .catch((error) => {
-        console.error('Gagal memuat overlay cuti tahunan Loyalis:', error);
-      });
+    void Promise.allSettled([
+      authenticatedJson<{
+        requests: Array<{
+          employeeId: string;
+          employeeKind: string;
+          leaveDate: string;
+          period: string;
+        }>;
+      }>(`/api/payroll/paid-leave/review?year=${year}&status=approved&period=${canonicalPeriod}`),
+      authenticatedJson<{
+        requests: Array<{ employeeId: string; dayOffDate: string }>;
+      }>(`/api/payroll/ganti-libur/review?status=approved&dayOffPeriod=${canonicalPeriod}`),
+    ]).then(([annualLeave, gantiLibur]) => {
+      if (cancelled) return;
+      if (annualLeave.status === 'rejected') {
+        console.error('Gagal memuat overlay cuti tahunan Loyalis:', annualLeave.reason);
+      }
+      if (gantiLibur.status === 'rejected') {
+        console.error('Gagal memuat overlay ganti libur Loyalis:', gantiLibur.reason);
+      }
+      setApprovedPaidLeaves([
+        ...(annualLeave.status === 'fulfilled'
+          ? annualLeave.value.requests
+              .filter((item) => item.employeeKind === 'loyalis')
+              .map((item) => ({
+                employeeId: item.employeeId,
+                leaveDate: item.leaveDate,
+                kind: 'annual_leave' as const,
+              }))
+          : []),
+        ...(gantiLibur.status === 'fulfilled'
+          ? gantiLibur.value.requests.map((item) => ({
+              employeeId: item.employeeId,
+              leaveDate: item.dayOffDate,
+              kind: 'ganti_libur' as const,
+            }))
+          : []),
+      ]);
+    });
     return () => {
       cancelled = true;
     };
