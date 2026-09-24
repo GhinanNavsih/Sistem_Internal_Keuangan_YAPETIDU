@@ -7,6 +7,7 @@ import {
   CalendarCheck,
   CalendarDays,
   Clock,
+  FileText,
   Loader2,
   MapPin,
   Package,
@@ -31,6 +32,7 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/lib/AuthContext';
 import { authenticatedJson } from '@/lib/payroll/client';
 import { canReserveVenues } from '@/lib/payroll/roles';
+import { cn } from '@/lib/utils';
 import {
   isActivePhase,
   jamRange,
@@ -150,6 +152,43 @@ function ReservationsContent() {
   const [photos, setPhotos] = useState<VenuePhotos | null>(null);
   const [photosLoading, setPhotosLoading] = useState(true);
   const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
+  const [previewSurat, setPreviewSurat] = useState<{
+    files: Array<{ name: string; base64: string }>;
+    activeIndex: number;
+  } | null>(null);
+  const [loadingSuratId, setLoadingSuratId] = useState<string | null>(null);
+
+  const handleViewSurat = async (reservation: ReservationView) => {
+    setLoadingSuratId(reservation.id);
+    try {
+      const res = await authenticatedJson<{
+        suratName: string | null;
+        suratBase64: string | null;
+        files?: Array<{ name: string; base64: string }>;
+      }>(
+        `/api/venue-reservations/surat?id=${encodeURIComponent(reservation.id)}`
+      );
+      const files =
+        res.files && res.files.length > 0
+          ? res.files
+          : res.suratBase64
+            ? [{ name: res.suratName || reservation.suratName || `SK_${reservation.id}`, base64: res.suratBase64 }]
+            : [];
+
+      if (files.length > 0) {
+        setPreviewSurat({
+          files,
+          activeIndex: 0,
+        });
+      } else {
+        setMessage({ type: 'error', text: 'Berkas SK tidak ditemukan untuk reservasi ini.' });
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Gagal memuat berkas SK.' });
+    } finally {
+      setLoadingSuratId(null);
+    }
+  };
 
   const loadReservations = useCallback(async () => {
     try {
@@ -519,6 +558,28 @@ function ReservationsContent() {
                                 </span>
                               )}
                             </p>
+                            {reservation.hasSurat && (
+                              <div className="flex items-center gap-1.5 pt-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleViewSurat(reservation)}
+                                  disabled={loadingSuratId === reservation.id}
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50/80 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100 transition-colors cursor-pointer"
+                                  title="Lihat Surat Konfirmasi Peminjaman / SK"
+                                >
+                                  {loadingSuratId === reservation.id ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <FileText className="h-3.5 w-3.5 text-indigo-600" />
+                                  )}
+                                  <span className="truncate max-w-[220px]">
+                                    {reservation.suratCount > 1
+                                      ? `${reservation.suratCount} Berkas Lampiran`
+                                      : (reservation.suratName || 'Surat Konfirmasi (SK)')}
+                                  </span>
+                                </button>
+                              </div>
+                            )}
                             {hint && <p className="text-xs text-slate-500">{hint}</p>}
                             {reservation.alasanPenolakan && (
                               <p className="text-xs italic text-rose-600">&ldquo;{reservation.alasanPenolakan}&rdquo;</p>
@@ -688,6 +749,72 @@ function ReservationsContent() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* SK Document Preview Lightbox */}
+      <Dialog open={previewSurat !== null} onOpenChange={(open) => { if (!open) setPreviewSurat(null); }}>
+        <DialogContent className="max-w-3xl w-[95vw] p-4 sm:p-6 rounded-2xl border-none shadow-2xl bg-white">
+          {previewSurat && previewSurat.files.length > 0 && (() => {
+            const currentFile = previewSurat.files[previewSurat.activeIndex] || previewSurat.files[0];
+            return (
+              <div className="space-y-3">
+                <DialogHeader>
+                  <div className="flex items-center justify-between gap-2 pr-6">
+                    <DialogTitle className="text-base font-bold text-slate-900 truncate">
+                      {currentFile.name}
+                    </DialogTitle>
+                    {previewSurat.files.length > 1 && (
+                      <span className="text-xs font-semibold text-slate-500 shrink-0">
+                        {previewSurat.activeIndex + 1} dari {previewSurat.files.length} berkas
+                      </span>
+                    )}
+                  </div>
+                  <DialogDescription className="text-xs text-slate-500">
+                    Surat Konfirmasi Peminjaman Tempat / SK & Berkas Lampiran
+                  </DialogDescription>
+                </DialogHeader>
+
+                {previewSurat.files.length > 1 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-slate-100">
+                    {previewSurat.files.map((file, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setPreviewSurat((prev) => (prev ? { ...prev, activeIndex: idx } : null))}
+                        className={cn(
+                          'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 cursor-pointer',
+                          idx === previewSurat.activeIndex
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        )}
+                      >
+                        <FileText className="h-3.5 w-3.5" />
+                        <span className="truncate max-w-[160px]">{file.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-center min-h-[300px]">
+                  {currentFile.base64.startsWith('data:application/pdf') || /\.pdf$/i.test(currentFile.name) ? (
+                    <iframe
+                      src={currentFile.base64}
+                      title={currentFile.name}
+                      className="h-[65vh] w-full rounded-xl border-none"
+                    />
+                  ) : (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={currentFile.base64}
+                      alt={currentFile.name}
+                      className="max-h-[65vh] w-full object-contain"
+                    />
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 

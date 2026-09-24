@@ -89,6 +89,7 @@ const BOOKING_FIELDS = [
   'sakuGroupDates',
   'sakuGroupIndex',
   'sakuGroupTotal',
+  'suratName',
 ];
 
 const SAFE_BOOKING_ID = /^[A-Za-z0-9_-]{1,120}$/;
@@ -452,4 +453,42 @@ export async function recordReservationAudit(
   } catch (err) {
     console.error('Failed to write venue reservation audit log:', err);
   }
+}
+
+export async function loadBookingSurat(
+  db: Firestore,
+  caller: ReservationActor,
+  bookingId: string,
+): Promise<{
+  suratName: string | null;
+  suratBase64: string | null;
+  files: Array<{ name: string; base64: string }>;
+}> {
+  if (!SAFE_BOOKING_ID.test(bookingId)) {
+    throw new HttpError(400, 'ID reservasi tidak valid.');
+  }
+  const snapshot = await db.collection(SIMPEL_BOOKINGS_COLLECTION).doc(bookingId).get();
+  if (!snapshot.exists) {
+    throw new HttpError(404, 'Reservasi tidak ditemukan di SIMPEL.');
+  }
+  const data = snapshot.data() || {};
+  const isOwner = Boolean(data.sakuUid && data.sakuUid === caller.uid);
+  const isSuperAdmin = caller.role === 'super_admin';
+  if (!isOwner && !isSuperAdmin) {
+    throw new HttpError(403, 'Anda tidak memiliki akses untuk melihat dokumen reservasi ini.');
+  }
+  const rawFiles = Array.isArray(data.suratFiles) ? data.suratFiles : [];
+  const files: Array<{ name: string; base64: string }> = rawFiles.length > 0
+    ? rawFiles
+        .filter((f) => f && typeof f.name === 'string' && typeof f.base64 === 'string')
+        .map((f) => ({ name: f.name as string, base64: f.base64 as string }))
+    : typeof data.suratBase64 === 'string' && data.suratBase64
+      ? [{ name: typeof data.suratName === 'string' && data.suratName ? data.suratName : 'Berkas SK', base64: data.suratBase64 }]
+      : [];
+
+  return {
+    suratName: typeof data.suratName === 'string' ? data.suratName : null,
+    suratBase64: typeof data.suratBase64 === 'string' ? data.suratBase64 : null,
+    files,
+  };
 }

@@ -91,6 +91,9 @@ export interface SimpelBooking {
   sakuGroupDates?: string[];
   sakuGroupIndex?: number;
   sakuGroupTotal?: number;
+  suratName?: string;
+  suratBase64?: string;
+  suratFiles?: Array<{ name: string; base64: string }>;
 }
 
 /** The fields the availability rules need from a booking. */
@@ -754,12 +757,23 @@ export interface VenueReservationRequest {
   equipment: EquipmentRequestLine[];
   /** Optional link to a SAKU event (e.g. a Proposal Kegiatan id). */
   sakuEventId?: string;
+  suratName?: string;
+  suratBase64?: string;
+  suratFiles?: Array<{ name: string; base64: string }>;
 }
 
 /** Coerces an untrusted JSON body into the request shape; validation comes next. */
 export function parseReservationRequest(body: unknown): VenueReservationRequest {
   const data = record(body);
   const equipment = Array.isArray(data.equipment) ? data.equipment : [];
+  const suratFilesRaw = Array.isArray(data.suratFiles) ? data.suratFiles : [];
+  const suratFiles = suratFilesRaw
+    .map(record)
+    .filter((f) => typeof f.name === 'string' && typeof f.base64 === 'string' && (f.base64 as string).startsWith('data:'))
+    .map((f) => ({ name: text(f.name), base64: f.base64 as string }));
+  const singleName = text(data.suratName) || (suratFiles.length > 0 ? suratFiles[0].name : undefined);
+  const singleBase64 = (typeof data.suratBase64 === 'string' && data.suratBase64.startsWith('data:') ? data.suratBase64 : undefined) || (suratFiles.length > 0 ? suratFiles[0].base64 : undefined);
+
   return {
     gedungId: text(data.gedungId),
     ruangan: text(data.ruangan),
@@ -775,6 +789,9 @@ export function parseReservationRequest(body: unknown): VenueReservationRequest 
       qty: typeof line.qty === 'number' ? line.qty : Number(line.qty),
     })),
     sakuEventId: text(data.sakuEventId) || undefined,
+    suratName: singleName,
+    suratBase64: singleBase64,
+    suratFiles: suratFiles.length > 0 ? suratFiles : undefined,
   };
 }
 
@@ -791,6 +808,9 @@ export interface ValidatedReservation {
   /** Canonical lines, e.g. "2x Mic Wireless Shure". */
   fasilitasTambahan: string[];
   sakuEventId?: string;
+  suratName?: string;
+  suratBase64?: string;
+  suratFiles?: Array<{ name: string; base64: string }>;
 }
 
 export type ValidationResult =
@@ -914,6 +934,9 @@ export function validateReservationRequest(
       kontak: request.kontak,
       fasilitasTambahan,
       sakuEventId: request.sakuEventId,
+      suratName: request.suratName,
+      suratBase64: request.suratBase64,
+      suratFiles: request.suratFiles,
     },
   };
 }
@@ -982,6 +1005,9 @@ export function buildSakuBooking(input: {
     sakuGroupDates: input.group?.dates,
     sakuGroupIndex: input.group?.index,
     sakuGroupTotal: input.group?.total,
+    suratName: reservation.suratName || undefined,
+    suratBase64: reservation.suratBase64 || undefined,
+    suratFiles: reservation.suratFiles && reservation.suratFiles.length > 0 ? reservation.suratFiles : undefined,
   });
 }
 
@@ -1156,6 +1182,9 @@ export interface ReservationView {
   groupIndex: number | null;
   groupTotal: number | null;
   isOwner: boolean;
+  suratName: string | null;
+  hasSurat: boolean;
+  suratCount: number;
 }
 
 export function toReservationView(
@@ -1190,6 +1219,9 @@ export function toReservationView(
     groupIndex: booking.sakuGroupIndex ?? null,
     groupTotal: booking.sakuGroupTotal ?? null,
     isOwner: viewerUid ? isOwner : true,
+    suratName: booking.suratName ?? null,
+    hasSurat: Boolean(booking.suratName || booking.suratBase64 || (booking.suratFiles && booking.suratFiles.length > 0)),
+    suratCount: booking.suratFiles?.length || (booking.suratName || booking.suratBase64 ? 1 : 0),
   };
 }
 

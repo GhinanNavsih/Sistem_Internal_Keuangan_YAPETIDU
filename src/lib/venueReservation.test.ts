@@ -852,3 +852,93 @@ test('toReservationView manages ownership and permissions for owner, other user,
   assert.equal(adminView.allowedActions.length > 0, true); // Admin retains ability to cancel
 });
 
+test('venue reservation handles uploaded confirmation letter (SK)', () => {
+  const dummyDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+  // 1. parseReservationRequest parses and validates surat
+  const parsed = parseReservationRequest({
+    ...request(),
+    suratName: ' Surat_Konfirmasi.png ',
+    suratBase64: dummyDataUrl,
+  });
+  assert.equal(parsed.suratName, 'Surat_Konfirmasi.png');
+  assert.equal(parsed.suratBase64, dummyDataUrl);
+
+  // Invalid base64 (not starting with data:) is ignored
+  const parsedBad = parseReservationRequest({
+    suratName: 'bad.png',
+    suratBase64: 'http://malicious-site.com/fake.png',
+  });
+  assert.equal(parsedBad.suratBase64, undefined);
+
+  // 2. validateReservationRequest propagates surat fields
+  const validated = validateReservationRequest(parsed, { buildings: BUILDINGS, equipment: EQUIPMENT }, NOW);
+  assert.equal(validated.ok, true);
+  if (!validated.ok) return;
+  assert.equal(validated.value.suratName, 'Surat_Konfirmasi.png');
+  assert.equal(validated.value.suratBase64, dummyDataUrl);
+
+  // 3. buildSakuBooking includes surat fields on booking
+  const booking = buildSakuBooking({
+    id: 'PJM-S-TEST-SK',
+    reservation: validated.value,
+    actor: { uid: 'uid-1', role: 'satker_head_loyalis', email: null, displayName: '' },
+    nowIso: '2026-09-19T03:00:00.000Z',
+    today: '2026-09-19',
+  });
+  assert.equal(booking.suratName, 'Surat_Konfirmasi.png');
+  assert.equal(booking.suratBase64, dummyDataUrl);
+
+  // 4. toReservationView exposes suratName and hasSurat flag
+  const viewWithSurat = toReservationView(booking, 'satker_head_loyalis', 'uid-1');
+  assert.equal(viewWithSurat.suratName, 'Surat_Konfirmasi.png');
+  assert.equal(viewWithSurat.hasSurat, true);
+
+  const viewWithoutSurat = toReservationView({ ...booking, suratName: undefined, suratBase64: undefined });
+  assert.equal(viewWithoutSurat.suratName, null);
+  assert.equal(viewWithoutSurat.hasSurat, false);
+});
+
+test('venue reservation handles multiple uploaded confirmation/proof files (suratFiles)', () => {
+  const dummyPdf = 'data:application/pdf;base64,JVBERi0xLjQKJcTl8uXrp...';
+  const dummyJpg = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD...';
+
+  // 1. parseReservationRequest parses array of files and populates fallback single-file fields
+  const parsed = parseReservationRequest({
+    ...request(),
+    suratFiles: [
+      { name: 'SK_Peminjaman.pdf', base64: dummyPdf },
+      { name: 'Bukti_Rektorat.jpg', base64: dummyJpg },
+    ],
+  });
+  assert.equal(parsed.suratFiles?.length, 2);
+  assert.equal(parsed.suratFiles?.[0].name, 'SK_Peminjaman.pdf');
+  assert.equal(parsed.suratFiles?.[1].name, 'Bukti_Rektorat.jpg');
+  assert.equal(parsed.suratName, 'SK_Peminjaman.pdf');
+  assert.equal(parsed.suratBase64, dummyPdf);
+
+  // 2. validateReservationRequest propagates suratFiles
+  const validated = validateReservationRequest(parsed, { buildings: BUILDINGS, equipment: EQUIPMENT }, NOW);
+  assert.equal(validated.ok, true);
+  if (!validated.ok) return;
+  assert.equal(validated.value.suratFiles?.length, 2);
+
+  // 3. buildSakuBooking persists suratFiles and backward compatible fields
+  const booking = buildSakuBooking({
+    id: 'PJM-S-TEST-MULTI',
+    reservation: validated.value,
+    actor: { uid: 'uid-1', role: 'satker_head_loyalis', email: null, displayName: '' },
+    nowIso: '2026-09-19T03:00:00.000Z',
+    today: '2026-09-19',
+  });
+  assert.equal(booking.suratFiles?.length, 2);
+  assert.equal(booking.suratName, 'SK_Peminjaman.pdf');
+  assert.equal(booking.suratBase64, dummyPdf);
+
+  // 4. toReservationView sets suratCount and hasSurat
+  const view = toReservationView(booking, 'satker_head_loyalis', 'uid-1');
+  assert.equal(view.hasSurat, true);
+  assert.equal(view.suratCount, 2);
+  assert.equal(view.suratName, 'SK_Peminjaman.pdf');
+});
+

@@ -392,3 +392,43 @@ test('draft serialization and parsing preserves isMultiDay and waktuSelesaiInput
   assert.equal(parsed?.waktuSelesai, '2026-10-04');
 });
 
+test('draft serialization and parsing preserves uploaded skFiles', () => {
+  const sampleWithFiles: SavedDraft = {
+    step: 0,
+    kegiatan: 'Kegiatan Dengan Berkas',
+    waktuInput: '2026-10-01',
+    jamMulai: '09:00',
+    jamSelesai: '11:00',
+    gedungId: 'GDG-01',
+    ruangan: 'Lapangan Utama',
+    quantities: {},
+    skFiles: [
+      { name: 'Surat_SK.pdf', base64: 'data:application/pdf;base64,JVBERi0...', size: 10240 },
+      { name: 'Lampiran.png', base64: 'data:image/png;base64,iVBORw0...', size: 20480 },
+    ],
+  };
+
+  const serialized = serializeDraft(sampleWithFiles, new Date('2026-09-19T00:00:00Z'));
+  const parsed = parseSavedDraft(serialized, new Date('2026-09-19T00:00:00Z'));
+
+  assert.equal(parsed?.skFiles?.length, 2);
+  assert.equal(parsed?.skFiles?.[0].name, 'Surat_SK.pdf');
+  assert.equal(parsed?.skFiles?.[0].size, 10240);
+  assert.equal(parsed?.skFiles?.[1].name, 'Lampiran.png');
+
+  // isBlankDraft returns false when skFiles is present even if text fields are empty
+  const onlyFiles: SavedDraft = {
+    step: 0,
+    kegiatan: '',
+    waktuInput: null,
+    jamMulai: '',
+    jamSelesai: '',
+    gedungId: '',
+    ruangan: '',
+    quantities: {},
+    skFiles: [{ name: 'Surat_SK.pdf', base64: 'data:application/pdf;base64,JVBERi0...', size: 10240 }],
+  };
+  assert.equal(isBlankDraft(onlyFiles), false);
+});
+
+

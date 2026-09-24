@@ -268,6 +268,12 @@ export function soleBookableRoom(building: SimpelBuilding | undefined): SimpelRo
 
 // ─── Saved progress ─────────────────────────────────────────────────────────
 
+export interface DraftSkFile {
+  name: string;
+  base64: string;
+  size: number;
+}
+
 /**
  * What is kept when someone closes the form half-way, so it can be picked up
  * again: only what they entered, never a phone number.
@@ -284,6 +290,7 @@ export interface SavedDraft {
   gedungId: string;
   ruangan: string;
   quantities: Record<string, number>;
+  skFiles?: DraftSkFile[];
 }
 
 export const DRAFT_MAX_AGE_DAYS = 7;
@@ -301,7 +308,8 @@ export function isBlankDraft(draft: SavedDraft): boolean {
     !draft.jamSelesai &&
     !draft.gedungId &&
     !draft.ruangan &&
-    Object.values(draft.quantities).every((qty) => !(qty > 0))
+    Object.values(draft.quantities).every((qty) => !(qty > 0)) &&
+    (!draft.skFiles || draft.skFiles.length === 0)
   );
 }
 
@@ -369,6 +377,27 @@ export function parseSavedDraft(raw: string | null, now: Date = new Date()): Sav
     }
   }
 
+  const skFiles: DraftSkFile[] = [];
+  if (Array.isArray(entry.skFiles)) {
+    for (const item of entry.skFiles.slice(0, 5)) {
+      if (
+        item &&
+        typeof item === 'object' &&
+        typeof (item as Record<string, unknown>).name === 'string' &&
+        typeof (item as Record<string, unknown>).base64 === 'string' &&
+        typeof (item as Record<string, unknown>).size === 'number'
+      ) {
+        const fileObj = item as Record<string, unknown>;
+        const name = fileObj.name as string;
+        const base64 = fileObj.base64 as string;
+        const size = fileObj.size as number;
+        if (name.length <= 200 && base64.startsWith('data:') && size >= 0) {
+          skFiles.push({ name, base64, size });
+        }
+      }
+    }
+  }
+
   const draft: SavedDraft = {
     step,
     kegiatan,
@@ -380,6 +409,7 @@ export function parseSavedDraft(raw: string | null, now: Date = new Date()): Sav
     quantities,
     ...(isMultiDay ? { isMultiDay: true } : {}),
     ...(waktuSelesai ? { waktuSelesai } : {}),
+    ...(skFiles.length > 0 ? { skFiles } : {}),
   };
   return isBlankDraft(draft) ? null : draft;
 }

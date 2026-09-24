@@ -8,11 +8,15 @@ import {
   CalendarCheck,
   CalendarDays,
   CheckCircle2,
+  FileCheck,
+  FileText,
   Loader2,
   Minus,
   Package,
   Plus,
   Timer,
+  Upload,
+  X,
 } from 'lucide-react';
 import OptionPicker, { type PickerOption } from '@/components/venue/OptionPicker';
 import { Button } from '@/components/ui/button';
@@ -141,12 +145,26 @@ function readDraft(uid: string): SavedDraft | null {
 /** A blank form is not kept; passing null forgets the draft. */
 function writeDraft(uid: string, draft: SavedDraft | null): void {
   if (typeof window === 'undefined' || !uid) return;
+  const key = `${DRAFT_STORAGE_PREFIX}${uid}`;
+  if (!draft || isBlankDraft(draft)) {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      // Storage can be blocked; ignore
+    }
+    return;
+  }
   try {
-    const key = `${DRAFT_STORAGE_PREFIX}${uid}`;
-    if (draft && !isBlankDraft(draft)) window.localStorage.setItem(key, serializeDraft(draft));
-    else window.localStorage.removeItem(key);
+    window.localStorage.setItem(key, serializeDraft(draft));
   } catch {
-    // Storage can be blocked (private window); the form works the same without it.
+    // If storing with base64 images exceeds browser localStorage quota,
+    // save the draft without the image files so text and selections are not lost.
+    try {
+      const withoutFiles = { ...draft, skFiles: undefined };
+      window.localStorage.setItem(key, serializeDraft(withoutFiles));
+    } catch {
+      // Storage can be blocked (e.g. strict private window); ignore
+    }
   }
 }
 
@@ -312,6 +330,55 @@ function EquipmentRow({
   );
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function compressImageToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const canvas = document.createElement('canvas');
+      let width = img.naturalWidth || img.width;
+      let height = img.naturalHeight || img.height;
+      const maxDim = 1600;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        const fallbackReader = new FileReader();
+        fallbackReader.onload = () => resolve(fallbackReader.result as string);
+        fallbackReader.onerror = reject;
+        fallbackReader.readAsDataURL(file);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      const fallbackReader = new FileReader();
+      fallbackReader.onload = () => resolve(fallbackReader.result as string);
+      fallbackReader.onerror = reject;
+      fallbackReader.readAsDataURL(file);
+    };
+    img.src = objectUrl;
+  });
+}
+
 // ─── The form ───────────────────────────────────────────────────────────────
 
 /**
@@ -375,6 +442,82 @@ export default function VenueReservationDialog({
   // and as an input once the user types their own.
   const [prefill, setPrefill] = useState<string | null>(null);
   const [editKontak, setEditKontak] = useState(false);
+
+  const MAX_SK_FILES = 5;
+  const skFileInputRef = useRef<HTMLInputElement>(null);
+  const [skFiles, setSkFiles] = useState<Array<{ name: string; base64: string; size: number }>>(
+    () => restored?.skFiles ?? []
+  );
+  const [uploadingSk, setUploadingSk] = useState(false);
+  const [skError, setSkError] = useState<string | null>(null);
+  const [previewSk, setPreviewSk] = useState<{ name: string; base64: string } | null>(null);
+
+  const handleSkFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = event.target.files;
+    if (!fileList || fileList.length === 0) return;
+
+    const filesToProcess = Array.from(fileList);
+    if (skFiles.length + filesToProcess.length > MAX_SK_FILES) {
+      setSkError(`Maksimal ${MAX_SK_FILES} berkas bukti/SK yang dapat diunggah.`);
+      if (skFileInputRef.current) skFileInputRef.current.value = '';
+      return;
+    }
+
+    setUploadingSk(true);
+    setSkError(null);
+
+    const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'bmp', 'gif', 'svg'];
+    const newItems: Array<{ name: string; base64: string; size: number }> = [];
+    let hasPdfSizeWarning = false;
+
+    try {
+      for (const file of filesToProcess) {
+        const ext = file.name.split('.').pop()?.toLowerCase() || '';
+        const isImage = file.type.startsWith('image/') || allowedExts.includes(ext);
+        const isPdf = file.type === 'application/pdf' || ext === 'pdf';
+
+        if (!isImage && !isPdf) {
+          setSkError(`Format berkas "${file.name}" tidak didukung. Harap pilih gambar (JPG, PNG, HEIC, dll) atau PDF.`);
+          setUploadingSk(false);
+          if (skFileInputRef.current) skFileInputRef.current.value = '';
+          return;
+        }
+
+        if (file.size > 10 * 1024 * 1024) {
+          setSkError(`Ukuran berkas "${file.name}" terlalu besar. Maksimal 10 MB per berkas.`);
+          setUploadingSk(false);
+          if (skFileInputRef.current) skFileInputRef.current.value = '';
+          return;
+        }
+
+        if (isPdf) {
+          if (file.size > 900 * 1024) {
+            hasPdfSizeWarning = true;
+          }
+          const base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target?.result as string);
+            reader.onerror = () => reject(new Error(`Gagal membaca berkas ${file.name}`));
+            reader.readAsDataURL(file);
+          });
+          newItems.push({ name: file.name, base64, size: file.size });
+        } else {
+          const base64 = await compressImageToDataUrl(file);
+          newItems.push({ name: file.name, base64, size: file.size });
+        }
+      }
+
+      setSkFiles((prev) => [...prev, ...newItems]);
+      if (hasPdfSizeWarning) {
+        setSkError('Peringatan: Terdapat berkas PDF berukuran lebih dari 900 KB. Berkas tetap diproses, namun disarankan di bawah 900 KB.');
+      }
+    } catch {
+      setSkError('Gagal memproses beberapa berkas. Silakan coba kembali.');
+    } finally {
+      setUploadingSk(false);
+      if (skFileInputRef.current) skFileInputRef.current.value = '';
+    }
+  };
 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -479,10 +622,11 @@ export default function VenueReservationDialog({
         gedungId,
         ruangan,
         quantities,
+        skFiles: skFiles.length > 0 ? skFiles : undefined,
       });
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [uid, step, kegiatan, waktuInput, isMultiDay, waktuSelesai, jamMulai, jamSelesai, gedungId, ruangan, quantities]);
+  }, [uid, step, kegiatan, waktuInput, isMultiDay, waktuSelesai, jamMulai, jamSelesai, gedungId, ruangan, quantities, skFiles]);
 
   // Every step starts at the top.
   useEffect(() => {
@@ -716,6 +860,9 @@ export default function VenueReservationDialog({
           pemohon: pemohon.trim(),
           kontak: kontak.trim(),
           equipment: selectedLines,
+          suratName: skFiles[0]?.name,
+          suratBase64: skFiles[0]?.base64,
+          suratFiles: skFiles.length > 0 ? skFiles.map((f) => ({ name: f.name, base64: f.base64 })) : undefined,
         }),
       });
       submitted.current = true;
@@ -763,6 +910,15 @@ export default function VenueReservationDialog({
 
   const summaryRows = [
     { label: 'Kegiatan', value: kegiatan.trim(), step: stepIndex('acara') },
+    ...(skFiles.length > 0
+      ? [
+          {
+            label: skFiles.length === 1 ? 'Surat Konfirmasi (SK)' : `Berkas Bukti / SK (${skFiles.length})`,
+            value: skFiles.map((f) => f.name).join(', '),
+            step: stepIndex('acara'),
+          },
+        ]
+      : []),
     {
       label: 'Waktu',
       value:
@@ -780,7 +936,8 @@ export default function VenueReservationDialog({
   ];
 
   return (
-    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen && !submitting) onOpenChange(false); }}>
+    <>
+      <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen && !submitting) onOpenChange(false); }}>
       <DialogContent
         className={cn(
           'flex max-h-[92vh] w-[95vw] flex-col gap-0 overflow-hidden rounded-2xl border-none bg-white p-0 shadow-2xl transition-[max-width] duration-300',
@@ -856,21 +1013,115 @@ export default function VenueReservationDialog({
                     error={errorFor('kegiatan')}
                     valid={!issueFor('kegiatan')}
                   >
-                    <Input
-                      id="reservasi-kegiatan"
-                      name="kegiatan"
-                      value={kegiatan}
-                      maxLength={MAX_KEGIATAN_LENGTH}
-                      placeholder="Contoh: Rapat Koordinasi Loyalis"
-                      autoComplete="off"
-                      enterKeyHint="next"
-                      autoFocus
-                      aria-invalid={!!errorFor('kegiatan') || undefined}
-                      aria-describedby="reservasi-kegiatan-message"
-                      onChange={(event) => setKegiatan(event.target.value)}
-                      onBlur={() => touch('kegiatan')}
-                      className={INPUT_CLASS}
-                    />
+                    <div className="flex items-start gap-2">
+                      <Input
+                        id="reservasi-kegiatan"
+                        name="kegiatan"
+                        value={kegiatan}
+                        maxLength={MAX_KEGIATAN_LENGTH}
+                        placeholder="Contoh: Rapat Koordinasi Loyalis"
+                        autoComplete="off"
+                        enterKeyHint="next"
+                        autoFocus
+                        aria-invalid={!!errorFor('kegiatan') || undefined}
+                        aria-describedby="reservasi-kegiatan-message"
+                        onChange={(event) => setKegiatan(event.target.value)}
+                        onBlur={() => touch('kegiatan')}
+                        className={cn(INPUT_CLASS, 'flex-1 min-w-0')}
+                      />
+                      <input
+                        ref={skFileInputRef}
+                        type="file"
+                        multiple
+                        accept=".jpg,.jpeg,.png,.webp,.heic,.heif,.pdf,image/*,application/pdf"
+                        onChange={handleSkFileChange}
+                        className="hidden"
+                      />
+                      <Button
+                        type="button"
+                        variant={skFiles.length > 0 ? 'secondary' : 'outline'}
+                        onClick={() => skFileInputRef.current?.click()}
+                        disabled={uploadingSk || skFiles.length >= MAX_SK_FILES}
+                        className={cn(
+                          'h-12 shrink-0 rounded-xl px-3 sm:px-4 text-xs sm:text-sm font-bold border transition-all cursor-pointer flex items-center gap-1.5',
+                          skFiles.length > 0
+                            ? 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-sm'
+                        )}
+                        title={
+                          skFiles.length >= MAX_SK_FILES
+                            ? 'Maksimal 5 berkas tercapai'
+                            : skFiles.length > 0
+                              ? 'Tambah Berkas Lampiran / Bukti Tambahan'
+                              : 'Upload Surat Konfirmasi Peminjaman / SK (Gambar atau PDF)'
+                        }
+                      >
+                        {uploadingSk ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
+                            <span>Memproses...</span>
+                          </>
+                        ) : skFiles.length > 0 ? (
+                          <>
+                            <Plus className="h-4 w-4 text-indigo-600 shrink-0" />
+                            <span>Tambah Berkas</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="h-4 w-4 text-slate-500 shrink-0" />
+                            <span>Upload SK</span>
+                          </>
+                        )}
+                      </Button>
+                    </div>
+
+                    {skFiles.length > 0 && (
+                      <div className="mt-2.5 space-y-1.5">
+                        <div className="flex items-center justify-between px-0.5 text-[11px] font-semibold text-slate-500">
+                          <span>Berkas Terlampir ({skFiles.length}/{MAX_SK_FILES}):</span>
+                          {skFiles.length >= MAX_SK_FILES && (
+                            <span className="text-amber-600 font-normal">Maksimal 5 berkas tercapai</span>
+                          )}
+                        </div>
+                        {skFiles.map((file, idx) => (
+                          <div
+                            key={`${file.name}-${idx}`}
+                            className="flex items-center justify-between gap-2 rounded-xl border border-indigo-100 bg-indigo-50/70 p-2.5 text-xs text-indigo-950"
+                          >
+                            <div className="flex min-w-0 items-center gap-2">
+                              <FileText className="h-4 w-4 shrink-0 text-indigo-600" />
+                              <span className="truncate font-semibold text-slate-800">{file.name}</span>
+                              <span className="shrink-0 text-[11px] text-slate-400">({formatFileSize(file.size)})</span>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setPreviewSk({ name: file.name, base64: file.base64 })}
+                                className="rounded-lg px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 cursor-pointer"
+                              >
+                                Lihat
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSkFiles((prev) => prev.filter((_, i) => i !== idx));
+                                }}
+                                className="rounded-lg p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
+                                title={`Hapus ${file.name}`}
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {skError && (
+                      <p role="alert" className="mt-1 text-[11px] font-medium text-rose-600">
+                        {skError}
+                      </p>
+                    )}
                   </Field>
                   <div className="space-y-3">
                     <div className="flex items-center justify-between gap-2">
@@ -1428,5 +1679,44 @@ export default function VenueReservationDialog({
         </form>
       </DialogContent>
     </Dialog>
+
+    {/* Lightbox / Preview SK Dialog */}
+    <Dialog open={previewSk !== null} onOpenChange={(open) => { if (!open) setPreviewSk(null); }}>
+      <DialogContent className="max-w-3xl w-[95vw] p-4 sm:p-6 rounded-2xl border-none shadow-2xl bg-white">
+        {previewSk && (
+          <div className="space-y-3">
+            <DialogHeader>
+              <div className="flex items-center justify-between gap-2 pr-6">
+                <div>
+                  <DialogTitle className="text-base font-bold text-slate-900 truncate">
+                    {previewSk.name}
+                  </DialogTitle>
+                  <p className="text-xs text-slate-500">
+                    Surat Konfirmasi Peminjaman Tempat / SK
+                  </p>
+                </div>
+              </div>
+            </DialogHeader>
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-center min-h-[300px]">
+              {previewSk.base64.startsWith('data:application/pdf') || /\.pdf$/i.test(previewSk.name) ? (
+                <iframe
+                  src={previewSk.base64}
+                  title={previewSk.name}
+                  className="h-[65vh] w-full rounded-xl border-none"
+                />
+              ) : (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={previewSk.base64}
+                  alt={previewSk.name}
+                  className="max-h-[65vh] w-full object-contain"
+                />
+              )}
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  </>
   );
 }
