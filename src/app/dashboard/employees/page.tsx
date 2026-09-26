@@ -2097,12 +2097,6 @@ export default function EmployeesPage() {
                     <TableHead onClick={() => handleSort('recognizedDate')} className="font-semibold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors whitespace-nowrap">
                       <div className="flex items-center">Tanggal Diakui <SortIcon active={sortConfig.key === 'recognizedDate'} direction={sortConfig.direction} /></div>
                     </TableHead>
-                    <TableHead onClick={() => handleSort('masaKerjaDiakui')} className="font-semibold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors whitespace-nowrap">
-                      <div className="flex flex-col">
-                        <div className="flex items-center">Masa Kerja (Diakui) <SortIcon active={sortConfig.key === 'masaKerjaDiakui'} direction={sortConfig.direction} /></div>
-                        <span className="text-[10px] font-normal text-slate-400">Gaji Pokok</span>
-                      </div>
-                    </TableHead>
                     <TableHead className="font-semibold text-slate-900 text-right pr-8 select-none">Aksi</TableHead>
                   </TableRow>
                 )}
@@ -2212,7 +2206,7 @@ export default function EmployeesPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={tableViewMode === 'default' ? (isLoyalisAdmin ? 8 : 9) : tableViewMode === 'debug' ? (isLoyalisAdmin ? 4 : 5) : tableViewMode === 'cuti' ? 6 : (activeTab === 'loyalis' ? (isLoyalisAdmin ? 12 : 13) : 5)} className="h-64 text-center">
+                    <TableCell colSpan={tableViewMode === 'default' ? (isLoyalisAdmin ? 7 : 8) : tableViewMode === 'debug' ? (isLoyalisAdmin ? 4 : 5) : tableViewMode === 'cuti' ? 6 : (activeTab === 'loyalis' ? (isLoyalisAdmin ? 12 : 13) : 5)} className="h-64 text-center">
                       <div className="flex flex-col items-center gap-3 text-slate-400">
                         <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
                         <p>Memuat data pegawai...</p>
@@ -2221,7 +2215,7 @@ export default function EmployeesPage() {
                   </TableRow>
                 ) : filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={tableViewMode === 'default' ? (isLoyalisAdmin ? 8 : 9) : tableViewMode === 'debug' ? (isLoyalisAdmin ? 4 : 5) : tableViewMode === 'cuti' ? 6 : (activeTab === 'loyalis' ? (isLoyalisAdmin ? 12 : 13) : 5)} className="h-64 text-center">
+                    <TableCell colSpan={tableViewMode === 'default' ? (isLoyalisAdmin ? 7 : 8) : tableViewMode === 'debug' ? (isLoyalisAdmin ? 4 : 5) : tableViewMode === 'cuti' ? 6 : (activeTab === 'loyalis' ? (isLoyalisAdmin ? 12 : 13) : 5)} className="h-64 text-center">
                       <p className="text-slate-400">Tidak ada pegawai yang ditemukan.</p>
                     </TableCell>
                   </TableRow>
@@ -2279,9 +2273,6 @@ export default function EmployeesPage() {
                         {getEmpRecognizedDate(emp)
                           ? new Date(getEmpRecognizedDate(emp)).toLocaleDateString('id-ID', { year: 'numeric', month: 'short' })
                           : '-'}
-                      </TableCell>
-                      <TableCell className="text-slate-700 text-sm font-medium whitespace-nowrap">
-                        {getEmpMasaKerjaDiakui(emp)}
                       </TableCell>
                       <TableCell className="text-right pr-8">
                         <div className="flex justify-end gap-1">
