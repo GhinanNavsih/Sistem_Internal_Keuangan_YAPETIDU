@@ -1,5 +1,7 @@
 "use client";
 
+import { bankDetailsDiffer, sakuBankDetails, type KoperasiEmployeeCollection } from '@/lib/koperasiMembers';
+
 import React, { Suspense, useState, useEffect, useMemo, useRef } from 'react';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import GlobalHeader from '@/components/GlobalHeader';
@@ -68,11 +70,13 @@ import {
   Fingerprint,
   CalendarDays,
   X,
+  ArrowRightLeft,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
   collection,
   doc,
+  getDocFromServer,
   setDoc,
   deleteDoc,
   addDoc,
@@ -97,6 +101,12 @@ import { getPayImpactLabels } from '@/lib/payroll/slipPropagation';
 import { matchFunctionalAllowance } from '@/lib/payroll/salaryMatrix';
 import { annualPaidLeaveTableFigures } from '@/lib/payroll/annualPaidLeave';
 import StructuralPositionPicker from '@/components/employee/StructuralPositionPicker';
+import ConvertToLoyalisDialog from '@/components/employee/ConvertToLoyalisDialog';
+import {
+  conversionPeriodLabel,
+  readConversionFromLink,
+  readConversionToLink,
+} from '@/lib/employeeConversion';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 
 const JOB_CATEGORIES = ['SATPAM', 'SOPIR', 'KEBERSIHAN', 'TEKNISI', 'KEBERSIHAN_PONTI'];
@@ -114,6 +124,22 @@ const JOB_ICONS: Record<string, React.ReactNode> = {
 const COLLAR_TABS = [
   { key: 'blue', label: 'Pekarya', collection: 'Employees_BlueCollar', prefix: 'BC' },
   { key: 'loyalis', label: 'Loyalis', collection: 'Employees_Loyalis', prefix: 'Loyalis' },
+];
+
+const FALLBACK_DEPARTMENTS = [
+  'FAK. AGAMA ISLAM',
+  'FAK. BISNIS, BAHASA DAN PENDIDIKAN',
+  'FAK. ILMU KESEHATAN',
+  'FAK. SAINS DAN TEKNOLOGI',
+  'PASCASARJANA',
+  'REKTORAT',
+  'UPT & LEMBAGA',
+];
+
+const FALLBACK_LOYALIS_GRADES = [
+  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L',
+  'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
+  'Y', 'Z', 'AA', 'AB', 'AC', 'AD',
 ];
 
 const LOYALIS_TYPE_OPTIONS = ['Keluarga', 'Dosen', 'Admin'] as const;
@@ -557,6 +583,26 @@ function getLocalISOString(): string {
   return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${ms}${dif}${offsetHours}:${offsetMinutes}`;
 }
 
+/** One line under the name linking the two records of a Pekarya converted to Loyalis. */
+function ConversionNote({ emp, tab }: { emp: unknown; tab: string }) {
+  if (tab === 'blue') {
+    const to = readConversionToLink(emp);
+    if (!to) return null;
+    return (
+      <span className="text-[11px] font-semibold text-emerald-700">
+        Dialihkan ke Loyalis {to.toEmployeeId} (mulai {conversionPeriodLabel(to.effectivePeriod)})
+      </span>
+    );
+  }
+  const from = readConversionFromLink(emp);
+  if (!from) return null;
+  return (
+    <span className="text-[11px] font-semibold text-sky-700">
+      Pindahan dari Pekarya {from.fromEmployeeId} (mulai {conversionPeriodLabel(from.effectivePeriod)})
+    </span>
+  );
+}
+
 export default function EmployeesPage() {
   const router = useRouter();
   const { user, profile, loading: authLoading, logout } = useAuth();
@@ -757,6 +803,7 @@ export default function EmployeesPage() {
   const [newPosSatker, setNewPosSatker] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionRef = useRef<HTMLDivElement>(null);
+  const [conversionTarget, setConversionTarget] = useState<{ id: string; name: string } | null>(null);
   const [isCustomDept, setIsCustomDept] = useState(false);
   const [customDeptValue, setCustomDeptValue] = useState('');
 
@@ -778,6 +825,9 @@ export default function EmployeesPage() {
   );
   const { data: dbPositions = [] } = useJabatanStruktural();
   const { data: departments = [] } = useDepartments();
+  const departmentOptions = departments.length > 0 ? departments : FALLBACK_DEPARTMENTS;
+  const loyalisGradeOptions =
+    gradeCodesWhite && gradeCodesWhite.length > 0 ? gradeCodesWhite : FALLBACK_LOYALIS_GRADES;
   const queryClient = useQueryClient();
 
   const eduLevels = useMemo(() => {
@@ -1080,6 +1130,16 @@ export default function EmployeesPage() {
   };
 
   const handleOpenEdit = (emp: any) => {
+    const convertedTo = activeTab === 'blue' ? readConversionToLink(emp) : null;
+    if (convertedTo) {
+      // Reactivating or editing the closed Pekarya record would put the same
+      // person on payroll twice; the Loyalis record is the live one.
+      setMessage({
+        type: 'error',
+        text: `${getEmpName(emp)} sudah dialihkan ke Loyalis (${convertedTo.toEmployeeId}). Ubah datanya di tab Loyalis.`,
+      });
+      return;
+    }
     setEditingEmployee(emp);
     structuralPositionsEditedRef.current = false;
     setIsCustomDept(false);
@@ -1440,7 +1500,41 @@ export default function EmployeesPage() {
         employeeWritePayload = blueCollarPayload;
       }
 
+      // Cooperative identities are server-owned. Omitting them also avoids a
+      // stale employee form overwriting a link just changed by Super Admin.
+      delete employeeWritePayload.koperasiAuthUid;
+      delete employeeWritePayload.koperasiUserId;
+
+      // A new id comes from this tab's possibly stale list; a merge onto an id
+      // someone else just took (another tab, or an Alihkan ke Loyalis) would
+      // silently overwrite that person.
+      if (!editingEmployee) {
+        const existing = await getDocFromServer(doc(db, currentTab.collection, employeeId));
+        if (existing.exists()) {
+          void fetchEmployees();
+          throw new Error(
+            `ID ${employeeId} baru saja dipakai data lain. Daftar sudah dimuat ulang; simpan sekali lagi.`,
+          );
+        }
+      }
       await setDoc(doc(db, currentTab.collection, employeeId), employeeWritePayload, { merge: true });
+      let koperasiBankNote = '';
+      if (editingEmployee?.koperasiAuthUid || editingEmployee?.koperasiUserId) {
+        const collectionName = currentTab.collection as KoperasiEmployeeCollection;
+        if (bankDetailsDiffer(sakuBankDetails(editingEmployee, collectionName), sakuBankDetails(final, collectionName))) {
+          try {
+            const sync = await authenticatedJson<{ skipped: unknown[] }>(
+              '/api/admin/koperasi-members/bank-sync',
+              { method: 'POST', body: JSON.stringify({ employeeId, requestId: createFinancialRequestId('koperasi-bank') }) },
+            );
+            if (sync.skipped.length) koperasiBankNote = ' Rekening Koperasi belum disamakan karena data rekening atau tautan belum lengkap.';
+          } catch (error) {
+            console.error('Rekening Koperasi belum tersinkron:', error);
+            koperasiBankNote = ' Data pegawai tersimpan, tetapi rekening Koperasi belum tersinkron. Gunakan Samakan rekening di halaman Koperasi.';
+          }
+        }
+      }
+
       if (activeTab === 'loyalis' && desiredNipy !== previousNipy) {
         await authenticatedJson('/api/admin/attendance-identities', {
           method: 'PATCH',
@@ -1511,7 +1605,7 @@ export default function EmployeesPage() {
 
       setMessage({
         type: 'success',
-        text: `Karyawan ${editingEmployee ? 'diperbarui' : 'ditambahkan'}!${propagationNote}`,
+        text: `Karyawan ${editingEmployee ? 'diperbarui' : 'ditambahkan'}!${propagationNote}${koperasiBankNote}`,
       });
       setIsDialogOpen(false);
       fetchEmployees();
@@ -1599,12 +1693,27 @@ export default function EmployeesPage() {
         return result;
       };
 
+      let bankSyncFailures = 0;
       // Revert each pending edit in Firestore
       for (const edit of pendingEdits) {
         const collectionName = edit.tab === 'loyalis' ? 'Employees_Loyalis' : 'Employees_BlueCollar';
         const docRef = doc(db, collectionName, edit.employeeId);
         const revertPayload = reconstructNestedObject(edit.changes);
+        delete revertPayload.koperasiAuthUid;
+        delete revertPayload.koperasiUserId;
         await setDoc(docRef, revertPayload, { merge: true });
+        if (edit.changes.some(change => /^(banking_info|bankAccount)\./.test(change.field))) {
+          try {
+            const employee = (await getDocFromServer(docRef)).data();
+            if (employee?.koperasiAuthUid || employee?.koperasiUserId) {
+              const sync = await authenticatedJson<{ skipped: unknown[] }>('/api/admin/koperasi-members/bank-sync', {
+                method: 'POST', body: JSON.stringify({ employeeId: edit.employeeId, requestId: createFinancialRequestId('koperasi-bank-revert') }),
+              });
+              if (sync.skipped.length) bankSyncFailures += 1;
+            }
+          } catch { bankSyncFailures += 1; }
+        }
+
       }
 
       setPendingEdits([]);
@@ -1613,7 +1722,7 @@ export default function EmployeesPage() {
 
       await fetchEmployees();
 
-      setMessage({ type: 'success', text: 'Seluruh perubahan berhasil dibatalkan dan dikembalikan (revert)!' });
+      setMessage({ type: 'success', text: `Seluruh perubahan berhasil dibatalkan dan dikembalikan (revert)!${bankSyncFailures ? ' Sebagian rekening Koperasi belum tersinkron. Gunakan Samakan rekening di halaman Koperasi.' : ''}` });
     } catch (err) {
       console.error('Error reverting changes:', err);
       setMessage({ type: 'error', text: 'Gagal membatalkan dan mengembalikan perubahan.' });
@@ -2225,6 +2334,7 @@ export default function EmployeesPage() {
                       <TableCell className="w-[320px] max-w-[320px] pl-8">
                         <div className="flex flex-col">
                           <span className="font-bold text-slate-900 block truncate" title={getEmpName(emp)}>{getEmpName(emp)}</span>
+                          <ConversionNote emp={emp} tab={activeTab} />
                           {activeTab === 'loyalis' ? (
                             <span className={`text-xs font-mono font-semibold ${getEmpNipy(emp) ? 'text-emerald-600' : 'text-rose-600'}`}>
                               NIPY / NIY: {getEmpNipy(emp) || 'BELUM DIISI'}
@@ -2276,7 +2386,24 @@ export default function EmployeesPage() {
                       </TableCell>
                       <TableCell className="text-right pr-8">
                         <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(emp)} className="h-8 w-8 text-slate-400 hover:text-indigo-600 rounded-lg">
+                          {activeTab === 'blue' && getEmpIsActive(emp) && !readConversionToLink(emp) && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Alihkan ke Loyalis"
+                              onClick={() => setConversionTarget({ id: getEmpId(emp), name: getEmpName(emp) })}
+                              className="h-8 w-8 text-slate-400 hover:text-emerald-600 rounded-lg"
+                            >
+                              <ArrowRightLeft className="w-4 h-4" />
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleOpenEdit(emp)}
+                            disabled={activeTab === 'blue' && Boolean(readConversionToLink(emp))}
+                            className="h-8 w-8 text-slate-400 hover:text-indigo-600 rounded-lg"
+                          >
                             <Pencil className="w-4 h-4" />
                           </Button>
                           <Button variant="ghost" size="icon" onClick={() => handleDelete(getEmpId(emp))} className="h-8 w-8 text-slate-400 hover:text-red-600 rounded-lg">
@@ -2719,6 +2846,32 @@ export default function EmployeesPage() {
         </DialogContent>
       </Dialog>
 
+      <ConvertToLoyalisDialog
+        employee={conversionTarget}
+        departments={departmentOptions}
+        educationLevels={eduLevels}
+        gradeCodes={loyalisGradeOptions}
+        onClose={() => setConversionTarget(null)}
+        onConverted={async ({ loyalisEmployeeId }) => {
+          void fetchEmployees();
+          // The conversion form can also change the bank of the transferred
+          // Koperasi link. Treat its follow-up just like an ordinary bank edit.
+          try {
+            const sync = await authenticatedJson<{ skipped: unknown[] }>('/api/admin/koperasi-members/bank-sync', {
+              method: 'POST', body: JSON.stringify({ employeeId: loyalisEmployeeId, requestId: createFinancialRequestId('koperasi-bank-convert') }),
+            });
+            if (sync.skipped.length) setMessage({ type: 'success', text: 'Pengalihan tersimpan. Rekening Koperasi belum disamakan karena rekening SAKU belum lengkap.' });
+          } catch {
+            setMessage({ type: 'success', text: 'Pengalihan tersimpan, tetapi rekening Koperasi belum tersinkron. Gunakan Samakan rekening di halaman Koperasi.' });
+          }
+        }}
+        onOpenLoyalisRecord={(loyalisEmployeeId) => {
+          setConversionTarget(null);
+          setActiveTab('loyalis');
+          setSearchQuery(loyalisEmployeeId);
+        }}
+      />
+
       {/* CRUD Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="!max-w-5xl w-[90vw] rounded-[28px] border-none shadow-2xl p-0 overflow-hidden bg-white">
@@ -2799,15 +2952,7 @@ export default function EmployeesPage() {
                           </SelectTrigger>
                           <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
                             {(() => {
-                              const listToUse = departments.length > 0 ? departments : [
-                                'FAK. AGAMA ISLAM',
-                                'FAK. BISNIS, BAHASA DAN PENDIDIKAN',
-                                'FAK. ILMU KESEHATAN',
-                                'FAK. SAINS DAN TEKNOLOGI',
-                                'PASCASARJANA',
-                                'REKTORAT',
-                                'UPT & LEMBAGA'
-                              ];
+                              const listToUse = departmentOptions;
                               const currentVal = formData.employment_profile?.department_unit;
                               const options = currentVal && !listToUse.includes(currentVal)
                                 ? [...listToUse, currentVal]
@@ -2976,12 +3121,7 @@ export default function EmployeesPage() {
                             </SelectTrigger>
                             <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
                               {(() => {
-                                const defaultWhiteGrades = [
-                                  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L',
-                                  'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
-                                  'Y', 'Z', 'AA', 'AB', 'AC', 'AD'
-                                ];
-                                const whiteGrades = gradeCodesWhite && gradeCodesWhite.length > 0 ? gradeCodesWhite : defaultWhiteGrades;
+                                const whiteGrades = loyalisGradeOptions;
                                 const currentVal = formData.academic_and_tier?.level_code;
                                 const options = currentVal && !whiteGrades.includes(currentVal)
                                   ? [...whiteGrades, currentVal]
@@ -3342,15 +3482,7 @@ export default function EmployeesPage() {
                           </SelectTrigger>
                           <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
                             {(() => {
-                              const listToUse = departments.length > 0 ? departments : [
-                                'FAK. AGAMA ISLAM',
-                                'FAK. BISNIS, BAHASA DAN PENDIDIKAN',
-                                'FAK. ILMU KESEHATAN',
-                                'FAK. SAINS DAN TEKNOLOGI',
-                                'PASCASARJANA',
-                                'REKTORAT',
-                                'UPT & LEMBAGA'
-                              ];
+                              const listToUse = departmentOptions;
                               return listToUse.map(dept => (
                                 <SelectItem key={dept} value={dept} className="text-xs">
                                   {dept}

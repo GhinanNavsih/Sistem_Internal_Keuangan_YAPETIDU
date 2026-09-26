@@ -8,6 +8,8 @@ import {
   resolveKoperasiLoanStatus,
   type KoperasiLoanLike,
 } from '@/lib/payroll/koperasiLoan';
+import { isConvertedAway } from '@/lib/employeeConversion';
+import { koperasiMonthlyIuranWajib } from '@/lib/koperasiMembers';
 
 interface PayrollEmployeeLike {
   id: string;
@@ -15,6 +17,7 @@ interface PayrollEmployeeLike {
   personal_info?: { name?: string };
   koperasiAuthUid?: string | null;
   koperasiUserId?: string | null;
+  conversion?: unknown;
 }
 
 interface KoperasiPayrollLoanLike extends KoperasiLoanLike {
@@ -30,6 +33,7 @@ interface KoperasiUserLike {
   status?: string;
   membershipStatus?: string;
   paymentStatus?: string;
+  iuranWajib?: number | null;
 }
 
 export interface KoperasiPayrollAmountMaps {
@@ -108,12 +112,16 @@ function nameMatches(sourceName: string, targetName: string): boolean {
 
 export function buildKoperasiPayrollAmountMaps(
   payrollPeriod: string,
-  employees: readonly PayrollEmployeeLike[],
+  allEmployees: readonly PayrollEmployeeLike[],
   loans: readonly KoperasiPayrollLoanLike[],
   users: readonly KoperasiUserLike[],
 ): KoperasiPayrollAmountMaps {
   const deductions: Record<string, number> = {};
   const savings: Record<string, number> = {};
+  // A Pekarya converted to Loyalis keeps its Koperasi link (the final Pekarya
+  // slip still needs it at Verifikasi & Kunci), so only the new Loyalis record
+  // may match, or the same installment would be counted twice.
+  const employees = allEmployees.filter((employee) => !isConvertedAway(employee));
 
   for (const loan of loans) {
     if (!isPayrollEligibleLoan(loan, payrollPeriod)) continue;
@@ -139,12 +147,6 @@ export function buildKoperasiPayrollAmountMaps(
   }
 
   for (const user of users) {
-    if (
-      user.status !== 'approved' &&
-      user.membershipStatus !== 'approved'
-    ) {
-      continue;
-    }
     const userUid = user.uid || user.id;
     const uidMatches = employees.filter(
       (employee) =>
@@ -154,10 +156,12 @@ export function buildKoperasiPayrollAmountMaps(
     const matches = uidMatches.length > 0
       ? uidMatches
       : employees.filter((employee) =>
+          // A confirmed link wins over another member with the same name.
+          !employee.koperasiAuthUid && !employee.koperasiUserId &&
           nameMatches(String(user.nama || ''), employeeName(employee)),
         );
     for (const employee of matches) {
-      savings[employee.id] = user.paymentStatus === 'Yayasan Subsidy' ? 0 : 25_000;
+      savings[employee.id] = koperasiMonthlyIuranWajib(user);
     }
   }
 

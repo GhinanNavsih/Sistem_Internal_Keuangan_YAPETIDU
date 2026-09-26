@@ -136,16 +136,33 @@ service cloud.firestore {
         (isLoyalisAdmin() &&
           request.resource.data.get('salaryProfile', {}).get('salaryGradeCode', '') == '')
       ) &&
-        !request.resource.data.keys().hasAny(['nipy', 'nipyAssignment']);
+        request.resource.data.get('koperasiAuthUid', null) == null &&
+        request.resource.data.get('koperasiUserId', null) == null &&
+        !request.resource.data.keys().hasAny(['nipy', 'nipyAssignment', 'conversion']);
+      // `conversion` is written only by /api/admin/employee-conversions. A
+      // record converted to Loyalis stays closed: reactivating it would put
+      // the same person on payroll twice.
       allow update: if (
         isSuperAdmin() ||
         (isLoyalisAdmin() &&
           request.resource.data.get('salaryProfile', {}).get('salaryGradeCode', null) ==
             resource.data.get('salaryProfile', {}).get('salaryGradeCode', null))
       ) &&
+        request.resource.data.get('koperasiAuthUid', null) == resource.data.get('koperasiAuthUid', null) &&
+        request.resource.data.get('koperasiUserId', null) == resource.data.get('koperasiUserId', null) &&
         request.resource.data.get('nipy', null) == resource.data.get('nipy', null) &&
         request.resource.data.get('nipyAssignment', null) ==
-          resource.data.get('nipyAssignment', null);
+          resource.data.get('nipyAssignment', null) &&
+        request.resource.data.get('conversion', null) ==
+          resource.data.get('conversion', null) &&
+        (
+          resource.data.get('conversion', null) == null ||
+          (
+            request.resource.data.get('employment', {}).get('status', null) != 'active' &&
+            request.resource.data.get('flags', {}).get('isActive', false) != true &&
+            request.resource.data.get('flags', {}).get('isPayrollEligible', false) != true
+          )
+        );
       allow delete: if false;
     }
 
@@ -174,19 +191,27 @@ service cloud.firestore {
         (isLoyalisAdmin() &&
           request.resource.data.get('academic_and_tier', {}).get('level_code', '') == '')
       ) &&
-        !request.resource.data.keys().hasAny(['nipy']) &&
+        request.resource.data.get('koperasiAuthUid', null) == null &&
+        request.resource.data.get('koperasiUserId', null) == null &&
+        !request.resource.data.keys().hasAny(['nipy', 'conversion']) &&
         request.resource.data.get('personal_info', {})
           .get('employee_id_niy', null) == null;
+      // `conversion` (the link back to a converted Pekarya record) is written
+      // only by /api/admin/employee-conversions.
       allow update: if (
         isSuperAdmin() ||
         (isLoyalisAdmin() &&
           request.resource.data.get('academic_and_tier', {}).get('level_code', null) ==
             resource.data.get('academic_and_tier', {}).get('level_code', null))
       ) &&
+        request.resource.data.get('koperasiAuthUid', null) == resource.data.get('koperasiAuthUid', null) &&
+        request.resource.data.get('koperasiUserId', null) == resource.data.get('koperasiUserId', null) &&
         request.resource.data.get('nipy', null) == resource.data.get('nipy', null) &&
         request.resource.data.get('personal_info', {})
           .get('employee_id_niy', null) ==
-          resource.data.get('personal_info', {}).get('employee_id_niy', null);
+          resource.data.get('personal_info', {}).get('employee_id_niy', null) &&
+        request.resource.data.get('conversion', null) ==
+          resource.data.get('conversion', null);
       allow delete: if false;
     }
 

@@ -35,7 +35,8 @@ src/
 │   │       ├── pekarya-dashboard/
 │   │       ├── facility-reports/
 │   │       ├── master/            # Salary matrix / master data editing
-│   │       ├── simpan-pinjam/     # Koperasi loan admin view
+│   │       ├── koperasi/          # Koperasi members + Simpan Pinjam audit (super admin)
+│   │       ├── simpan-pinjam/     # 308 redirect to koperasi?view=simpan-pinjam
 │   │       └── uraian/            # Blue-collar rekap module + subpages: pelaporan-kegiatan,
 │   │                              #   presence-corrections, presensi-loyalis(-raw), presensi-pekarya,
 │   │                              #   proposal-kegiatan, rekap-pekarya, spj-pekarya, vakasi-loyalis
@@ -148,6 +149,18 @@ Kepala SatKer Loyalis books a room plus equipment at `/dashboard/reservasi-ruang
 
 ---
 
+## Pekarya → Loyalis conversion ("Alihkan ke Loyalis")
+
+Super Admin and Loyalis Admin (`EMPLOYEE_PROFILE_EDITOR_ROLES`) convert a Pekarya from the Pekarya tab of `/dashboard/employees` (row button → `ConvertToLoyalisDialog`, 3 steps: Pemeriksaan → Data Loyalis → Konfirmasi). Rules are pure in `src/lib/employeeConversion.ts` (+ test); the transaction is `src/lib/server/employeeConversion.ts` behind `GET`/`POST /api/admin/employee-conversions`.
+
+- **Never a rename.** The person gets a new `Employees_Loyalis/Loyalis_NNN` (server-allocated, `transaction.create`) and the old `Employees_BlueCollar/BC_NNN` is closed (`employment.status: 'inactive'`, flags false, `endDate` = last day before the switch), so every slip, report, journey and leave balance stays under the old id. Both records carry `conversion` (`fromEmployeeId` / `toEmployeeId` + `effectivePeriod`); browsers can never write it, and the rules refuse reactivating a converted Pekarya record.
+- **Whole months only.** `effectivePeriod` is the current Jakarta month; the previous month must already be closed (its last Pekarya slip is sealed on the old id). `employeeInPayrollPeriod` decides which record pays a month — used by `buildPayrollRoster`/`isPayrollEmployeeEligible(…, period)`, the payroll dashboard lists, `save_draft` for a new slip, Loyalis uraian propagation and the Loyalis presence calculator.
+- **What moves:** the NIPY (deleted from the BC record, kept as `conversion.previousNipy`; `AttendanceIdentityIndex` re-pointed), the login account (`honorer` → `loyalis`, `linkedEmployeeId`, `permittedCategories: [department_unit]`), and a copy of the Koperasi link. `koperasiAuthUid` deliberately stays on the BC record too (Verifikasi & Kunci of the final Pekarya slip reads it); `buildKoperasiPayrollAmountMaps` and the simpan-pinjam view skip converted-away records so nothing counts twice. Cuti starts fresh under the new id; both service dates carry over by default.
+- **Blockers** (`collectConversionIssues`): previous month open, slips already at/after the switch month, pending or switch-month Pekarya work (activity reports, driver journeys, future piket, SPJ events, non-zero Uraian rekap), pending Pekarya/Satpam/annual leave, Satpam team membership, a linked account that isn't a plain `honorer`, a NIPY held elsewhere. Everything is re-checked inside the transaction; `FinancialAuditLogs` gets `EMPLOYEE_CONVERTED_TO_LOYALIS` + `USER_PROFILE_UPDATED`.
+- **Payslip history:** `/employee/payslip` shows months before `effectivePeriod` from the old Pekarya slip in the Pekarya layout (`conversionSourceForPeriod`).
+- **Outside the app:** attendance rows are still routed by the scanner's department column, so the fingerprint machine's department must change from TEKNISI/CS/SECURITY/DRIVER; the Loyalis presence page warns about a newly converted employee with no matched scans.
+- **Test:** `npm run test:employee-conversion:integration` (Auth + Firestore emulators, project `demo-conversion`; needs Java).
+
 ## Payroll Calculation Logic
 
 ### White-collar salary (`src/utils/payrollLogic.ts`, pure logic split into `src/lib/payroll/salaryMatrix.ts` so it's importable from API routes without the client SDK)
@@ -212,7 +225,7 @@ Physical presence printouts are parsed via the [/api/parse-rekap](file:///Users/
 
 - **Run dev environment**: `npm run dev`
 - **Build application**: `npm run build`
-- **Test**: `npm test` (runs `tsx --test` over the payroll/server/util test suite directly)
+- **Test**: `npm test` (runs `tsx --test` over the payroll/server/util test suite directly); emulator integration tests: `test:kjm:integration`, `test:employee-conversion:integration`
 
 `scripts/` holds ~125 files; only the ones below are wired into `package.json`. The rest are ad hoc one-off migration/inspection scripts (`inspect*`, `check*`, `compare*`, `find*`, etc.) run directly via `tsx scripts/<file>.ts` — don't assume every script has an npm entry.
 
@@ -221,3 +234,16 @@ Physical presence printouts are parsed via the [/api/parse-rekap](file:///Users/
 - **Audit (read-only, safe to run anytime)**: `audit:satpam-payroll`, `audit:pekarya-spj`, `audit:driver-seed-date`
 - **Reconcile**: `reconcile:satpam-flexible`, `recompute:driver-komponen-waktu`
 - **Fix/repair (dry-run by default; require an explicit `--apply` flag, some also require an `--ids` allowlist)**: `fix:driver-short-trip-meal`, `fix:driver-seed-date`
+
+
+### Koperasi page
+
+- `/dashboard/payroll/koperasi` is Super Admin only. `?view=koperasi` (default) manages users/members; `?view=simpan-pinjam` retains the loan audit. The old `/dashboard/payroll/simpan-pinjam` redirects with HTTP 308, preserving other query parameters. The employee portal, `simpanPinjam` collection and `/api/koperasi/loans` are unchanged.
+- Editable: Status Pembayaran, Iuran Pokok, Iuran Wajib, Role, and Status keanggotaan, plus an optional audit note. Rupiah inputs accept whole amounts from 1 to 10,000,000. `Pending Verification` can only be retained when already current. Staff roles require explicit confirmation because they grant permissions in the Koperasi app at next login. Every member edit also mirrors legacy `status` (`Pending` becomes `pending`). Names, identity/contact data and savings balances are not edited here.
+- Payroll uses `koperasiMonthlyIuranWajib`: `(membershipStatus ?? status) === 'approved'` and `paymentStatus === 'Payroll Deduction'` deduct the member's `iuranWajib`, with zero/missing falling back to 25,000. Other payment/membership states deduct zero. Explicit member links take precedence over name fallbacks. Payroll Refresh applies changes to drafts; locked/paid snapshots remain authoritative. Iuran Pokok is still not deducted, including the first month.
+- Link candidates must be active and unlinked. Suggestions rank NIK, email, then normalized names with Koperasi overrides; search includes all available employees. Both employee collections are checked transactionally for `koperasiAuthUid` and `koperasiUserId`. UID falls back to the Koperasi document ID. Replacing a link explicitly checks the previous holder and clears it atomically. Converted-away Pekarya records are excluded from current matches but keep their historical links for the final Pekarya slip.
+- Banks are read-only in this page: Loyalis `banking_info.bank_name/account_number` or Pekarya `bankAccount.bankName/accountNumber` is copied to Koperasi `bankDetails`. Bank names are preserved (BRIS remains BRIS); account numbers retain digits, including leading zeroes. Bulk sync previews differences and skips incomplete/empty SAKU banks. Employee bank saves, reverts and Pekarya-to-Loyalis conversions request a server sync as a best-effort step; a failure leaves the employee save intact and shows a message. The page continues to show differing banks.
+- All Koperasi writes use `koperasiAdminDb()`, with HTTP 503 when credentials are absent. `PATCH /api/admin/koperasi-members`, `POST .../link`, and bulk `POST .../bank-sync` require Super Admin. Single-employee bank sync also permits `EMPLOYEE_PROFILE_EDITOR_ROLES`; browser bank values are never accepted. Browser rules prohibit creating non-null cooperative link fields or changing existing links, including for Super Admin; server link/conversion flows own them.
+- Edits use an `expected` snapshot and return 409 on conflict. `FinancialAuditLogs` and `FinancialIdempotencyKeys/{uid}__{requestId}` live in SAKU. Cross-project edits/sync reserve a pending receipt before the Koperasi write, then atomically finish the audit and receipt in SAKU. This small extension to the three-step flow prevents concurrent request-ID reuse and preserves bank before-values across a lost response. Pending receipts are resumed, never replayed as success. Bank batches also check document versions. Link writes and their audit are one SAKU transaction; a pending bank-sync step can be retried without relinking.
+- The member page reload invalidates both employee and Koperasi payroll query caches. The former Simpan Pinjam audit body is `src/components/koperasi/SimpanPinjamAuditView.tsx`; both views share one data load and retain URL-selected navigation.
+- Verification: `npm test`, `npm run test:koperasi-members:integration` (Auth + Firestore emulators only, `firebase.koperasi-test.json` with `singleProjectMode: false` for `koperasi-unipdu`), `npm run build`, and a lint comparison against the pre-existing baseline. Production edits must use an agreed test member first.

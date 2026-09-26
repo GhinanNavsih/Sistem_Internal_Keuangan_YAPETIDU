@@ -58,6 +58,13 @@ function koperasiApp(): admin.app.App | null {
     return cachedApp;
   }
 
+  // The SDK routes both projects to this emulator. No production credential
+  // is needed (or loaded) by the multi-project integration suite.
+  if (process.env.FIRESTORE_EMULATOR_HOST) {
+    cachedApp = admin.initializeApp({ projectId: KOPERASI_PROJECT_ID }, KOPERASI_APP_NAME);
+    return cachedApp;
+  }
+
   const credential = resolveKoperasiCredential();
   if (!credential) {
     cachedApp = null;

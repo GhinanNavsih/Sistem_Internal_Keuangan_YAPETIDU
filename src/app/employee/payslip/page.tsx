@@ -66,7 +66,9 @@ import {
 import {
   calculateYearsOfService,
 } from '@/utils/payrollLogic';
+import { koperasiMonthlyIuranWajib } from '@/lib/koperasiMembers';
 import { isTransferEligibleStatus } from '@/lib/payroll/domain';
+import { conversionSourceForPeriod, readConversionFromLink } from '@/lib/employeeConversion';
 import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
 import {
   overlayPekaryaAttendanceEarnings,
@@ -566,20 +568,33 @@ export default function EmployeePayslipPage() {
     const determineDefaultPeriod = async (attempt = 1) => {
       try {
         const empId = profile.linkedEmployeeId as string;
-        const q = query(
-          collection(db, 'PayrollSlipStates'),
-          where('employeeId', '==', empId),
-          where('status', 'in', ['confirmed', 'locked', 'payment_created', 'paid'])
+        // A Loyalis employee converted from Pekarya also owns the slips filed
+        // under the old Pekarya id (often the latest final one right after
+        // the switch).
+        const slipOwnerIds = [empId];
+        if (profile.role === 'loyalis') {
+          const ownSnap = await getDocFromServer(doc(db, 'Employees_Loyalis', empId));
+          const from = ownSnap.exists() ? readConversionFromLink(ownSnap.data()) : null;
+          if (from) slipOwnerIds.push(from.fromEmployeeId);
+        }
+        const querySnapshots = await Promise.all(
+          slipOwnerIds.map((ownerId) =>
+            getDocsFromServer(query(
+              collection(db, 'PayrollSlipStates'),
+              where('employeeId', '==', ownerId),
+              where('status', 'in', ['confirmed', 'locked', 'payment_created', 'paid'])
+            )),
+          ),
         );
-        const querySnapshot = await getDocsFromServer(q);
+        const finalSlipDocs = querySnapshots.flatMap((snapshot) => snapshot.docs);
 
         let targetYear = 2026;
         let targetMonth = 6;
         let foundLocked = false;
 
-        if (!querySnapshot.empty) {
+        if (finalSlipDocs.length > 0) {
           let latestPeriodVal = 0;
-          querySnapshot.forEach((docSnap) => {
+          finalSlipDocs.forEach((docSnap) => {
             const data = docSnap.data();
             const period = data.period; // e.g. "2026_06"
             if (period && typeof period === 'string') {
@@ -637,7 +652,7 @@ export default function EmployeePayslipPage() {
     };
 
     determineDefaultPeriod();
-  }, [profile?.linkedEmployeeId, isDefaultPeriodSet]);
+  }, [profile?.linkedEmployeeId, profile?.role, isDefaultPeriodSet]);
 
   const targetDate = useMemo(() => new Date(year, month - 1, 1), [year, month]);
   const periodEndDate = useMemo(
@@ -658,6 +673,9 @@ export default function EmployeePayslipPage() {
 
   // Page data states
   const [employeeData, setEmployeeData] = useState<any | null>(null);
+  // True for a month before this Loyalis employee's switch from Pekarya: that
+  // month was paid on the old Pekarya record and is shown in its layout.
+  const [pekaryaHistoryMonth, setPekaryaHistoryMonth] = useState(false);
   const [confirmedSlip, setConfirmedSlip] = useState<any | null>(null);
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -901,6 +919,43 @@ export default function EmployeePayslipPage() {
         }
 
         const employee = { id: empSnap.id, ...empSnap.data() } as any;
+
+        // Before a Pekarya → Loyalis switch the month was paid on the old
+        // Pekarya record. Its period is closed and its slip sealed, so show
+        // that saved slip as it is instead of computing a Loyalis draft.
+        const pekaryaSource = isLoyalis
+          ? conversionSourceForPeriod(employee, periodToken)
+          : null;
+        if (pekaryaSource) {
+          const [sourceSnap, historySlipSnap] = await Promise.all([
+            getDocFromServer(doc(db, 'Employees_BlueCollar', pekaryaSource.employeeId)),
+            getDocFromServer(doc(db, 'PayrollSlipStates', `${periodKey}_${pekaryaSource.employeeId}`)),
+          ]);
+          if (cancelled) return;
+          const source: typeof employee = sourceSnap.exists()
+            ? { id: sourceSnap.id, ...sourceSnap.data() }
+            : { id: pekaryaSource.employeeId };
+          source.joinDate = source.employment?.startDate
+            ? new Date(source.employment.startDate)
+            : new Date();
+          source.dateRecognized = undefined;
+          source.gradeLevel = source.salaryProfile?.salaryGradeCode || '';
+          const historySlip = historySlipSnap.exists() ? historySlipSnap.data() : null;
+          const isFinal = Boolean(historySlip) && isTransferEligibleStatus(historySlip?.status);
+          setPekaryaHistoryMonth(true);
+          setEmployeeData(source);
+          setConfirmedSlip(isFinal ? historySlip : null);
+          setIsConfirmed(isFinal);
+          setCalculatedEarnings(historySlip ? normalizeSlipFields(historySlip.earnings) : []);
+          setCalculatedDeductions(historySlip ? normalizeSlipFields(historySlip.deductions) : []);
+          setCalculatedTaxes(historySlip ? normalizeTaxFields(historySlip.taxes) : []);
+          setPresenceInfo({ workingDays: 0, expectedHours: 0, absenceMinutes: 0, bonusDeduction: 0 });
+          setVakasiEvents([]);
+          setKepangkatanDesignations({});
+          setLoading(false);
+          return;
+        }
+        setPekaryaHistoryMonth(false);
         // Parse metadata properties dynamically matching each collection structure
         if (isLoyalis) {
           employee.joinDate = employee.employment_profile?.date_of_hire?.toDate?.() ||
@@ -945,15 +1000,24 @@ export default function EmployeePayslipPage() {
           })
           : Promise.resolve(null);
 
-        const memberPromise = employee.koperasiAuthUid
-          ? getDocsFromServer(query(
-            collection(secondaryDb, 'users'),
-            where('uid', '==', employee.koperasiAuthUid),
-          )).catch((error) => {
-            console.warn('Unable to load cooperative membership data for payslip draft:', error);
-            return null;
-          })
-          : Promise.resolve(null);
+        const memberPromise = (async () => {
+          // Some legacy Koperasi documents have no uid. Prefer the saved doc id,
+          // then uid lookup, then the uid-as-doc-id migration convention.
+          if (employee.koperasiUserId) {
+            const member = await getDocFromServer(doc(secondaryDb, 'users', employee.koperasiUserId));
+            if (member.exists()) return member.data();
+          }
+          if (!employee.koperasiAuthUid) return null;
+          const byUid = await getDocsFromServer(query(
+            collection(secondaryDb, 'users'), where('uid', '==', employee.koperasiAuthUid),
+          ));
+          if (!byUid.empty) return byUid.docs[0].data();
+          const member = await getDocFromServer(doc(secondaryDb, 'users', employee.koperasiAuthUid));
+          return member.exists() ? member.data() : null;
+        })().catch((error) => {
+          console.warn('Unable to load cooperative membership data for payslip draft:', error);
+          return null;
+        });
 
         const [activitySnapshot, loanSnapshot, memberSnapshot] = await Promise.all([
           activityPromise,
@@ -993,11 +1057,7 @@ export default function EmployeePayslipPage() {
         // composedTrail still retains its legitimate restructuring ancestry.
         setKoperasiLoansInfo(payableLoans);
 
-        const memberData = memberSnapshot?.docs[0]?.data() as any;
-        const memberApproved = memberData?.status === 'approved' || memberData?.membershipStatus === 'approved';
-        const koperasiSaving = memberApproved && memberData?.paymentStatus !== 'Yayasan Subsidy'
-          ? money(memberData?.iuranWajib) || 25000
-          : 0;
+        const koperasiSaving = koperasiMonthlyIuranWajib(memberSnapshot);
 
         let fallbackEarnings: PaySlipField[] = [];
         let fallbackDeductions: PaySlipField[] = [];
@@ -1586,7 +1646,10 @@ export default function EmployeePayslipPage() {
   // Client-side PDF trigger
   const handleDownloadPdf = () => {
     if (!employeeData || !isConfirmed) return;
-    const isLoyalis = profile?.role !== 'honorer' && profile?.role !== 'ketua_shift_satpam';
+    const isLoyalis =
+      profile?.role !== 'honorer' &&
+      profile?.role !== 'ketua_shift_satpam' &&
+      !pekaryaHistoryMonth;
     const slipData: PaySlipData = {
       employeeName: employeeData.personal_info?.name || profile?.displayName || 'Karyawan',
       employeeNo: 1, // Placeholder
@@ -1658,6 +1721,8 @@ export default function EmployeePayslipPage() {
       </div>
     );
   }
+
+  const showLoyalisLayout = profile.role === 'loyalis' && !pekaryaHistoryMonth;
 
   const employeeHomeHref = profile.role === 'loyalis'
     ? null
@@ -1843,10 +1908,15 @@ export default function EmployeePayslipPage() {
                     <span className="text-[10px] font-bold text-black uppercase tracking-widest block">PERIODE SLIP</span>
                     <span className="text-sm font-bold text-indigo-600 block">{periodText.toUpperCase()}</span>
                     <span className="text-[11px] font-bold bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full inline-block">
-                      {profile?.role === 'loyalis'
+                      {showLoyalisLayout
                         ? `STAF ${employeeData.employment_profile?.department_unit || 'LOYALIS'}`
                         : `VAKASI ${employeeData.employment?.jobCategory || 'PEKARYA'}`}
                     </span>
+                    {pekaryaHistoryMonth && (
+                      <span className="text-[11px] font-semibold text-slate-600 block">
+                        Slip saat masih Pekarya · rincian harian dapat diminta ke admin
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1990,7 +2060,7 @@ export default function EmployeePayslipPage() {
                 </div>
 
                 {showDoc && (() => {
-                  const earningsDocs = profile?.role === 'loyalis' ? payrollDocumentation : pekaryaPayrollDocumentation;
+                  const earningsDocs = showLoyalisLayout ? payrollDocumentation : pekaryaPayrollDocumentation;
 
                   return (
                     <div className="animate-in fade-in slide-in-from-top-2 duration-200 space-y-6 pt-2">
@@ -2046,7 +2116,7 @@ export default function EmployeePayslipPage() {
                             )}
 
                             {/* Optional variables display — Loyalis */}
-                            {profile?.role === 'loyalis' && userVariables && (
+                            {showLoyalisLayout && userVariables && (
                               <div className="mt-3 ml-0 w-full py-2 animate-in fade-in duration-200">
                                 {item.id === 'gapok' && (
                                   <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
@@ -2178,7 +2248,7 @@ export default function EmployeePayslipPage() {
                             )}
 
                             {/* Pekarya variables display card */}
-                            {profile?.role !== 'loyalis' && (
+                            {!showLoyalisLayout && (
                               <div className="mt-3 ml-0 w-full py-2 animate-in fade-in duration-200">
                                 {(() => {
                                   const getEarningAmount = (labels: string[]) => {

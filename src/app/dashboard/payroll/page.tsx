@@ -98,6 +98,7 @@ import {
 } from '@/lib/payroll/dashboardSlipData';
 import { buildKoperasiPayrollAmountMaps } from '@/lib/payroll/koperasiAmounts';
 import { isPayrollEmployeeEligible } from '@/lib/payroll/payrollRoster';
+import { employeeInPayrollPeriod } from '@/lib/employeeConversion';
 import {
   isPayableVakasiTambahan,
   vakasiWorkerCollection,
@@ -423,7 +424,11 @@ export default function PayrollValidationDashboard() {
   const allPayrollTargets = useMemo<PayrollTarget[]>(() => [
     ...employeesLoyalis
       .filter((employee) =>
-        isPayrollEmployeeEligible('Employees_Loyalis', employee),
+        isPayrollEmployeeEligible(
+          'Employees_Loyalis',
+          employee,
+          currentPekaryaPreviewPeriod,
+        ),
       )
       .map((employee) => ({
         id: employee.id,
@@ -433,7 +438,11 @@ export default function PayrollValidationDashboard() {
       })),
     ...employeesBlueCollar
       .filter((employee) =>
-        isPayrollEmployeeEligible('Employees_BlueCollar', employee),
+        isPayrollEmployeeEligible(
+          'Employees_BlueCollar',
+          employee,
+          currentPekaryaPreviewPeriod,
+        ),
       )
       .map((employee) => ({
         id: employee.id,
@@ -443,7 +452,7 @@ export default function PayrollValidationDashboard() {
       })),
   ].sort((left, right) =>
     left.name.localeCompare(right.name, 'id') || left.id.localeCompare(right.id),
-  ), [employeesLoyalis, employeesBlueCollar]);
+  ), [employeesLoyalis, employeesBlueCollar, currentPekaryaPreviewPeriod]);
 
   const missingPayrollDraftCount = allPayrollTargets.filter(
     (target) => !slipStates[target.id],
@@ -1635,7 +1644,15 @@ export default function PayrollValidationDashboard() {
     if (!profile || !['super_admin', 'finance_verifier'].includes(profile.role)) return;
 
     const isLoyalis = payrollCollar === 'loyalis';
-    const list = isLoyalis ? employeesLoyalis : employeesBlueCollar;
+    // A Pekarya converted to Loyalis appears in exactly one tab per month:
+    // the Pekarya tab before the switch month, the Loyalis tab from it.
+    const list = (isLoyalis ? employeesLoyalis : employeesBlueCollar).filter((data) =>
+      employeeInPayrollPeriod(
+        isLoyalis ? 'Employees_Loyalis' : 'Employees_BlueCollar',
+        data,
+        currentPekaryaPreviewPeriod,
+      ),
+    );
     const matrix = isLoyalis ? salaryMatrixWhite : salaryMatrixBlue;
 
     let index = 1;
@@ -1668,7 +1685,7 @@ export default function PayrollValidationDashboard() {
     setSalaryMatrix(matrix);
     setFunctionalAllowanceMap(contextFunctionalAllowanceMap);
     setKepangkatanAllowanceMap(contextKepangkatanAllowanceMap);
-  }, [payrollCollar, employeesLoyalis, employeesBlueCollar, salaryMatrixWhite, salaryMatrixBlue, contextFunctionalAllowanceMap, contextKepangkatanAllowanceMap, profile]);
+  }, [payrollCollar, employeesLoyalis, employeesBlueCollar, salaryMatrixWhite, salaryMatrixBlue, contextFunctionalAllowanceMap, contextKepangkatanAllowanceMap, profile, currentPekaryaPreviewPeriod]);
 
   // ─── Fetch UraianGaji & persisted SlipStates for current period ──
   useEffect(() => {

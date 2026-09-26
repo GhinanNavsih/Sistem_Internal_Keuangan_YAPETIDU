@@ -375,6 +375,7 @@ export async function POST(request: NextRequest) {
             id: document.id,
             data: document.data(),
           })),
+          period,
         );
         if (roster.duplicateEmployeeIds.length > 0) {
           throw new HttpError(

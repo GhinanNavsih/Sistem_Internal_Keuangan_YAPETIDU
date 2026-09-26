@@ -41,6 +41,7 @@ import {
 import { MONTHS_ID, REKAP_COLUMNS, SUPPORTED_CATEGORIES } from '@/utils/rekapConfig';
 import { normalizeName, MANUAL_OVERRIDES } from '@/utils/payrollLogic';
 import { isFridayDate, normalizeNipy } from '@/lib/payroll/attendance';
+import { employeeInPayrollPeriod, readConversionFromLink } from '@/lib/employeeConversion';
 import { parseLoyalisPresenceWorkbook } from '@/lib/payroll/loyalisPresenceWorkbook';
 import {
   autoFillLoyalisScan,
@@ -479,16 +480,23 @@ export default function PresensiLoyalisRawPage() {
   const loyalisEmployees = useMemo<any[]>(
     () =>
       (loyalisQuery.data || [])
-        .filter((d: any) => d.personal_info?.status === 'AKTIF')
+        .filter(
+          (d: any) =>
+            d.personal_info?.status === 'AKTIF' &&
+            // Someone converted from Pekarya only counts from the switch month.
+            employeeInPayrollPeriod('Employees_Loyalis', d, canonicalPeriod),
+        )
         .map((d: any) => ({
           id: d.id,
           nipy: normalizeNipy(d.nipy || d.personal_info?.employee_id_niy || ''),
           name: d.personal_info?.name || '',
           role: d.employment_profile?.job_role || '',
           department: d.employment_profile?.department_unit || '',
+          convertedThisPeriod:
+            readConversionFromLink(d)?.effectivePeriod === canonicalPeriod,
         }))
         .sort((a: any, b: any) => a.name.localeCompare(b.name)),
-    [loyalisQuery.data],
+    [loyalisQuery.data, canonicalPeriod],
   );
 
   // ── Period work calendar (Jumat + Tanggal Merah) ──────────────────────────
@@ -1501,6 +1509,22 @@ export default function PresensiLoyalisRawPage() {
     return null;
   }, [uploadedData, loyalisEmployees, existingPresence, calcMode, workingDays, activeWorkingDays, expectedHours, calculatePresenceStratum, corrections]);
 
+  // Staff converted from Pekarya this month whose scans did not reach this
+  // page: the scanner still routes them by its own department column, so a
+  // TEKNISI/CS/SECURITY/DRIVER label there sends them to the Pekarya side and
+  // they would silently take the full-month absence deduction here.
+  const newlyConvertedWithoutScans = useMemo(() => {
+    if (!displayRows) return [];
+    const missing = new Set(
+      displayRows
+        .filter((row) => row.isNotFoundInExcel && row.employeeId)
+        .map((row) => row.employeeId),
+    );
+    return loyalisEmployees.filter(
+      (employee) => employee.convertedThisPeriod && missing.has(employee.id),
+    );
+  }, [displayRows, loyalisEmployees]);
+
   const filteredDisplayRows = useMemo(() => {
     if (!displayRows) return null;
     if (strataFilter === 'all') return displayRows;
@@ -2503,6 +2527,19 @@ export default function PresensiLoyalisRawPage() {
 
             {displayRows && (
               <div className="space-y-4 pt-4 border-t border-slate-100 animate-in fade-in">
+                {newlyConvertedWithoutScans.length > 0 && (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                    <p className="font-bold">
+                      Baru pindah dari Pekarya bulan ini, belum ada data scan:{' '}
+                      {newlyConvertedWithoutScans.map((employee) => employee.name).join(', ')}
+                    </p>
+                    <p className="mt-1 text-xs">
+                      Tanpa scan, mereka terhitung tidak hadir sebulan penuh (potongan Rp250.000). Pastikan
+                      departemen mereka di mesin absen sudah diganti dari TEKNISI/CS/SECURITY/DRIVER ke
+                      unitnya, lalu impor ulang, atau tautkan barisnya secara manual.
+                    </p>
+                  </div>
+                )}
                 <div className="flex flex-wrap justify-between items-center gap-4 bg-slate-50/70 p-3 rounded-2xl border border-slate-200/70">
                   <div className="flex flex-col gap-1.5">
                     <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">

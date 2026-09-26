@@ -36,6 +36,7 @@ import {
   type AuthenticatedProfile,
 } from '@/lib/server/auth';
 import { applyApprovedLoyalisDayCreditsToPresence } from '@/lib/server/annualPaidLeave';
+import { employeeInPayrollPeriod } from '@/lib/employeeConversion';
 
 export const dynamic = 'force-dynamic';
 
@@ -218,6 +219,10 @@ async function collectLoyalisTargets(command: PropagationCommand): Promise<SlipT
   for (const employeeDoc of employeeSnapshot.docs) {
     const employeeId = employeeDoc.id;
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(employeeId)) continue;
+    // A record converted from Pekarya only has Loyalis slips from its switch month.
+    if (!employeeInPayrollPeriod('Employees_Loyalis', employeeDoc.data(), command.periodToken)) {
+      continue;
+    }
     const amounts = loyalisPresenceAmounts(presence, employeeId);
     targets.push({
       employeeId,

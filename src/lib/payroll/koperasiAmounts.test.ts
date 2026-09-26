@@ -2,6 +2,27 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildKoperasiPayrollAmountMaps } from './koperasiAmounts';
 
+test('savings follow payment status, authoritative membership status and the member amount', () => {
+  const employee = { id: 'employee-1', koperasiUserId: 'member-1' };
+  const member = { id: 'member-1', status: 'approved', membershipStatus: 'approved', paymentStatus: 'Payroll Deduction', iuranWajib: 75_000 };
+  const savings = (changes: Partial<typeof member>) => buildKoperasiPayrollAmountMaps('2026-09', [employee], [], [{ ...member, ...changes }]).savings['employee-1'];
+  assert.equal(savings({}), 75_000);
+  assert.equal(savings({ iuranWajib: 0 }), 25_000);
+  for (const paymentStatus of ['Transfer', 'Pending Verification', 'Yayasan Subsidy', '']) assert.equal(savings({ paymentStatus }), 0);
+  for (const membershipStatus of ['Pending', 'inactive', 'rejected', 'removed']) assert.equal(savings({ membershipStatus }), 0);
+});
+
+test('another member with the same name cannot override an explicit savings link', () => {
+  const employee = { id: 'employee-1', name: 'Nama Sama', koperasiUserId: 'member-1' };
+  const members = [
+    { id: 'member-1', nama: 'Nama Sama', membershipStatus: 'approved', paymentStatus: 'Payroll Deduction', iuranWajib: 75000 },
+    { id: 'member-2', nama: 'Nama Sama', membershipStatus: 'inactive', paymentStatus: 'Transfer' },
+  ];
+  for (const users of [members, [...members].reverse()]) {
+    assert.equal(buildKoperasiPayrollAmountMaps('2026-09', [employee], [], users).savings['employee-1'], 75000);
+  }
+});
+
 const timestamp = (iso: string) => ({
   toMillis: () => new Date(iso).getTime(),
 });
@@ -65,7 +86,7 @@ test('Koperasi savings and fallback names map to the payroll employee', () => {
         sisaHutang: 1_200_000,
       },
     ],
-    [{ id: 'member-1', nama: 'Siti Rofiah', status: 'approved' }],
+    [{ id: 'member-1', nama: 'Siti Rofiah', status: 'approved', paymentStatus: 'Payroll Deduction' }],
   );
 
   assert.equal(result.deductions['employee-1'], 100_000);
@@ -117,4 +138,51 @@ test('original installment remains payable while restructuring is pending approv
   );
 
   assert.equal(result.deductions['Loyalis_070'], 200_000);
+});
+
+test('a Pekarya record converted to Loyalis never matches a loan or membership', () => {
+  const converted = {
+    id: 'BC_012',
+    name: 'Ahmad Fauzi',
+    koperasiAuthUid: 'kop-uid-1',
+    conversion: { toEmployeeId: 'Loyalis_046', effectivePeriod: '2026-10' },
+  };
+  const loyalis = {
+    id: 'Loyalis_046',
+    personal_info: { name: 'Ahmad Fauzi' },
+    koperasiAuthUid: 'kop-uid-1',
+  };
+  const loan = {
+    id: 'loan-1',
+    userId: 'kop-uid-1',
+    userData: { namaLengkap: 'Ahmad Fauzi' },
+    status: 'Disetujui dan Aktif',
+    jumlahPinjaman: 1_200_000,
+    tenor: 12,
+    jumlahMenyicil: 1,
+    sisaHutang: 1_100_000,
+    tanggalDisetujui: timestamp('2026-08-03T00:00:00+07:00'),
+    history: [
+      { status: 'Disetujui dan Aktif', timestamp: timestamp('2026-08-03T00:00:00+07:00') },
+    ],
+  };
+  const member = { id: 'kop-user-1', uid: 'kop-uid-1', nama: 'Ahmad Fauzi', status: 'approved', paymentStatus: 'Payroll Deduction' };
+
+  const result = buildKoperasiPayrollAmountMaps('2026-10', [converted, loyalis], [loan], [member]);
+  assert.equal(result.deductions['BC_012'], undefined);
+  assert.equal(result.deductions['Loyalis_046'], 100_000);
+  assert.equal(result.savings['BC_012'], undefined);
+  assert.equal(result.savings['Loyalis_046'], 25_000);
+
+  // Without a Koperasi uid the name fallback must not pick the old record either.
+  const byName = buildKoperasiPayrollAmountMaps(
+    '2026-10',
+    [
+      { ...converted, koperasiAuthUid: null },
+      { ...loyalis, koperasiAuthUid: null },
+    ],
+    [{ ...loan, userId: 'unlinked' }],
+    [],
+  );
+  assert.deepEqual(Object.keys(byName.deductions), ['Loyalis_046']);
 });

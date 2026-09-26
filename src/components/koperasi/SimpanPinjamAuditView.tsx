@@ -1,12 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import GlobalHeader from '@/components/GlobalHeader';
-import Link from 'next/link';
-import { db, secondaryDb } from '@/lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
-import { useAuth } from '@/lib/AuthContext';
-import { normalizeName, MANUAL_OVERRIDES } from '../../../../utils/payrollLogic';
+import { normalizeName, MANUAL_OVERRIDES } from '@/lib/payroll/employeeNames';
 import {
   composeKoperasiLoanHistoryTrail,
   koperasiMonthlyInstallment,
@@ -32,22 +28,19 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import {
-  ArrowLeft,
   Banknote,
   Search,
   AlertCircle,
   CheckCircle2,
   Info,
-  Clock,
   HelpCircle,
-  Loader2,
   User,
   Activity,
   History,
   FileText,
 } from 'lucide-react';
 
-interface KoperasiUser {
+export interface KoperasiUser {
   id: string;
   uid?: string;
   nama: string;
@@ -67,7 +60,7 @@ interface LoanHistory {
   };
 }
 
-interface SimpanPinjamDoc {
+export interface SimpanPinjamDoc {
   id: string;
   userId: string;
   status: string;
@@ -101,7 +94,7 @@ interface SimpanPinjamDoc {
   tujuanPinjaman?: string;
 }
 
-interface InternalEmployee {
+export interface InternalEmployee {
   id: string;
   name: string;
   normalizedName: string;
@@ -124,89 +117,16 @@ interface ProcessedLoan extends SimpanPinjamDoc {
   monthlyInstallment: number;
 }
 
-export default function SimpanPinjamReviewPage() {
-  const { profile, loading: authLoading } = useAuth();
-  
-  const [loans, setLoans] = useState<SimpanPinjamDoc[]>([]);
-  const [kopUsers, setKopUsers] = useState<KoperasiUser[]>([]);
-  const [employees, setEmployees] = useState<InternalEmployee[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navigation }: {
+  loans: SimpanPinjamDoc[];
+  kopUsers: KoperasiUser[];
+  employees: InternalEmployee[];
+  navigation: React.ReactNode;
+}) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'all' | 'active' | 'warnings' | 'completed' | 'restructured'>('active');
   const [selectedLoan, setSelectedLoan] = useState<ProcessedLoan | null>(null);
   const [showDetailedMatch, setShowDetailedMatch] = useState(false);
-
-  // 1. Fetch All Data
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        // Fetch Koperasi loans & users
-        const [loanSnap, userSnap, loyalisSnap, blueCollarSnap] = await Promise.all([
-          getDocs(collection(secondaryDb, 'simpanPinjam')),
-          getDocs(collection(secondaryDb, 'users')),
-          getDocs(collection(db, 'Employees_Loyalis')),
-          getDocs(collection(db, 'Employees_BlueCollar')),
-        ]);
-
-        const loansList = loanSnap.docs.map(docSnap => ({
-          id: docSnap.id,
-          ...docSnap.data(),
-        })) as SimpanPinjamDoc[];
-
-        const usersList = userSnap.docs.map(docSnap => ({
-          id: docSnap.id,
-          ...docSnap.data(),
-        })) as KoperasiUser[];
-
-        const employeesList: InternalEmployee[] = [];
-
-        loyalisSnap.docs.forEach(docSnap => {
-          const data = docSnap.data();
-          const name = data.personal_info?.name || '';
-          if (name) {
-            employeesList.push({
-              id: docSnap.id,
-              name,
-              normalizedName: normalizeName(name),
-              collection: 'Employees_Loyalis',
-              koperasiAuthUid: data.koperasiAuthUid || null,
-              koperasiUserId: data.koperasiUserId || null,
-              email: data.personal_info?.email || '',
-              nik: data.personal_info?.nik || '',
-            });
-          }
-        });
-
-        blueCollarSnap.docs.forEach(docSnap => {
-          const data = docSnap.data();
-          const name = data.name || '';
-          if (name) {
-            employeesList.push({
-              id: docSnap.id,
-              name,
-              normalizedName: normalizeName(name),
-              collection: 'Employees_BlueCollar',
-              koperasiAuthUid: data.koperasiAuthUid || null,
-              koperasiUserId: data.koperasiUserId || null,
-              email: data.email || '',
-              nik: data.nik || '',
-            });
-          }
-        });
-
-        setLoans(loansList);
-        setKopUsers(usersList);
-        setEmployees(employeesList);
-      } catch (err) {
-        console.error('Error fetching data for loan review page:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
 
   // 2. Perform Linkage Match
   const processedLoans = useMemo<ProcessedLoan[]>(() => {
@@ -342,39 +262,6 @@ export default function SimpanPinjamReviewPage() {
     });
   }, [processedLoans, activeTab, searchQuery]);
 
-  if (authLoading || loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 flex items-center justify-center flex-col relative overflow-hidden">
-        {/* Subtle decorative blobs */}
-        <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
-        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
-        <div className="flex flex-col items-center gap-3 relative z-10">
-          <Loader2 className="w-10 h-10 animate-spin text-indigo-600 mb-4" />
-          <p className="text-slate-500 font-medium">Memuat data simpan pinjam...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Auth Guard check (Only super_admin can view)
-  if (profile?.role !== 'super_admin') {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 flex items-center justify-center p-6 relative overflow-hidden">
-        {/* Subtle decorative blobs */}
-        <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
-        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
-        <Card className="max-w-md w-full p-8 text-center bg-white rounded-2xl shadow-md border-none relative z-10">
-          <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-slate-800 mb-2">Akses Ditolak</h2>
-          <p className="text-slate-500 mb-6">Anda tidak memiliki izin yang cukup untuk mengakses halaman audit simpan pinjam koperasi.</p>
-          <Link href="/dashboard/payroll">
-            <Button className="rounded-xl px-6 bg-indigo-600 hover:bg-indigo-700">← Kembali ke Payroll</Button>
-          </Link>
-        </Card>
-      </div>
-    );
-  }
-
   // Format date helper
   const formatDate = (ts?: { seconds: number }) => {
     if (!ts) return '-';
@@ -412,17 +299,11 @@ export default function SimpanPinjamReviewPage() {
       <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
       <div className="max-w-7xl mx-auto relative z-10">
         <GlobalHeader />
+        {navigation}
         
         {/* Header navigation bar */}
         <div className="flex flex-wrap justify-between items-center gap-4 mb-8">
           <div className="flex items-center gap-3">
-            {profile?.role !== 'super_admin' && (
-              <Link href="/dashboard/payroll">
-                <Button variant="outline" className="rounded-xl bg-white shadow-sm border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer">
-                  <ArrowLeft className="w-4 h-4 mr-2" /> Kembali
-                </Button>
-              </Link>
-            )}
             <div className="flex items-center gap-2 px-3 py-1 bg-indigo-50 border border-indigo-100 rounded-xl">
               <Banknote className="w-5 h-5 text-indigo-600" />
               <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wider">Audit Panel</span>
@@ -734,7 +615,7 @@ export default function SimpanPinjamReviewPage() {
                 <div>
                   <h4 className="text-xs font-bold text-amber-800">Review Diperlukan (Warning Peringatan)</h4>
                   <ul className="list-disc list-inside text-xs text-amber-700 font-medium mt-1 space-y-1">
-                    {selectedLoan.warnings.map((w: any, idx: number) => (
+                    {selectedLoan.warnings.map((w, idx) => (
                       <li key={idx}>{w}</li>
                     ))}
                   </ul>

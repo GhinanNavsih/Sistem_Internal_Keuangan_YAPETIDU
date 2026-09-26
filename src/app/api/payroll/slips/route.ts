@@ -36,6 +36,7 @@ import {
   loadActiveSalaryMatrix,
 } from '@/lib/server/pekaryaSlipPreview';
 import { isPayrollEmployeeEligible } from '@/lib/payroll/payrollRoster';
+import { employeeInPayrollPeriod } from '@/lib/employeeConversion';
 import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
 import { DRIFT_NOTICES_COLLECTION } from '@/lib/payroll/slipPropagation';
 import {
@@ -319,10 +320,12 @@ export async function POST(request: NextRequest) {
           ? isPayrollEmployeeEligible(
               'Employees_BlueCollar',
               blueEmployeeSnapshot.data()!,
+              command.period,
             )
           : isPayrollEmployeeEligible(
               'Employees_Loyalis',
               loyalisEmployeeSnapshot.data()!,
+              command.period,
             );
         if (!eligible) {
           throw new HttpError(
@@ -552,6 +555,23 @@ export async function POST(request: NextRequest) {
             throw new HttpError(
               409,
               `Slip berstatus ${before.status}; hanya draf yang dapat diubah.`,
+            );
+          }
+          // A Pekarya converted to Loyalis is paid by exactly one record per
+          // month; a new slip may never open on the other side of the switch.
+          if (
+            !before &&
+            !employeeInPayrollPeriod(
+              blueEmployeeSnapshot.exists ? 'Employees_BlueCollar' : 'Employees_Loyalis',
+              blueEmployeeSnapshot.exists
+                ? blueEmployeeSnapshot.data()
+                : loyalisEmployeeSnapshot.data(),
+              command.period,
+            )
+          ) {
+            throw new HttpError(
+              409,
+              'Pegawai ini sudah dialihkan dari Pekarya ke Loyalis; slip bulan ini milik catatan pegawai yang lain.',
             );
           }
           const validatedEarnings = validateMoneyFields(

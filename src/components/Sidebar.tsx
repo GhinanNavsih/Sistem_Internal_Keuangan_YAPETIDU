@@ -90,8 +90,8 @@ export default function Sidebar() {
       activePattern: '/dashboard/payroll/uraian'
     },
     {
-      name: 'Simpan Pinjam',
-      path: '/dashboard/payroll/simpan-pinjam',
+      name: 'Koperasi',
+      path: '/dashboard/payroll/koperasi',
       icon: Banknote
     },
     {

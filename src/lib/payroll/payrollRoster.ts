@@ -1,8 +1,11 @@
+import { employeeInPayrollPeriod } from '../employeeConversion';
+
 export interface PayrollEmployeeData {
   name?: unknown;
   employment?: { status?: unknown };
   flags?: { isActive?: unknown; isPayrollEligible?: unknown };
   personal_info?: { name?: unknown; status?: unknown };
+  conversion?: unknown;
 }
 
 export type PayrollEmployeeCollection =
@@ -25,10 +28,18 @@ export interface PayrollRosterResult {
   duplicateEmployeeIds: string[];
 }
 
+/**
+ * With a `period`, a record converted from Pekarya to Loyalis also has to be on
+ * its own side of the conversion month (see `employeeInPayrollPeriod`).
+ */
 export function isPayrollEmployeeEligible(
   employeeCollection: PayrollEmployeeCollection,
   data: PayrollEmployeeData,
+  period?: string,
 ): boolean {
+  if (period && !employeeInPayrollPeriod(employeeCollection, data, period)) {
+    return false;
+  }
   if (employeeCollection === 'Employees_Loyalis') {
     return data.personal_info?.status === 'AKTIF';
   }
@@ -54,11 +65,12 @@ function payrollEmployeeName(
 export function buildPayrollRoster(
   blueEmployees: readonly PayrollRosterSource[],
   loyalisEmployees: readonly PayrollRosterSource[],
+  period?: string,
 ): PayrollRosterResult {
   const entries = [
     ...blueEmployees
       .filter(({ data }) =>
-        isPayrollEmployeeEligible('Employees_BlueCollar', data),
+        isPayrollEmployeeEligible('Employees_BlueCollar', data, period),
       )
       .map(({ id, data }) => ({
         employeeId: id,
@@ -67,7 +79,7 @@ export function buildPayrollRoster(
       })),
     ...loyalisEmployees
       .filter(({ data }) =>
-        isPayrollEmployeeEligible('Employees_Loyalis', data),
+        isPayrollEmployeeEligible('Employees_Loyalis', data, period),
       )
       .map(({ id, data }) => ({
         employeeId: id,
