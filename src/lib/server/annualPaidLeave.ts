@@ -47,7 +47,7 @@ export function annualPaidLeaveEmployeeDataMatches(
   const isLoyalis = employee.kind === 'loyalis';
   const serviceDate = dateValueToIso(
     isLoyalis
-      ? data.employment_profile?.date_recognized
+      ? (data.employment_profile?.date_of_hire || data.employment_profile?.date_recognized)
       : data.employment?.startDate,
   );
   const category = isLoyalis
@@ -102,7 +102,7 @@ export function annualPaidLeaveEmployeeFromData(
   const isLoyalis = kind === 'loyalis';
   const serviceDate = dateValueToIso(
     isLoyalis
-      ? data.employment_profile?.date_recognized
+      ? (data.employment_profile?.date_of_hire || data.employment_profile?.date_recognized)
       : data.employment?.startDate,
   );
   if (!serviceDate) return null;

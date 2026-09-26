@@ -205,6 +205,13 @@ const getEmpRecognizedDate = (emp: any) => {
     }
     return d;
   }
+  if (emp.employment?.dateRecognized) {
+    const d = emp.employment.dateRecognized;
+    if (d && typeof d.toDate === 'function') {
+      return d.toDate().toISOString().split('T')[0];
+    }
+    return d;
+  }
   return '';
 };
 
@@ -256,24 +263,28 @@ interface PendingLeaveChange {
   valid: boolean;
 }
 
-const getEmpMasaKerja = (emp: any): string => {
-  const tmtVal = emp.employment_profile?.date_recognized;
-  if (!tmtVal) return '-';
+const calculateMasaKerjaDelta = (dateVal: unknown): string => {
+  if (!dateVal) return '-';
 
-  let tmtDate: Date;
-  if (typeof tmtVal.toDate === 'function') {
-    tmtDate = tmtVal.toDate();
+  let date: Date;
+  if (typeof (dateVal as any)?.toDate === 'function') {
+    date = (dateVal as any).toDate();
+  } else if (dateVal instanceof Date) {
+    date = dateVal;
+  } else if (typeof dateVal === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateVal.trim())) {
+    const [y, m, d] = dateVal.trim().split('-').map(Number);
+    date = new Date(y, m - 1, d);
   } else {
-    tmtDate = new Date(tmtVal);
+    date = new Date(dateVal as any);
   }
 
-  if (isNaN(tmtDate.getTime())) return '-';
+  if (isNaN(date.getTime())) return '-';
 
   const now = new Date();
   const nextMonth5th = new Date(now.getFullYear(), now.getMonth() + 1, 5);
-  let years = nextMonth5th.getFullYear() - tmtDate.getFullYear();
-  let months = nextMonth5th.getMonth() - tmtDate.getMonth();
-  let days = nextMonth5th.getDate() - tmtDate.getDate();
+  let years = nextMonth5th.getFullYear() - date.getFullYear();
+  let months = nextMonth5th.getMonth() - date.getMonth();
+  let days = nextMonth5th.getDate() - date.getDate();
 
   if (days < 0) {
     months -= 1;
@@ -302,6 +313,21 @@ const getEmpMasaKerja = (emp: any): string => {
   }
   return parts.join(' ');
 };
+
+// 1. Delta value from Mulai Kerja (used for Jatah Cuti)
+const getEmpMasaKerjaMulai = (emp: any): string => {
+  const startDate = getEmpStartDate(emp);
+  return calculateMasaKerjaDelta(startDate);
+};
+
+// 2. Delta value from Tanggal Diakui (used for Gaji Pokok matrix)
+const getEmpMasaKerjaDiakui = (emp: any): string => {
+  const recognizedDate = getEmpRecognizedDate(emp);
+  return calculateMasaKerjaDelta(recognizedDate);
+};
+
+// Legacy fallback (defaults to Mulai Kerja)
+const getEmpMasaKerja = (emp: any): string => getEmpMasaKerjaMulai(emp);
 
 const calculateStructuralAllowance = (positions: any[]): number => {
   if (!positions || positions.length === 0) return 0;
@@ -565,9 +591,9 @@ export default function EmployeesPage() {
     () => new Map((leaveBalancesQuery.data?.employees || []).map(row => [row.employeeId, row])),
     [leaveBalancesQuery.data],
   );
-  // Leave accrues from Tanggal Diakui for Loyalis and from Mulai Kerja for Pekarya.
+  // Leave accrues from Mulai Kerja for all employees (Masa Kerja Mulai Kerja)
   const getLeaveServiceDate = (emp: Record<string, unknown>) =>
-    toDateOnly(activeTab === 'loyalis' ? getEmpRecognizedDate(emp) : getEmpStartDate(emp));
+    toDateOnly(getEmpStartDate(emp) || getEmpRecognizedDate(emp));
   const getLeaveFigures = (emp: Record<string, unknown>) =>
     annualPaidLeaveTableFigures({
       serviceDate: getLeaveServiceDate(emp),
@@ -848,7 +874,7 @@ export default function EmployeesPage() {
       phoneNumber: '',
       email: '',
       collarType: 'blue_collar',
-      employment: { status: 'active', jobCategory: 'OTHER', startDate: '', endDate: null },
+      employment: { status: 'active', jobCategory: 'OTHER', startDate: '', dateRecognized: '', endDate: null },
       salaryProfile: { salaryGradeCode: '', baseSalaryAmount: 0, salaryMatrixVersion: '2026_v1', tunjanganBeras: 0 },
       bankAccount: { bankName: 'BSI', accountNumber: '', accountHolderName: '' },
       bpjs: { allowanceAmount: 0, deductionAmount: 0 },
@@ -1100,6 +1126,14 @@ export default function EmployeesPage() {
         : '';
       setFormData({
         ...emp,
+        employment: {
+          status: 'active',
+          jobCategory: 'OTHER',
+          endDate: null,
+          ...emp.employment,
+          startDate: formatTimestampForInput(emp.employment?.startDate),
+          dateRecognized: formatTimestampForInput(emp.employment?.dateRecognized),
+        },
         salaryProfile: {
           ...emp.salaryProfile,
           salaryGradeCode: normalizedGradeCode,
@@ -1638,19 +1672,32 @@ export default function EmployeesPage() {
           bVal = bDateStr ? new Date(bDateStr).getTime() : 0;
           break;
         }
+        case 'masaKerjaMulai':
         case 'masaKerja': {
-          const aTmt = a.employment_profile?.date_recognized;
-          const bTmt = b.employment_profile?.date_recognized;
-          const aTime = aTmt ? (aTmt.toDate ? aTmt.toDate().getTime() : new Date(aTmt).getTime()) : 0;
-          const bTime = bTmt ? (bTmt.toDate ? bTmt.toDate().getTime() : new Date(bTmt).getTime()) : 0;
-          aVal = -aTime;
-          bVal = -bTime;
+          const aDateStr = getEmpStartDate(a);
+          const bDateStr = getEmpStartDate(b);
+          const aTime = aDateStr ? new Date(aDateStr).getTime() : 0;
+          const bTime = bDateStr ? new Date(bDateStr).getTime() : 0;
+          aVal = aTime ? -aTime : -Infinity;
+          bVal = bTime ? -bTime : -Infinity;
           break;
         }
-        case 'recognizedDate':
-          aVal = toDateOnly(getEmpRecognizedDate(a));
-          bVal = toDateOnly(getEmpRecognizedDate(b));
+        case 'recognizedDate': {
+          const aDateStr = getEmpRecognizedDate(a);
+          const bDateStr = getEmpRecognizedDate(b);
+          aVal = aDateStr ? new Date(aDateStr).getTime() : 0;
+          bVal = bDateStr ? new Date(bDateStr).getTime() : 0;
           break;
+        }
+        case 'masaKerjaDiakui': {
+          const aDateStr = getEmpRecognizedDate(a);
+          const bDateStr = getEmpRecognizedDate(b);
+          const aTime = aDateStr ? new Date(aDateStr).getTime() : 0;
+          const bTime = bDateStr ? new Date(bDateStr).getTime() : 0;
+          aVal = aTime ? -aTime : -Infinity;
+          bVal = bTime ? -bTime : -Infinity;
+          break;
+        }
         case 'leaveEntitlement':
           aVal = getLeaveFigures(a).entitlementDays ?? -1;
           bVal = getLeaveFigures(b).entitlementDays ?? -1;
@@ -1780,7 +1827,9 @@ export default function EmployeesPage() {
           'Departemen/Unit': emp.employment_profile?.department_unit || '',
           ...(isLoyalisAdmin ? {} : { 'Golongan / Level': getEmpGrade(emp) }),
           'Mulai Kerja': getEmpStartDate(emp),
+          'Masa Kerja (Mulai Kerja)': getEmpMasaKerjaMulai(emp),
           'Tgl Diakui': getEmpRecognizedDate(emp),
+          'Masa Kerja (Tgl Diakui)': getEmpMasaKerjaDiakui(emp),
           'Nama Bank': emp.banking_info?.bank_name || '',
           'Nomor Rekening': emp.banking_info?.account_number || '',
           'Pendidikan': emp.academic_and_tier?.education_level || '',
@@ -1807,6 +1856,9 @@ export default function EmployeesPage() {
           'Kategori': getEmpCategory(emp),
           ...(isLoyalisAdmin ? {} : { 'Golongan': getEmpGrade(emp) }),
           'Mulai Kerja': getEmpStartDate(emp),
+          'Masa Kerja (Mulai Kerja)': getEmpMasaKerjaMulai(emp),
+          'Tgl Diakui': getEmpRecognizedDate(emp),
+          'Masa Kerja (Tgl Diakui)': getEmpMasaKerjaDiakui(emp),
           'Nama Bank': emp.bankAccount?.bankName || '',
           'Nomor Rekening': emp.bankAccount?.accountNumber || '',
           'Atas Nama Rekening': emp.bankAccount?.accountHolderName || '',
@@ -2002,8 +2054,7 @@ export default function EmployeesPage() {
 
         {tableViewMode === 'cuti' && (
           <p className="-mt-2 mb-4 px-2 text-xs text-slate-500">
-            Cuti tahunan {leaveYear}, dihitung per {formatDateOnly(leaveAsOfDate)} dari{' '}
-            {activeTab === 'loyalis' ? 'Tanggal Diakui' : 'Mulai Kerja'}.
+            Cuti tahunan {leaveYear}, dihitung per {formatDateOnly(leaveAsOfDate)} dari Mulai Kerja.
             {leaveBalancesQuery.isError && (
               <span className="text-rose-600"> Sisa cuti gagal dimuat.</span>
             )}
@@ -2034,11 +2085,23 @@ export default function EmployeesPage() {
                     <TableHead onClick={() => handleSort('status')} className="font-semibold text-slate-900 text-center cursor-pointer hover:text-indigo-600 transition-colors">
                       <div className="flex items-center justify-center">Status <SortIcon active={sortConfig.key === 'status'} direction={sortConfig.direction} /></div>
                     </TableHead>
-                    <TableHead onClick={() => handleSort('startDate')} className="font-semibold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors">
+                    <TableHead onClick={() => handleSort('startDate')} className="font-semibold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors whitespace-nowrap">
                       <div className="flex items-center">Mulai Kerja <SortIcon active={sortConfig.key === 'startDate'} direction={sortConfig.direction} /></div>
                     </TableHead>
-                    <TableHead onClick={() => handleSort('masaKerja')} className="font-semibold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors">
-                      <div className="flex items-center">Masa Kerja <SortIcon active={sortConfig.key === 'masaKerja'} direction={sortConfig.direction} /></div>
+                    <TableHead onClick={() => handleSort('masaKerjaMulai')} className="font-semibold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors whitespace-nowrap">
+                      <div className="flex flex-col">
+                        <div className="flex items-center">Masa Kerja (Mulai) <SortIcon active={sortConfig.key === 'masaKerjaMulai'} direction={sortConfig.direction} /></div>
+                        <span className="text-[10px] font-normal text-slate-400">Jatah Cuti</span>
+                      </div>
+                    </TableHead>
+                    <TableHead onClick={() => handleSort('recognizedDate')} className="font-semibold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors whitespace-nowrap">
+                      <div className="flex items-center">Tanggal Diakui <SortIcon active={sortConfig.key === 'recognizedDate'} direction={sortConfig.direction} /></div>
+                    </TableHead>
+                    <TableHead onClick={() => handleSort('masaKerjaDiakui')} className="font-semibold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors whitespace-nowrap">
+                      <div className="flex flex-col">
+                        <div className="flex items-center">Masa Kerja (Diakui) <SortIcon active={sortConfig.key === 'masaKerjaDiakui'} direction={sortConfig.direction} /></div>
+                        <span className="text-[10px] font-normal text-slate-400">Gaji Pokok</span>
+                      </div>
                     </TableHead>
                     <TableHead className="font-semibold text-slate-900 text-right pr-8 select-none">Aksi</TableHead>
                   </TableRow>
@@ -2073,8 +2136,8 @@ export default function EmployeesPage() {
                     <TableHead onClick={() => handleSort('recognizedDate')} className="font-semibold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors">
                       <div className="flex items-center">Tanggal Diakui <SortIcon active={sortConfig.key === 'recognizedDate'} direction={sortConfig.direction} /></div>
                     </TableHead>
-                    <TableHead onClick={() => handleSort('masaKerja')} className="font-semibold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors">
-                      <div className="flex items-center">Masa Kerja <SortIcon active={sortConfig.key === 'masaKerja'} direction={sortConfig.direction} /></div>
+                    <TableHead onClick={() => handleSort('masaKerjaMulai')} className="font-semibold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors whitespace-nowrap">
+                      <div className="flex items-center">Masa Kerja (Mulai Kerja) <SortIcon active={sortConfig.key === 'masaKerjaMulai' || sortConfig.key === 'masaKerja'} direction={sortConfig.direction} /></div>
                     </TableHead>
                     <TableHead onClick={() => handleSort('leaveEntitlement')} className="font-semibold text-slate-900 text-right cursor-pointer hover:text-indigo-600 transition-colors">
                       <div className="flex items-center justify-end">Jatah Cuti <SortIcon active={sortConfig.key === 'leaveEntitlement'} direction={sortConfig.direction} /></div>
@@ -2149,7 +2212,7 @@ export default function EmployeesPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={tableViewMode === 'default' ? (isLoyalisAdmin ? 6 : 7) : tableViewMode === 'debug' ? (isLoyalisAdmin ? 4 : 5) : tableViewMode === 'cuti' ? 6 : (activeTab === 'loyalis' ? (isLoyalisAdmin ? 12 : 13) : 5)} className="h-64 text-center">
+                    <TableCell colSpan={tableViewMode === 'default' ? (isLoyalisAdmin ? 8 : 9) : tableViewMode === 'debug' ? (isLoyalisAdmin ? 4 : 5) : tableViewMode === 'cuti' ? 6 : (activeTab === 'loyalis' ? (isLoyalisAdmin ? 12 : 13) : 5)} className="h-64 text-center">
                       <div className="flex flex-col items-center gap-3 text-slate-400">
                         <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
                         <p>Memuat data pegawai...</p>
@@ -2158,7 +2221,7 @@ export default function EmployeesPage() {
                   </TableRow>
                 ) : filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={tableViewMode === 'default' ? (isLoyalisAdmin ? 6 : 7) : tableViewMode === 'debug' ? (isLoyalisAdmin ? 4 : 5) : tableViewMode === 'cuti' ? 6 : (activeTab === 'loyalis' ? (isLoyalisAdmin ? 12 : 13) : 5)} className="h-64 text-center">
+                    <TableCell colSpan={tableViewMode === 'default' ? (isLoyalisAdmin ? 8 : 9) : tableViewMode === 'debug' ? (isLoyalisAdmin ? 4 : 5) : tableViewMode === 'cuti' ? 6 : (activeTab === 'loyalis' ? (isLoyalisAdmin ? 12 : 13) : 5)} className="h-64 text-center">
                       <p className="text-slate-400">Tidak ada pegawai yang ditemukan.</p>
                     </TableCell>
                   </TableRow>
@@ -2204,13 +2267,21 @@ export default function EmployeesPage() {
                           {getEmpIsActive(emp) ? 'Aktif' : 'Non-Aktif'}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-slate-500 text-sm">
+                      <TableCell className="text-slate-500 text-sm whitespace-nowrap">
                         {getEmpStartDate(emp)
                           ? new Date(getEmpStartDate(emp)).toLocaleDateString('id-ID', { year: 'numeric', month: 'short' })
                           : '-'}
                       </TableCell>
-                      <TableCell className="text-slate-500 text-sm">
-                        {getEmpMasaKerja(emp)}
+                      <TableCell className="text-slate-700 text-sm font-medium whitespace-nowrap">
+                        {getEmpMasaKerjaMulai(emp)}
+                      </TableCell>
+                      <TableCell className="text-slate-500 text-sm whitespace-nowrap">
+                        {getEmpRecognizedDate(emp)
+                          ? new Date(getEmpRecognizedDate(emp)).toLocaleDateString('id-ID', { year: 'numeric', month: 'short' })
+                          : '-'}
+                      </TableCell>
+                      <TableCell className="text-slate-700 text-sm font-medium whitespace-nowrap">
+                        {getEmpMasaKerjaDiakui(emp)}
                       </TableCell>
                       <TableCell className="text-right pr-8">
                         <div className="flex justify-end gap-1">
@@ -2239,8 +2310,8 @@ export default function EmployeesPage() {
                         <TableCell className="text-slate-600 text-sm whitespace-nowrap">
                           {formatDateOnly(recognizedDate)}
                         </TableCell>
-                        <TableCell className="text-slate-500 text-sm whitespace-nowrap">
-                          {getEmpMasaKerja(emp)}
+                        <TableCell className="text-slate-700 text-sm font-medium whitespace-nowrap">
+                          {getEmpMasaKerjaMulai(emp)}
                         </TableCell>
                         <TableCell className="text-right text-sm whitespace-nowrap">
                           {leave.entitlementDays === null ? (
@@ -2790,8 +2861,34 @@ export default function EmployeesPage() {
                         </div>
                       )}
                     </div>
-                    <div className="space-y-2"><Label>Tanggal Mulai Kerja</Label><Input type="date" value={formData.employment_profile?.date_of_hire || ''} onChange={e => updateNestedField('employment_profile', 'date_of_hire', e.target.value)} /></div>
-                    <div className="space-y-2"><Label>Tanggal Diakui</Label><Input type="date" value={formData.employment_profile?.date_recognized || ''} onChange={e => updateNestedField('employment_profile', 'date_recognized', e.target.value)} /></div>
+                    <div className="space-y-2">
+                      <Label>Tanggal Mulai Kerja</Label>
+                      <Input
+                        type="date"
+                        value={formData.employment_profile?.date_of_hire || ''}
+                        onChange={e => updateNestedField('employment_profile', 'date_of_hire', e.target.value)}
+                        className="rounded-xl border-slate-200"
+                      />
+                      {formData.employment_profile?.date_of_hire && (
+                        <p className="text-[11px] text-slate-500">
+                          Masa Kerja: <span className="font-semibold text-slate-700">{calculateMasaKerjaDelta(formData.employment_profile.date_of_hire)}</span> · Digunakan untuk <span className="text-sky-600 font-semibold">Jatah Cuti</span>
+                        </p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Tanggal Diakui</Label>
+                      <Input
+                        type="date"
+                        value={formData.employment_profile?.date_recognized || ''}
+                        onChange={e => updateNestedField('employment_profile', 'date_recognized', e.target.value)}
+                        className="rounded-xl border-slate-200"
+                      />
+                      {formData.employment_profile?.date_recognized && (
+                        <p className="text-[11px] text-slate-500">
+                          Masa Kerja: <span className="font-semibold text-slate-700">{calculateMasaKerjaDelta(formData.employment_profile.date_recognized)}</span> · Digunakan untuk <span className="text-indigo-600 font-semibold">Gaji Pokok</span>
+                        </p>
+                      )}
+                    </div>
                   </div>
                   <div className="space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Akademik &amp; Finansial</h3>
@@ -3391,7 +3488,47 @@ export default function EmployeesPage() {
                         <SelectContent>{JOB_CATEGORIES.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-2"><Label>Tanggal Mulai</Label><Input type="date" required={!editingEmployee && formData.flags?.isActive !== false} value={formData.employment?.startDate || ''} onChange={e => setFormData((prev: any) => ({ ...prev, employment: { ...(prev.employment || { status: 'active', jobCategory: 'OTHER', endDate: null }), startDate: e.target.value } as any }))} className="rounded-xl border-slate-200" /></div>
+                    <div className="space-y-2">
+                      <Label>Tanggal Mulai Kerja</Label>
+                      <Input
+                        type="date"
+                        required={!editingEmployee && formData.flags?.isActive !== false}
+                        value={formData.employment?.startDate || ''}
+                        onChange={e => setFormData((prev: any) => ({
+                          ...prev,
+                          employment: {
+                            ...(prev.employment || { status: 'active', jobCategory: 'OTHER', endDate: null }),
+                            startDate: e.target.value
+                          } as any
+                        }))}
+                        className="rounded-xl border-slate-200"
+                      />
+                      {formData.employment?.startDate && (
+                        <p className="text-[11px] text-slate-500">
+                          Masa Kerja: <span className="font-semibold text-slate-700">{calculateMasaKerjaDelta(formData.employment.startDate)}</span> · Digunakan untuk <span className="text-sky-600 font-semibold">Jatah Cuti</span>
+                        </p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Tanggal Diakui (Opsional)</Label>
+                      <Input
+                        type="date"
+                        value={formData.employment?.dateRecognized || ''}
+                        onChange={e => setFormData((prev: any) => ({
+                          ...prev,
+                          employment: {
+                            ...(prev.employment || { status: 'active', jobCategory: 'OTHER', endDate: null }),
+                            dateRecognized: e.target.value
+                          } as any
+                        }))}
+                        className="rounded-xl border-slate-200"
+                      />
+                      {formData.employment?.dateRecognized && (
+                        <p className="text-[11px] text-slate-500">
+                          Masa Kerja: <span className="font-semibold text-slate-700">{calculateMasaKerjaDelta(formData.employment.dateRecognized)}</span> · Digunakan untuk <span className="text-indigo-600 font-semibold">Gaji Pokok</span>
+                        </p>
+                      )}
+                    </div>
                     {/* Golongan is base-salary-grade information: super_admin only, per product decision. */}
                     {!isLoyalisAdmin && (
                       <div className="space-y-2">
