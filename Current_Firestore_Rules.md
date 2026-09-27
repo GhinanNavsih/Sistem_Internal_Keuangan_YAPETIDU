@@ -649,7 +649,7 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Loyalis ganti libur is server-owned the same way: submission,
+    // Loyalis and Pekarya ganti libur is server-owned the same way: submission,
     // attendance-verified decisions, and the revision trail go through APIs.
     match /GantiLiburRequests/{requestId} {
       allow read, write: if false;

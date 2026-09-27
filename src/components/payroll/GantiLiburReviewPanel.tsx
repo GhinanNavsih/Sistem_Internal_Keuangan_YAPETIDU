@@ -14,6 +14,8 @@ import {
 } from '@/lib/payroll/client';
 import {
   gantiLiburDeclineSuggestion,
+  canReviewGantiLibur,
+  gantiLiburEmployeeKind,
   gantiLiburVerdictLabel,
   type GantiLiburAttendanceCheck,
   type GantiLiburRequest,
@@ -90,8 +92,8 @@ export default function GantiLiburReviewPanel() {
   } | null>(null);
 
   const role = profile?.role || '';
-  const allowed = ['super_admin', 'loyalis_admin', 'satker_head_loyalis'].includes(role);
-  const canDecide = role === 'super_admin' || role === 'loyalis_admin';
+  const allowed = ['super_admin', 'loyalis_admin', 'satker_head_loyalis', 'satker_head', 'finance_verifier'].includes(role);
+  const canDecide = role === 'super_admin' || role === 'loyalis_admin' || role === 'satker_head';
 
   const load = useCallback(async () => {
     if (!allowed) return;
@@ -121,11 +123,14 @@ export default function GantiLiburReviewPanel() {
     (item.attendanceCheck ? gantiLiburDeclineSuggestion(item.attendanceCheck.verdict) : '');
 
   const decide = async (item: GantiLiburRequest, action: 'approve' | 'decline') => {
+    if (!canReviewGantiLibur({ role, permittedCategories: profile?.permittedCategories || [] }, item)) {
+      throw new Error('Anda tidak berwenang memutuskan pengajuan pegawai ini.');
+    }
     const reason = reasonFor(item).trim();
     if (action === 'decline' && !reason) {
       throw new Error('Alasan penolakan wajib diisi.');
     }
-    await authenticatedJson('/api/payroll/ganti-libur/review', {
+    const result = await authenticatedJson<{ payrollWarning?: string }>('/api/payroll/ganti-libur/review', {
       method: 'POST',
       body: JSON.stringify({
         gantiLiburRequestId: item.id,
@@ -135,9 +140,12 @@ export default function GantiLiburReviewPanel() {
         requestId: createFinancialRequestId(`ganti-libur-${action}`),
       }),
     });
+    if (result.payrollWarning) return ` ${result.payrollWarning}`;
     if (action === 'approve') {
       try {
-        await propagateUraianToSlips({ scope: 'loyalis', period: item.dayOffPeriod });
+        await propagateUraianToSlips(gantiLiburEmployeeKind(item) === 'loyalis'
+          ? { scope: 'loyalis', period: item.dayOffPeriod }
+          : { scope: 'pekarya', period: item.dayOffPeriod, jobCategory: item.category });
       } catch (error) {
         console.error('Ganti libur payroll propagation failed:', error);
         return ' Sinkronisasi slip draf perlu dijalankan ulang.';
@@ -171,7 +179,8 @@ export default function GantiLiburReviewPanel() {
   };
 
   const eligiblePending = items.filter(
-    (item) => item.status === 'pending' && item.attendanceCheck?.verdict === 'eligible',
+    (item) => item.status === 'pending' && item.attendanceCheck?.verdict === 'eligible' &&
+      canReviewGantiLibur({ role, permittedCategories: profile?.permittedCategories || [] }, item),
   );
 
   const approveAllEligible = async () => {
@@ -187,7 +196,8 @@ export default function GantiLiburReviewPanel() {
         detail: `${item.employeeName} · ${formatDate(item.dayOffDate)}`,
       });
       try {
-        propagationWarning ||= await decide(item, 'approve');
+        const warning = await decide(item, 'approve');
+        propagationWarning ||= warning;
       } catch (error) {
         failures.push(`${item.employeeName}: ${error instanceof Error ? error.message : 'gagal'}`);
       }
@@ -213,7 +223,7 @@ export default function GantiLiburReviewPanel() {
             <div>
               <div className="flex items-center gap-2">
                 <CalendarClock className="h-5 w-5 text-sky-600" />
-                <h2 className="font-bold text-slate-800">Ganti Libur Loyalis</h2>
+                <h2 className="font-bold text-slate-800">Ganti Libur</h2>
               </div>
               <p className="mt-1 text-sm text-slate-500">
                 Setujui hanya jika presensi di hari libur menunjukkan 07.30–14.00 WIB. Kurang dari itu
@@ -267,6 +277,7 @@ export default function GantiLiburReviewPanel() {
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                       <div className="min-w-0">
                         <div className="font-bold text-slate-800">{item.employeeName || item.employeeId}</div>
+                        <div className="text-xs font-semibold text-slate-500">{item.category || 'LOYALIS'}</div>
                         <div className="mt-1 text-sm text-slate-600">
                           Masuk hari libur <span className="font-semibold">{formatDate(item.workedDate)}</span>
                           {' → '}libur <span className="font-semibold">{formatDate(item.dayOffDate)}</span>
@@ -289,7 +300,7 @@ export default function GantiLiburReviewPanel() {
                           <div className="mt-2 text-sm text-slate-600">Catatan keputusan: {item.decisionReason}</div>
                         ) : null}
                       </div>
-                      {item.status === 'pending' && canDecide ? (
+                      {item.status === 'pending' && canReviewGantiLibur({ role, permittedCategories: profile?.permittedCategories || [] }, item) ? (
                         <div className="w-full space-y-2 lg:w-80">
                           <textarea
                             value={reasonFor(item)}

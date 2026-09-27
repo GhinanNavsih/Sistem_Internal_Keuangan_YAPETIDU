@@ -564,7 +564,7 @@ export default function PresensiLoyalisRawPage() {
         }>;
       }>(`/api/payroll/paid-leave/review?year=${year}&status=approved&period=${canonicalPeriod}`),
       authenticatedJson<{
-        requests: Array<{ employeeId: string; dayOffDate: string }>;
+        requests: Array<{ employeeId: string; employeeKind?: string; dayOffDate: string }>;
       }>(`/api/payroll/ganti-libur/review?status=approved&dayOffPeriod=${canonicalPeriod}`),
     ]).then(([annualLeave, gantiLibur]) => {
       if (cancelled) return;
@@ -585,7 +585,7 @@ export default function PresensiLoyalisRawPage() {
               }))
           : []),
         ...(gantiLibur.status === 'fulfilled'
-          ? gantiLibur.value.requests.map((item) => ({
+          ? gantiLibur.value.requests.filter((item) => item.employeeKind !== 'blue_collar').map((item) => ({
               employeeId: item.employeeId,
               leaveDate: item.dayOffDate,
               kind: 'ganti_libur' as const,

@@ -49,6 +49,8 @@ import {
   annualPaidLeaveDocumentId,
 } from '@/lib/server/annualPaidLeave';
 
+import { GANTI_LIBUR_REQUESTS_COLLECTION } from '@/lib/server/gantiLibur';
+
 export const dynamic = 'force-dynamic';
 
 type ShiftDecisionAction = 'approve' | 'decline';
@@ -446,6 +448,9 @@ export async function POST(request: NextRequest) {
             ),
           ),
       );
+      const gantiLiburSnapshot = await transaction.get(
+        adminDb.collection(GANTI_LIBUR_REQUESTS_COLLECTION).where('dayOffPeriod', '==', period),
+      );
       const secondarySnapshots = await Promise.all([
         transaction.get(periodRef),
         ...slipRefs.map((reference) => transaction.get(reference)),
@@ -665,6 +670,10 @@ export async function POST(request: NextRequest) {
               409,
               `${String(before.employeeName || before.employeeId)} memiliki izin dibayar pada tanggal ini. Selesaikan konflik izin terlebih dahulu.`,
             );
+          }
+          if (gantiLiburSnapshot.docs.some((doc) => doc.data().status === 'approved' &&
+            doc.data().employeeId === before.employeeId && doc.data().dayOffDate === occurrence.dutyDate)) {
+            throw new HttpError(409, 'Petugas memiliki ganti libur disetujui pada tanggal ini.');
           }
           if (annualPaidLeaveSnapshots[index]?.data()?.status === 'approved') {
             throw new HttpError(
@@ -1189,6 +1198,9 @@ export async function PUT(request: NextRequest) {
           .collection(ANNUAL_PAID_LEAVE_REQUESTS_COLLECTION)
           .doc(annualPaidLeaveDocumentId(employeeId, command.dutyDate)),
       );
+      const gantiLiburSnapshot = await transaction.get(
+        adminDb.collection(GANTI_LIBUR_REQUESTS_COLLECTION).where('dayOffPeriod', '==', period),
+      );
       const secondarySnapshots = await Promise.all([
         transaction.get(periodRef),
         transaction.get(holidayRef),
@@ -1276,6 +1288,10 @@ export async function PUT(request: NextRequest) {
             assignment.employeeId,
             command.dutyDate,
           );
+          if (gantiLiburSnapshot.docs.some((doc) => doc.data().status === 'approved' &&
+            doc.data().employeeId === assignment.employeeId && doc.data().dayOffDate === command.dutyDate)) {
+            throw new HttpError(409, 'Petugas memiliki ganti libur disetujui pada tanggal ini.');
+          }
           if (annualPaidLeaveByEmployeeId.get(annualId)?.status === 'approved') {
             throw new HttpError(
               409,

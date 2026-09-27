@@ -207,8 +207,7 @@ export async function POST(request: NextRequest) {
           transaction.get(slipRef),
           transaction.get(employeeRef),
           transaction.get(idempotencyRef),
-          // Only Loyalis can take ganti libur.
-          employee.kind === 'loyalis' && action === 'submit'
+          action === 'submit'
             ? transaction.get(employeeGantiLiburQuery(employee.id))
             : Promise.resolve(null),
         ]);

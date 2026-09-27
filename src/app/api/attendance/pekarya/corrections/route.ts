@@ -38,6 +38,9 @@ import {
   annualPaidLeaveDocumentId,
 } from '@/lib/server/annualPaidLeave';
 
+import { employeeGantiLiburQuery } from '@/lib/server/gantiLibur';
+import { hasGantiLiburDayOff } from '@/lib/payroll/gantiLibur';
+
 export const dynamic = 'force-dynamic';
 
 function optionalTime(body: Record<string, unknown>, key: string) {
@@ -187,6 +190,7 @@ export async function POST(request: NextRequest) {
         slipSnapshot,
         importSnapshot,
         annualPaidLeaveSnapshot,
+        gantiLiburSnapshot,
       ] =
         await Promise.all([
           transaction.get(adminDb.collection('PayrollPeriods').doc(period)),
@@ -197,6 +201,7 @@ export async function POST(request: NextRequest) {
           transaction.get(slipRef),
           transaction.get(importRef),
           transaction.get(annualPaidLeaveRef),
+          transaction.get(employeeGantiLiburQuery(employeeId)),
         ]);
       if (idempotencySnapshot.exists) {
         if (idempotencySnapshot.data()?.requestHash !== requestHash) {
@@ -218,6 +223,9 @@ export async function POST(request: NextRequest) {
           409,
           'Slip pegawai sudah immutable; gunakan koreksi finansial.',
         );
+      }
+      if (hasGantiLiburDayOff(gantiLiburSnapshot.docs.map((doc) => doc.data()), date, true)) {
+        throw new HttpError(409, 'Ganti libur sudah disetujui pada tanggal ini.');
       }
       if (present && annualPaidLeaveSnapshot.data()?.status === 'approved') {
         throw new HttpError(

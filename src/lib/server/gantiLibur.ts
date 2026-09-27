@@ -2,14 +2,24 @@ import { createHash } from 'node:crypto';
 import { adminDb, adminStorage } from '@/lib/firebase-admin';
 import type { AuthenticatedProfile } from '@/lib/server/auth';
 import { HttpError } from '@/lib/server/auth';
-import { loadPeriodPremiumDates } from '@/lib/server/attendanceStore';
+import {
+  attendanceJoinNipy,
+  loadAttendanceEmployeeIdentities,
+  loadEffectiveAttendanceDays,
+  loadPeriodPremiumDates,
+} from '@/lib/server/attendanceStore';
 import { storageDownloadUrl } from '@/lib/server/storageUpload';
 import { isFridayDate } from '@/lib/payroll/attendance';
 import {
   gantiLiburAttendanceCheck,
+  evaluateGantiLiburAttendance,
+  gantiLiburEmployeeKind,
+  gantiLiburPeriod,
   type GantiLiburAttendanceCheck,
   type GantiLiburRequest,
 } from '@/lib/payroll/gantiLibur';
+import type { AnnualPaidLeaveEmployeeKind } from '@/lib/payroll/annualPaidLeave';
+import { shiftPeriod } from '@/lib/server/payrollPeriod';
 import {
   coerceGantiLiburAttachments,
   type GantiLiburAttachment,
@@ -21,6 +31,9 @@ export const GANTI_LIBUR_REVISIONS_COLLECTION = 'GantiLiburRequestRevisions';
 export interface GantiLiburEmployee {
   id: string;
   name: string;
+  kind: AnnualPaidLeaveEmployeeKind;
+  category: string;
+  collection: 'Employees_Loyalis' | 'Employees_BlueCollar';
 }
 
 function isActiveLoyalis(data: FirebaseFirestore.DocumentData | undefined): boolean {
@@ -30,31 +43,41 @@ function isActiveLoyalis(data: FirebaseFirestore.DocumentData | undefined): bool
 export function gantiLiburEmployeeFromData(
   employeeId: string,
   data: FirebaseFirestore.DocumentData | undefined,
+  kind: AnnualPaidLeaveEmployeeKind = 'loyalis',
 ): GantiLiburEmployee | null {
-  if (!data || !isActiveLoyalis(data)) return null;
+  if (!data) return null;
+  const loyalis = kind === 'loyalis';
+  const category = loyalis ? 'LOYALIS' : String(data.employment?.jobCategory || '').trim().toUpperCase();
+  const active = loyalis ? isActiveLoyalis(data) :
+    data.employment?.status === 'active' && data.flags?.isActive !== false &&
+    data.flags?.isPayrollEligible !== false && Boolean(category);
+  if (!active) return null;
   return {
     id: employeeId,
-    name: String(data.personal_info?.name || '').trim(),
+    name: String((loyalis ? data.personal_info?.name : data.name) || '').trim(),
+    kind,
+    category,
+    collection: loyalis ? 'Employees_Loyalis' : 'Employees_BlueCollar',
   };
 }
 
-/** Ganti libur is a Loyalis-only privilege. */
 export async function requireSelfGantiLiburEmployee(
   actor: AuthenticatedProfile,
 ): Promise<GantiLiburEmployee> {
-  if (actor.role !== 'loyalis') {
-    throw new HttpError(403, 'Ganti libur hanya tersedia untuk pegawai Loyalis.');
+  if (!['loyalis', 'honorer', 'ketua_shift_satpam'].includes(actor.role)) {
+    throw new HttpError(403, 'Ganti libur hanya tersedia untuk pegawai Loyalis dan Pekarya.');
   }
   if (!actor.linkedEmployeeId) {
     throw new HttpError(403, 'Akun belum terhubung ke data pegawai.');
   }
+  const kind = actor.role === 'loyalis' ? 'loyalis' : 'blue_collar';
   const snapshot = await adminDb
-    .collection('Employees_Loyalis')
+    .collection(kind === 'loyalis' ? 'Employees_Loyalis' : 'Employees_BlueCollar')
     .doc(actor.linkedEmployeeId)
     .get();
-  const employee = gantiLiburEmployeeFromData(snapshot.id, snapshot.data());
+  const employee = gantiLiburEmployeeFromData(snapshot.id, snapshot.data(), kind);
   if (!snapshot.exists || !employee) {
-    throw new HttpError(409, 'Data pegawai Loyalis aktif tidak ditemukan.');
+    throw new HttpError(409, 'Data pegawai aktif tidak ditemukan.');
   }
   return employee;
 }
@@ -74,6 +97,8 @@ export function gantiLiburRequestFromData(
     id,
     employeeId: String(data.employeeId || ''),
     employeeName: String(data.employeeName || ''),
+    employeeKind: gantiLiburEmployeeKind(data),
+    category: String(data.category || (gantiLiburEmployeeKind(data) === 'loyalis' ? 'LOYALIS' : '')),
     workedDate: String(data.workedDate || ''),
     workedPeriod: String(data.workedPeriod || ''),
     dayOffDate: String(data.dayOffDate || ''),
@@ -140,10 +165,12 @@ export function employeeGantiLiburQuery(employeeId: string) {
 
 export async function loadEmployeeGantiLiburRequests(
   employeeId: string,
+  kind?: AnnualPaidLeaveEmployeeKind,
 ): Promise<GantiLiburRequest[]> {
   const snapshot = await employeeGantiLiburQuery(employeeId).get();
   return sortGantiLiburRequests(
-    snapshot.docs.map((document) => gantiLiburRequestFromData(document.id, document.data())),
+    snapshot.docs.map((document) => gantiLiburRequestFromData(document.id, document.data()))
+      .filter((request) => !kind || gantiLiburEmployeeKind(request) === kind),
   );
 }
 
@@ -154,7 +181,10 @@ export async function loadEmployeeGantiLiburRequests(
  */
 export async function loadLoyalisOffDayDates(months: readonly string[]): Promise<Set<string>> {
   const calendars = await Promise.all(
-    Array.from(new Set(months)).map((month) => loadPeriodPremiumDates(month)),
+    // Legacy Pekarya calendars ran from the 26th to the 25th; include
+    // the next period when resolving historical calendar-month requests.
+    Array.from(new Set(months.flatMap((month) => [month, shiftPeriod(month, 1)])))
+      .map((month) => loadPeriodPremiumDates(month)),
   );
   const dates = new Set<string>();
   for (const calendar of calendars) {
@@ -215,9 +245,10 @@ export function gantiLiburAttendanceCheckFromSnapshots(
 
 /** Live checks for many requests, reading each month's presence only once. */
 export async function loadGantiLiburAttendanceChecks(
-  requests: readonly Pick<GantiLiburRequest, 'id' | 'employeeId' | 'workedDate'>[],
+  requests: readonly Pick<GantiLiburRequest, 'id' | 'employeeId' | 'workedDate' | 'employeeKind'>[],
 ): Promise<Map<string, GantiLiburAttendanceCheck>> {
-  const months = Array.from(new Set(requests.map((request) => request.workedDate.slice(0, 7))));
+  const loyalisRequests = requests.filter((request) => gantiLiburEmployeeKind(request) === 'loyalis');
+  const months = Array.from(new Set(loyalisRequests.map((request) => request.workedDate.slice(0, 7))));
   const snapshotsByMonth = new Map(
     await Promise.all(
       months.map(async (month) => {
@@ -226,8 +257,8 @@ export async function loadGantiLiburAttendanceChecks(
       }),
     ),
   );
-  return new Map(
-    requests.map((request) => [
+  const checks = new Map(
+    loyalisRequests.map((request) => [
       request.id,
       gantiLiburAttendanceCheckFromSnapshots(
         snapshotsByMonth.get(request.workedDate.slice(0, 7)) || [],
@@ -236,6 +267,30 @@ export async function loadGantiLiburAttendanceChecks(
       ),
     ]),
   );
+  const blueRequests = requests.filter((request) => gantiLiburEmployeeKind(request) === 'blue_collar');
+  if (blueRequests.length) {
+    const identities = await loadAttendanceEmployeeIdentities();
+    const periods = [...new Set(blueRequests.map((item) => gantiLiburPeriod('blue_collar', item.workedDate)))];
+    const sources = new Map(await Promise.all(periods.map(async (period) => [
+      period,
+      await loadEffectiveAttendanceDays(period, { identities, allowMissingActiveImport: true }),
+    ] as const)));
+    for (const request of blueRequests) {
+      const source = sources.get(gantiLiburPeriod('blue_collar', request.workedDate))!;
+      const employee = identities.identities.find((item) => item.employeeId === request.employeeId &&
+        item.employeeCollection === 'Employees_BlueCollar');
+      const day = employee && source.days.find((item) =>
+        item.nipy === attendanceJoinNipy(employee) && item.date === request.workedDate);
+      const attendanceUploaded = source.importData.activeRevisionId && employee &&
+        source.rows.some((row) => row.nipy === attendanceJoinNipy(employee) && row.date >= request.workedDate);
+      checks.set(request.id, attendanceUploaded
+        ? evaluateGantiLiburAttendance(day?.present ? {
+          'Jam kerja': day.workStatus, 'Scan masuk': day.scanIn, 'Scan pulang': day.scanOut,
+        } : null)
+        : { verdict: 'awaiting_upload', scanIn: '', scanOut: '' });
+    }
+  }
+  return checks;
 }
 
 /** Approved ganti libur days off in a Loyalis payroll period (a calendar month). */
@@ -252,6 +307,7 @@ export async function loadApprovedGantiLiburDayOffs(
     .filter(
       (data) =>
         data.status === 'approved' &&
+        gantiLiburEmployeeKind(data) === 'loyalis' &&
         typeof data.dayOffDate === 'string' &&
         (!employeeId || data.employeeId === employeeId),
     )

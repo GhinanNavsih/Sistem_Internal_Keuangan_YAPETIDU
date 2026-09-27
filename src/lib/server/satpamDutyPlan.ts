@@ -101,6 +101,7 @@ export interface SatpamDutyReconciliationView {
       bonusCount: 0 | 1;
       bonusAmount: number;
       approvedAbsenceCount: number;
+      gantiLiburCount: number;
       annualPaidLeaveCount: number;
       annualPaidLeaveHarianCount: number;
       annualPaidLeavePremiumCount: number;
@@ -112,6 +113,7 @@ export interface SatpamDutyReconciliationView {
     employeeId: string;
     employeeName: string;
     extraDuties: number;
+    gantiLiburCount: number;
     annualPaidLeaveCount: number;
     annualPaidLeaveHarianCount: number;
     annualPaidLeavePremiumCount: number;
@@ -259,6 +261,7 @@ export async function buildSatpamDutyReconciliation(
     uraianSnapshot,
     shiftRegistrations,
     annualPaidLeaveSnapshot,
+    gantiLiburSnapshot,
   ] = await Promise.all([
     adminDb
       .collection(SATPAM_DUTY_PLANS_COLLECTION)
@@ -285,6 +288,7 @@ export async function buildSatpamDutyReconciliation(
       .collection(ANNUAL_PAID_LEAVE_PAYROLL_POSTS_COLLECTION)
       .where('period', '==', period)
       .get(),
+    adminDb.collection('GantiLiburRequests').where('dayOffPeriod', '==', period).get(),
   ]);
   const plans: StoredSatpamDutyPlan[] = planSnapshot.docs.map((snapshot) => ({
     id: snapshot.id,
@@ -325,6 +329,7 @@ export async function buildSatpamDutyReconciliation(
     { harian: number; premium: number }
   >();
   const annualPaidLeaveEmployeeIds = new Set<string>();
+  const gantiLiburCounts = new Map<string, number>();
   const conflictKeys = new Set<string>();
   const registeredShiftKeys = new Set(
     shiftRegistrations.map((registration) =>
@@ -349,6 +354,17 @@ export async function buildSatpamDutyReconciliation(
     else counts.harian += 1;
     annualPaidLeaveCounts.set(employeeId, counts);
     if (fulfilledWorkKeys.has(key)) conflictKeys.add(key);
+  }
+
+  for (const document of gantiLiburSnapshot.docs) {
+    const dayOff = document.data();
+    if (dayOff.status !== 'approved' || dayOff.category !== 'SATPAM' || dayOff.employeeKind !== 'blue_collar') continue;
+    const employeeId = String(dayOff.employeeId || '');
+    const date = String(dayOff.dayOffDate || '');
+    if (!employeeId || !date) continue;
+    approvedAbsenceKeys.add(satpamDutyKey(employeeId, date));
+    gantiLiburCounts.set(employeeId, (gantiLiburCounts.get(employeeId) || 0) + 1);
+    if (!workedShiftCountsByEmployee.has(employeeId)) workedShiftCountsByEmployee.set(employeeId, 0);
   }
 
   for (const reportSnapshot of reportSnapshots) {
@@ -496,6 +512,7 @@ export async function buildSatpamDutyReconciliation(
       approvedAbsenceCount: Number(
         approvedAbsenceCounts.get(employee.employeeId) || 0,
       ),
+      gantiLiburCount: gantiLiburCounts.get(employee.employeeId) || 0,
       annualPaidLeaveCount:
         Number(annualPaidLeaveCounts.get(employee.employeeId)?.harian || 0) +
         Number(annualPaidLeaveCounts.get(employee.employeeId)?.premium || 0),
@@ -554,6 +571,9 @@ export async function buildSatpamDutyReconciliation(
   if (pendingAbsenceCount > 0) {
     blockers.push('Ada pengajuan izin Satpam yang belum diputuskan.');
   }
+  if (gantiLiburSnapshot.docs.some((doc) => doc.data().category === 'SATPAM' && doc.data().status === 'pending')) {
+    blockers.push('Ada pengajuan ganti libur Satpam yang belum diputuskan.');
+  }
   if (conflictKeys.size > 0) {
     blockers.push('Ada konflik antara izin disetujui dan laporan bekerja.');
   }
@@ -563,7 +583,7 @@ export async function buildSatpamDutyReconciliation(
     ),
   );
   const unassignedExternalEmployees = Array.from(
-    new Set([...extraDutyEmployeeIds, ...annualPaidLeaveEmployeeIds]),
+    new Set([...extraDutyEmployeeIds, ...annualPaidLeaveEmployeeIds, ...gantiLiburCounts.keys()]),
   )
     .filter((employeeId) => !plannedEmployeeIds.has(employeeId))
     .map((employeeId) => ({
@@ -572,6 +592,7 @@ export async function buildSatpamDutyReconciliation(
       extraDuties: Array.from(extraDutyKeys).filter((key) =>
         key.startsWith(`${employeeId}__`),
       ).length,
+      gantiLiburCount: gantiLiburCounts.get(employeeId) || 0,
       annualPaidLeaveCount:
         Number(annualPaidLeaveCounts.get(employeeId)?.harian || 0) +
         Number(annualPaidLeaveCounts.get(employeeId)?.premium || 0),
@@ -736,7 +757,7 @@ export async function syncSatpamDutyReconciliation(
         const totalHarianCount = satpamHarianCountWithApprovedAbsences(
           shiftCounts.harian,
           employee.approvedAbsenceCount,
-        ) + employee.annualPaidLeaveHarianCount;
+        ) + employee.annualPaidLeaveHarianCount + employee.gantiLiburCount;
         counts.harian = totalHarianCount;
         values.harian = totalHarianCount * SATPAM_RATES.Harian;
         counts.jumatLibur =
@@ -775,6 +796,7 @@ export async function syncSatpamDutyReconciliation(
             planId: plan.planId,
             planRevision: plan.revision,
             approvedAbsenceCount: employee.approvedAbsenceCount,
+            gantiLiburCount: employee.gantiLiburCount,
             annualPaidLeaveCount: employee.annualPaidLeaveCount,
             annualPaidLeaveHarianCount: employee.annualPaidLeaveHarianCount,
             annualPaidLeavePremiumCount: employee.annualPaidLeavePremiumCount,
@@ -822,7 +844,7 @@ export async function syncSatpamDutyReconciliation(
       );
       const values = { ...normalizedExisting.values };
       const counts = { ...(normalizedExisting.counts || {}) };
-      counts.harian = shiftCounts.harian + external.annualPaidLeaveHarianCount;
+      counts.harian = shiftCounts.harian + external.annualPaidLeaveHarianCount + external.gantiLiburCount;
       values.harian = counts.harian * SATPAM_RATES.Harian;
       counts.jumatLibur =
         shiftCounts.jumatLibur + external.annualPaidLeavePremiumCount;
@@ -858,6 +880,7 @@ export async function syncSatpamDutyReconciliation(
           planRevision: null,
           externalSubstitute: true,
           approvedAbsenceCount: 0,
+          gantiLiburCount: external.gantiLiburCount,
           annualPaidLeaveCount: external.annualPaidLeaveCount,
           annualPaidLeaveHarianCount: external.annualPaidLeaveHarianCount,
           annualPaidLeavePremiumCount: external.annualPaidLeavePremiumCount,

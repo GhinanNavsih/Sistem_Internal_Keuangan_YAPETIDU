@@ -1,4 +1,5 @@
-import { isDateOnly } from './annualPaidLeave';
+import { canReviewAnnualPaidLeave, isDateOnly, type AnnualPaidLeaveEmployeeKind } from './annualPaidLeave';
+import { pekaryaPayrollPeriodForDate } from './pekaryaSpj';
 import { normalizeAttendanceTime } from './attendance';
 import type { GantiLiburAttachment } from './gantiLiburAttachments';
 import {
@@ -7,7 +8,7 @@ import {
 } from './loyalisPresenceWindow';
 
 /**
- * Ganti libur (compensatory day off) — Loyalis only.
+ * Ganti libur (compensatory day off) for Loyalis and all Pekarya categories.
  *
  * A Loyalis who comes in on a non-working day (Jumat or Tanggal Merah) for the
  * full 07:30–14:00 window earns one day off on a working day. Coming in for
@@ -47,6 +48,9 @@ export interface GantiLiburRequest {
   id: string;
   employeeId: string;
   employeeName: string;
+  /** Missing on legacy Loyalis requests. */
+  employeeKind?: AnnualPaidLeaveEmployeeKind;
+  category?: string;
   /** The Jumat / Tanggal Merah the employee came in. */
   workedDate: string;
   workedPeriod: string;
@@ -61,6 +65,50 @@ export interface GantiLiburRequest {
   attendanceCheck?: GantiLiburAttendanceCheck | null;
   /** Surat resmi files the employee attached; optional. */
   attachments?: GantiLiburAttachment[];
+}
+
+export function gantiLiburEmployeeKind(data: {
+  employeeKind?: unknown;
+  employeeCollection?: unknown;
+}): AnnualPaidLeaveEmployeeKind {
+  return data.employeeKind === 'blue_collar' || data.employeeCollection === 'Employees_BlueCollar'
+    ? 'blue_collar'
+    : 'loyalis';
+}
+
+export function gantiLiburPeriod(kind: AnnualPaidLeaveEmployeeKind, date: string): string {
+  return kind === 'blue_collar' ? pekaryaPayrollPeriodForDate(date) : date.slice(0, 7);
+}
+
+export function canReviewGantiLibur(
+  actor: { role: string; permittedCategories: readonly string[] },
+  request: Pick<GantiLiburRequest, 'employeeKind' | 'category'>,
+): boolean {
+  return canReviewAnnualPaidLeave(actor, {
+    kind: gantiLiburEmployeeKind(request),
+    category: request.category || 'LOYALIS',
+  });
+}
+
+export function canReadGantiLibur(
+  actor: { role: string; permittedCategories: readonly string[] },
+  request: Pick<GantiLiburRequest, 'employeeKind' | 'category'>,
+): boolean {
+  return canReviewGantiLibur(actor, request) || actor.role === 'finance_verifier' ||
+    (actor.role === 'satker_head_loyalis' && gantiLiburEmployeeKind(request) === 'loyalis');
+}
+
+export function gantiLiburAttendanceCorrection() {
+  return { present: true, workStatus: 'GANTI LIBUR', scanIn: '07:30:00', scanOut: '14:00:00' } as const;
+}
+
+export function hasGantiLiburDayOff(
+  requests: readonly { dayOffDate?: unknown; status?: unknown }[],
+  date: string,
+  approvedOnly = false,
+): boolean {
+  return requests.some((request) => request.dayOffDate === date &&
+    (approvedOnly ? request.status === 'approved' : isActiveGantiLiburStatus(request.status)));
 }
 
 export interface GantiLiburDailyLog {
@@ -226,7 +274,7 @@ function scanMinutes(value: unknown): { minutes: number; display: string } | nul
 }
 
 /** Work statuses that mean nobody actually scanned in that day. */
-const NOT_WORKED_STATUSES = new Set(['TIDAK HADIR', 'CUTI', 'GANTI LIBUR']);
+const NOT_WORKED_STATUSES = new Set(['TIDAK HADIR', 'CUTI', 'GANTI LIBUR', 'IZIN RESMI', 'IZIN', 'SAKIT']);
 
 /**
  * Judges one day's attendance row against rule 1. A scan the presence

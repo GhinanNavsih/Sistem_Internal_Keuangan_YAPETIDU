@@ -46,6 +46,9 @@ import {
   annualPaidLeaveDocumentId,
 } from '@/lib/server/annualPaidLeave';
 
+import { employeeGantiLiburQuery } from '@/lib/server/gantiLibur';
+import { hasGantiLiburDayOff } from '@/lib/payroll/gantiLibur';
+
 export const dynamic = 'force-dynamic';
 
 const ACTIONS = new Set([
@@ -514,6 +517,7 @@ export async function POST(request: NextRequest) {
           latestHead,
           latestImport,
           annualPaidLeaveSnapshot,
+          gantiLiburSnapshot,
           idempotencySnapshot,
         ] = await Promise.all([
           transaction.get(absenceRef),
@@ -524,6 +528,7 @@ export async function POST(request: NextRequest) {
           transaction.get(scanHeadRef),
           transaction.get(scanImportRef),
           transaction.get(annualPaidLeaveRef),
+          transaction.get(employeeGantiLiburQuery(employeeId)),
           transaction.get(scanIdempotencyRef),
         ]);
         if (idempotencySnapshot.exists) {
@@ -552,6 +557,9 @@ export async function POST(request: NextRequest) {
             409,
             'Slip pegawai sudah immutable; gunakan koreksi finansial.',
           );
+        }
+        if (action === 'approve' && hasGantiLiburDayOff(gantiLiburSnapshot.docs.map((doc) => doc.data()), dutyDate, true)) {
+          throw new HttpError(409, 'Ganti libur sudah disetujui pada tanggal ini.');
         }
         if (action === 'approve' && annualPaidLeaveSnapshot.data()?.status === 'approved') {
           throw new HttpError(
@@ -775,6 +783,7 @@ export async function POST(request: NextRequest) {
         idempotencySnapshot,
         shiftReportsSnapshot,
         annualPaidLeaveSnapshot,
+        gantiLiburSnapshot,
       ] = await Promise.all([
         transaction.get(absenceRef),
         planRef ? transaction.get(planRef) : Promise.resolve(null),
@@ -784,6 +793,7 @@ export async function POST(request: NextRequest) {
         transaction.get(idempotencyRef),
         transaction.get(employeeShiftReportsQuery),
         transaction.get(annualPaidLeaveRef),
+        transaction.get(employeeGantiLiburQuery(employeeId)),
       ]);
       if (idempotencySnapshot.exists) {
         if (idempotencySnapshot.data()?.requestHash !== requestHash) {
@@ -811,6 +821,9 @@ export async function POST(request: NextRequest) {
         isImmutablePayrollStatus(slipSnapshot.data()?.status)
       ) {
         throw new HttpError(409, 'Slip pegawai sudah immutable; gunakan koreksi finansial.');
+      }
+      if (approving && hasGantiLiburDayOff(gantiLiburSnapshot.docs.map((doc) => doc.data()), dutyDate, true)) {
+        throw new HttpError(409, 'Ganti libur sudah disetujui pada tanggal ini.');
       }
       if (approving && annualPaidLeaveSnapshot.data()?.status === 'approved') {
         throw new HttpError(

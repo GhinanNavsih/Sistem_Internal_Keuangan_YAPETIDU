@@ -395,6 +395,7 @@ export function GantiLiburPanel() {
             <li>
               Ganti libur maksimal {GANTI_LIBUR_MAX_DAYS_PER_WEEK} hari per minggu (Sabtu–Jumat).
             </li>
+            <li>Ganti libur tidak mengurangi saldo cuti tahunan.</li>
           </ul>
         </CardHeader>
         <CardContent className="space-y-5 p-4 sm:p-5">

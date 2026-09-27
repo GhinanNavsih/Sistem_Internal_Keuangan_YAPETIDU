@@ -45,9 +45,7 @@ export default function EmployeeLeavePage() {
   const [workflow, setWorkflow] = useState<
     'presence_correction' | 'sick_leave' | 'paid_leave' | 'ganti_libur'
   >('paid_leave');
-  // Ganti libur is a Loyalis-only privilege.
-  const effectiveWorkflow =
-    workflow === 'ganti_libur' && !isLoyalis ? 'paid_leave' : workflow;
+  const effectiveWorkflow = workflow;
 
   const isSatpam = Boolean(
     profile?.role === 'ketua_shift_satpam' ||
@@ -185,7 +183,7 @@ export default function EmployeeLeavePage() {
                 value === 'presence_correction' ||
                 value === 'sick_leave' ||
                 value === 'paid_leave' ||
-                (value === 'ganti_libur' && isLoyalis)
+                value === 'ganti_libur'
               ) {
                 setWorkflow(value);
               }
@@ -216,22 +214,20 @@ export default function EmployeeLeavePage() {
               >
                 Ambil Cuti
               </SelectItem>
-              {isLoyalis && (
-                <SelectItem
-                  value="ganti_libur"
-                  className="min-h-12 px-3 py-3 text-base font-semibold"
-                >
-                  Ganti Libur
-                </SelectItem>
-              )}
+              <SelectItem
+                value="ganti_libur"
+                className="min-h-12 px-3 py-3 text-base font-semibold"
+              >
+                Ganti Libur
+              </SelectItem>
             </SelectContent>
           </Select>
         </div>
 
         {effectiveWorkflow === 'paid_leave' ? (
-          <PaidLeavePanel />
+          <PaidLeavePanel key={profile.linkedEmployeeId} />
         ) : effectiveWorkflow === 'ganti_libur' ? (
-          <GantiLiburPanel />
+          <GantiLiburPanel key={profile.linkedEmployeeId} />
         ) : isLoyalis ? (
           <LoyalisPresenceCorrectionPanel
             key={effectiveWorkflow}

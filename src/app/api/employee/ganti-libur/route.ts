@@ -10,6 +10,8 @@ import {
   gantiLiburSubmitIssue,
   gantiLiburSubmitIssueMessage,
   gantiLiburWeekStart,
+  gantiLiburPeriod,
+  gantiLiburEmployeeKind,
   isActiveGantiLiburStatus,
 } from '@/lib/payroll/gantiLibur';
 import { parseGantiLiburAttachmentPaths } from '@/lib/payroll/gantiLiburAttachments';
@@ -87,7 +89,7 @@ export async function GET(request: NextRequest) {
       (_, index) => shiftPeriod(currentMonth, index - OFF_DAY_MONTHS_BEFORE),
     );
     const [requests, offDayDates] = await Promise.all([
-      loadEmployeeGantiLiburRequests(employee.id),
+      loadEmployeeGantiLiburRequests(employee.id, employee.kind),
       loadLoyalisOffDayDates(offDayMonths),
     ]);
     return Response.json(
@@ -162,7 +164,7 @@ export async function POST(request: NextRequest) {
         }
         const current = requestSnapshot.data();
         if (!current) throw new HttpError(404, 'Pengajuan ganti libur tidak ditemukan.');
-        if (current.employeeId !== employee.id) {
+        if (current.employeeId !== employee.id || gantiLiburEmployeeKind(current) !== employee.kind) {
           throw new HttpError(403, 'Pengajuan ganti libur bukan milik akun ini.');
         }
         if (Number(current.revision || 0) !== expectedRevision) {
@@ -234,14 +236,14 @@ export async function POST(request: NextRequest) {
     const attachmentPaths = parseGantiLiburAttachmentPaths(body.attachmentPaths, employee.id);
     if (!attachmentPaths.ok) throw new HttpError(400, attachmentPaths.message);
     const attachments = await loadGantiLiburAttachments(attachmentPaths.paths);
-    const workedPeriod = workedDate.slice(0, 7);
-    const dayOffPeriod = dayOffDate.slice(0, 7);
+    const workedPeriod = gantiLiburPeriod(employee.kind, workedDate);
+    const dayOffPeriod = gantiLiburPeriod(employee.kind, dayOffDate);
     const isOffDay = await loadLoyalisOffDayChecker([workedDate, dayOffDate]);
     const periodRef = adminDb.collection('PayrollPeriods').doc(dayOffPeriod);
     const slipRef = adminDb
       .collection('PayrollSlipStates')
       .doc(`${dayOffPeriod.replace('-', '_')}_${employee.id}`);
-    const employeeRef = adminDb.collection('Employees_Loyalis').doc(employee.id);
+    const employeeRef = adminDb.collection(employee.collection).doc(employee.id);
     const annualLeaveRef = adminDb
       .collection(ANNUAL_PAID_LEAVE_REQUESTS_COLLECTION)
       .doc(annualPaidLeaveDocumentId(employee.id, dayOffDate));
@@ -288,11 +290,15 @@ export async function POST(request: NextRequest) {
       }
 
       const current = requestSnapshot.data();
+      if (current && gantiLiburEmployeeKind(current) !== employee.kind) {
+        throw new HttpError(409, 'Identitas pengajuan tidak sesuai data pegawai.');
+      }
       const currentRevision = Number(current?.revision || 0);
       if (currentRevision !== expectedRevision) {
         throw new HttpError(409, 'Pengajuan telah berubah. Muat ulang sebelum melanjutkan.');
       }
-      if (!gantiLiburEmployeeFromData(employee.id, employeeSnapshot.data())) {
+      const latestEmployee = gantiLiburEmployeeFromData(employee.id, employeeSnapshot.data(), employee.kind);
+      if (!latestEmployee || latestEmployee.category !== employee.category) {
         throw new HttpError(409, 'Data pegawai berubah. Muat ulang sebelum mengajukan.');
       }
       assertPeriodAcceptsInput(
@@ -328,7 +334,9 @@ export async function POST(request: NextRequest) {
         id: requestDocumentId,
         employeeId: employee.id,
         employeeName: employee.name,
-        employeeCollection: 'Employees_Loyalis',
+        employeeCollection: employee.collection,
+        employeeKind: employee.kind,
+        category: employee.category,
         workedDate,
         workedPeriod,
         dayOffDate,
@@ -346,7 +354,7 @@ export async function POST(request: NextRequest) {
         decidedBy: null,
         attendanceCheck: null,
         updatedAt: now,
-        schemaVersion: 1,
+        schemaVersion: 2,
       };
       transaction.set(requestRef, after);
       transaction.create(

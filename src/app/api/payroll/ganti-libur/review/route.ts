@@ -2,10 +2,15 @@ import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { assertRequestId, isImmutablePayrollStatus } from '@/lib/payroll/domain';
+import { resolveEmployeeAttendanceNipy } from '@/lib/payroll/attendance';
 import {
   gantiLiburDecisionIssue,
   gantiLiburVerdictLabel,
   isActiveGantiLiburStatus,
+  canReadGantiLibur,
+  canReviewGantiLibur,
+  gantiLiburEmployeeKind,
+  gantiLiburPeriod,
   type GantiLiburDecisionIssue,
   type GantiLiburRequest,
 } from '@/lib/payroll/gantiLibur';
@@ -36,12 +41,18 @@ import {
   loyalisPresenceRefs,
   sortGantiLiburRequests,
 } from '@/lib/server/gantiLibur';
+import {
+  prepareBlueCollarGantiLiburReview,
+  readBlueCollarGantiLiburReview,
+  postBlueCollarGantiLibur,
+} from '@/lib/server/gantiLiburBlueCollar';
+import { syncSatpamDutyReconciliation } from '@/lib/server/satpamDutyPlan';
 import { isPeriodClosed } from '@/lib/server/payrollPeriod';
 
 export const dynamic = 'force-dynamic';
 
-/** Loyalis attendance reviewers: the same people who decide Loyalis annual leave. */
-const REVIEWER_ROLES = ['super_admin', 'loyalis_admin'] as const;
+/** The same category-scoped reviewers who decide annual leave. */
+const REVIEWER_ROLES = ['super_admin', 'loyalis_admin', 'satker_head'] as const;
 /** Readers also include the pages that overlay approved days onto presence. */
 const REVIEW_READER_ROLES = [
   ...REVIEWER_ROLES,
@@ -95,7 +106,7 @@ export async function GET(request: NextRequest) {
     const requests = sortGantiLiburRequests(
       snapshot.docs
         .map((document) => gantiLiburRequestFromData(document.id, document.data()))
-        .filter((item) => status === 'all' || item.status === status),
+        .filter((item) => (status === 'all' || item.status === status) && canReadGantiLibur(actor, item)),
     );
 
     // Pending requests are judged against the attendance as it stands now;
@@ -165,18 +176,27 @@ export async function POST(request: NextRequest) {
     }
     const initial = gantiLiburRequestFromData(initialSnapshot.id, initialSnapshot.data() || {});
     const { employeeId, workedDate, dayOffDate, dayOffPeriod } = initial;
-    const isOffDay = approving ? await loadLoyalisOffDayChecker([dayOffDate]) : () => false;
+    if (!canReviewGantiLibur(actor, initial)) {
+      throw new HttpError(403, 'Anda tidak berwenang memutuskan ganti libur pegawai ini.');
+    }
+    const employeeKind = gantiLiburEmployeeKind(initial);
+    if (dayOffPeriod !== gantiLiburPeriod(employeeKind, dayOffDate)) {
+      throw new HttpError(409, 'Periode pengajuan tidak sesuai tanggal ganti libur.');
+    }
+    const blueReview = approving && employeeKind === 'blue_collar'
+      ? await prepareBlueCollarGantiLiburReview(initial) : null;
+    const isOffDay = approving ? await loadLoyalisOffDayChecker([workedDate, dayOffDate]) : () => false;
     const dayOffIsOffDay = isOffDay(dayOffDate);
 
     const idempotencyRef = adminDb
       .collection('FinancialIdempotencyKeys')
       .doc(`${actor.uid}__${commandId}`);
-    const employeeRef = adminDb.collection('Employees_Loyalis').doc(employeeId);
+    const employeeRef = adminDb.collection(employeeKind === 'loyalis' ? 'Employees_Loyalis' : 'Employees_BlueCollar').doc(employeeId);
     const periodRef = adminDb.collection('PayrollPeriods').doc(dayOffPeriod);
     const slipRef = adminDb
       .collection('PayrollSlipStates')
       .doc(`${dayOffPeriod.replace('-', '_')}_${employeeId}`);
-    const workedPresenceRefs = loyalisPresenceRefs(workedDate.slice(0, 7));
+    const workedPresenceRefs = employeeKind === 'loyalis' ? loyalisPresenceRefs(workedDate.slice(0, 7)) : [];
     // Written where the presence calculator and annual leave write it.
     const dayOffPresenceRef = loyalisPresenceRefs(dayOffPeriod)[0];
     const annualLeaveRef = adminDb
@@ -203,6 +223,7 @@ export async function POST(request: NextRequest) {
         dayOffPresenceSnapshot,
         annualLeaveSnapshot,
         correctionsSnapshot,
+        blueReviewRead,
         ...workedPresenceSnapshots
       ] = await Promise.all([
         transaction.get(requestRef),
@@ -213,6 +234,7 @@ export async function POST(request: NextRequest) {
         transaction.get(dayOffPresenceRef),
         transaction.get(annualLeaveRef),
         transaction.get(correctionsQuery),
+        blueReview ? readBlueCollarGantiLiburReview(transaction, blueReview) : Promise.resolve(null),
         ...workedPresenceRefs.map((reference) => transaction.get(reference)),
       ]);
 
@@ -232,26 +254,45 @@ export async function POST(request: NextRequest) {
       const currentData = requestSnapshot.data();
       if (!currentData) throw new HttpError(404, 'Pengajuan ganti libur tidak ditemukan.');
       const current = gantiLiburRequestFromData(requestSnapshot.id, currentData);
-      const employee = gantiLiburEmployeeFromData(employeeId, employeeSnapshot.data());
+      if (current.employeeId !== employeeId || current.workedDate !== workedDate ||
+        current.dayOffDate !== dayOffDate || current.dayOffPeriod !== dayOffPeriod ||
+        gantiLiburEmployeeKind(current) !== employeeKind || current.category !== initial.category ||
+        !canReviewGantiLibur(actor, current)) {
+        throw new HttpError(409, 'Pengajuan berubah. Muat ulang sebelum memutuskan.');
+      }
+      const employee = gantiLiburEmployeeFromData(employeeId, employeeSnapshot.data(), employeeKind);
       if (approving && !employee) {
-        throw new HttpError(409, 'Data pegawai Loyalis aktif tidak ditemukan.');
+        throw new HttpError(409, 'Data pegawai aktif tidak ditemukan.');
+      }
+      if (approving && employee?.category !== current.category) {
+        throw new HttpError(409, 'Kategori pegawai berubah. Minta pegawai mengajukan ulang.');
+      }
+      if (blueReviewRead && !blueReviewRead.unchanged) {
+        throw new HttpError(409, 'Data presensi atau payroll berubah. Muat ulang sebelum memutuskan.');
+      }
+      if (blueReview && resolveEmployeeAttendanceNipy(employeeSnapshot.data() || {}) !== blueReview.employee.nipy) {
+        throw new HttpError(409, 'NIPY pegawai berubah. Muat ulang sebelum memutuskan.');
+      }
+      if (approving && !isOffDay(workedDate)) {
+        throw new HttpError(409, 'Tanggal masuk kini bukan hari libur. Minta pegawai mengajukan ulang.');
       }
 
-      const attendanceCheck = gantiLiburAttendanceCheckFromSnapshots(
+      const attendanceCheck = blueReview?.attendanceCheck || gantiLiburAttendanceCheckFromSnapshots(
         workedPresenceSnapshots,
         employeeId,
         workedDate,
       );
-      const presence = dayOffPresenceSnapshot.data() || null;
+      const presence = employeeKind === 'loyalis' ? dayOffPresenceSnapshot.data() || null : null;
       const presenceEntries = presence?.entries && typeof presence.entries === 'object'
         ? { ...(presence.entries as Record<string, LoyalisPaidLeaveEntry>) }
         : {};
       const dayOffConflict =
         isActiveGantiLiburStatus(annualLeaveSnapshot.data()?.status) ||
-        correctionsSnapshot.docs.some((document) => {
+        Boolean(blueReview?.dayOffConflict) ||
+        (employeeKind === 'loyalis' && correctionsSnapshot.docs.some((document) => {
           const correction = document.data();
           return correction.date === dayOffDate && correction.status === 'approved';
-        }) ||
+        })) ||
         loyalisHasPayableAttendance(presenceEntries[employeeId], dayOffDate);
 
       const issue = gantiLiburDecisionIssue({
@@ -275,6 +316,7 @@ export async function POST(request: NextRequest) {
 
       const revision = expectedRevision + 1;
       const now = admin.firestore.FieldValue.serverTimestamp();
+      const amount = blueReview ? postBlueCollarGantiLibur(transaction, blueReview, actor) : 0;
       const after = {
         ...currentData,
         status: approving ? 'approved' : 'declined',
@@ -284,6 +326,8 @@ export async function POST(request: NextRequest) {
         decidedBy: actor.uid,
         decidedByName: actor.displayName,
         attendanceCheck,
+        approvedPayType: approving ? 'Harian' : null,
+        approvedAmount: approving ? amount : 0,
         updatedAt: now,
       };
       transaction.set(requestRef, after);
@@ -374,7 +418,16 @@ export async function POST(request: NextRequest) {
       };
     });
 
-    return Response.json(result, { headers: { 'Cache-Control': 'no-store' } });
+    let payrollWarning = '';
+    if (approving && employeeKind === 'blue_collar' && initial.category === 'SATPAM') {
+      try {
+        await syncSatpamDutyReconciliation(dayOffPeriod, actor.uid);
+      } catch (error) {
+        console.error('Ganti libur Satpam reconciliation failed:', error);
+        payrollWarning = 'Ganti libur tersimpan; sinkronisasi payroll Satpam perlu dijalankan ulang.';
+      }
+    }
+    return Response.json({ ...result, payrollWarning }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return errorResponse(error);
   }

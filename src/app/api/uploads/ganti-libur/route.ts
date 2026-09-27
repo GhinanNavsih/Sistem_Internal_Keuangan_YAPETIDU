@@ -11,7 +11,7 @@ import { requireSelfGantiLiburEmployee } from '@/lib/server/gantiLibur';
 import { saveUploadedFile } from '@/lib/server/storageUpload';
 
 /**
- * Stores one surat resmi (photo, scan or PDF) for the signed-in Loyalis. The
+ * Stores one surat resmi (photo, scan or PDF) for the signed-in employee. The
  * file is only held in the employee's own folder until a ganti libur request
  * names it; the request route reads it back from Storage.
  */
