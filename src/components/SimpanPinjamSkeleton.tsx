@@ -26,9 +26,6 @@ export function SimpanPinjamPageSkeleton() {
             <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
               Simpan Pinjam
             </h1>
-            <p className="text-slate-500 text-xs sm:text-sm">
-              Ajukan, restrukturisasi, dan pantau cicilan pinjaman Koperasi UNIPDU Anda.
-            </p>
           </div>
         </div>
 

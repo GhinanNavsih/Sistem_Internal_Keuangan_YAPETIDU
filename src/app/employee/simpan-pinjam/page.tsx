@@ -534,9 +534,6 @@ export default function EmployeeSimpanPinjamPage() {
       </header>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="max-w-3xl text-xs leading-relaxed text-slate-500 sm:text-sm">
-          Ajukan, restrukturisasi, dan pantau cicilan pinjaman Koperasi UNIPDU Anda.
-        </p>
         {canApply && (
           <Button
             onClick={openApplyDialog}
