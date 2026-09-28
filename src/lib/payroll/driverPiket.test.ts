@@ -12,6 +12,12 @@ import {
   countSubmittedSelfPiketJourneysOnDate,
   isSelfCreatedDriverJourney,
   classifyDriverPiketDatesInPeriod,
+  driverVehicleChangeBlocker,
+  driverVehicleChangesFrom,
+  planDriverVehicleChange,
+  MAX_DRIVER_VEHICLE_CHANGES,
+  type DriverVehicleChange,
+  type DriverVehicleChangeJourneyLike,
 } from './driverPiket';
 
 const mockSchedules: DriverPiketSchedule[] = [
@@ -239,4 +245,116 @@ test('Piket days split into Harian/Jumat & Libur exactly like real attendance da
     classifyDriverPiketDatesInPeriod('D1', '2026-08', mondayHolidaySchedule, withNationalHoliday),
     { harian: 0, jumatLibur: 1 },
   );
+});
+
+function selfJourney(overrides: DriverVehicleChangeJourneyLike = {}): DriverVehicleChangeJourneyLike {
+  return {
+    id: 'JRN-PIKET-20260926-ABCDEF123456',
+    status: 'claimed',
+    isSelfCreatedPiketSpj: true,
+    vehicleName: 'Ndalem',
+    fuelProcurementMode: 'standard_direct',
+    fuelReservationState: 'none',
+    heldFuelAmount: 0,
+    procuredAccumulatedAmount: 0,
+    ...overrides,
+  };
+}
+
+test('only a self-authorized, still-running journey with no BBM held may switch vehicles', () => {
+  assert.equal(driverVehicleChangeBlocker(selfJourney()), null);
+  assert.equal(
+    driverVehicleChangeBlocker(selfJourney({ id: 'JRN-MANDIRI-20260926-ABCDEF123456', isSelfCreatedPiketSpj: false, isSelfAuthorizedWithoutPiket: true })),
+    null,
+  );
+
+  // Kepala-Satker-authorized: priced and held on its vehicle already.
+  assert.match(
+    driverVehicleChangeBlocker(selfJourney({ id: 'JRN-20260926-ABCDEF123456', isSelfCreatedPiketSpj: false }))!,
+    /diotorisasi sendiri/,
+  );
+  // Already reported.
+  assert.match(driverVehicleChangeBlocker(selfJourney({ status: 'submitted' }))!, /sebelum laporan/);
+  // BBM already on hold (e.g. a legacy self journey priced at authorization).
+  assert.match(driverVehicleChangeBlocker(selfJourney({ fuelReservationState: 'reserved' }))!, /direservasi/);
+  assert.match(driverVehicleChangeBlocker(selfJourney({ heldFuelAmount: 50_000 }))!, /direservasi/);
+  assert.match(driverVehicleChangeBlocker(selfJourney({ procuredAccumulatedAmount: 10_000 }))!, /direservasi/);
+});
+
+test('switching from Ndalem to a car takes the chosen fuel mode, defaulting to Tahan & akumulasi', () => {
+  assert.deepEqual(
+    planDriverVehicleChange(selfJourney(), { vehicleName: 'Suzuki XL7', fuelProcurementMode: 'procure_release' }),
+    {
+      ok: true,
+      changed: true,
+      fromVehicle: 'Ndalem',
+      toVehicle: 'Suzuki XL7',
+      fromFuelMode: 'standard_direct',
+      toFuelMode: 'procure_release',
+    },
+  );
+  const defaulted = planDriverVehicleChange(selfJourney(), { vehicleName: 'Bis' });
+  assert.equal(defaulted.ok && defaulted.toFuelMode, 'hold_accumulate');
+});
+
+test('car to car keeps the locked fuel mode, and asking for another is refused', () => {
+  const journey = selfJourney({ vehicleName: 'Suzuki XL7', fuelProcurementMode: 'hold_accumulate' });
+  const plan = planDriverVehicleChange(journey, { vehicleName: 'Elf' });
+  assert.equal(plan.ok && plan.toFuelMode, 'hold_accumulate');
+  assert.equal(
+    planDriverVehicleChange(journey, { vehicleName: 'Elf', fuelProcurementMode: 'hold_accumulate' }).ok,
+    true,
+  );
+  const refused = planDriverVehicleChange(journey, { vehicleName: 'Elf', fuelProcurementMode: 'standard_direct' });
+  assert.equal(refused.ok, false);
+  assert.equal(!refused.ok && refused.status, 409);
+});
+
+test('switching to Ndalem always lands on Standard langsung', () => {
+  const journey = selfJourney({ vehicleName: 'Bis', fuelProcurementMode: 'hold_accumulate' });
+  const plan = planDriverVehicleChange(journey, { vehicleName: 'Ndalem' });
+  assert.equal(plan.ok && plan.toFuelMode, 'standard_direct');
+  const refused = planDriverVehicleChange(journey, { vehicleName: 'Ndalem', fuelProcurementMode: 'hold_accumulate' });
+  assert.equal(!refused.ok && refused.status, 400);
+});
+
+test('picking the same vehicle is a no-op, and bad input or a blocked journey is refused', () => {
+  const same = planDriverVehicleChange(
+    selfJourney({ vehicleName: 'Bis', fuelProcurementMode: 'hold_accumulate' }),
+    { vehicleName: 'Bis' },
+  );
+  assert.equal(same.ok && same.changed, false);
+
+  const unknownVehicle = planDriverVehicleChange(selfJourney(), { vehicleName: 'Truk' });
+  assert.equal(!unknownVehicle.ok && unknownVehicle.status, 400);
+  const badMode = planDriverVehicleChange(selfJourney(), { vehicleName: 'Bis', fuelProcurementMode: 'gratis' });
+  assert.equal(!badMode.ok && badMode.status, 400);
+
+  const assigned = planDriverVehicleChange(
+    selfJourney({ id: 'JRN-20260926-ABCDEF123456', isSelfCreatedPiketSpj: false }),
+    { vehicleName: 'Bis' },
+  );
+  assert.equal(!assigned.ok && assigned.status, 403);
+  const submitted = planDriverVehicleChange(selfJourney({ status: 'submitted' }), { vehicleName: 'Bis' });
+  assert.equal(!submitted.ok && submitted.status, 409);
+});
+
+test('the switch log is read defensively and caps how often a journey can switch', () => {
+  const entry: DriverVehicleChange = {
+    fromVehicle: 'Ndalem',
+    toVehicle: 'Suzuki XL7',
+    fromFuelMode: 'standard_direct',
+    toFuelMode: 'hold_accumulate',
+    changedAt: '2026-09-26T00:30:00.000Z',
+    changedBy: 'uid-1',
+    changedByName: 'Pak Budi',
+  };
+  assert.deepEqual(
+    driverVehicleChangesFrom([entry, { fromVehicle: 'Truk' }, null, 'x']),
+    [entry],
+  );
+  assert.deepEqual(driverVehicleChangesFrom(undefined), []);
+
+  const full = Array.from({ length: MAX_DRIVER_VEHICLE_CHANGES }, () => entry);
+  assert.match(driverVehicleChangeBlocker(selfJourney({ driverVehicleChanges: full }))!, /sudah diganti/);
 });

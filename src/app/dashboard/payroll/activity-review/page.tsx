@@ -174,6 +174,7 @@ interface ActivityReport {
   fuelTotalAllocation?: number;
   fuelReservationBalanceFlagged?: boolean;
   fuelReservationBalanceShortfall?: number;
+  driverVehicleChanges?: unknown;
   mealAllowance?: number;
   preAuthorizedMeal?: number;
   preAuthorizedToll?: number;

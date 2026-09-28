@@ -33,7 +33,13 @@ import {
   type FuelReservationRecord,
   VehicleFuelConflictError,
 } from '@/lib/payroll/vehicleFuel';
-import { hasClaimedDriverJourney, isSelfCreatedDriverJourney } from '@/lib/payroll/driverPiket';
+import {
+  driverVehicleChangesFrom,
+  hasClaimedDriverJourney,
+  isSelfCreatedDriverJourney,
+  planDriverVehicleChange,
+  type DriverVehicleChange,
+} from '@/lib/payroll/driverPiket';
 import {
   buildPekaryaActivityIdentity,
   pekaryaPayrollPeriodForDate,
@@ -802,6 +808,87 @@ export async function POST(request: NextRequest) {
         };
       });
       return NextResponse.json(result);
+    }
+
+    if (action === 'change_vehicle') {
+      requireSopirProfile(actor);
+      const journeyId = stringField(body?.journeyId, 'ID perjalanan', 180);
+      if (!SAFE_JOURNEY_ID.test(journeyId)) throw new HttpError(400, 'ID perjalanan tidak valid.');
+      const journeyRef = adminDb.collection('DriverJourneys').doc(journeyId);
+      const result = await adminDb.runTransaction(async (transaction) => {
+        const journeySnapshot = await transaction.get(journeyRef);
+        if (!journeySnapshot.exists) throw new HttpError(404, 'Perjalanan dinas tidak ditemukan.');
+        const journey = journeySnapshot.data()!;
+        await assertJourneyPeriodOpen(transaction, payrollPeriodFromJourney(journey));
+        if (!canDriverAccessJourney(journey, actor)) {
+          throw new HttpError(403, 'Perjalanan dinas ini bukan milik Anda.');
+        }
+        // Nothing is priced or held on a self-authorized journey until its
+        // report is submitted, so a switch only rewrites which vehicle (and,
+        // from Ndalem, which fuel mode) submission will price and hold against.
+        const plan = planDriverVehicleChange(
+          { ...journey, id: journey.id || journeyId },
+          { vehicleName: body?.vehicleName, fuelProcurementMode: body?.fuelProcurementMode },
+        );
+        if (!plan.ok) throw new HttpError(plan.status, plan.message);
+        const previousChanges = driverVehicleChangesFrom(journey.driverVehicleChanges);
+        if (!plan.changed) {
+          return {
+            journeyId,
+            vehicleName: plan.toVehicle,
+            vehicleRate: getDriverVehicleRate(plan.toVehicle),
+            fuelProcurementMode: plan.toFuelMode,
+            driverVehicleChanges: previousChanges,
+            changed: false,
+          };
+        }
+        const change: DriverVehicleChange = {
+          fromVehicle: plan.fromVehicle,
+          toVehicle: plan.toVehicle,
+          fromFuelMode: plan.fromFuelMode,
+          toFuelMode: plan.toFuelMode,
+          changedAt: new Date().toISOString(),
+          changedBy: actor.uid,
+          changedByName: actor.displayName || '',
+        };
+        const driverVehicleChanges = [...previousChanges, change];
+        const vehicleRate = getDriverVehicleRate(plan.toVehicle);
+        transaction.update(journeyRef, {
+          vehicleName: plan.toVehicle,
+          vehicleRate,
+          fuelProcurementMode: plan.toFuelMode,
+          fuelReservationVehicleName: plan.toVehicle,
+          fuelModeSelectionRequired: false,
+          driverVehicleChanges,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        transaction.create(
+          newFinancialAuditRef(),
+          buildFinancialAuditRecord(actor, {
+            action: 'DRIVER_JOURNEY_VEHICLE_CHANGED',
+            entityType: 'DriverJourney',
+            entityId: journeyId,
+            reason: `Sopir mengganti kendaraan ${plan.fromVehicle} → ${plan.toVehicle}`,
+            before: { vehicleName: plan.fromVehicle, fuelProcurementMode: plan.fromFuelMode },
+            after: { vehicleName: plan.toVehicle, fuelProcurementMode: plan.toFuelMode },
+            metadata: { journeyId, changeCount: driverVehicleChanges.length },
+          }),
+        );
+        return {
+          journeyId,
+          vehicleName: plan.toVehicle,
+          vehicleRate,
+          fuelProcurementMode: plan.toFuelMode,
+          driverVehicleChanges,
+          changed: true,
+        };
+      });
+      return NextResponse.json({
+        ...result,
+        fuelBalance: result.vehicleName === DEFAULT_DRIVER_VEHICLE_NAME
+          ? null
+          : await getVehicleFuelBalance(result.vehicleName),
+      });
     }
 
     if (action === 'claim') {

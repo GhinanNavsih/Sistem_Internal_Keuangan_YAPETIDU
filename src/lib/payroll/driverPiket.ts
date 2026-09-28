@@ -1,4 +1,12 @@
 import { isPremiumAttendanceDate } from './attendance';
+import {
+  DEFAULT_DRIVER_VEHICLE_NAME,
+  DEFAULT_FUEL_PROCUREMENT_MODE,
+  isDriverVehicleName,
+  isFuelProcurementMode,
+  type DriverVehicleName,
+  type FuelProcurementMode,
+} from './driverJourney';
 
 export type PiketStationKey = 'pak_ufik' | 'pak_zuem' | 'pak_heri' | 'bu_afifah' | 'sekolah';
 
@@ -83,6 +91,182 @@ export function isSelfCreatedDriverJourney(
       journey.isSelfAuthorizedWithoutPiket === true ||
       (typeof journey.id === 'string' && journey.id.startsWith('JRN-MANDIRI-')),
   );
+}
+
+/** How many times a sopir may switch vehicles on one journey. */
+export const MAX_DRIVER_VEHICLE_CHANGES = 10;
+
+/** One vehicle switch a sopir made on their own journey before reporting it. */
+export interface DriverVehicleChange {
+  fromVehicle: DriverVehicleName;
+  toVehicle: DriverVehicleName;
+  fromFuelMode: FuelProcurementMode;
+  toFuelMode: FuelProcurementMode;
+  /** Server clock, ISO 8601. */
+  changedAt: string;
+  changedBy: string;
+  changedByName: string;
+}
+
+export interface DriverVehicleChangeJourneyLike extends DriverPiketJourneyLike {
+  vehicleName?: unknown;
+  fuelProcurementMode?: unknown;
+  fuelModeSelectionRequired?: unknown;
+  fuelReservationState?: unknown;
+  heldFuelAmount?: unknown;
+  procuredAccumulatedAmount?: unknown;
+  driverVehicleChanges?: unknown;
+}
+
+/** Reads a stored switch log, dropping anything malformed. */
+export function driverVehicleChangesFrom(value: unknown): DriverVehicleChange[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): DriverVehicleChange[] => {
+    if (!item || typeof item !== 'object') return [];
+    const entry = item as Record<string, unknown>;
+    if (
+      !isDriverVehicleName(entry.fromVehicle) ||
+      !isDriverVehicleName(entry.toVehicle) ||
+      !isFuelProcurementMode(entry.fromFuelMode) ||
+      !isFuelProcurementMode(entry.toFuelMode) ||
+      typeof entry.changedAt !== 'string'
+    ) {
+      return [];
+    }
+    return [{
+      fromVehicle: entry.fromVehicle,
+      toVehicle: entry.toVehicle,
+      fromFuelMode: entry.fromFuelMode,
+      toFuelMode: entry.toFuelMode,
+      changedAt: entry.changedAt,
+      changedBy: typeof entry.changedBy === 'string' ? entry.changedBy : '',
+      changedByName: typeof entry.changedByName === 'string' ? entry.changedByName : '',
+    }];
+  });
+}
+
+/**
+ * Why the sopir may not switch this journey's vehicle, or null when they may.
+ *
+ * Only a self-authorized journey that is still under way and has no BBM held
+ * qualifies. Such a journey has nothing priced or reserved yet: the fuel
+ * allowance and any hold are derived at submission from whichever vehicle the
+ * journey names by then, so switching is the same as having picked that
+ * vehicle at authorization. A Kepala-Satker-authorized journey was priced and
+ * held on its vehicle, and stays correctable only in the audit.
+ */
+export function driverVehicleChangeBlocker(
+  journey: DriverVehicleChangeJourneyLike,
+): string | null {
+  if (!isSelfCreatedDriverJourney(journey)) {
+    return 'Kendaraan hanya dapat diganti pada SPJ yang diotorisasi sendiri.';
+  }
+  if (journey.status !== 'claimed') {
+    return 'Kendaraan hanya dapat diganti sebelum laporan perjalanan dikirim.';
+  }
+  if (
+    journey.fuelReservationState === 'reserved' ||
+    journey.fuelReservationState === 'committed' ||
+    Number(journey.heldFuelAmount || 0) > 0 ||
+    Number(journey.procuredAccumulatedAmount || 0) > 0
+  ) {
+    return 'BBM perjalanan ini sudah direservasi, sehingga kendaraan tidak dapat diganti.';
+  }
+  if (driverVehicleChangesFrom(journey.driverVehicleChanges).length >= MAX_DRIVER_VEHICLE_CHANGES) {
+    return `Kendaraan sudah diganti ${MAX_DRIVER_VEHICLE_CHANGES} kali pada perjalanan ini.`;
+  }
+  return null;
+}
+
+export type DriverVehicleChangePlan =
+  | {
+      ok: true;
+      changed: boolean;
+      fromVehicle: DriverVehicleName;
+      toVehicle: DriverVehicleName;
+      fromFuelMode: FuelProcurementMode;
+      toFuelMode: FuelProcurementMode;
+    }
+  | { ok: false; status: 400 | 403 | 409; message: string };
+
+/**
+ * Decides the vehicle and fuel mode a switch lands on.
+ *
+ * - To Ndalem: always Standard langsung (Ndalem has no fuel balance).
+ * - From Ndalem, or while the mode is still unchosen: the sopir picks the mode,
+ *   defaulting to Tahan & akumulasi like the authorization dialog.
+ * - Car to car: the mode already chosen stays; asking for another is refused.
+ */
+export function planDriverVehicleChange(
+  journey: DriverVehicleChangeJourneyLike,
+  request: { vehicleName: unknown; fuelProcurementMode?: unknown },
+): DriverVehicleChangePlan {
+  if (!isDriverVehicleName(request.vehicleName)) {
+    return { ok: false, status: 400, message: 'Jenis kendaraan tidak dikenal.' };
+  }
+  const rawMode = request.fuelProcurementMode ?? undefined;
+  if (rawMode !== undefined && !isFuelProcurementMode(rawMode)) {
+    return { ok: false, status: 400, message: 'Mode pengadaan BBM tidak valid.' };
+  }
+  const requestedMode = isFuelProcurementMode(rawMode) ? rawMode : undefined;
+  const blocker = driverVehicleChangeBlocker(journey);
+  if (blocker) {
+    return {
+      ok: false,
+      status: isSelfCreatedDriverJourney(journey) ? 409 : 403,
+      message: blocker,
+    };
+  }
+  if (!isDriverVehicleName(journey.vehicleName)) {
+    return { ok: false, status: 409, message: 'Jenis kendaraan perjalanan tidak valid.' };
+  }
+
+  const fromVehicle = journey.vehicleName;
+  const toVehicle = request.vehicleName;
+  const fromFuelMode = isFuelProcurementMode(journey.fuelProcurementMode)
+    ? journey.fuelProcurementMode
+    : DEFAULT_FUEL_PROCUREMENT_MODE;
+  let toFuelMode: FuelProcurementMode;
+  if (toVehicle === DEFAULT_DRIVER_VEHICLE_NAME) {
+    if (requestedMode !== undefined && requestedMode !== DEFAULT_FUEL_PROCUREMENT_MODE) {
+      return {
+        ok: false,
+        status: 400,
+        message: 'Kendaraan Ndalem hanya menggunakan Pengisian Standard.',
+      };
+    }
+    toFuelMode = DEFAULT_FUEL_PROCUREMENT_MODE;
+  } else if (
+    fromVehicle === DEFAULT_DRIVER_VEHICLE_NAME ||
+    journey.fuelModeSelectionRequired === true
+  ) {
+    toFuelMode = requestedMode ?? 'hold_accumulate';
+  } else {
+    if (requestedMode !== undefined && requestedMode !== fromFuelMode) {
+      return {
+        ok: false,
+        status: 409,
+        message: 'Mode BBM perjalanan sudah dikunci; hanya kendaraan yang dapat diganti.',
+      };
+    }
+    toFuelMode = fromFuelMode;
+  }
+
+  if (toVehicle === fromVehicle && toFuelMode !== fromFuelMode) {
+    return {
+      ok: false,
+      status: 409,
+      message: 'Pilih kendaraan yang berbeda untuk mengganti kendaraan.',
+    };
+  }
+  return {
+    ok: true,
+    changed: toVehicle !== fromVehicle,
+    fromVehicle,
+    toVehicle,
+    fromFuelMode,
+    toFuelMode,
+  };
 }
 
 /** Only an unresolved claimed journey blocks the next self-authorized trip. */

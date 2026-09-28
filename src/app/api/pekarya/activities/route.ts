@@ -8,7 +8,7 @@ import {
   PAYROLL_TIME_ZONE,
   type PhotoEvidence,
 } from '@/lib/payroll/domain';
-import { isSelfCreatedDriverJourney } from '@/lib/payroll/driverPiket';
+import { driverVehicleChangesFrom, isSelfCreatedDriverJourney } from '@/lib/payroll/driverPiket';
 import {
   calculateJourneyDateTimeTimings,
   calculateDriverNetWage,
@@ -868,6 +868,13 @@ export async function POST(request: NextRequest) {
         }
         const vehicleType = journeyVehicleName;
         driverData.vehicleType = vehicleType;
+        // Switches the sopir made on a self-authorized journey travel with the
+        // report, so the auditor sees the vehicle was changed and from what.
+        // Read from the journey, never from the client.
+        const vehicleChanges = driverVehicleChangesFrom(journeyBefore.driverVehicleChanges);
+        if (vehicleChanges.length > 0) {
+          driverData.driverVehicleChanges = vehicleChanges;
+        }
         const fuelProcurementMode = isFuelProcurementMode(journeyBefore.fuelProcurementMode)
           ? journeyBefore.fuelProcurementMode
           : DEFAULT_FUEL_PROCUREMENT_MODE;
@@ -1209,6 +1216,8 @@ export async function POST(request: NextRequest) {
         delete journeyEvidence.mainDestinationLocations;
         delete journeyEvidence.fuelReceiptEvidence;
         delete journeyEvidence.tollReceiptEvidence;
+        // Already on the journey; only the report needs a copy.
+        delete journeyEvidence.driverVehicleChanges;
         const submittedPoints = Array.isArray(driverData.points) ? driverData.points : [];
         const submittedExtraActivities = Array.isArray(driverData.extraActivities)
           ? driverData.extraActivities

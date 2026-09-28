@@ -42,6 +42,7 @@ import {
   Eye,
   AlertCircle,
   Banknote,
+  ChevronDown,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { uploadProofFile } from '@/lib/uploads';
@@ -87,7 +88,11 @@ import {
   type DriverJourneyLocation,
   type FuelProcurementMode,
 } from '@/lib/payroll/driverJourney';
-import { isSelfCreatedDriverJourney } from '@/lib/payroll/driverPiket';
+import { driverVehicleChangeBlocker, isSelfCreatedDriverJourney } from '@/lib/payroll/driverPiket';
+import {
+  ChangeJourneyVehicleDialog,
+  type ChangeJourneyVehicleResult,
+} from '@/components/employee/activities/ChangeJourneyVehicleDialog';
 import { prepareProofImage, type PhotoEvidence } from '@/lib/photoEvidence';
 import type { PhotoAuditMetadata } from '@/lib/payroll/domain';
 import {
@@ -1319,6 +1324,40 @@ function JourneyReportContent() {
     return activeReportingJourney ? isSelfCreatedDriverJourney(activeReportingJourney) : false;
   }, [activeReportingJourney]);
 
+  // Same rule the server enforces: only a self-authorized journey still under
+  // way, with no BBM held yet, may switch vehicles.
+  const canChangeVehicle = useMemo(() => {
+    return Boolean(
+      activeReportingJourney &&
+        !activeReportingJourney.editingActivityDocId &&
+        driverVehicleChangeBlocker(activeReportingJourney) === null,
+    );
+  }, [activeReportingJourney]);
+  const [showVehicleDialog, setShowVehicleDialog] = useState(false);
+
+  const handleVehicleChanged = (result: ChangeJourneyVehicleResult) => {
+    if (!result.changed) return;
+    setActiveReportingJourney((previous: any) => previous ? {
+      ...previous,
+      vehicleName: result.vehicleName,
+      vehicleRate: result.vehicleRate,
+      fuelProcurementMode: result.fuelProcurementMode,
+      fuelReservationVehicleName: result.vehicleName,
+      fuelModeSelectionRequired: false,
+      fuelBalance: result.fuelBalance,
+      driverVehicleChanges: result.driverVehicleChanges,
+    } : previous);
+    setSelectedFuelMode(result.fuelProcurementMode);
+    // Neither a hold nor Ndalem takes a fuel purchase; a stale amount would
+    // otherwise demand a receipt the form no longer shows.
+    if (result.fuelProcurementMode === 'hold_accumulate' || result.vehicleName === 'Ndalem') {
+      setFormFuelFee('');
+      setFormFuelReceiptUrls([]);
+      setFormFuelReceiptEvidence([]);
+    }
+    setMessage({ type: 'success', text: `Kendaraan diganti ke ${result.vehicleName}.` });
+  };
+
   // Only journeys authorized under the "authorizing is departing" rule carry
   // this flag, so reports already in flight when it shipped stay editable.
   const isDepartureLocked = useMemo(() => {
@@ -1904,10 +1943,24 @@ function JourneyReportContent() {
             </div>
 
             <div className="flex items-center gap-2 border-t border-slate-100 pt-3">
-              <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
-                <Car className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                <strong className="min-w-0 truncate text-[10px] font-extrabold text-slate-700">{activeReportingJourney.vehicleName}</strong>
-              </div>
+              {canChangeVehicle ? (
+                <button
+                  type="button"
+                  onClick={() => setShowVehicleDialog(true)}
+                  disabled={submitting}
+                  aria-label={`Kendaraan: ${activeReportingJourney.vehicleName}. Ketuk untuk mengganti.`}
+                  className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-left transition-colors hover:border-blue-400 hover:bg-blue-100 cursor-pointer disabled:opacity-60"
+                >
+                  <Car className="h-3.5 w-3.5 shrink-0 text-blue-600" />
+                  <strong className="min-w-0 flex-1 truncate text-[10px] font-extrabold text-slate-700">{activeReportingJourney.vehicleName}</strong>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-blue-600" />
+                </button>
+              ) : (
+                <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
+                  <Car className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                  <strong className="min-w-0 truncate text-[10px] font-extrabold text-slate-700">{activeReportingJourney.vehicleName}</strong>
+                </div>
+              )}
               <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
                 <Calendar className="h-3.5 w-3.5 shrink-0 text-slate-500" />
                 <strong className="min-w-0 truncate text-[10px] font-extrabold text-slate-700">
@@ -3180,6 +3233,18 @@ function JourneyReportContent() {
               </CardContent>
             </Card>
           </div>
+        )}
+
+        {canChangeVehicle && showVehicleDialog && (
+          <ChangeJourneyVehicleDialog
+            open
+            onOpenChange={setShowVehicleDialog}
+            journeyId={activeReportingJourney.id}
+            currentVehicle={activeReportingJourney.vehicleName}
+            currentFuelMode={activeFuelMode}
+            fuelModeSelectionRequired={activeReportingJourney.fuelModeSelectionRequired === true}
+            onChanged={handleVehicleChanged}
+          />
         )}
 
         {/* Custom Cancellation Confirmation Dialog Modal */}

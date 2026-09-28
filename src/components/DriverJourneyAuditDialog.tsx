@@ -41,7 +41,7 @@ import {
 } from 'lucide-react';
 import type { PhotoAuditMetadata, PhotoEvidence } from '@/lib/payroll/domain';
 import type { JourneyAuditResult, JourneyAuditPayload } from '@/lib/ai/journeyAudit';
-import { isSelfCreatedDriverJourney } from '@/lib/payroll/driverPiket';
+import { driverVehicleChangesFrom, isSelfCreatedDriverJourney } from '@/lib/payroll/driverPiket';
 import {
   calculateEditableDriverJourneyTimeline,
   calculateDriverReimbursementSettlement,
@@ -63,6 +63,7 @@ import {
   resolveMealAccountingMode,
   resolveDriverJourneyPointLocations,
   formatDurationHoursAsJamMenit,
+  fuelProcurementModeLabel,
   type DriverJourneyLocation,
   type FuelProcurementMode,
 } from '@/lib/payroll/driverJourney';
@@ -192,6 +193,8 @@ export interface DriverAuditReport {
   fuelReservationBalanceFlagged?: boolean;
   /** How much the tracked balance fell short by when the hold was flagged. */
   fuelReservationBalanceShortfall?: number;
+  /** Vehicle switches the sopir made on a self-authorized journey; read with `driverVehicleChangesFrom`. */
+  driverVehicleChanges?: unknown;
   preAuthorizedMeal?: number;
   /** Stamped by the server; absent on records predating the policy. */
   mealAccountingMode?: string;
@@ -1588,6 +1591,39 @@ export function DriverJourneyAuditDialog({
                       </div>
                     </div>
                   )}
+
+                  {(() => {
+                    const vehicleChanges = driverVehicleChangesFrom(report.driverVehicleChanges);
+                    if (vehicleChanges.length === 0) return null;
+                    return (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[10px] font-bold text-amber-900 flex items-start gap-2">
+                        <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-600" />
+                        <div className="space-y-1">
+                          <p>Sopir mengganti kendaraan sebelum mengirim laporan:</p>
+                          <ul className="space-y-0.5 font-semibold text-amber-800">
+                            {vehicleChanges.map((change, index) => (
+                              <li key={`${change.changedAt}-${index}`}>
+                                {change.fromVehicle} → <strong className="font-extrabold">{change.toVehicle}</strong>
+                                {' · '}
+                                {new Date(change.changedAt).toLocaleString('id-ID', {
+                                  timeZone: 'Asia/Jakarta',
+                                  day: 'numeric',
+                                  month: 'short',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                                {change.fromFuelMode !== change.toFuelMode &&
+                                  ` · mode BBM ${fuelProcurementModeLabel(change.fromFuelMode)} → ${fuelProcurementModeLabel(change.toFuelMode)}`}
+                              </li>
+                            ))}
+                          </ul>
+                          <p className="font-semibold text-amber-800">
+                            Jatah BBM dihitung dari kendaraan terakhir. Pastikan kendaraan ini memang yang dipakai.
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* RUTE PERJALANAN TIMELINE EDITOR */}
                   <div className="space-y-3 pt-1.5 border-t border-slate-200/60">
