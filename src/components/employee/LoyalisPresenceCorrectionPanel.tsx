@@ -414,23 +414,34 @@ export function LoyalisPresenceCorrectionPanel({
       const targetId = editingRequestId || overwriteDocId;
 
       if (targetId) {
-        // Reset status to pending and clear rejection reason when updating/overwriting
-        requestData.status = 'pending';
-        requestData.rejectionReason = null;
-        requestData.employeeId = empId;
-        requestData.employeeName = profile?.displayName || 'Karyawan';
-
-        // Preserve the original document identity so editing a date never
-        // requires deleting the historical correction document.
-        await setDoc(
-          doc(db, 'LoyalisPresenceCorrections', targetId),
-          requestData,
-          { merge: true },
+        // Route existing-request edits through the authenticated API so the
+        // user gets the specific ownership/period error instead of a generic
+        // Firestore permission failure.
+        await authenticatedJson<{ requestId: string; date: string; status: string }>(
+          '/api/employee/presensi-correction',
+          {
+            method: 'PUT',
+            body: JSON.stringify({
+              requestId: targetId,
+              date,
+              type: effectiveType,
+              checkInTime: effectiveType === 'tap_out' ? null : checkIn,
+              checkOutTime: effectiveType === 'tap_in' ? null : checkOut,
+              reason: reason.trim(),
+              proofUrl,
+            }),
+          },
         );
 
         setMessage({
           type: 'success',
-          text: editingRequestId ? 'Pengajuan koreksi berhasil diperbarui!' : 'Pengajuan koreksi sebelumnya berhasil ditimpa!'
+          text: editingRequestId
+            ? workflowMode === 'sick_leave'
+              ? 'Izin sakit berhasil diperbarui!'
+              : 'Pengajuan koreksi berhasil diperbarui!'
+            : workflowMode === 'sick_leave'
+              ? 'Pengajuan izin sakit sebelumnya berhasil ditimpa!'
+              : 'Pengajuan koreksi sebelumnya berhasil ditimpa!',
         });
       } else {
         const newRequest = {
