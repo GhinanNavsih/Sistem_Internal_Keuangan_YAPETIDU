@@ -3,8 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
-import AnnualPaidLeaveReviewPanel from '@/components/payroll/AnnualPaidLeaveReviewPanel';
-import GantiLiburReviewPanel from '@/components/payroll/GantiLiburReviewPanel';
+import LeaveAndDayOffReviewCard from '@/components/payroll/LeaveAndDayOffReviewCard';
 import { useAuth } from '@/lib/AuthContext';
 import { db } from '@/lib/firebase';
 import { useQueryClient } from '@tanstack/react-query';
@@ -1428,9 +1427,7 @@ export default function PresenceCorrectionsAdminPage() {
     <div className="space-y-6">
       <FloatingSnackbar message={message} />
 
-      <AnnualPaidLeaveReviewPanel />
-
-      <GantiLiburReviewPanel />
+      <LeaveAndDayOffReviewCard />
 
       {/* ── Filters Row ────────────────────────────────────────────── */}
       <Card className="bg-white rounded-2xl shadow-sm border-none">
