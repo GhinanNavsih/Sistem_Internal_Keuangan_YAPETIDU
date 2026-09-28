@@ -3,12 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   CalendarCheck2,
-  CalendarDays,
   CheckCircle2,
   Clock3,
   Loader2,
   Send,
-  ShieldCheck,
   Undo2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -264,20 +262,6 @@ export function PaidLeavePanel() {
             </div>
           ) : (
             <>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex items-start gap-3">
-                  <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" />
-                  <div className="min-w-0">
-                    <p className="font-bold text-slate-900">{data.employee.name}</p>
-                    <p className="mt-1 text-sm text-slate-600">
-                      Masa kerja saat ini {data.employee.completedYearsToday} tahun, dihitung sejak{' '}
-                      {formatDate(data.employee.serviceDate)}. Hak cuti pertama mulai{' '}
-                      {formatDate(data.employee.qualifyingDate)} setelah melewati masa kerja 5 tahun.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {[
                   ['Hak', data.balance.entitlementDays, 'text-slate-900'],
@@ -291,9 +275,6 @@ export function PaidLeavePanel() {
                   </div>
                 ))}
               </div>
-              <p className="text-xs text-slate-500">
-                Hak dan sisa dihitung per {formatDate(data.policy.balanceReferenceDate)}. Jatah untuk tanggal pengajuan mengikuti masa kerja pada tanggal tersebut dan bertambah saat melewati jenjang berikutnya.
-              </p>
 
               <div className="space-y-2">
                 <Label htmlFor="paid-leave-date">Tanggal cuti</Label>
@@ -341,20 +322,6 @@ export function PaidLeavePanel() {
                   className="min-h-28 w-full rounded-xl border border-slate-300 p-3 text-base"
                   placeholder="Contoh: Keperluan keluarga"
                 />
-                <p className="text-right text-xs text-slate-400">{reason.length}/500</p>
-              </div>
-
-              <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 text-sm text-indigo-900">
-                <p className="flex items-center gap-2 font-bold">
-                  <CalendarDays className="h-4 w-4" />
-                  Setiap tanggal yang disetujui dibayar penuh
-                </p>
-                <p className="mt-1">
-                  Pengajuan menunggu hanya mencadangkan saldo. Catatan kehadiran cuti dan pembayaran baru dibuat setelah disetujui.
-                </p>
-                <p className="mt-2">
-                  Koreksi presensi dan izin sakit diajukan melalui pilihan terpisah dan tidak mengurangi saldo cuti tahunan.
-                </p>
               </div>
 
               <Button
