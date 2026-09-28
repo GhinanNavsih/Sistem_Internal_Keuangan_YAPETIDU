@@ -1,6 +1,6 @@
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { pekaryaAttendanceAmount } from '@/lib/payroll/attendance';
-import { SATPAM_RATES } from '@/lib/payroll/domain';
+import { satpamRatesForDutyDate } from '@/lib/payroll/domain';
 import {
   evaluateGantiLiburAttendance,
   gantiLiburAttendanceCorrection,
@@ -134,7 +134,7 @@ export function postBlueCollarGantiLibur(
     reason: `Kalender periode dibekukan saat persetujuan ganti libur ${period}`,
   });
   if (materialization) transaction.set(prepared.periodRef, materialization, { merge: true });
-  if (request.category === 'SATPAM') return SATPAM_RATES.Harian;
+  if (request.category === 'SATPAM') return satpamRatesForDutyDate(request.dayOffDate).Harian;
 
   const correction = gantiLiburAttendanceCorrection();
   const amount = pekaryaAttendanceAmount(correction.scanIn, correction.scanOut, false);

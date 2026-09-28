@@ -89,3 +89,20 @@ test('old generated Satpam slips display one consolidated allowance row', () => 
     { label: 'Tunjangan Jabatan', amount: 150_000 },
   ]);
 });
+
+test('SATPAM rekap prices October 2026 at Rp15.000 without Lembur Sendiri', () => {
+  const column = (period: string, key: string) =>
+    getRekapColumns('SATPAM', period).find((item) => item.key === key);
+  assert.equal(column('2026-09', 'harian')?.multiplier, 12_500);
+  assert.equal(column('2026-09', 'lemburSendiri')?.multiplier, 30_000);
+  assert.equal(column('2026-10', 'harian')?.multiplier, 15_000);
+  assert.equal(column('2026-10', 'lemburSendiri'), undefined);
+  assert.equal(column('2026-10', 'lemburCover')?.multiplier, 50_000);
+  assert.equal(column('2026-10', 'jumatLibur')?.multiplier, 25_000);
+  // Only Satpam moves: other Pekarya day rates are unchanged.
+  assert.equal(
+    getRekapColumns('PEKARYA', '2026-07').find((item) => item.key === 'harian')
+      ?.multiplier,
+    12_500,
+  );
+});

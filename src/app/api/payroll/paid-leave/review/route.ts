@@ -20,7 +20,7 @@ import {
 import {
   assertRequestId,
   isImmutablePayrollStatus,
-  SATPAM_RATES,
+  satpamRatesForDutyDate,
 } from '@/lib/payroll/domain';
 import {
   applyApprovedPaidLeaveToLoyalisEntry,
@@ -516,7 +516,7 @@ export async function POST(request: NextRequest) {
           }
           amount = pekaryaAttendanceAmount('07:30:00', '14:00:00', premium);
         } else if (isSatpam) {
-          amount = SATPAM_RATES[payType];
+          amount = satpamRatesForDutyDate(leaveDate)[payType];
         }
       }
 

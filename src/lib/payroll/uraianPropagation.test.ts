@@ -207,3 +207,28 @@ test('Loyalis presence owns only its four rows', () => {
   assert.equal(deductions('BPJS'), false);
   assert.equal(deductions('Pinjaman Kop. UNIPDU'), false);
 });
+
+test('October 2026 Satpam propagation writes no Lembur Sendiri row', () => {
+  const entry = {
+    employeeId: 'BC_001',
+    name: 'Satpam',
+    values: { harian: 450_000, lemburSendiri: 0 },
+    counts: { harian: 30, lemburSendiri: 0 },
+  };
+  const labels = (period: string) =>
+    buildInitialEarnings(
+      { employment: { jobCategory: 'SATPAM' } },
+      0, 'blue', entry, 0, [], 0, 0, [], 0, 0, period,
+    ).map((row) => row.label);
+  assert.equal(labels('2026-09').includes('Lembur Sendiri'), true);
+  assert.equal(labels('2026-10').includes('Lembur Sendiri'), false);
+  assert.equal(
+    uraianOwnedEarningPredicate('SATPAM', entry, [], '2026-10')('Lembur Sendiri'),
+    false,
+  );
+  const october = buildInitialEarnings(
+    { employment: { jobCategory: 'SATPAM' } },
+    0, 'blue', entry, 0, [], 0, 0, [], 0, 0, '2026-10',
+  );
+  assert.equal(october.find((row) => row.label === 'Vakasi Harian')?.amount, 450_000);
+});

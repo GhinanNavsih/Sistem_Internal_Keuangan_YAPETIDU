@@ -1359,7 +1359,7 @@ export function SatpamAbsencePanel(props: {
 
   useEffect(() => {
     if (!selectedDuty) return;
-    const defaults = defaultSatpamScanTimes(selectedDuty.shiftName);
+    const defaults = defaultSatpamScanTimes(selectedDuty.dutyDate, selectedDuty.shiftName);
     const timer = window.setTimeout(() => {
       setScanIn(defaults.scanIn);
       setScanOut(defaults.scanOut);

@@ -8,7 +8,12 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
 import { ImageExifViewer } from '@/components/ImageExifViewer';
-import { SATPAM_POSTS, SATPAM_RATES } from '@/lib/payroll/domain';
+import {
+  isSatpamLemburSendiriAllowed,
+  SATPAM_POSTS,
+  satpamPayTypeIssue,
+  satpamRatesForDutyDate,
+} from '@/lib/payroll/domain';
 import type { PhotoAuditMetadata, PhotoEvidence } from '@/lib/payroll/domain';
 import {
   Card,
@@ -657,6 +662,16 @@ function ActivityReviewPageContent() {
   const [payTypeEmployeeId, setPayTypeEmployeeId] = useState('');
   const [payTypeCovered, setPayTypeCovered] = useState('');
   const [savingPayType, setSavingPayType] = useState(false);
+  // Rates and allowed classifications follow the corrected shift's duty date.
+  const payTypeDutyDate = payTypeTarget?.dutyDate || payTypeTarget?.activityDate || '';
+  const payTypeDutyDateValid = /^\d{4}-\d{2}-\d{2}$/.test(payTypeDutyDate);
+  const payTypeRates = payTypeDutyDateValid ? satpamRatesForDutyDate(payTypeDutyDate) : null;
+  const payTypeOptions = SATPAM_EDITABLE_PAY_TYPES.filter(
+    (type) =>
+      type === payTypeTarget?.shiftType ||
+      !payTypeDutyDateValid ||
+      !satpamPayTypeIssue(payTypeDutyDate, type),
+  );
 
   // ── Add Satpam to an accepted shift (super_admin/satker_head) ──
   const [addSatpamTarget, setAddSatpamTarget] = useState<SatpamShiftGroup | null>(null);
@@ -2568,6 +2583,8 @@ function ActivityReviewPageContent() {
                           satpamAssignmentsByOccurrence.get(group.occurrenceId) || [];
                         const canAddPetugas =
                           canManageAcceptedSatpam &&
+                          // A petugas tambahan is paid as Lembur Sendiri, gone from 1 Oct 2026.
+                          isSatpamLemburSendiriAllowed(group.dutyDate) &&
                           group.assignments.length === allSatpamAssignments.length &&
                           allSatpamAssignments.length === SATPAM_POSTS.length &&
                           allSatpamAssignments.every((assignment) => assignment.status === 'approved') &&
@@ -3826,13 +3843,13 @@ function ActivityReviewPageContent() {
               <Select value={payTypeValue} onValueChange={(v) => v && setPayTypeValue(v)}>
                 <SelectTrigger className="h-11 w-full rounded-xl border-slate-200 bg-white text-sm font-bold">
                   <SelectValue>
-                    {payTypeValue} · {fmtRp(SATPAM_RATES[payTypeValue as keyof typeof SATPAM_RATES] || 0)}
+                    {payTypeValue} · {fmtRp(payTypeRates?.[payTypeValue as keyof typeof payTypeRates] || 0)}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent className="rounded-xl bg-white">
-                  {SATPAM_EDITABLE_PAY_TYPES.map((type) => (
+                  {payTypeOptions.map((type) => (
                     <SelectItem key={type} value={type} className="min-h-10 text-sm">
-                      {type} · {fmtRp(SATPAM_RATES[type as keyof typeof SATPAM_RATES] || 0)}
+                      {type} · {fmtRp(payTypeRates?.[type as keyof typeof payTypeRates] || 0)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -3901,7 +3918,7 @@ function ActivityReviewPageContent() {
             </DialogTitle>
             <DialogDescription className="text-slate-500">
               Tambahkan satu petugas ke laporan shift yang sudah disetujui. Penugasan baru akan
-              dicatat sebagai <strong>Lembur Sendiri · {fmtRp(SATPAM_RATES['Lembur Sendiri'])}</strong>.
+              dicatat sebagai <strong>Lembur Sendiri · {fmtRp(addSatpamTarget ? satpamRatesForDutyDate(addSatpamTarget.dutyDate)['Lembur Sendiri'] : 0)}</strong>.
               Sembilan penugasan lama tetap dipertahankan.
             </DialogDescription>
           </DialogHeader>

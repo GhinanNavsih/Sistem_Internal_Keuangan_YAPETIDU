@@ -1,16 +1,7 @@
 import { normalizeAttendanceTime } from './attendance';
-import type { SatpamShiftName } from './domain';
+import { satpamShiftTimes, type SatpamShiftName } from './domain';
 
 export type SatpamAttendanceReportType = 'scan' | 'izin_resmi';
-
-const DEFAULT_SCAN_TIMES: Record<
-  SatpamShiftName,
-  { scanIn: string; scanOut: string }
-> = {
-  Pagi: { scanIn: '08:00', scanOut: '14:00' },
-  Sore: { scanIn: '14:00', scanOut: '22:00' },
-  Malam: { scanIn: '22:00', scanOut: '08:00' },
-};
 
 export function satpamAttendanceReportType(request: {
   reportType?: unknown;
@@ -18,10 +9,13 @@ export function satpamAttendanceReportType(request: {
   return request.reportType === 'scan' ? 'scan' : 'izin_resmi';
 }
 
+/** The shift's own start and end, which change from October 2026. */
 export function defaultSatpamScanTimes(
+  dutyDate: string,
   shiftName: SatpamShiftName,
 ): { scanIn: string; scanOut: string } {
-  return DEFAULT_SCAN_TIMES[shiftName];
+  const { start, end } = satpamShiftTimes(dutyDate, shiftName);
+  return { scanIn: start, scanOut: end };
 }
 
 export function isValidSatpamAttendanceScanRange(

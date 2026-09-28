@@ -3,7 +3,8 @@
  * 
  * Shift Rotation Rules:
  * - Shift sequence: Pagi -> Malam -> Sore -> Pagi
- * - Shift rotation happens every Sunday at 08:00 (Start of Shift Pagi).
+ * - Shift rotation happens every Sunday at the start of Shift Pagi: 08:00,
+ *   and 07:00 from Sunday 4 October 2026 (see satpamShiftTimes).
  * - Roster Teams:
  *   - Team 1 (Ketua: BASTOMI)
  *   - Team 2 (Ketua: MUJIONO)
@@ -15,6 +16,8 @@
  *   Team 3 = Shift Sore
  */
 
+import { satpamShiftTimes } from '@/lib/payroll/domain';
+
 // Anchor Sunday: July 12, 2026 at the exact rotation boundary in Jakarta.
 const REF_SUNDAY_MS = new Date('2026-07-12T08:00:00+07:00').getTime();
 
@@ -22,8 +25,8 @@ export type SatpamShift = 'Pagi' | 'Sore' | 'Malam';
 
 /**
  * Gets the Sunday start timestamp of the scheduling week containing the given date.
- * A scheduling week starts on Sunday at 08:00 WIB.
- * Any instant before Sunday 08:00 WIB belongs to the previous week's schedule.
+ * A scheduling week starts on Sunday when Shift Pagi starts (08:00 WIB, 07:00
+ * from October 2026). Any instant before that belongs to the previous week.
  * A date-only value represents that date's schedule at the rotation boundary.
  */
 export function getSchedulingSunday(dateInput: Date | string | number): Date {
@@ -33,7 +36,7 @@ export function getSchedulingSunday(dateInput: Date | string | number): Date {
   let year: number;
   let month: number;
   let dayOfMonth: number;
-  let hour = 8;
+  let hour = 0;
 
   if (isDateOnly) {
     [year, month, dayOfMonth] = (dateInput as string).split('-').map(Number);
@@ -59,7 +62,11 @@ export function getSchedulingSunday(dateInput: Date | string | number): Date {
 
   // Use UTC for calendar arithmetic; Jakarta has a fixed +07:00 offset and no DST.
   let calendarDate = new Date(Date.UTC(year, month - 1, dayOfMonth));
-  if (!isDateOnly && calendarDate.getUTCDay() === 0 && hour < 8) {
+  if (
+    !isDateOnly &&
+    calendarDate.getUTCDay() === 0 &&
+    hour < sundayPagiStartHour(dateOnlyOf(calendarDate))
+  ) {
     calendarDate = new Date(calendarDate.getTime() - 24 * 60 * 60 * 1000);
   }
 
@@ -67,12 +74,22 @@ export function getSchedulingSunday(dateInput: Date | string | number): Date {
   const sundayCalendar = new Date(
     calendarDate.getTime() - daysSinceSunday * 24 * 60 * 60 * 1000,
   );
-  const sundayDateOnly = [
-    sundayCalendar.getUTCFullYear(),
-    String(sundayCalendar.getUTCMonth() + 1).padStart(2, '0'),
-    String(sundayCalendar.getUTCDate()).padStart(2, '0'),
+  const sundayDateOnly = dateOnlyOf(sundayCalendar);
+  const { start } = satpamShiftTimes(sundayDateOnly, 'Pagi');
+  return new Date(`${sundayDateOnly}T${start}:00+07:00`);
+}
+
+function dateOnlyOf(calendarDate: Date): string {
+  return [
+    calendarDate.getUTCFullYear(),
+    String(calendarDate.getUTCMonth() + 1).padStart(2, '0'),
+    String(calendarDate.getUTCDate()).padStart(2, '0'),
   ].join('-');
-  return new Date(`${sundayDateOnly}T08:00:00+07:00`);
+}
+
+/** Shift Pagi starts on the hour, so the hour alone decides the boundary. */
+function sundayPagiStartHour(sundayDateOnly: string): number {
+  return Number(satpamShiftTimes(sundayDateOnly, 'Pagi').start.slice(0, 2));
 }
 
 /**

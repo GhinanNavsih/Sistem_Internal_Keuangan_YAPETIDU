@@ -20,8 +20,15 @@ import {
   resolveCrossTeamPos9PayType,
   defaultSatpamAssignmentPayType,
   resolveSatpamAssignmentPayType,
+  SATPAM_POLICY_V2_START_DATE,
   SATPAM_POSTS,
-  SATPAM_RATES,
+  SATPAM_RATES_V1,
+  SATPAM_RATES_V2,
+  satpamPayTypeIssue,
+  satpamRatesForDutyDate,
+  satpamRatesForPeriod,
+  satpamRateVersionForDutyDate,
+  satpamShiftTimes,
   shiftOccurrenceId,
   satpamKetuaEditConflict,
   summarizeApprovedSatpamReports,
@@ -55,13 +62,92 @@ test('month-end night shift stays in the start-date payroll period', () => {
 });
 
 test('canonical Satpam rates match the approved pay structure', () => {
-  assert.deepEqual(SATPAM_RATES, {
+  assert.deepEqual(SATPAM_RATES_V1, {
     Harian: 12_500,
     'Jumat & Libur': 25_000,
     'Lembur Sendiri': 30_000,
     'Lembur Cover': 50_000,
     'Off-Duty': 0,
   });
+  // 27 September 2026 townhall: only Harian changes; Lembur Cover stays.
+  assert.deepEqual(SATPAM_RATES_V2, {
+    Harian: 15_000,
+    'Jumat & Libur': 25_000,
+    'Lembur Sendiri': 30_000,
+    'Lembur Cover': 50_000,
+    'Off-Duty': 0,
+  });
+});
+
+test('the October 2026 Satpam rates follow the duty date, not the run date', () => {
+  // A payroll period must sit wholly on one side of the change.
+  assert.match(SATPAM_POLICY_V2_START_DATE, /^\d{4}-\d{2}-01$/);
+  assert.equal(satpamRatesForDutyDate('2026-09-30').Harian, 12_500);
+  assert.equal(satpamRatesForDutyDate('2026-10-01').Harian, 15_000);
+  assert.equal(satpamRatesForPeriod('2026-09'), SATPAM_RATES_V1);
+  assert.equal(satpamRatesForPeriod('2026-10'), SATPAM_RATES_V2);
+  assert.equal(satpamRatesForPeriod('2027-01'), SATPAM_RATES_V2);
+  assert.equal(payrollPeriodForDutyDate('2026-09-30'), '2026-09');
+  assert.equal(satpamRateVersionForDutyDate('2026-09-30'), 'SATPAM-2026-V1');
+  assert.equal(satpamRateVersionForDutyDate('2026-10-01'), 'SATPAM-2026-V2');
+});
+
+test('Lembur Sendiri can be recorded up to 30 September 2026 only', () => {
+  assert.equal(satpamPayTypeIssue('2026-09-30', 'Lembur Sendiri'), null);
+  assert.match(
+    String(satpamPayTypeIssue('2026-10-01', 'Lembur Sendiri')),
+    /Lembur Sendiri sudah dihapus/,
+  );
+  for (const payType of ['Harian', 'Jumat & Libur', 'Lembur Cover']) {
+    assert.equal(satpamPayTypeIssue('2026-10-01', payType), null);
+  }
+});
+
+test('shifts become 07–15, 15–23, 23–07 from 1 October 2026', () => {
+  assert.deepEqual(satpamShiftTimes('2026-09-30', 'Pagi'), {
+    start: '08:00', end: '14:00', endDayOffset: 0,
+  });
+  assert.deepEqual(satpamShiftTimes('2026-10-01', 'Pagi'), {
+    start: '07:00', end: '15:00', endDayOffset: 0,
+  });
+  assert.deepEqual(satpamShiftTimes('2026-10-01', 'Sore'), {
+    start: '15:00', end: '23:00', endDayOffset: 0,
+  });
+  assert.deepEqual(getShiftIsoBounds('2026-09-29', 'Malam'), {
+    startsAtIso: '2026-09-29T22:00:00+07:00',
+    endsAtIso: '2026-09-30T08:00:00+07:00',
+  });
+  // The changeover night starts on the old schedule (right after the 14–22
+  // Sore) and hands over to the first 07:00 Pagi: no gap, no overlap. It is
+  // still September duty, paid at the September rate.
+  assert.deepEqual(getShiftIsoBounds('2026-09-30', 'Malam'), {
+    startsAtIso: '2026-09-30T22:00:00+07:00',
+    endsAtIso: '2026-10-01T07:00:00+07:00',
+  });
+  assert.equal(satpamRatesForDutyDate('2026-09-30').Harian, 12_500);
+  assert.deepEqual(getShiftIsoBounds('2026-10-01', 'Malam'), {
+    startsAtIso: '2026-10-01T23:00:00+07:00',
+    endsAtIso: '2026-10-02T07:00:00+07:00',
+  });
+  assert.equal(
+    hasSatpamShiftEnded('2026-09-30', 'Malam', new Date('2026-10-01T07:00:00+07:00')),
+    true,
+  );
+});
+
+test('every Satpam shift ends exactly when the next one starts', () => {
+  const order = ['Pagi', 'Sore', 'Malam'] as const;
+  for (let day = 0; day < 6; day += 1) {
+    const date = new Date(Date.UTC(2026, 8, 27 + day)).toISOString().slice(0, 10);
+    for (const [index, shiftName] of order.entries()) {
+      const { endsAtIso } = getShiftIsoBounds(date, shiftName);
+      const nextDate = shiftName === 'Malam'
+        ? new Date(Date.UTC(2026, 8, 28 + day)).toISOString().slice(0, 10)
+        : date;
+      const next = order[(index + 1) % order.length];
+      assert.equal(endsAtIso, getShiftIsoBounds(nextDate, next).startsAtIso, `${date} ${shiftName}`);
+    }
+  }
 });
 
 test('financial and occurrence identifiers are deterministic', () => {

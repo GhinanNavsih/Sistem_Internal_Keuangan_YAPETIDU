@@ -16,10 +16,11 @@ import {
   resolveKetuaSatpamPayType,
   resolveSatpamAssignmentPayType,
   SATPAM_POSTS,
-  SATPAM_RATES,
   satpamKetuaEditConflict,
-  SATPAM_RATE_VERSION,
-  SHIFT_TIMES,
+  satpamPayTypeIssue,
+  satpamRatesForDutyDate,
+  satpamRateVersionForDutyDate,
+  satpamShiftTimes,
   type PhotoAuditMetadata,
   type SatpamPayType,
   type SatpamPostId,
@@ -302,6 +303,13 @@ function parseCommand(raw: unknown, ketuaShiftId: string, requireEditFields: boo
       'Pilih sedikitnya satu petugas. Pos lain boleh dibiarkan kosong.',
     );
   }
+  // A petugas tambahan is always paid as Lembur Sendiri.
+  const lemburSendiriIssue =
+    extraAssignment ||
+    assignments.some((assignment) => assignment.shiftType === 'Lembur Sendiri')
+      ? satpamPayTypeIssue(input.dutyDate, 'Lembur Sendiri')
+      : null;
+  if (lemburSendiriIssue) throw new HttpError(400, lemburSendiriIssue);
 
   return {
     requestId: input.requestId,
@@ -592,7 +600,7 @@ function assignmentReportData(input: {
   now: FirebaseFirestore.FieldValue;
 }) {
   const post = SATPAM_POSTS.find((item) => item.id === input.record.postId)!;
-  const shiftTimes = SHIFT_TIMES[input.reportedShiftName];
+  const shiftTimes = satpamShiftTimes(input.dutyDate, input.reportedShiftName);
   return {
     employeeId: input.record.employeeId,
     employeeName: input.record.employeeName,
@@ -609,7 +617,7 @@ function assignmentReportData(input: {
     startsAt: input.startsAt,
     endsAt: input.endsAt,
     status: 'pending',
-    fee: SATPAM_RATES[input.record.payType],
+    fee: satpamRatesForDutyDate(input.dutyDate)[input.record.payType],
     shiftType: input.record.payType,
     assignmentKind: input.record.assignmentKind,
     assignmentKey: input.record.assignmentKey,
@@ -641,7 +649,7 @@ function assignmentReportData(input: {
     ),
     anomalyCodes: input.anomalyCodes,
     auditorActionAt: null,
-    rateVersion: SATPAM_RATE_VERSION,
+    rateVersion: satpamRateVersionForDutyDate(input.dutyDate),
     holidayCalendarVersion: input.holidayCalendarVersion,
     calendarRevision: input.calendarRevision,
     dutyPlanId: input.dutyPlanId,
@@ -1076,7 +1084,7 @@ async function mutateShift(
       submittedByUid: actor.uid,
       ketuaShiftId: actor.linkedEmployeeId,
       ketuaShiftName: String(team.ketuaShiftName || actor.displayName),
-      rateVersion: SATPAM_RATE_VERSION,
+      rateVersion: satpamRateVersionForDutyDate(command.dutyDate),
       holidayCalendarVersion: holidaySnapshot.exists
         ? `PERIOD-${period}-R${periodCalendar.revision}`
         : periodCalendar.annualVersion,

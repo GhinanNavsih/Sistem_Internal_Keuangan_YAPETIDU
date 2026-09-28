@@ -1321,8 +1321,8 @@ export default function PresenceCorrectionsAdminPage() {
     const satpamShiftName = item.source === 'satpam'
       ? item.request.shiftName || undefined
       : undefined;
-    const defaultTimes = isSatpamShiftName(satpamShiftName)
-      ? defaultSatpamScanTimes(satpamShiftName)
+    const defaultTimes = isSatpamShiftName(satpamShiftName) && item.source === 'satpam'
+      ? defaultSatpamScanTimes(item.request.dutyDate, satpamShiftName)
       : { scanIn: '08:00', scanOut: '14:00' };
     setEditingTypeRequestId(`${item.source}:${request.id}`);
     setEditingReportType(reportType);

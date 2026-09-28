@@ -46,6 +46,7 @@ import {
 } from '@/lib/satpamShiftDraft';
 import {
   defaultSatpamAssignmentPayType,
+  isSatpamLemburSendiriAllowed,
   payrollPeriodForDutyDate,
   SatpamPostId,
   SatpamPayType,
@@ -2654,6 +2655,9 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
         satpamRequestIdsRef.current[requestKey] ||
         createFinancialRequestId('satpam_shift');
       satpamRequestIdsRef.current[requestKey] = requestId;
+      // From 1 Oct 2026 the form hides Lembur Sendiri and the petugas tambahan
+      // (always Lembur Sendiri), so send what the Ketua can actually see.
+      const lemburSendiriAllowed = isSatpamLemburSendiriAllowed(submissionDate);
       const payload = {
         requestId,
         dutyDate: submissionDate,
@@ -2675,7 +2679,12 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
           .map(([postId, assignment]) => ({
             postId: postId as SatpamPostId,
             employeeId: assignment.employeeId,
-            shiftType: (assignment.shiftType || getDefaultShiftTypeForDate(submissionDate)) as SatpamPayType,
+            shiftType: (
+              assignment.shiftType &&
+              (lemburSendiriAllowed || assignment.shiftType !== 'Lembur Sendiri')
+                ? assignment.shiftType
+                : getDefaultShiftTypeForDate(submissionDate)
+            ) as SatpamPayType,
             ...(assignment.shiftType === 'Lembur Cover' && {
               coveredEmployeeId: assignment.coveredEmployeeId,
               overtimeReason: assignment.overtimeReason,
@@ -2685,7 +2694,7 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
               ? { photoAuditMetadata: assignment.photoAuditMetadata }
               : {}),
           })),
-        ...(isExtraPostVisible && extraEmployeeId && extraPostName && {
+        ...(lemburSendiriAllowed && isExtraPostVisible && extraEmployeeId && extraPostName && {
           extraAssignment: {
             postId: extraPostName as SatpamPostId,
             employeeId: extraEmployeeId,

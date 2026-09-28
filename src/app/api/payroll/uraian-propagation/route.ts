@@ -173,6 +173,7 @@ async function collectPekaryaTargets(command: PropagationCommand): Promise<SlipT
         command.jobCategory,
         effectiveEntry,
         customColumns,
+        command.periodToken,
       ),
       deductionsOwned: () => false,
       freshEarnings: buildInitialEarnings(
@@ -187,6 +188,7 @@ async function collectPekaryaTargets(command: PropagationCommand): Promise<SlipT
         customColumns,
         0,
         0,
+        command.periodToken,
       ),
       freshDeductions: [],
     });

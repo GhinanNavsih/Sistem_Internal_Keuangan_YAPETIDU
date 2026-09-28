@@ -12,7 +12,7 @@ import { periodCalendarFromData } from '../src/lib/payroll/calendar';
 import {
   getRegularSatpamPayType,
   inferLegacySatpamReportKind,
-  SATPAM_RATES,
+  satpamRatesForDutyDate,
   SatpamActivityLike,
 } from '../src/lib/payroll/domain';
 
@@ -138,10 +138,15 @@ async function main() {
       financialKeys.set(financialKey, documentId);
     }
 
+    const reportDutyDate = String(report.dutyDate || report.activityDate || '');
+    const reportRates = /^\d{4}-\d{2}-\d{2}$/.test(reportDutyDate)
+      ? satpamRatesForDutyDate(reportDutyDate)
+      : null;
     if (
       report.shiftType &&
-      report.shiftType in SATPAM_RATES &&
-      Number(report.fee) !== SATPAM_RATES[report.shiftType as keyof typeof SATPAM_RATES]
+      reportRates &&
+      report.shiftType in reportRates &&
+      Number(report.fee) !== reportRates[report.shiftType as keyof typeof reportRates]
     ) {
       findings.push({
         severity: 'critical',

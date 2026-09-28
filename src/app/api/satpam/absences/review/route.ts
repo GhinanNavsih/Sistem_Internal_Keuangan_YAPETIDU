@@ -4,6 +4,7 @@ import admin, { adminDb } from '@/lib/firebase-admin';
 import {
   assertRequestId,
   isImmutablePayrollStatus,
+  satpamRatesForDutyDate,
 } from '@/lib/payroll/domain';
 import {
   normalizeAttendanceTime,
@@ -884,7 +885,9 @@ export async function POST(request: NextRequest) {
             hasShiftRegistration: Boolean(shiftRegistration),
           }));
       const harianCountAdded = approving && !payrollExcludedFromHarian;
-      const approvedAmount = harianCountAdded ? 12_500 : 0;
+      const approvedAmount = harianCountAdded
+        ? satpamRatesForDutyDate(String(current.dutyDate || '')).Harian
+        : 0;
       const payrollExclusionReason = payrollExcludedFromHarian
         ? isUnassignedSatpam
           ? 'NO_SCHEDULED_DUTY'
@@ -955,7 +958,7 @@ export async function POST(request: NextRequest) {
           sourceType: 'satpam_approved_absence',
           sourceId: absenceRequestId,
           payType: 'Harian',
-          amount: 12_500,
+          amount: approvedAmount,
           currency: 'IDR',
           status: 'posted',
           dutyDate: current.dutyDate,

@@ -70,6 +70,18 @@ export function resolveRekapColumnsForSlip(
 }
 
 /**
+ * Satpam's rekap columns change with the period (Rp15.000 Harian and no
+ * Lembur Sendiri from October 2026), so its builders need the period. The
+ * other categories keep resolving their columns from the entry alone.
+ */
+export function satpamSlipPeriod(
+  jobCategory: string,
+  period?: string,
+): string | undefined {
+  return jobCategory === 'SATPAM' ? period : undefined;
+}
+
+/**
  * Build initial earnings rows from whatever we know about the employee.
  *
  * The `loyalis` branch is still the canonical white-collar builder. The blue
@@ -91,7 +103,8 @@ export function buildInitialEarnings(
   tunjanganKepangkatan?: number,
   customColumns?: RekapColumn[],
   presenceBonus = 0,
-  presensiEarning = 0
+  presensiEarning = 0,
+  period?: string,
 ): SlipField[] {
   const earnings: SlipField[] = [];
 
@@ -190,6 +203,7 @@ export function buildInitialEarnings(
       jobCategory,
       effectiveUraian,
       customColumns,
+      satpamSlipPeriod(jobCategory, period),
     );
 
     // Gaji Pokok – always known

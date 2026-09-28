@@ -37,7 +37,7 @@ import { createHash } from 'node:crypto';
 import admin, { adminDb } from '../src/lib/firebase-admin';
 import {
   isImmutablePayrollStatus,
-  SATPAM_RATES,
+  satpamRatesForDutyDate,
   type SatpamPayType,
 } from '../src/lib/payroll/domain';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '../src/lib/server/audit';
@@ -137,7 +137,9 @@ async function correctApproved(
     }
 
     const now = admin.firestore.FieldValue.serverTimestamp();
-    const amount = SATPAM_RATES[TARGET_PAY_TYPE];
+    const amount = satpamRatesForDutyDate(
+      String(before.dutyDate || before.activityDate || ''),
+    )[TARGET_PAY_TYPE];
     const after = {
       ...before,
       shiftType: TARGET_PAY_TYPE,
@@ -235,7 +237,9 @@ async function correctPending(
     }
 
     const now = admin.firestore.FieldValue.serverTimestamp();
-    const amount = SATPAM_RATES[TARGET_PAY_TYPE];
+    const amount = satpamRatesForDutyDate(
+      String(before.dutyDate || before.activityDate || ''),
+    )[TARGET_PAY_TYPE];
     const after = {
       ...before,
       shiftType: TARGET_PAY_TYPE,
@@ -337,7 +341,7 @@ async function main() {
       results.push({
         id: snapshot.id,
         outcome: 'would-correct',
-        detail: `status=${data.status}; fee ${Number(data.fee || 0)} -> ${SATPAM_RATES[TARGET_PAY_TYPE]}.`,
+        detail: `status=${data.status}; fee ${Number(data.fee || 0)} -> ${satpamRatesForDutyDate(String(data.dutyDate || data.activityDate || ''))[TARGET_PAY_TYPE]}.`,
       });
       continue;
     }

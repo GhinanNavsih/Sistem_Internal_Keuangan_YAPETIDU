@@ -1,7 +1,8 @@
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
   hasSatpamShiftEnded,
-  SATPAM_RATES,
+  satpamRatesForDutyDate,
+  satpamRatesForPeriod,
   type SatpamShiftName,
 } from '@/lib/payroll/domain';
 import {
@@ -11,7 +12,6 @@ import {
   satpamDutyKey,
   satpamDutyPlanId,
   SATPAM_MONTHLY_ATTENDANCE_BONUS,
-  SATPAM_PAID_ABSENCE_RATE,
   shouldExcludeSatpamLeaveFromHarian,
   type SatpamDutyPlanDay,
   type SatpamDutyPlanStatus,
@@ -626,6 +626,7 @@ export async function syncSatpamDutyReconciliation(
     buildSatpamDutyReconciliation(period),
     adminDb.collection('ActivityReports').where('period', '==', period).get(),
   ]);
+  const rates = satpamRatesForPeriod(period);
   const shiftCountsByEmployee = new Map<
     string,
     {
@@ -759,17 +760,17 @@ export async function syncSatpamDutyReconciliation(
           employee.approvedAbsenceCount,
         ) + employee.annualPaidLeaveHarianCount + employee.gantiLiburCount;
         counts.harian = totalHarianCount;
-        values.harian = totalHarianCount * SATPAM_RATES.Harian;
+        values.harian = totalHarianCount * rates.Harian;
         counts.jumatLibur =
           shiftCounts.jumatLibur + employee.annualPaidLeavePremiumCount;
         values.jumatLibur =
-          counts.jumatLibur * SATPAM_RATES['Jumat & Libur'];
+          counts.jumatLibur * rates['Jumat & Libur'];
         counts.lemburSendiri = shiftCounts.lemburSendiri;
         values.lemburSendiri =
-          shiftCounts.lemburSendiri * SATPAM_RATES['Lembur Sendiri'];
+          shiftCounts.lemburSendiri * rates['Lembur Sendiri'];
         counts.lemburCover = shiftCounts.lemburCover;
         values.lemburCover =
-          shiftCounts.lemburCover * SATPAM_RATES['Lembur Cover'];
+          shiftCounts.lemburCover * rates['Lembur Cover'];
         if (!manualSatpamBonusOverride) {
           counts.bonusPresensiBulanan = employee.bonusCount;
           values.bonusPresensiBulanan = employee.bonusAmount;
@@ -845,17 +846,17 @@ export async function syncSatpamDutyReconciliation(
       const values = { ...normalizedExisting.values };
       const counts = { ...(normalizedExisting.counts || {}) };
       counts.harian = shiftCounts.harian + external.annualPaidLeaveHarianCount + external.gantiLiburCount;
-      values.harian = counts.harian * SATPAM_RATES.Harian;
+      values.harian = counts.harian * rates.Harian;
       counts.jumatLibur =
         shiftCounts.jumatLibur + external.annualPaidLeavePremiumCount;
       values.jumatLibur =
-        counts.jumatLibur * SATPAM_RATES['Jumat & Libur'];
+        counts.jumatLibur * rates['Jumat & Libur'];
       counts.lemburSendiri = shiftCounts.lemburSendiri;
       values.lemburSendiri =
-        shiftCounts.lemburSendiri * SATPAM_RATES['Lembur Sendiri'];
+        shiftCounts.lemburSendiri * rates['Lembur Sendiri'];
       counts.lemburCover = shiftCounts.lemburCover;
       values.lemburCover =
-        shiftCounts.lemburCover * SATPAM_RATES['Lembur Cover'];
+        shiftCounts.lemburCover * rates['Lembur Cover'];
       const preservedBonusCount = manualSatpamBonusOverride
         ? Math.max(
             0,
@@ -924,7 +925,7 @@ export function absenceEntitlementData(input: {
     ...input,
     payType: 'Harian',
     count: 1,
-    amount: SATPAM_PAID_ABSENCE_RATE,
+    amount: satpamRatesForDutyDate(input.dutyDate).Harian,
     sourceType: 'satpam_approved_absence',
     schemaVersion: 1,
   };

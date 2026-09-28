@@ -1,5 +1,4 @@
 export const PAYROLL_TIME_ZONE = 'Asia/Jakarta';
-export const SATPAM_RATE_VERSION = 'SATPAM-2026-V1';
 export const SATPAM_HOLIDAY_CALENDAR_VERSION = 'ID-UNIPDU-2026-V1';
 
 export const SATPAM_POSTS = [
@@ -276,7 +275,28 @@ export function summarizeApprovedSatpamReports(
   return summary;
 }
 
-export const SATPAM_RATES: Readonly<Record<SatpamPayType, number>> = Object.freeze({
+/**
+ * First duty date under the Satpam rules announced at the 27 September 2026
+ * townhall: Harian rises to Rp15.000, the three shifts become 8 hours each
+ * (07–15, 15–23, 23–07, as revised by the Satpam after the townhall) and
+ * Lembur Sendiri is abolished (Lembur Cover stays).
+ *
+ * Every rule follows the date of the duty, never the date the code runs or the
+ * payroll is compiled: September is compiled in early October, and its shifts
+ * must keep the September rules. Deploying early is therefore safe — nothing
+ * changes until October duty exists. It is the first day of a month, so a
+ * payroll period is wholly on one side of it (see satpamRatesForPeriod).
+ */
+export const SATPAM_POLICY_V2_START_DATE = '2026-10-01';
+const SATPAM_POLICY_V2_START_PERIOD = SATPAM_POLICY_V2_START_DATE.slice(0, 7);
+
+export const SATPAM_RATE_VERSION_V1 = 'SATPAM-2026-V1';
+export const SATPAM_RATE_VERSION_V2 = 'SATPAM-2026-V2';
+
+export type SatpamRateTable = Readonly<Record<SatpamPayType, number>>;
+
+/** Duty up to 30 September 2026. */
+export const SATPAM_RATES_V1: SatpamRateTable = Object.freeze({
   Harian: 12_500,
   'Jumat & Libur': 25_000,
   'Lembur Sendiri': 30_000,
@@ -284,13 +304,108 @@ export const SATPAM_RATES: Readonly<Record<SatpamPayType, number>> = Object.free
   'Off-Duty': 0,
 });
 
-export const SHIFT_TIMES: Readonly<
-  Record<SatpamShiftName, { start: string; end: string; endDayOffset: 0 | 1 }>
-> = Object.freeze({
+/**
+ * Duty from 1 October 2026. Lembur Sendiri can no longer be recorded for these
+ * dates (satpamPayTypeIssue); its price is kept only so reading a
+ * record never fails.
+ */
+export const SATPAM_RATES_V2: SatpamRateTable = Object.freeze({
+  ...SATPAM_RATES_V1,
+  Harian: 15_000,
+});
+
+export function isSatpamPolicyV2DutyDate(dutyDate: string): boolean {
+  assertDateOnly(dutyDate);
+  return dutyDate >= SATPAM_POLICY_V2_START_DATE;
+}
+
+export function satpamRatesForDutyDate(dutyDate: string): SatpamRateTable {
+  return isSatpamPolicyV2DutyDate(dutyDate) ? SATPAM_RATES_V2 : SATPAM_RATES_V1;
+}
+
+/** Payroll periods are calendar months from August 2026 (payrollPeriodForDutyDate). */
+export function satpamRatesForPeriod(period: string): SatpamRateTable {
+  if (!/^\d{4}-\d{2}$/.test(period)) {
+    throw new Error('Periode wajib menggunakan format YYYY-MM.');
+  }
+  return period >= SATPAM_POLICY_V2_START_PERIOD ? SATPAM_RATES_V2 : SATPAM_RATES_V1;
+}
+
+export function satpamRateVersionForDutyDate(dutyDate: string): string {
+  return isSatpamPolicyV2DutyDate(dutyDate)
+    ? SATPAM_RATE_VERSION_V2
+    : SATPAM_RATE_VERSION_V1;
+}
+
+export const SATPAM_LEMBUR_SENDIRI_REMOVED_MESSAGE =
+  'Lembur Sendiri sudah dihapus untuk dinas mulai 1 Oktober 2026. Gunakan Lembur Cover bila menggantikan rekan yang absen.';
+
+export function isSatpamLemburSendiriAllowed(dutyDate: string): boolean {
+  return !isSatpamPolicyV2DutyDate(dutyDate);
+}
+
+/**
+ * Why a pay type cannot be set on this duty date, or null when it can. Every
+ * write that sets a pay type checks it; reading an existing record never does.
+ */
+export function satpamPayTypeIssue(
+  dutyDate: string,
+  payType: unknown,
+): string | null {
+  return payType === 'Lembur Sendiri' && !isSatpamLemburSendiriAllowed(dutyDate)
+    ? SATPAM_LEMBUR_SENDIRI_REMOVED_MESSAGE
+    : null;
+}
+
+export interface SatpamShiftTime {
+  start: string;
+  end: string;
+  endDayOffset: 0 | 1;
+}
+
+type SatpamShiftTimeTable = Readonly<Record<SatpamShiftName, SatpamShiftTime>>;
+
+/** Pagi 6 hours, Sore 8, Malam 10 — for the same daily rate. */
+export const SATPAM_SHIFT_TIMES_V1: SatpamShiftTimeTable = Object.freeze({
   Pagi: { start: '08:00', end: '14:00', endDayOffset: 0 },
   Sore: { start: '14:00', end: '22:00', endDayOffset: 0 },
   Malam: { start: '22:00', end: '08:00', endDayOffset: 1 },
 });
+
+export const SATPAM_SHIFT_TIMES_V2: SatpamShiftTimeTable = Object.freeze({
+  Pagi: { start: '07:00', end: '15:00', endDayOffset: 0 },
+  Sore: { start: '15:00', end: '23:00', endDayOffset: 0 },
+  Malam: { start: '23:00', end: '07:00', endDayOffset: 1 },
+});
+
+const NEXT_SATPAM_SHIFT: Readonly<Record<SatpamShiftName, SatpamShiftName>> = {
+  Pagi: 'Sore',
+  Sore: 'Malam',
+  Malam: 'Pagi',
+};
+
+function satpamShiftTimeTable(dutyDate: string): SatpamShiftTimeTable {
+  return isSatpamPolicyV2DutyDate(dutyDate)
+    ? SATPAM_SHIFT_TIMES_V2
+    : SATPAM_SHIFT_TIMES_V1;
+}
+
+/**
+ * A shift starts at its own duty date's time and ends at the handover
+ * (aplusan) to the next shift. Inside one schedule that is simply the table;
+ * across the change it joins them without a gap or an overlap: the night of
+ * 30 September runs 22:00–07:00, from the last 14–22 Sore to the first 07:00
+ * Pagi. That night is still September duty, paid at the September rate.
+ */
+export function satpamShiftTimes(
+  dutyDate: string,
+  shiftName: SatpamShiftName,
+): SatpamShiftTime {
+  const own = satpamShiftTimeTable(dutyDate)[shiftName];
+  const handoverDate = addCalendarDays(dutyDate, own.endDayOffset);
+  const next = satpamShiftTimeTable(handoverDate)[NEXT_SATPAM_SHIFT[shiftName]];
+  return { start: own.start, end: next.start, endDayOffset: own.endDayOffset };
+}
 
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const SAFE_ID_RE = /^[A-Za-z0-9_-]{8,128}$/;
@@ -561,8 +676,7 @@ export function getShiftIsoBounds(
   dutyDate: string,
   shiftName: SatpamShiftName,
 ): { startsAtIso: string; endsAtIso: string } {
-  assertDateOnly(dutyDate);
-  const shift = SHIFT_TIMES[shiftName];
+  const shift = satpamShiftTimes(dutyDate, shiftName);
   const endDate = addCalendarDays(dutyDate, shift.endDayOffset);
   return {
     startsAtIso: `${dutyDate}T${shift.start}:00+07:00`,

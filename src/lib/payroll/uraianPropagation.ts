@@ -1,5 +1,5 @@
 import type { RekapColumn, UraianEntry } from '@/types';
-import { resolveRekapColumnsForSlip } from './slipBuilders';
+import { resolveRekapColumnsForSlip, satpamSlipPeriod } from './slipBuilders';
 import { normalizeLabel, type OwnedLabelPredicate, type SlipFieldKind } from './slipPropagation';
 
 /**
@@ -27,9 +27,15 @@ export function uraianOwnedEarningLabels(
   jobCategory: string,
   uraian?: UraianEntry,
   customColumns?: RekapColumn[],
+  period?: string,
 ): Set<string> {
   const labels = new Set<string>();
-  for (const column of resolveRekapColumnsForSlip(jobCategory, uraian, customColumns)) {
+  for (const column of resolveRekapColumnsForSlip(
+    jobCategory,
+    uraian,
+    customColumns,
+    satpamSlipPeriod(jobCategory, period),
+  )) {
     if (column.slipLabel) labels.add(normalizeLabel(column.slipLabel));
   }
   return labels;
@@ -39,8 +45,9 @@ export function uraianOwnedEarningPredicate(
   jobCategory: string,
   uraian?: UraianEntry,
   customColumns?: RekapColumn[],
+  period?: string,
 ): OwnedLabelPredicate {
-  const labels = uraianOwnedEarningLabels(jobCategory, uraian, customColumns);
+  const labels = uraianOwnedEarningLabels(jobCategory, uraian, customColumns, period);
   const legacySatpamBonusLabels =
     jobCategory === 'SATPAM'
       ? new Set(['bonus presensi mutlak', 'bonus mutlak'])

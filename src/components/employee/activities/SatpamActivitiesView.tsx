@@ -63,6 +63,13 @@ import {
 import {
   POSTS_CONFIG,
 } from './activityModel';
+import {
+  isSatpamLemburSendiriAllowed,
+  satpamRatesForDutyDate,
+  satpamShiftTimes,
+  type SatpamShiftName,
+} from '@/lib/payroll/domain';
+import { getTodayDateString } from '@/lib/payroll/driverPiket';
 import type { EmployeeActivitiesModel } from './activityModel';
 import ActivityHistoryPanel from './ActivityHistoryPanel';
 import EmployeeActivityFab from './EmployeeActivityFab';
@@ -169,6 +176,21 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
 
   if (!profile) return null;
 
+  // Hours, rates and Lembur Sendiri follow the duty date being reported: the
+  // 8-hour shifts, Rp15.000 Harian and no Lembur Sendiri start 1 Oct 2026.
+  const satpamDutyDate = /^\d{4}-\d{2}-\d{2}$/.test(satpamReportDate)
+    ? satpamReportDate
+    : getTodayDateString();
+  const satpamRates = satpamRatesForDutyDate(satpamDutyDate);
+  const lemburSendiriAllowed = isSatpamLemburSendiriAllowed(satpamDutyDate);
+  const rp = (amount: number) => `Rp${amount.toLocaleString('id-ID')}`;
+  const shiftHours = (shiftName: SatpamShiftName) => {
+    const { start, end } = satpamShiftTimes(satpamDutyDate, shiftName);
+    return `${start} – ${end}`;
+  };
+  const regularPayRate = (payType: string) =>
+    payType === 'Jumat & Libur' ? satpamRates['Jumat & Libur'] : satpamRates.Harian;
+
   return (
     <>
 {isKetuaShiftSatpam && (
@@ -233,15 +255,15 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                         <SelectContent className="w-[var(--radix-select-trigger-width)] min-w-[280px] rounded-xl border border-slate-100 shadow-xl bg-white p-1.5 z-50">
                           <SelectItem value="Pagi" className="rounded-lg font-semibold py-2.5 px-3 cursor-pointer">
                             <span className="font-bold text-slate-800">Shift Pagi</span>
-                            <span className="ml-2 text-xs font-medium text-slate-500">(08:00 – 14:00 WIB)</span>
+                            <span className="ml-2 text-xs font-medium text-slate-500">({shiftHours('Pagi')} WIB)</span>
                           </SelectItem>
                           <SelectItem value="Sore" className="rounded-lg font-semibold py-2.5 px-3 cursor-pointer">
                             <span className="font-bold text-slate-800">Shift Sore</span>
-                            <span className="ml-2 text-xs font-medium text-slate-500">(14:00 – 22:00 WIB)</span>
+                            <span className="ml-2 text-xs font-medium text-slate-500">({shiftHours('Sore')} WIB)</span>
                           </SelectItem>
                           <SelectItem value="Malam" className="rounded-lg font-semibold py-2.5 px-3 cursor-pointer">
                             <span className="font-bold text-slate-800">Shift Malam</span>
-                            <span className="ml-2 text-xs font-medium text-slate-500">(22:00 – 08:00 WIB)</span>
+                            <span className="ml-2 text-xs font-medium text-slate-500">({shiftHours('Malam')} WIB)</span>
                           </SelectItem>
                         </SelectContent>
                       </Select>
@@ -266,16 +288,14 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                           const options: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' };
                           const startDate = new Date(satpamReportDate);
                           const startStr = startDate.toLocaleDateString('id-ID', options);
+                          const { start, end } = satpamShiftTimes(satpamDutyDate, activeShift);
                           if (activeShift === 'Malam') {
                             const endDate = new Date(startDate);
                             endDate.setDate(startDate.getDate() + 1);
                             const endStr = endDate.toLocaleDateString('id-ID', options);
-                            return `${startStr} (22:00) s/d ${endStr} (08:00 WIB)`;
-                          } else if (activeShift === 'Pagi') {
-                            return `${startStr} (08:00 s/d 14:00 WIB)`;
-                          } else {
-                            return `${startStr} (14:00 s/d 22:00 WIB)`;
+                            return `${startStr} (${start}) s/d ${endStr} (${end} WIB)`;
                           }
+                          return `${startStr} (${start} s/d ${end} WIB)`;
                         })()}
                       </span>
                     </div>
@@ -340,16 +360,16 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                             !isPos9 &&
                             !isKetuaGuard);
                         const selectedShiftType = isKetuaGuard
-                          ? (['Harian', 'Jumat & Libur', 'Lembur Sendiri'].includes(val.shiftType) ||
+                          ? (['Harian', 'Jumat & Libur', ...(lemburSendiriAllowed ? ['Lembur Sendiri'] : [])].includes(val.shiftType) ||
                             (isKetuaCoverEligible && val.shiftType === 'Lembur Cover')
                             ? val.shiftType
                             : defaultShiftTypeForRender)
                           : isCrossTeamPos9
-                          ? (['Harian', 'Lembur Sendiri', 'Lembur Cover'].includes(val.shiftType)
+                          ? (['Harian', ...(lemburSendiriAllowed ? ['Lembur Sendiri'] : []), 'Lembur Cover'].includes(val.shiftType)
                             ? val.shiftType
                             : 'Harian')
                           : isDesignatedPos9
-                            ? (['Harian', 'Jumat & Libur', 'Lembur Sendiri'].includes(val.shiftType)
+                            ? (['Harian', 'Jumat & Libur', ...(lemburSendiriAllowed ? ['Lembur Sendiri'] : [])].includes(val.shiftType)
                               ? val.shiftType
                               : defaultShiftTypeForRender)
                           : isExternalGuard
@@ -371,9 +391,9 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                           ),
                         );
                         const plannedPayLabel = isPlannedRegular
-                          ? `${defaultShiftTypeForRender} (${defaultShiftTypeForRender === 'Jumat & Libur' ? 'Rp25.000' : 'Rp12.500'})`
+                          ? `${defaultShiftTypeForRender} (${rp(regularPayRate(defaultShiftTypeForRender))})`
                           : val.employeeId
-                            ? 'Lembur Cover (Rp50.000)'
+                            ? `Lembur Cover (${rp(satpamRates['Lembur Cover'])})`
                             : 'Pilih petugas dahulu';
                         return (
                           <div key={post.id} className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center bg-white p-3 rounded-xl border border-slate-200 hover:shadow-sm transition-shadow">
@@ -484,54 +504,60 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                   {isKetuaGuard ? (
                                     <>
                                       <SelectItem value="Harian" className="text-base font-bold">
-                                        Harian (Rp12.500)
+                                        Harian ({rp(satpamRates.Harian)})
                                       </SelectItem>
                                       {defaultShiftTypeForRender === 'Jumat & Libur' && (
                                         <SelectItem value="Jumat & Libur" className="text-base font-bold">
-                                          Jumat &amp; Libur (Rp25.000)
+                                          Jumat &amp; Libur ({rp(satpamRates['Jumat & Libur'])})
                                         </SelectItem>
                                       )}
-                                      <SelectItem value="Lembur Sendiri" className="text-base font-bold">
-                                        Lembur Sendiri (Rp30.000)
-                                      </SelectItem>
+                                      {lemburSendiriAllowed && (
+                                        <SelectItem value="Lembur Sendiri" className="text-base font-bold">
+                                          Lembur Sendiri ({rp(satpamRates['Lembur Sendiri'])})
+                                        </SelectItem>
+                                      )}
                                     </>
                                   ) : isCrossTeamPos9 ? (
                                     <>
                                       <SelectItem value="Harian" className="text-base font-bold">
-                                        Harian (Rp12.500)
+                                        Harian ({rp(satpamRates.Harian)})
                                       </SelectItem>
-                                      <SelectItem value="Lembur Sendiri" className="text-base font-bold">Lembur Sendiri (Rp30.000)</SelectItem>
-                                      <SelectItem value="Lembur Cover" className="text-base font-bold">Lembur Cover (Rp50.000)</SelectItem>
+                                      {lemburSendiriAllowed && (
+                                        <SelectItem value="Lembur Sendiri" className="text-base font-bold">Lembur Sendiri ({rp(satpamRates['Lembur Sendiri'])})</SelectItem>
+                                      )}
+                                      <SelectItem value="Lembur Cover" className="text-base font-bold">Lembur Cover ({rp(satpamRates['Lembur Cover'])})</SelectItem>
                                     </>
                                   ) : isDesignatedPos9 ? (
                                     <>
                                       <SelectItem value="Harian" className="text-base font-bold">
-                                        Harian (Rp12.500)
+                                        Harian ({rp(satpamRates.Harian)})
                                       </SelectItem>
                                       {defaultShiftTypeForRender === 'Jumat & Libur' && (
                                         <SelectItem value="Jumat & Libur" className="text-base font-bold">
-                                          Jumat &amp; Libur (Rp25.000)
+                                          Jumat &amp; Libur ({rp(satpamRates['Jumat & Libur'])})
                                         </SelectItem>
                                       )}
-                                      <SelectItem value="Lembur Sendiri" className="text-base font-bold">
-                                        Lembur Sendiri (Rp30.000)
-                                      </SelectItem>
+                                      {lemburSendiriAllowed && (
+                                        <SelectItem value="Lembur Sendiri" className="text-base font-bold">
+                                          Lembur Sendiri ({rp(satpamRates['Lembur Sendiri'])})
+                                        </SelectItem>
+                                      )}
                                     </>
                                   ) : isExternalGuard ? (
                                     <>
                                       <SelectItem value="Harian" className="text-base font-bold">
-                                        Harian (Rp12.500)
+                                        Harian ({rp(satpamRates.Harian)})
                                       </SelectItem>
-                                      <SelectItem value="Lembur Cover" className="text-base font-bold">Lembur Cover (Rp50.000)</SelectItem>
+                                      <SelectItem value="Lembur Cover" className="text-base font-bold">Lembur Cover ({rp(satpamRates['Lembur Cover'])})</SelectItem>
                                     </>
                                   ) : (
                                     <SelectItem value={defaultShiftTypeForRender} className="text-base font-bold">
-                                      {defaultShiftTypeForRender} ({defaultShiftTypeForRender === 'Jumat & Libur' ? 'Rp25.000' : 'Rp12.500'})
+                                      {defaultShiftTypeForRender} ({rp(regularPayRate(defaultShiftTypeForRender))})
                                     </SelectItem>
                                   )}
                                   {canSelectLemburCover && (
                                     <SelectItem value="Lembur Cover" className="text-base font-bold">
-                                      Lembur Cover (Rp50.000)
+                                      Lembur Cover ({rp(satpamRates['Lembur Cover'])})
                                     </SelectItem>
                                   )}
                                 </SelectContent>
@@ -625,7 +651,12 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                         );
                       })}
 
-                      {!isExtraPostVisible ? (
+                      {!lemburSendiriAllowed ? (
+                        <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-4 text-sm font-semibold text-slate-600">
+                          Mulai 1 Oktober 2026 tidak ada lagi Lembur Sendiri (petugas tambahan).
+                          Bila ada anggota yang absen, isi posnya dengan Lembur Cover.
+                        </p>
+                      ) : !isExtraPostVisible ? (
                         !isSatpamReportLocked && (
                           <div
                             onClick={() => setIsExtraPostVisible(true)}
@@ -715,7 +746,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                           {/* Fixed overtime type */}
                           <div className="md:col-span-3">
                             <div className="w-full text-base font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 h-12 flex items-center">
-                              Lembur Sendiri (Rp30.000)
+                              Lembur Sendiri ({rp(satpamRates['Lembur Sendiri'])})
                             </div>
                           </div>
 
@@ -1260,7 +1291,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
               <div className="flex items-start gap-2.5">
                 <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                 <div>
-                  <h4 className="font-extrabold text-amber-900 text-base">Roster Shift Malam (22:00 - 08:00 WIB)</h4>
+                  <h4 className="font-extrabold text-amber-900 text-base">Roster Shift Malam ({shiftHours('Malam')} WIB)</h4>
                 </div>
               </div>
             </div>
@@ -1288,7 +1319,8 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                     const formatOpt: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
                     const startStr = startDate.toLocaleDateString('id-ID', formatOpt);
                     const endStr = endDate.toLocaleDateString('id-ID', formatOpt);
-                    return `${startStr} (22:00) s/d ${endStr} (08:00 WIB)`;
+                    const { start, end } = satpamShiftTimes(satpamDutyDate, 'Malam');
+                    return `${startStr} (${start}) s/d ${endStr} (${end} WIB)`;
                   })()}
                 </span>
               </div>

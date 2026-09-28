@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
-  SATPAM_RATES,
+  satpamRatesForDutyDate,
   getRegularSatpamPayType,
   guardDutyIndexId,
   isImmutablePayrollStatus,
@@ -425,6 +425,9 @@ export async function PATCH(
             String(occurrence.dutyDate || ''),
             afterSet,
           );
+          const nextFee = satpamRatesForDutyDate(
+            String(occurrence.dutyDate || ''),
+          )[nextType];
           const reopened = affected.filter(
             (snapshot) => snapshot.data()?.status === 'approved',
           );
@@ -436,7 +439,7 @@ export async function PATCH(
             const isApproved = before.status === 'approved';
             writer.update(reportSnapshot.ref, {
               shiftType: nextType,
-              fee: SATPAM_RATES[nextType],
+              fee: nextFee,
               calendarRevision: nextRevision,
               holidayCalendarVersion: `PERIOD-${period}-R${nextRevision}`,
               ...(isApproved
@@ -486,7 +489,7 @@ export async function PATCH(
                 after: {
                   status: isApproved ? 'pending' : before.status,
                   shiftType: nextType,
-                  fee: SATPAM_RATES[nextType],
+                  fee: nextFee,
                   calendarRevision: nextRevision,
                 },
               }),

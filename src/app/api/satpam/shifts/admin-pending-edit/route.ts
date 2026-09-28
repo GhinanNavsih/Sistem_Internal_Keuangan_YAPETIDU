@@ -4,7 +4,8 @@ import admin, { adminDb } from '@/lib/firebase-admin';
 import {
   assertRequestId,
   payrollPeriodForDutyDate,
-  SATPAM_RATES,
+  satpamPayTypeIssue,
+  satpamRatesForDutyDate,
   type SatpamPayType,
 } from '@/lib/payroll/domain';
 import { satpamDutyKey } from '@/lib/payroll/satpamDutyPlan';
@@ -195,6 +196,10 @@ export async function POST(request: NextRequest) {
         throw new HttpError(409, 'Periode payroll penugasan tidak dapat ditentukan.');
       }
       const dutyDate = String(before.dutyDate || before.activityDate || '');
+      const payTypeIssue = payTypeChanged
+        ? satpamPayTypeIssue(dutyDate, command.payType)
+        : null;
+      if (payTypeIssue) throw new HttpError(409, payTypeIssue);
 
       const periodRef = adminDb.collection('PayrollPeriods').doc(period);
       const newEmployeeRef = employeeChanged
@@ -243,7 +248,7 @@ export async function POST(request: NextRequest) {
       }
 
       const now = admin.firestore.FieldValue.serverTimestamp();
-      const amount = SATPAM_RATES[command.payType];
+      const amount = satpamRatesForDutyDate(dutyDate)[command.payType];
       const after = {
         ...before,
         employeeId: targetEmployeeId,

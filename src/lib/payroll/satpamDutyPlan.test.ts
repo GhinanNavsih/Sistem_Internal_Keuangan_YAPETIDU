@@ -23,7 +23,6 @@ import {
   SATPAM_FIXED_POST_ID,
   SATPAM_KETUA_POST_ID,
   SATPAM_MONTHLY_ATTENDANCE_BONUS,
-  SATPAM_PAID_ABSENCE_RATE,
   SATPAM_ROTATION_SLOTS,
   validateAndGenerateSatpamDutyPlan,
   validateSatpamDutyPlanDay,
@@ -56,13 +55,22 @@ test('Ketua may plan exactly the next Jakarta calendar month', () => {
 });
 
 test('Satpam attendance reports preserve overnight Malam scan ranges', () => {
-  assert.deepEqual(defaultSatpamScanTimes('Pagi'), {
+  assert.deepEqual(defaultSatpamScanTimes('2026-09-15', 'Pagi'), {
     scanIn: '08:00',
     scanOut: '14:00',
   });
-  assert.deepEqual(defaultSatpamScanTimes('Malam'), {
+  assert.deepEqual(defaultSatpamScanTimes('2026-09-15', 'Malam'), {
     scanIn: '22:00',
     scanOut: '08:00',
+  });
+  // From 1 October 2026 every shift is 8 hours.
+  assert.deepEqual(defaultSatpamScanTimes('2026-10-01', 'Pagi'), {
+    scanIn: '07:00',
+    scanOut: '15:00',
+  });
+  assert.deepEqual(defaultSatpamScanTimes('2026-10-01', 'Malam'), {
+    scanIn: '23:00',
+    scanOut: '07:00',
   });
   assert.equal(
     isValidSatpamAttendanceScanRange('22:00', '08:00', 'Malam'),
@@ -657,7 +665,6 @@ test('approved absence fulfills duty at fixed pay, while a work conflict blocks 
     extraDutyKeys: new Set(),
     periodComplete: true,
   })[0];
-  assert.equal(SATPAM_PAID_ABSENCE_RATE, 12_500);
   assert.equal(approvedAbsence.fulfilledByAbsence, 1);
   assert.equal(
     approvedAbsence.bonusAmount,

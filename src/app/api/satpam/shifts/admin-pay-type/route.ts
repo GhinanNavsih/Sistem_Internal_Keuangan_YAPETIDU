@@ -6,7 +6,8 @@ import {
   guardDutyIndexId,
   isImmutablePayrollStatus,
   payrollPeriodForDutyDate,
-  SATPAM_RATES,
+  satpamPayTypeIssue,
+  satpamRatesForDutyDate,
   type SatpamPayType,
   type SatpamShiftName,
 } from '@/lib/payroll/domain';
@@ -192,6 +193,10 @@ export async function POST(request: NextRequest) {
         throw new HttpError(409, 'Periode payroll penugasan tidak dapat ditentukan.');
       }
       const dutyDate = String(before.dutyDate || before.activityDate || '');
+      const payTypeIssue = payTypeChanged
+        ? satpamPayTypeIssue(dutyDate, command.payType)
+        : null;
+      if (payTypeIssue) throw new HttpError(409, payTypeIssue);
       const shiftName = String(
         before.reportedShiftName || before.shiftName || '',
       ) as SatpamShiftName;
@@ -311,7 +316,7 @@ export async function POST(request: NextRequest) {
       }
 
       const now = admin.firestore.FieldValue.serverTimestamp();
-      const amount = SATPAM_RATES[command.payType];
+      const amount = satpamRatesForDutyDate(dutyDate)[command.payType];
       const after = {
         ...before,
         employeeId: targetEmployeeId,

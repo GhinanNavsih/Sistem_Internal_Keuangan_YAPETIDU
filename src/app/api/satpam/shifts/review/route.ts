@@ -12,8 +12,10 @@ import {
   isImmutablePayrollStatus,
   payrollPeriodForDutyDate,
   SATPAM_POSTS,
-  SATPAM_RATES,
-  SHIFT_TIMES,
+  satpamPayTypeIssue,
+  satpamRatesForDutyDate,
+  satpamRateVersionForDutyDate,
+  satpamShiftTimes,
   type SatpamPostId,
   type SatpamShiftName,
   SatpamPayType,
@@ -282,6 +284,15 @@ function parseAuditorEditCommand(raw: unknown): AuditorEditCommand {
   if (assignments.filter((assignment) => assignment.assignmentKind === 'extra').length > 1) {
     throw new HttpError(400, 'Edit auditor hanya dapat memuat satu petugas tambahan.');
   }
+  // A petugas tambahan is always paid as Lembur Sendiri.
+  const lemburSendiriIssue = assignments.some(
+    (assignment) =>
+      assignment.assignmentKind === 'extra' ||
+      assignment.shiftType === 'Lembur Sendiri',
+  )
+    ? satpamPayTypeIssue(value.dutyDate, 'Lembur Sendiri')
+    : null;
+  if (lemburSendiriIssue) throw new HttpError(400, lemburSendiriIssue);
   const providedReportIds = assignments.flatMap((assignment) =>
     assignment.reportId ? [assignment.reportId] : [],
   );
@@ -636,7 +647,7 @@ export async function POST(request: NextRequest) {
         }
         // Fees are server-derived from the rate table, never client supplied.
         const payType = String(before.shiftType || '') as SatpamPayType;
-        const rate = SATPAM_RATES[payType];
+        const rate = satpamRatesForDutyDate(String(occurrence.dutyDate || ''))[payType];
         const isKetuaPrimary =
           before.assignmentKind !== 'extra' &&
           String(before.employeeId || '') === String(occurrence.ketuaShiftId || '');
@@ -690,6 +701,11 @@ export async function POST(request: NextRequest) {
           if (typeof rate !== 'number') {
             throw new HttpError(409, `Tipe upah ${payType} tidak dikenal.`);
           }
+          const payTypeIssue = satpamPayTypeIssue(
+            String(occurrence.dutyDate || ''),
+            payType,
+          );
+          if (payTypeIssue) throw new HttpError(409, payTypeIssue);
           if (
             (before.assignmentKind === 'extra' &&
               payType !== 'Lembur Sendiri') ||
@@ -1788,6 +1804,8 @@ export async function PUT(request: NextRequest) {
       );
       const startsAt = admin.firestore.Timestamp.fromDate(new Date(startsAtIso));
       const endsAt = admin.firestore.Timestamp.fromDate(new Date(endsAtIso));
+      const editedShiftTimes = satpamShiftTimes(command.dutyDate, command.shiftName);
+      const editedRates = satpamRatesForDutyDate(command.dutyDate);
       const now = admin.firestore.FieldValue.serverTimestamp();
 
       const reportIds = canonicalAssignments.map((assignment, index) =>
@@ -1887,12 +1905,12 @@ export async function PUT(request: NextRequest) {
           activityType: 'Lainnya',
           activityDate: command.dutyDate,
           dutyDate: command.dutyDate,
-          timeStart: SHIFT_TIMES[command.shiftName].start,
-          timeEnd: SHIFT_TIMES[command.shiftName].end,
+          timeStart: editedShiftTimes.start,
+          timeEnd: editedShiftTimes.end,
           startsAt,
           endsAt,
           ...approvedNow,
-          fee: SATPAM_RATES[assignment.shiftType],
+          fee: editedRates[assignment.shiftType],
           shiftType: assignment.shiftType,
           assignmentKind: assignment.assignmentKind,
           assignmentKey,
@@ -1938,7 +1956,7 @@ export async function PUT(request: NextRequest) {
           anomalyCodes: uniqueAnomalies.map((anomaly) => anomaly.code),
           auditorActionAt: now,
           reviewOwnerUid: actor.uid,
-          rateVersion: before.rateVersion || null,
+          rateVersion: satpamRateVersionForDutyDate(command.dutyDate),
           holidayCalendarVersion: `PERIOD-${period}-R${periodCalendar.revision}`,
           calendarRevision: periodCalendar.revision,
           dutyPlanId: dutyPlanSnapshot.exists ? dutyPlanRef.id : null,
@@ -1961,10 +1979,10 @@ export async function PUT(request: NextRequest) {
               sourceId: reportId,
               sourceOccurrenceId: command.occurrenceId,
               payType: assignment.shiftType,
-              amount: SATPAM_RATES[assignment.shiftType],
+              amount: editedRates[assignment.shiftType],
               currency: 'IDR',
               status: 'posted',
-              rateVersion: before.rateVersion || null,
+              rateVersion: satpamRateVersionForDutyDate(command.dutyDate),
               dutyDate: command.dutyDate,
               startsAt,
               endsAt,

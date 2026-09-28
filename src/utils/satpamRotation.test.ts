@@ -25,3 +25,25 @@ test('rotation follows Pagi to Malam to Sore on consecutive Sundays', () => {
   assert.equal(getSatpamShiftForTeam(1, '2026-08-16'), 'Sore');
   assert.equal(getSatpamShiftForTeam(1, '2026-08-23'), 'Pagi');
 });
+
+test('from October 2026 the week turns over at the 07:00 Pagi start', () => {
+  assert.equal(
+    getSchedulingSunday(new Date('2026-10-04T06:59:59+07:00')).toISOString(),
+    new Date('2026-09-27T08:00:00+07:00').toISOString(),
+  );
+  assert.equal(
+    getSchedulingSunday(new Date('2026-10-04T07:00:00+07:00')).toISOString(),
+    new Date('2026-10-04T07:00:00+07:00').toISOString(),
+  );
+  // The three-week cycle carries on across the change of boundary hour.
+  assert.equal(getSatpamShiftForTeam(1, '2026-09-27'), 'Sore');
+  assert.equal(getSatpamShiftForTeam(1, '2026-10-04'), 'Pagi');
+  assert.equal(
+    getSatpamShiftForTeam(1, new Date('2026-10-04T07:30:00+07:00')),
+    'Pagi',
+  );
+  assert.equal(
+    getSatpamShiftForTeam(1, new Date('2026-10-04T06:30:00+07:00')),
+    'Sore',
+  );
+});

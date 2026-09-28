@@ -16,7 +16,7 @@ import {
   dedupeSatpamActivityReports,
   inferLegacySatpamReportKind,
   payrollPeriodForDutyDate,
-  SATPAM_RATES,
+  satpamRatesForPeriod,
   type SatpamActivityLike,
   type SatpamReportKind,
 } from '../src/lib/payroll/domain';
@@ -258,17 +258,18 @@ async function main() {
       const entries = { ...(snapshot.data()?.entries || {}) };
       const current = entries[recap.employeeId];
       if (!current) return;
+      const rates = satpamRatesForPeriod(recap.period);
       entries[recap.employeeId] = {
         ...current,
         values: {
           ...(current.values || {}),
-          harian: recap.shiftCounts.harian * SATPAM_RATES.Harian,
+          harian: recap.shiftCounts.harian * rates.Harian,
           jumatLibur:
-            recap.shiftCounts.jumatLibur * SATPAM_RATES['Jumat & Libur'],
+            recap.shiftCounts.jumatLibur * rates['Jumat & Libur'],
           lemburSendiri:
-            recap.shiftCounts.lemburSendiri * SATPAM_RATES['Lembur Sendiri'],
+            recap.shiftCounts.lemburSendiri * rates['Lembur Sendiri'],
           lemburCover:
-            recap.shiftCounts.lemburCover * SATPAM_RATES['Lembur Cover'],
+            recap.shiftCounts.lemburCover * rates['Lembur Cover'],
           spj: recap.totalSpj,
         },
         counts: {

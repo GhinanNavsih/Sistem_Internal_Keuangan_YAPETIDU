@@ -1,12 +1,16 @@
 import { RekapColumn } from '@/types';
-import { SATPAM_RATES } from '@/lib/payroll/domain';
+import {
+  SATPAM_RATES_V1,
+  satpamRatesForPeriod,
+  type SatpamRateTable,
+} from '@/lib/payroll/domain';
 import { SATPAM_MONTHLY_ATTENDANCE_BONUS } from '@/lib/payroll/satpamDutyPlan';
 
 // ─── Hardcoded multiplier rates ─────────────────────────────────────────────
-export const RATE_HARIAN = SATPAM_RATES.Harian;
-export const RATE_JUMAT  = SATPAM_RATES['Jumat & Libur'];
-export const RATE_LEMBUR_SENDIRI = SATPAM_RATES['Lembur Sendiri'];
-export const RATE_LEMBUR_COVER = SATPAM_RATES['Lembur Cover'];
+// The non-Satpam day rates. They began equal to the Satpam ones but are set
+// on their own: the October 2026 Satpam raise does not reach other Pekarya.
+export const RATE_HARIAN = 12_500;
+export const RATE_JUMAT  = 25_000;
 export const RATE_BONUS_MUTLAK = 50_000;
 export const RATE_BONUS_BULANAN = 17_500;
 export const RATE_BONUS_PRESENSI_BULANAN = SATPAM_MONTHLY_ATTENDANCE_BONUS;
@@ -18,18 +22,34 @@ export const RATE_PIKET = 15_000;
 // 'count' columns are raw attendance counts that get multiplied.
 // 'currency' columns are direct Rp amounts from the rekap.
 
-export const REKAP_COLUMNS: Record<string, RekapColumn[]> = {
-  SATPAM: [
-    { key: 'harian',                 label: 'Harian',                     type: 'count',    multiplier: RATE_HARIAN,                    slipLabel: 'Vakasi Harian' },
-    { key: 'jumatLibur',             label: 'Jumat & Libur',              type: 'count',    multiplier: RATE_JUMAT,                     slipLabel: 'Jumat & Libur' },
-    { key: 'lemburSendiri',          label: 'Lembur Sendiri',             type: 'count',    multiplier: RATE_LEMBUR_SENDIRI,            slipLabel: 'Lembur Sendiri' },
-    { key: 'lemburCover',            label: 'Lembur Cover',               type: 'count',    multiplier: RATE_LEMBUR_COVER,              slipLabel: 'Lembur Cover' },
+/**
+ * Satpam rekap columns priced for one payroll period. From October 2026
+ * Harian is Rp15.000 and the Lembur Sendiri column is gone — no duty in those
+ * months can carry it (satpamPayTypeIssue).
+ */
+function satpamRekapColumns(rates: SatpamRateTable): RekapColumn[] {
+  const withLemburSendiri = rates === SATPAM_RATES_V1;
+  return [
+    { key: 'harian',                 label: 'Harian',                     type: 'count',    multiplier: rates.Harian,                   slipLabel: 'Vakasi Harian' },
+    { key: 'jumatLibur',             label: 'Jumat & Libur',              type: 'count',    multiplier: rates['Jumat & Libur'],         slipLabel: 'Jumat & Libur' },
+    ...(withLemburSendiri
+      ? [{ key: 'lemburSendiri',     label: 'Lembur Sendiri',             type: 'count',    multiplier: rates['Lembur Sendiri'],        slipLabel: 'Lembur Sendiri' } satisfies RekapColumn]
+      : []),
+    { key: 'lemburCover',            label: 'Lembur Cover',               type: 'count',    multiplier: rates['Lembur Cover'],          slipLabel: 'Lembur Cover' },
     { key: 'bonusPresensiBulanan',   label: 'Bonus Presensi Bulanan',     type: 'count',    multiplier: RATE_BONUS_PRESENSI_BULANAN,    slipLabel: 'Bonus Presensi Bulanan' },
     { key: 'bonusPresensiTriwulanan', label: 'Bonus Presensi Triwulanan',   type: 'count',    multiplier: RATE_BONUS_PRESENSI_TRIWULANAN,  slipLabel: 'Bonus Presensi Triwulanan' },
     { key: 'spj',                    label: 'SPJ',                        type: 'currency',                                             slipLabel: 'SPJ' },
     { key: 'tunjanganJabatan',       label: 'Tunjangan Jabatan',          type: 'currency',                                             slipLabel: 'Tunjangan Jabatan' },
     { key: 'bonusLainnya',           label: 'Bonus Lainnya',              type: 'count',    multiplier: RATE_BONUS_BULANAN,             slipLabel: 'Bonus Lainnya' },
-  ],
+  ];
+}
+
+/**
+ * SATPAM here is the pre-October 2026 layout; ask getRekapColumns with a
+ * period for the columns that actually price a given month.
+ */
+export const REKAP_COLUMNS: Record<string, RekapColumn[]> = {
+  SATPAM: satpamRekapColumns(SATPAM_RATES_V1),
   KEBERSIHAN: [
     { key: 'harian',             label: 'Presensi Harian',        type: 'count',    multiplier: RATE_HARIAN,         slipLabel: 'Presensi Harian' },
     { key: 'jumatLibur',         label: 'Jumat & Libur',          type: 'count',    multiplier: RATE_JUMAT,          slipLabel: 'Jumat & Libur' },
@@ -145,8 +165,13 @@ export function getRekapColumns(
   category: string,
   period?: string,
 ): RekapColumn[] {
-  const base = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
   const normalizedPeriod = normalizeRekapPeriod(period);
+  if (category === 'SATPAM') {
+    return normalizedPeriod
+      ? satpamRekapColumns(satpamRatesForPeriod(normalizedPeriod))
+      : REKAP_COLUMNS.SATPAM;
+  }
+  const base = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
   if (
     !normalizedPeriod ||
     normalizedPeriod < '2026-08' ||
