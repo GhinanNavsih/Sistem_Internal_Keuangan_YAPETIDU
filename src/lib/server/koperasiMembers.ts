@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import admin, { adminDb } from '@/lib/firebase-admin';
-import { isKoperasiAdminConfigured, koperasiAdminDb } from '@/lib/koperasi-admin';
+import { isKoperasiAdminConfigured, koperasiAdminDb, KOPERASI_LOANS_COLLECTION, KOPERASI_USERS_COLLECTION } from '@/lib/koperasi-admin';
 import { isConvertedAway } from '@/lib/employeeConversion';
 import {
   bankDetailsDiffer, diffKoperasiMember, employeeLinkedToMember, hasSakuBank,
@@ -10,6 +10,7 @@ import {
 } from '@/lib/koperasiMembers';
 import { buildFinancialAuditRecord, newFinancialAuditRef, type FinancialAuditInput } from './audit';
 import { HttpError, type AuthenticatedProfile } from './auth';
+import { isKoperasiActiveStatus } from '@/lib/payroll/koperasiLoanApplication';
 
 const COLLECTIONS: readonly KoperasiEmployeeCollection[] = ['Employees_Loyalis', 'Employees_BlueCollar'];
 type Data = Record<string, unknown>;
@@ -22,7 +23,7 @@ export function memberCommandBody(value: unknown): Data {
   return value as Data;
 }
 function documentId(value: unknown, label: string): string {
-  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(value)) throw new HttpError(400, `${label} tidak valid.`);
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_. -]{1,128}$/.test(value)) throw new HttpError(400, `${label} tidak valid.`);
   return value;
 }
 function requestId(body: Data): string {
@@ -311,4 +312,90 @@ export async function syncKoperasiBanks(actor: AuthenticatedProfile, body: Data)
     after: planned.map(change => ({ memberId: change.memberId, bankDetails: change.after })),
     metadata: { members: planned, skipped: prepared.intent.skipped },
   }, { synced: planned.length, skipped: prepared.intent.skipped });
+}
+
+export async function deleteKoperasiMember(actor: AuthenticatedProfile, body: Data) {
+  requireKoperasiAdmin();
+  const memberId = documentId(body.memberId, 'ID anggota');
+  const id = requestId(body);
+  const reason = note(body);
+  const op = operation(actor, id, { action: 'delete', memberId, reason });
+  const replay = previousResult(await op.ref.get(), op);
+  if (replay) return replay;
+
+  const userRef = koperasiAdminDb().collection(KOPERASI_USERS_COLLECTION).doc(memberId);
+  const userSnap = await userRef.get();
+  if (!userSnap.exists) {
+    throw new HttpError(404, 'Anggota Koperasi tidak ditemukan.');
+  }
+  const member: KoperasiMember = { ...userSnap.data(), id: userSnap.id };
+
+  // Safety check: ensure member has no active or unsettled loans in simpanPinjam
+  const loansSnap = await koperasiAdminDb().collection(KOPERASI_LOANS_COLLECTION).get();
+  const activeLoans = loansSnap.docs.filter(doc => {
+    const data = doc.data();
+    const isThisMember = data.userId === memberId || (member.uid && data.userId === member.uid);
+    if (!isThisMember) return false;
+    const status = String(data.status || '');
+    // Terminal, rejected, cancelled, or paid-off loans are settled and do not block deletion
+    if (['Lunas', 'Ditolak', 'Ditolak BAK', 'Ditolak Wakil Rektor 2', 'Dibatalkan', 'Revisi Ditolak Anggota'].includes(status)) {
+      return false;
+    }
+    // Active loan with remaining balance
+    if (status === 'Disetujui dan Aktif') {
+      const sisa = typeof data.sisaHutang === 'number' ? data.sisaHutang : Number(data.sisaHutang) || 0;
+      return sisa > 0;
+    }
+    // In-flight / pending loan application
+    return isKoperasiActiveStatus(status);
+  });
+
+  if (activeLoans.length > 0) {
+    throw new HttpError(409, 'Anggota memiliki pinjaman aktif atau pengajuan berjalan di Koperasi dan tidak dapat dihapus.');
+  }
+
+  const prepared = await prepareOperation(op, { memberId, before: member });
+  if (prepared.completed) return prepared.completed;
+
+  // Unlink any SAKU employee linked to this member
+  await adminDb.runTransaction(async transaction => {
+    const holders = await memberHolders(transaction, member);
+    for (const holder of holders) {
+      transaction.update(holder.ref, {
+        koperasiAuthUid: null,
+        koperasiUserId: null,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedBy: actor.uid,
+      });
+    }
+  });
+
+  // Delete user document in Koperasi database
+  await userRef.delete();
+
+  // Best-effort delete Auth user in secondary project if exists
+  if (member.uid) {
+    try {
+      const app = admin.apps.find(candidate => candidate?.name === 'koperasi');
+      if (app) {
+        await app.auth().deleteUser(member.uid);
+      }
+    } catch {
+      // Ignored if Auth user does not exist or already removed
+    }
+  }
+
+  return finishOperation(actor, op, {
+    action: 'KOPERASI_MEMBER_DELETED',
+    entityType: 'KoperasiMember',
+    entityId: memberId,
+    requestId: id,
+    reason: reason || 'Anggota Koperasi dihapus oleh Super Admin.',
+    before: member,
+    after: null,
+    metadata: {
+      memberName: member.nama || member.name || null,
+      memberNumber: member.nomorAnggota || member.memberNumber || null,
+    },
+  }, { memberId, deleted: true });
 }

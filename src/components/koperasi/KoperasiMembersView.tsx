@@ -70,8 +70,9 @@ export default function KoperasiMembersView({ members, employees, reload, disabl
       member.kantor, member.office, member.satuanKerja, member.unit, employee?.name, employee?.id,
       employee?.employment_profile?.department_unit, employee?.employment?.jobCategory].join(' ').toLowerCase().includes(search.toLowerCase().trim());
   });
-  async function saved(text = 'Perubahan anggota tersimpan. Jalankan Refresh di Payroll untuk memperbarui draf.') {
-    setEditing(null); setLinking(null); setSyncing(false); setMessage(text);
+  async function saved(text?: unknown) {
+    const msg = typeof text === 'string' && text.trim() ? text : 'Perubahan anggota tersimpan. Jalankan Refresh di Payroll untuk memperbarui draf.';
+    setEditing(null); setLinking(null); setSyncing(false); setMessage(msg);
     await reload();
   }
   async function staleReload() { setEditing(null); setLinking(null); setSyncing(false); await reload(); }
@@ -110,7 +111,7 @@ export default function KoperasiMembersView({ members, employees, reload, disabl
       {!filtered.length && <TableRow><TableCell colSpan={9} className="py-16 text-center"><div className="mx-auto flex max-w-xs flex-col items-center"><div className="mb-3 flex size-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-400"><UsersRound className="size-5" /></div><p className="font-semibold text-slate-700">Tidak ada anggota yang cocok</p><p className="mt-1 text-xs text-slate-500">Ubah pencarian atau pilih filter lain untuk melihat akun.</p></div></TableCell></TableRow>}
     </TableBody></Table></div>
     </section>
-    {editing && <KoperasiMemberEditDialog key={editing.id} member={editing} employee={rows.find(row => row.member.id === editing.id)?.employee} onClose={() => setEditing(null)} onSaved={() => saved()} onReload={staleReload} onLink={() => { setLinking(editing); setEditing(null); }} />}
+    {editing && <KoperasiMemberEditDialog key={editing.id} member={editing} employee={rows.find(row => row.member.id === editing.id)?.employee} onClose={() => setEditing(null)} onSaved={msg => saved(msg)} onReload={staleReload} onLink={() => { setLinking(editing); setEditing(null); }} />}
     {linking && <KoperasiLinkDialog key={linking.id} member={linking} employees={employees} current={rows.find(row => row.member.id === linking.id)?.employee} onClose={() => setLinking(null)} onSaved={warning => saved(warning || 'Tautan anggota tersimpan. Rekening mengikuti data SAKU.')} onReload={staleReload} />}
     {syncing && <KoperasiBankSyncDialog rows={bankRows} onClose={() => setSyncing(false)} onSaved={saved} onReload={staleReload} />}
   </div>;

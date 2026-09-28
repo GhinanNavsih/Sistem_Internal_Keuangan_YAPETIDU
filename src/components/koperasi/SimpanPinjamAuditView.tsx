@@ -297,7 +297,7 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
       {/* Subtle decorative blobs */}
       <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
-      <div className="max-w-7xl mx-auto relative z-10">
+      <div className="w-full mx-auto relative z-10">
         <GlobalHeader />
         {navigation}
         

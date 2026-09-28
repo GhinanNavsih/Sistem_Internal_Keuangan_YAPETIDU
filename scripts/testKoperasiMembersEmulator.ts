@@ -24,7 +24,7 @@ async function main() {
   const { koperasiAdminDb } = await import('../src/lib/koperasi-admin');
   const koperasi = koperasiAdminDb();
   assert.equal(admin.app('koperasi').options.projectId, 'koperasi-unipdu');
-  const { PATCH } = await import('../src/app/api/admin/koperasi-members/route');
+  const { PATCH, DELETE } = await import('../src/app/api/admin/koperasi-members/route');
   const { POST: link } = await import('../src/app/api/admin/koperasi-members/link/route');
   const { POST: sync } = await import('../src/app/api/admin/koperasi-members/bank-sync/route');
   const { GET: redirect } = await import('../src/app/dashboard/payroll/simpan-pinjam/route');
@@ -51,6 +51,7 @@ async function main() {
   const command = { memberId: 'member-1', input, expected: koperasiMemberSnapshot(base), requestId: key() };
   for (const actor of [worker, finance, loyalisAdmin]) {
     assert.equal((await invoke(PATCH, command, actor.authorization, 'PATCH')).status, 403);
+    assert.equal((await invoke(DELETE, { memberId: 'member-1' }, actor.authorization, 'DELETE')).status, 403);
     assert.equal((await invoke(link, {}, actor.authorization)).status, 403);
     assert.equal((await invoke(sync, { memberIds: ['member-1'] }, actor.authorization)).status, 403);
   }
@@ -172,6 +173,39 @@ async function main() {
   assert.equal(recoveredBankAudits.size, 1);
   assert.equal(recoveredBankAudits.docs[0].data().before[0].bankDetails.nomorRekening, '0055000');
   assert.equal(recoveredBankAudits.docs[0].data().after[0].bankDetails.nomorRekening, '0066000');
+
+  // Test member deletion: rejection with active loan, unlink from employee, and deletion with audit log
+  const toDelete = koperasi.doc('users/member-delete-test');
+  await toDelete.set({ ...base, uid: 'uid-delete-test' });
+  const deleteEmployee = adminDb.doc('Employees_Loyalis/Loyalis_Delete_Test');
+  await deleteEmployee.set({ personal_info: { status: 'AKTIF' }, koperasiUserId: 'member-delete-test', koperasiAuthUid: 'uid-delete-test' });
+
+  // 1. Rejects deletion when active loan exists (409)
+  const activeLoan = koperasi.doc('simpanPinjam/loan-delete-test');
+  await activeLoan.set({ userId: 'member-delete-test', status: 'Disetujui dan Aktif', sisaHutang: 500000 });
+  assert.equal((await invoke(DELETE, { memberId: 'member-delete-test', requestId: key() }, superAdmin.authorization, 'DELETE')).status, 409);
+
+  // 2. Allows deletion when loan is settled / Lunas
+  await activeLoan.set({ userId: 'member-delete-test', status: 'Lunas', sisaHutang: 0 });
+  const deleteRequestId = key();
+  const deleteResult = await succeeds(await invoke(DELETE, { memberId: 'member-delete-test', requestId: deleteRequestId }, superAdmin.authorization, 'DELETE'));
+  assert.equal(deleteResult.deleted, true);
+
+  // Check user doc is deleted from Koperasi
+  assert.equal((await toDelete.get()).exists, false);
+
+  // Check unlinked from SAKU employee
+  const employeeAfterDelete = (await deleteEmployee.get()).data()!;
+  assert.equal(employeeAfterDelete.koperasiUserId, null);
+  assert.equal(employeeAfterDelete.koperasiAuthUid, null);
+
+  // Check audit log recorded
+  const deleteAudits = await adminDb.collection('FinancialAuditLogs').where('action', '==', 'KOPERASI_MEMBER_DELETED').where('requestId', '==', deleteRequestId).get();
+  assert.equal(deleteAudits.size, 1);
+  assert.equal(deleteAudits.docs[0].data().entityId, 'member-delete-test');
+
+  // Replay is idempotent
+  assert.equal((await succeeds(await invoke(DELETE, { memberId: 'member-delete-test', requestId: deleteRequestId }, superAdmin.authorization, 'DELETE'))).deleted, true);
 
   // Authenticated browser writes use actual Firestore rules through REST.
   const clientWrite = (authorization: string, path: string, fields: Record<string, unknown>) => fetch(

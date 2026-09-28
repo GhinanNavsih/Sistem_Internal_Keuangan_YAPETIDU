@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from 'react';
-import { AlertTriangle, Banknote, Loader2 } from 'lucide-react';
+import { AlertTriangle, Banknote, Loader2, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CurrencyInput } from '@/components/ui/currency-input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -28,8 +28,10 @@ function Choice({ id, label, value, options, onChange }: { id: string; label: st
 
 export default function KoperasiMemberEditDialog({ member, employee, onClose, onSaved, onLink, onReload }: {
   member: KoperasiMember; employee?: KoperasiEmployee; onClose: () => void;
-  onSaved: () => Promise<void>; onLink: () => void; onReload: () => Promise<void>;
+  onSaved: (message?: string) => Promise<void>; onLink: () => void; onReload: () => Promise<void>;
 }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteReason, setDeleteReason] = useState('');
   const [form, setForm] = useState<KoperasiMemberEdit>(() => ({
     paymentStatus: member.paymentStatus || '',
     membershipStatus: (member.membershipStatus ?? member.status) === 'pending' ? 'Pending' : member.membershipStatus ?? member.status ?? 'Pending',
@@ -42,13 +44,55 @@ export default function KoperasiMemberEditDialog({ member, employee, onClose, on
   const bank = employee ? sakuBankDetails(employee, employee.collection) : member.bankDetails;
   return <Dialog open onOpenChange={open => { if (!open && !saving) onClose(); }}>
     <DialogContent showCloseButton={!saving} className="max-h-[90vh] overflow-y-auto rounded-[24px] border-slate-200 p-5 shadow-2xl sm:max-w-2xl sm:p-6">
-      <DialogHeader className="mb-1"><DialogTitle className="text-xl font-bold tracking-tight text-slate-900">Ubah anggota Koperasi</DialogTitle><DialogDescription className="text-slate-500">{member.nama || member.id} · No. Anggota {member.nomorAnggota || '—'}</DialogDescription></DialogHeader>
+      <DialogHeader className="mb-1"><DialogTitle className="text-xl font-bold tracking-tight text-slate-900">{confirmDelete ? 'Hapus anggota Koperasi' : 'Ubah anggota Koperasi'}</DialogTitle><DialogDescription className="text-slate-500">{member.nama || member.id} · No. Anggota {member.nomorAnggota || '—'}</DialogDescription></DialogHeader>
+      {confirmDelete ? (
+        <div className="space-y-5">
+          <div className="flex items-start gap-4 rounded-2xl border border-rose-100 bg-rose-50/80 p-4">
+            <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-600">
+              <Trash2 className="size-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-rose-950">Konfirmasi Hapus Anggota</h3>
+              <p className="mt-1 text-sm leading-relaxed text-rose-800">
+                Akun <strong>{member.nama || member.id}</strong> (No. Anggota: {member.nomorAnggota || member.memberNumber || '—'}) akan dihapus permanen dari data anggota Koperasi.
+                {employee && ` Tautan ke pegawai SAKU (${employee.name}) akan dilepas secara otomatis.`}
+              </p>
+              <p className="mt-2 text-xs font-semibold text-rose-700">Tindakan ini tidak dapat dibatalkan.</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="delete-reason" className="text-xs font-semibold text-slate-700">Alasan penghapusan (opsional)</Label>
+            <textarea
+              id="delete-reason"
+              maxLength={500}
+              value={deleteReason}
+              disabled={saving}
+              onChange={event => setDeleteReason(event.target.value)}
+              className="min-h-20 w-full rounded-xl border border-slate-200 bg-slate-50/50 p-3 text-sm outline-none transition focus:border-rose-400 focus:bg-white focus:ring-2 focus:ring-rose-500/20"
+              placeholder="Tambahkan alasan mengapa anggota ini dihapus..."
+            />
+          </div>
+          {error && <p role="alert" className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2.5 text-sm text-rose-700">{error}</p>}
+          <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+            <Button type="button" variant="outline" className="h-10 rounded-xl border-slate-200 px-4 text-slate-700 hover:bg-slate-50" disabled={saving} onClick={() => setConfirmDelete(false)}>Batal</Button>
+            <Button
+              type="button"
+              className="h-10 rounded-xl bg-rose-600 px-4 font-semibold text-white shadow-sm hover:bg-rose-700"
+              disabled={saving}
+              onClick={() => void submit('/api/admin/koperasi-members', 'DELETE', { memberId: member.id, note: deleteReason }, () => onSaved('Anggota Koperasi berhasil dihapus.'))}
+            >
+              {saving && <Loader2 className="mr-1.5 size-4 animate-spin" />}
+              {saving ? 'Menghapus...' : 'Ya, hapus anggota'}
+            </Button>
+          </div>
+        </div>
+      ) : (
       <form className="space-y-5" onSubmit={event => {
         event.preventDefault();
         const errors = validateKoperasiMemberEdit(form, member);
         setValidation(Object.values(errors)[0] || '');
         if (Object.keys(errors).length) return;
-        void submit('/api/admin/koperasi-members', 'PATCH', { memberId: member.id, input: form, expected: koperasiMemberSnapshot(member) }, onSaved);
+        void submit('/api/admin/koperasi-members', 'PATCH', { memberId: member.id, input: form, expected: koperasiMemberSnapshot(member) }, () => onSaved('Perubahan anggota tersimpan. Jalankan Refresh di Payroll untuk memperbarui draf.'));
       }}>
         <fieldset disabled={saving || stale} className="space-y-5">
           <div className="grid gap-4 rounded-2xl border border-slate-100 bg-slate-50/60 p-4 sm:grid-cols-2">
@@ -75,11 +119,31 @@ export default function KoperasiMemberEditDialog({ member, employee, onClose, on
           <div className="space-y-2"><Label htmlFor="member-note" className="text-xs font-semibold text-slate-700">Catatan (opsional)</Label><textarea id="member-note" maxLength={500} value={form.note} onChange={event => update('note', event.target.value)} className="min-h-20 w-full rounded-xl border border-slate-200 bg-slate-50/50 p-3 text-sm outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-500/20" placeholder="Tambahkan alasan perubahan bila diperlukan" /></div>
         </fieldset>
         {(validation || error) && <p role="alert" className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2.5 text-sm text-rose-700">{error || validation}</p>}
-        <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
-          <Button type="button" variant="outline" className="h-10 rounded-xl border-slate-200 px-4 text-slate-700 hover:bg-slate-50" disabled={saving} onClick={onClose}>Batal</Button>
-          {stale ? <Button type="button" className="h-10 rounded-xl bg-indigo-600 px-4 font-semibold text-white hover:bg-indigo-700" onClick={() => void onReload()}>Muat ulang data</Button> : <Button type="submit" className="h-10 rounded-xl bg-indigo-600 px-4 font-semibold text-white shadow-sm hover:bg-indigo-700" disabled={saving}>{saving && <Loader2 className="size-4 animate-spin" />}{saving ? 'Menyimpan...' : 'Simpan perubahan'}</Button>}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-4">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10 rounded-xl border-rose-200 text-xs font-semibold text-rose-600 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
+            disabled={saving}
+            onClick={() => setConfirmDelete(true)}
+          >
+            <Trash2 className="mr-1.5 size-4" />
+            Hapus anggota
+          </Button>
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="outline" className="h-10 rounded-xl border-slate-200 px-4 text-slate-700 hover:bg-slate-50" disabled={saving} onClick={onClose}>Batal</Button>
+            {stale ? (
+              <Button type="button" className="h-10 rounded-xl bg-indigo-600 px-4 font-semibold text-white hover:bg-indigo-700" onClick={() => void onReload()}>Muat ulang data</Button>
+            ) : (
+              <Button type="submit" className="h-10 rounded-xl bg-indigo-600 px-4 font-semibold text-white shadow-sm hover:bg-indigo-700" disabled={saving}>
+                {saving && <Loader2 className="size-4 animate-spin" />}
+                {saving ? 'Menyimpan...' : 'Simpan perubahan'}
+              </Button>
+            )}
+          </div>
         </div>
       </form>
+      )}
     </DialogContent>
   </Dialog>;
 }
