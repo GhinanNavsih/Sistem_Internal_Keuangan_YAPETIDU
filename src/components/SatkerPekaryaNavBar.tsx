@@ -27,13 +27,11 @@ export default function SatkerPekaryaNavBar() {
   const permittedCategories = (profile?.permittedCategories || []).map((item) =>
     item.trim().toUpperCase(),
   );
-  const defaultAttendanceCategory =
-    permittedCategories.some((item) => item !== 'SATPAM')
-      ? ALL_BLUE_COLLAR_CATEGORY
-      : permittedCategories[0] || '';
+  const defaultAttendanceCategory = ALL_BLUE_COLLAR_CATEGORY;
   const attendanceCategory =
-    searchParams.get('category')?.trim().toUpperCase() ||
-    defaultAttendanceCategory;
+    searchParams.get('category')?.trim().toUpperCase() === 'SATPAM' && pathname.includes('presensi-pekarya')
+      ? 'SATPAM'
+      : defaultAttendanceCategory;
   // Uraian pages resolve their own default period (previous month before the
   // 6th, unless closed) when the URL carries none at all. Forcing "now" in
   // here — like the non-uraian links below still do — would pre-empt that,
@@ -45,7 +43,7 @@ export default function SatkerPekaryaNavBar() {
     query ? `?${periodQuery ? `${periodQuery}&${query}` : query}` : periodQuery ? `?${periodQuery}` : '';
   const uraianUrl = `/dashboard/payroll/uraian/rekap-pekarya${withPeriod('')}`;
   const attendanceUrl = `/dashboard/payroll/uraian/presensi-pekarya${withPeriod(
-    attendanceCategory ? `category=${encodeURIComponent(attendanceCategory)}` : '',
+    `category=${encodeURIComponent(attendanceCategory)}`,
   )}`;
   const activityUrl = `/dashboard/payroll/activity-review?month=${month}&year=${year}`;
   const journeysUrl = `/dashboard/payroll/driver-journeys?month=${month}&year=${year}`;

@@ -5,20 +5,42 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   AlertTriangle,
+  Calendar,
+  Check,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
   ClipboardCheck,
+  Clock,
   ExternalLink,
   Eye,
+  FileText,
+  Loader2,
   RefreshCw,
   Save,
   ShieldCheck,
   UserRoundX,
+  X,
+  ZoomIn,
 } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Checkbox } from '@/components/ui/checkbox';
+import { formatPresenceDate } from '@/lib/payroll/presenceCorrections';
 import { useAuth } from '@/lib/AuthContext';
-import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
-import { ImageExifViewer } from '@/components/ImageExifViewer';
+import {
+  authenticatedJson,
+  createFinancialRequestId,
+  propagateUraianToSlips,
+} from '@/lib/payroll/client';
+import { EvidenceLightbox } from '@/components/EvidenceLightbox';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -30,6 +52,14 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import type { AnnualPaidLeaveRequest } from '@/lib/payroll/annualPaidLeave';
+import {
+  gantiLiburDeclineSuggestion,
+  gantiLiburVerdictLabel,
+  type GantiLiburAttendanceCheck,
+  type GantiLiburRequest,
+} from '@/lib/payroll/gantiLibur';
+import { GantiLiburAttachmentLinks } from '@/components/GantiLiburAttachmentLinks';
 import {
   isValidAttendanceScanRange,
   pekaryaAttendanceReportType,
@@ -401,6 +431,13 @@ function satpamAbsenceTypeLabel(absenceType: string | undefined): string {
   );
 }
 
+function checkClass(check: GantiLiburAttendanceCheck): string {
+  if (check.verdict === 'eligible') return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+  if (check.verdict === 'awaiting_upload') return 'border-slate-200 bg-slate-50 text-slate-600';
+  if (check.verdict === 'absent') return 'border-rose-200 bg-rose-50 text-rose-800';
+  return 'border-amber-200 bg-amber-50 text-amber-800';
+}
+
 function satpamPlanStatusLabel(status: string): string {
   return (
     {
@@ -453,142 +490,717 @@ function satpamShiftReviewHref(
   return `/dashboard/payroll/activity-review?${params.toString()}`;
 }
 
-function SatpamSubmissionsSection({
-  requests,
-  notice,
+function isImageProofUrl(value?: string | null): boolean {
+  if (!value) return false;
+  const normalized = value.toLowerCase();
+  return (
+    /\.(?:jpe?g|png|gif|webp)(?:[?#]|$)/.test(normalized) ||
+    normalized.includes('image%2f') ||
+    normalized.includes('image/')
+  );
+}
+
+function submissionStatusLabel(status: string): string {
+  switch (status) {
+    case 'approved':
+      return 'DISETUJUI';
+    case 'declined':
+    case 'rejected':
+      return 'DITOLAK';
+    case 'withdrawn':
+      return 'DITARIK';
+    case 'pending':
+    default:
+      return 'TERTUNDA';
+  }
+}
+
+interface BlueCollarSubmissionItem {
+  id: string;
+  key: string;
+  kind: 'official_leave' | 'satpam_absence' | 'paid_leave' | 'ganti_libur';
+  employeeId: string;
+  employeeName: string;
+  category: string;
+  date: string;
+  title: string;
+  subtitle: string;
+  reason: string;
+  status: string;
+  evidenceUrl?: string | null;
+  attachments?: GantiLiburRequest['attachments'];
+  approvedAmount?: number;
+  decisionReason?: string | null;
+  shiftName?: string | null;
+  postId?: string | null;
+  isUnassignedSatpam?: boolean;
+  hasShiftRegistrationConflict?: boolean;
+  shiftRegistrationConflicts?: Array<{
+    id: string;
+    shiftName?: string | null;
+    postId?: string | null;
+    shiftType?: string | null;
+    ketuaShiftName?: string | null;
+  }>;
+  payrollExcludedFromHarian?: boolean;
+  payrollExclusionReason?: string | null;
+  attendanceCheck?: GantiLiburAttendanceCheck | null;
+  raw: any;
+}
+
+function BlueCollarSubmissionsCard({
+  category,
+  canViewSatpamCategory,
   canEdit,
   working,
-  onReview,
+  profileRole,
+  satpamSubmissionNotice,
+  officialLeaves = [],
+  satpamRequests = [],
+  paidLeaves = [],
+  gantiLiburs = [],
+  onReviewOfficialLeave,
+  onReviewSatpamAbsence,
+  onReviewPaidLeave,
+  onReviewGantiLibur,
+  openDeclineDialog,
+  onBulkApprove,
+  setSelectedEvidence,
 }: {
-  requests: SatpamAbsenceAdminView['requests'];
-  notice?: string;
+  category: string;
+  canViewSatpamCategory: boolean;
   canEdit: boolean;
   working: boolean;
-  onReview: (
+  profileRole?: string;
+  satpamSubmissionNotice?: string;
+  officialLeaves?: PekaryaOfficialLeaveRequest[];
+  satpamRequests?: SatpamAbsenceAdminView['requests'];
+  paidLeaves?: AnnualPaidLeaveRequest[];
+  gantiLiburs?: GantiLiburRequest[];
+  onReviewOfficialLeave: (
+    leave: PekaryaOfficialLeaveRequest,
+    action: 'approve' | 'decline',
+    reason?: string,
+  ) => Promise<void>;
+  onReviewSatpamAbsence: (
     absence: SatpamAbsenceAdminView['requests'][number],
     action: 'approve' | 'decline' | 'supersede_approve' | 'supersede_decline',
+    reason?: string,
+  ) => Promise<void>;
+  onReviewPaidLeave: (
+    leave: AnnualPaidLeaveRequest,
+    action: 'approve' | 'decline',
+    reason?: string,
+  ) => Promise<void>;
+  onReviewGantiLibur: (
+    gl: GantiLiburRequest,
+    action: 'approve' | 'decline',
+    reason?: string,
+  ) => Promise<void>;
+  openDeclineDialog: (
+    type: 'official_leave' | 'satpam_absence' | 'paid_leave' | 'ganti_libur',
+    item: any,
+    title: string,
+    defaultReason?: string,
   ) => void;
+  onBulkApprove: (items: BlueCollarSubmissionItem[]) => Promise<void>;
+  setSelectedEvidence: (evidence: { url: string; title: string }) => void;
 }) {
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const unifiedItems: BlueCollarSubmissionItem[] = useMemo(() => {
+    const items: BlueCollarSubmissionItem[] = [];
+
+    for (const leave of officialLeaves) {
+      const reportType = pekaryaAttendanceReportType(leave);
+      items.push({
+        id: leave.id,
+        key: `official_leave:${leave.id}`,
+        kind: 'official_leave',
+        employeeId: leave.employeeId,
+        employeeName: leave.employeeName || leave.employeeId || '—',
+        category: leave.category,
+        date: leave.date,
+        title: reportType === 'scan' ? 'Koreksi Scan' : 'Izin Resmi',
+        subtitle:
+          reportType === 'scan'
+            ? `Scan ${leave.scanIn?.slice(0, 5) || '--:--'} – ${leave.scanOut?.slice(0, 5) || '--:--'}`
+            : '07:30 – 14:00',
+        reason: leave.reason || 'Tanpa keterangan',
+        status: leave.status,
+        evidenceUrl: leave.evidenceUrl,
+        approvedAmount: leave.approvedAmount,
+        decisionReason: (leave as any).decisionReason,
+        raw: leave,
+      });
+    }
+
+    for (const absence of satpamRequests) {
+      const reqType = satpamAttendanceReportType(absence);
+      const isUnassignedSatpam =
+        absence.scheduleRelation === 'unassigned' || !absence.teamId;
+      const shiftConflicts = absence.shiftRegistrationConflicts || [];
+      const hasConflict =
+        reqType === 'izin_resmi' &&
+        !isUnassignedSatpam &&
+        (absence.hasShiftRegistrationConflict === true || shiftConflicts.length > 0);
+
+      const subtitleParts: string[] = [];
+      if (reqType === 'scan') {
+        subtitleParts.push(
+          `Scan ${absence.scanIn?.slice(0, 5) || '--:--'} – ${absence.scanOut?.slice(0, 5) || '--:--'}`,
+        );
+      } else {
+        if (absence.shiftName) subtitleParts.push(`Shift ${absence.shiftName}`);
+        if (absence.postId) subtitleParts.push(absence.postId);
+        if (isUnassignedSatpam) subtitleParts.push('Tanpa regu');
+      }
+
+      items.push({
+        id: absence.id,
+        key: `satpam_absence:${absence.id}`,
+        kind: 'satpam_absence',
+        employeeId: absence.employeeId,
+        employeeName: absence.employeeName || absence.employeeId || '—',
+        category: 'SATPAM',
+        date: absence.dutyDate,
+        title:
+          reqType === 'scan'
+            ? 'Koreksi Scan'
+            : satpamAbsenceTypeLabel(absence.absenceType),
+        subtitle: subtitleParts.join(' · '),
+        reason: absence.reason || 'Tanpa keterangan',
+        status: absence.status,
+        evidenceUrl: (absence as any).evidenceUrl || (absence as any).proofUrl,
+        approvedAmount: absence.approvedAmount,
+        decisionReason: (absence as any).decisionReason,
+        shiftName: absence.shiftName,
+        postId: absence.postId,
+        isUnassignedSatpam,
+        hasShiftRegistrationConflict: hasConflict,
+        shiftRegistrationConflicts: shiftConflicts,
+        payrollExcludedFromHarian: absence.payrollExcludedFromHarian === true,
+        payrollExclusionReason: absence.payrollExclusionReason,
+        raw: absence,
+      });
+    }
+
+    for (const pl of paidLeaves) {
+      items.push({
+        id: pl.id,
+        key: `paid_leave:${pl.id}`,
+        kind: 'paid_leave',
+        employeeId: pl.employeeId,
+        employeeName: pl.employeeName || pl.employeeId || '—',
+        category: pl.category,
+        date: pl.leaveDate,
+        title: 'Cuti Tahunan',
+        subtitle: 'Dibayar Penuh',
+        reason: pl.reason || 'Tanpa alasan tertulis',
+        status: pl.status,
+        evidenceUrl: (pl as any).evidenceUrl || null,
+        approvedAmount: pl.approvedAmount,
+        decisionReason: pl.decisionReason,
+        raw: pl,
+      });
+    }
+
+    for (const gl of gantiLiburs) {
+      items.push({
+        id: gl.id,
+        key: `ganti_libur:${gl.id}`,
+        kind: 'ganti_libur',
+        employeeId: gl.employeeId,
+        employeeName: gl.employeeName || gl.employeeId || '—',
+        category: gl.category || 'PEKARYA',
+        date: gl.dayOffDate,
+        title: 'Ganti Libur',
+        subtitle: `Masuk kerja: ${gl.workedDate}`,
+        reason: gl.reason || 'Tanpa keterangan',
+        status: gl.status,
+        evidenceUrl:
+          gl.attachments && gl.attachments.length > 0 ? gl.attachments[0].url : undefined,
+        attachments: gl.attachments,
+        decisionReason: gl.decisionReason,
+        attendanceCheck: gl.attendanceCheck,
+        raw: gl,
+      });
+    }
+
+    items.sort((a, b) => b.date.localeCompare(a.date));
+    return items;
+  }, [officialLeaves, satpamRequests, paidLeaves, gantiLiburs]);
+
+  const pendingItems = useMemo(
+    () => unifiedItems.filter((i) => i.status === 'pending'),
+    [unifiedItems],
+  );
+
+  const allPendingSelected =
+    pendingItems.length > 0 &&
+    pendingItems.every((item) => selectedKeys.has(item.key));
+
+  const toggleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedKeys(new Set(pendingItems.map((i) => i.key)));
+    } else {
+      setSelectedKeys(new Set());
+    }
+  };
+
+  const toggleSelect = (key: string, checked: boolean) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(key);
+      } else {
+        next.delete(key);
+      }
+      return next;
+    });
+  };
+
+  const selectedPendingItems = useMemo(
+    () => pendingItems.filter((item) => selectedKeys.has(item.key)),
+    [pendingItems, selectedKeys],
+  );
+
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-200 p-5">
-        <h2 className="font-bold">Pengajuan Presensi &amp; Izin Satpam</h2>
-        <p className="text-sm text-slate-500">
-          Laporan scan memperbaiki bukti presensi tanpa mengubah upah shift. Izin
-          disetujui menambah Harian Rp12.500 hanya jika tidak ada shift terdaftar
-          pada tanggal yang sama. Satpam tanpa regu dapat mengajukan izin
-          administratif, tetapi tidak mendapat tambahan Harian karena tidak ada
-          jadwal dinas yang digantikan.
-        </p>
+    <Card className="overflow-hidden rounded-[24px] border-none bg-white shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
+      <div className="border-b border-slate-100 px-5 py-4 lg:px-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="font-bold text-slate-800">
+              {category === ALL_BLUE_COLLAR_CATEGORY
+                ? 'Pengajuan Koreksi & Izin Blue Collar'
+                : `Pengajuan Koreksi & Izin ${categoryLabel(category)}`}
+            </h2>
+            <p className="text-xs text-slate-500">
+              {category === ALL_BLUE_COLLAR_CATEGORY
+                ? 'Semua kategori Blue Collar aktif ditampilkan di sini, termasuk Pekarya dan Satpam.'
+                : `Pengajuan presensi, izin resmi, cuti tahunan, dan ganti libur ${categoryLabel(category)}.`}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex w-fit items-center rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+              {profileRole === 'super_admin' ? 'Review oleh Super Admin' : 'Review oleh Kepala SatKer'}
+            </span>
+            {canEdit && pendingItems.length > 0 && (
+              <Button
+                type="button"
+                onClick={() => void onBulkApprove(selectedPendingItems)}
+                disabled={working || selectedPendingItems.length === 0}
+                className="h-9 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white shadow-sm hover:bg-emerald-700"
+              >
+                {working ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Check className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                Setujui Izin Terpilih ({selectedPendingItems.length})
+              </Button>
+            )}
+          </div>
+        </div>
       </div>
-      <div className="divide-y divide-slate-100">
-        {requests.length === 0 ? (
-          <div className="p-8 text-center text-slate-500">
-            {notice
-              ? `Pengajuan Satpam belum dapat dimuat: ${notice}`
-              : 'Belum ada pengajuan presensi atau izin.'}
+
+      {category === ALL_BLUE_COLLAR_CATEGORY &&
+        canViewSatpamCategory &&
+        satpamSubmissionNotice && (
+          <div className="border-b border-amber-100 bg-amber-50/70 p-4 text-xs font-semibold text-amber-800">
+            Pengajuan Satpam: {satpamSubmissionNotice}
+          </div>
+        )}
+
+      <CardContent className="p-0">
+        {unifiedItems.length === 0 ? (
+          <div className="flex flex-col items-center p-16 text-center text-slate-400">
+            <Clock className="mb-4 h-12 w-12 opacity-20" />
+            <h4 className="text-base font-bold text-slate-700">Tidak Ada Data</h4>
+            <p className="mt-1 max-w-xs text-xs text-slate-400">
+              Belum ada pengajuan presensi, izin, cuti, atau ganti libur pada periode ini.
+            </p>
           </div>
         ) : (
-          requests.map((absence) => {
-            const requestType = satpamAttendanceReportType(absence);
-            const approveAction =
-              absence.status === 'pending' ? 'approve' : 'supersede_approve';
-            const declineAction =
-              absence.status === 'pending' ? 'decline' : 'supersede_decline';
-            const payrollExcludedFromHarian =
-              absence.payrollExcludedFromHarian === true;
-            const isUnassignedSatpam =
-              absence.scheduleRelation === 'unassigned' || !absence.teamId;
-            return (
-              <article key={absence.id} className="space-y-3 p-5">
-                <div>
-                  <p className="font-bold text-slate-900">
-                    {absence.employeeName || absence.employeeId} ·{' '}
-                    {absence.dutyDate}
-                  </p>
-                  <p className="text-sm font-semibold text-indigo-700">
-                    {requestType === 'scan'
-                      ? `Scan Masuk & Scan Keluar · ${absence.scanIn?.slice(0, 5) || '--:--'}–${absence.scanOut?.slice(0, 5) || '--:--'}`
-                      : satpamAbsenceTypeLabel(absence.absenceType)}
-                    {absence.shiftName ? ` · ${absence.shiftName}` : ''}
-                    {absence.postId ? ` · ${absence.postId}` : ''}
-                    {isUnassignedSatpam ? ' · Tanpa regu' : ''}
-                  </p>
-                  {requestType === 'izin_resmi' &&
-                    !isUnassignedSatpam &&
-                    (absence.hasShiftRegistrationConflict === true ||
-                      (absence.shiftRegistrationConflicts?.length || 0) > 0) && (
-                      <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
-                        <p className="font-bold">⚠ Shift sudah terdaftar pada tanggal ini</p>
-                        <p className="mt-1 text-xs">
-                          {absence.status === 'approved' && payrollExcludedFromHarian
-                            ? 'Izin telah disetujui tanpa tambahan Harian karena shift ini sudah terdaftar.'
-                            : 'Jika izin disetujui, pengajuan tidak akan menambah hitungan Harian.'}
-                        </p>
-                        {absence.shiftRegistrationConflicts?.map((registration) => (
-                          <p key={registration.id} className="mt-1 text-xs">
-                            {registration.shiftName || 'Shift'}
-                            {registration.postId ? ` · ${registration.postId}` : ''}
-                            {registration.shiftType ? ` · ${registration.shiftType}` : ''}
-                            {registration.ketuaShiftName
-                              ? ` · Ketua: ${registration.ketuaShiftName}`
-                              : ''}
-                          </p>
-                        ))}
-                        <Link
-                          href={satpamShiftReviewHref(absence)}
-                          className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-lg border border-amber-300 bg-white px-3 text-sm font-bold text-amber-800 transition-colors hover:bg-amber-100"
+          <Table>
+            <TableHeader className="sticky top-0 z-20 bg-slate-50/60">
+              <TableRow className="border-slate-100">
+                <TableHead className="w-12 pl-5">
+                  <Checkbox
+                    checked={allPendingSelected}
+                    onCheckedChange={(checked) => toggleSelectAll(checked === true)}
+                    disabled={pendingItems.length === 0 || working}
+                    aria-label="Pilih semua pengajuan tertunda"
+                  />
+                  <span className="sr-only">Pilih pengajuan</span>
+                </TableHead>
+                <TableHead className="font-bold text-slate-500">Nama Pegawai</TableHead>
+                <TableHead className="font-bold text-slate-500">Tanggal</TableHead>
+                <TableHead className="font-bold text-slate-500">Koreksi</TableHead>
+                <TableHead className="font-bold text-slate-500">Status</TableHead>
+                <TableHead className="pr-6 text-right font-bold text-slate-500">Detail</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {unifiedItems.map((item) => {
+                const isExpanded = expandedId === item.key;
+                const isSatpam = item.kind === 'satpam_absence';
+                const isSupersede =
+                  isSatpam && item.status !== 'pending' && item.status !== 'withdrawn';
+                const canReview = item.status === 'pending' || isSupersede;
+                const approveAction = isSupersede ? 'supersede_approve' : 'approve';
+
+                return (
+                  <React.Fragment key={item.key}>
+                    <TableRow
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={isExpanded}
+                      onClick={() =>
+                        setExpandedId((curr) => (curr === item.key ? null : item.key))
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          setExpandedId((curr) => (curr === item.key ? null : item.key));
+                        }
+                      }}
+                      className={`cursor-pointer border-slate-100 transition-colors ${
+                        isExpanded ? 'bg-indigo-50/50' : 'hover:bg-slate-50/60'
+                      }`}
+                    >
+                      <TableCell
+                        className="w-12 pl-5"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {item.status === 'pending' && (
+                          <Checkbox
+                            checked={selectedKeys.has(item.key)}
+                            onCheckedChange={(checked) =>
+                              toggleSelect(item.key, checked === true)
+                            }
+                            disabled={working}
+                            aria-label={`Pilih pengajuan ${item.employeeName}`}
+                          />
+                        )}
+                      </TableCell>
+                      <TableCell className="min-w-48">
+                        <div className="font-bold text-slate-800">{item.employeeName}</div>
+                        <div className="mt-1 inline-flex items-center rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase text-indigo-700">
+                          {item.category === 'SATPAM' ? 'SATPAM' : categoryLabel(item.category)}
+                        </div>
+                      </TableCell>
+                      <TableCell className="min-w-36">
+                        <div className="flex items-center gap-2 font-mono text-xs font-bold text-slate-700">
+                          <Calendar className="h-4 w-4 text-slate-400" />
+                          {formatPresenceDate(item.date, {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </div>
+                      </TableCell>
+                      <TableCell className="min-w-52">
+                        <div className="text-xs font-bold text-indigo-700">{item.title}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[10px] font-semibold text-slate-500">
+                          <span>{item.subtitle}</span>
+                          {item.isUnassignedSatpam && (
+                            <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 font-bold text-indigo-700">
+                              Tanpa regu
+                            </span>
+                          )}
+                          {item.hasShiftRegistrationConflict && (
+                            <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-bold text-amber-800">
+                              ⚠ Shift sudah terdaftar
+                            </span>
+                          )}
+                          {item.attendanceCheck && (
+                            <span
+                              className={`inline-flex rounded-md border px-1.5 py-0.5 text-[9px] font-semibold ${checkClass(
+                                item.attendanceCheck,
+                              )}`}
+                            >
+                              {gantiLiburVerdictLabel(item.attendanceCheck.verdict)}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${
+                            item.status === 'approved'
+                              ? 'border border-emerald-100 bg-emerald-50 text-emerald-700'
+                              : item.status === 'declined' || item.status === 'rejected'
+                                ? 'border border-rose-100 bg-rose-50 text-rose-700'
+                                : item.status === 'withdrawn'
+                                  ? 'border border-slate-200 bg-slate-100 text-slate-500'
+                                  : 'border border-amber-100 bg-amber-50 text-amber-700'
+                          }`}
                         >
-                          <ExternalLink className="h-4 w-4" />
-                          Check Shift
-                        </Link>
-                      </div>
+                          {submissionStatusLabel(item.status)}
+                        </span>
+                      </TableCell>
+                      <TableCell className="pr-6 text-right">
+                        {isExpanded ? (
+                          <ChevronUp className="ml-auto h-5 w-5 text-slate-400" />
+                        ) : (
+                          <ChevronDown className="ml-auto h-5 w-5 text-slate-400" />
+                        )}
+                      </TableCell>
+                    </TableRow>
+
+                    {isExpanded && (
+                      <TableRow className="border-slate-100 bg-white">
+                        <TableCell colSpan={6} className="whitespace-normal p-0">
+                          <div className="space-y-5 p-5 animate-in fade-in slide-in-from-top-1 duration-200 lg:p-6">
+                            <div className="space-y-2">
+                              <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                Detail Pengajuan
+                              </span>
+                              <div className="grid grid-cols-1 gap-4 text-left md:grid-cols-2">
+                                <div className="space-y-2 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                                  <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                    Data Presensi
+                                  </span>
+                                  <div className="space-y-1.5 text-xs font-semibold text-slate-700">
+                                    <div className="flex items-center justify-between gap-3 border-b border-slate-100/50 pb-1">
+                                      <span>Jenis:</span>
+                                      <span className="text-right text-[10px] font-bold text-indigo-600">
+                                        {item.title}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span>Kategori:</span>
+                                      <span className="text-slate-900">
+                                        {categoryLabel(item.category)}
+                                      </span>
+                                    </div>
+                                    {item.kind === 'satpam_absence' && item.shiftName && (
+                                      <div className="flex items-center justify-between gap-3">
+                                        <span>Shift / Pos:</span>
+                                        <span className="text-slate-900">
+                                          {item.shiftName}
+                                          {item.postId ? ` · ${item.postId}` : ''}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {item.isUnassignedSatpam && (
+                                      <div className="flex items-center justify-between gap-3">
+                                        <span>Penjadwalan:</span>
+                                        <span className="font-bold text-indigo-700">
+                                          Tanpa regu / jadwal dinas
+                                        </span>
+                                      </div>
+                                    )}
+                                    {item.hasShiftRegistrationConflict && (
+                                      <div className="space-y-1 rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-900">
+                                        <p className="font-bold">
+                                          ⚠ Pegawai sudah terdaftar pada shift tanggal ini
+                                        </p>
+                                        <p className="text-[11px] font-semibold">
+                                          {item.status === 'approved' &&
+                                          item.payrollExcludedFromHarian
+                                            ? 'Izin telah disetujui tanpa tambahan Harian karena shift ini sudah terdaftar.'
+                                            : 'Jika izin disetujui, pengajuan tidak akan menambah hitungan Harian.'}
+                                        </p>
+                                        {item.shiftRegistrationConflicts?.map((reg) => (
+                                          <p key={reg.id} className="text-[11px] font-semibold">
+                                            {reg.shiftName || 'Shift'}
+                                            {reg.postId ? ` · ${reg.postId}` : ''}
+                                            {reg.shiftType ? ` · ${reg.shiftType}` : ''}
+                                            {reg.ketuaShiftName
+                                              ? ` · Ketua: ${reg.ketuaShiftName}`
+                                              : ''}
+                                          </p>
+                                        ))}
+                                        <Link
+                                          href={satpamShiftReviewHref(item.raw)}
+                                          className="mt-2 inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-2.5 text-xs font-bold text-amber-800 transition-colors hover:bg-amber-100"
+                                        >
+                                          <ExternalLink className="h-3.5 w-3.5" />
+                                          Check Shift
+                                        </Link>
+                                      </div>
+                                    )}
+                                    {item.attendanceCheck && (
+                                      <div className="flex items-center justify-between gap-3">
+                                        <span>Verifikasi Kehadiran:</span>
+                                        <span
+                                          className={`inline-flex rounded-lg border px-2 py-0.5 text-xs font-semibold ${checkClass(
+                                            item.attendanceCheck,
+                                          )}`}
+                                        >
+                                          {gantiLiburVerdictLabel(item.attendanceCheck.verdict)}
+                                          {item.attendanceCheck.scanIn || item.attendanceCheck.scanOut
+                                            ? ` (${item.attendanceCheck.scanIn || '--:--'} – ${item.attendanceCheck.scanOut || '--:--'})`
+                                            : ''}
+                                        </span>
+                                      </div>
+                                    )}
+                                    <div className="mt-3 border-t border-slate-100/50 pt-3">
+                                      <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                        Alasan Pengajuan
+                                      </span>
+                                      <p className="mt-1.5 text-xs font-semibold leading-relaxed text-slate-700">
+                                        {item.reason}
+                                      </p>
+                                    </div>
+                                    {item.decisionReason && (
+                                      <div className="mt-2 border-t border-slate-100/50 pt-2 text-xs text-slate-500">
+                                        <span className="font-semibold text-slate-600">
+                                          Catatan keputusan:
+                                        </span>{' '}
+                                        {item.decisionReason}
+                                      </div>
+                                    )}
+                                    {item.approvedAmount && item.status === 'approved' && (
+                                      <p className="pt-2 text-xs font-bold text-emerald-700">
+                                        Nilai disetujui: {money(item.approvedAmount)}
+                                      </p>
+                                    )}
+                                    {item.payrollExcludedFromHarian &&
+                                      item.status === 'approved' && (
+                                        <p className="pt-2 text-xs font-bold text-amber-700">
+                                          {item.payrollExclusionReason === 'NO_SCHEDULED_DUTY'
+                                            ? 'Disetujui tanpa tambahan Harian karena pegawai belum memiliki regu atau jadwal dinas.'
+                                            : 'Disetujui tanpa tambahan Harian karena pegawai telah terdaftar pada shift ini.'}
+                                        </p>
+                                      )}
+                                  </div>
+                                </div>
+
+                                <div className="text-left">
+                                  <span className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                    Dokumen Pendukung
+                                  </span>
+                                  {item.evidenceUrl ? (
+                                    isImageProofUrl(item.evidenceUrl) ? (
+                                      <div className="h-[calc(100%-1.25rem)] overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 p-2">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setSelectedEvidence({
+                                              url: item.evidenceUrl!,
+                                              title: `Foto Bukti ${item.employeeName} · ${item.date}`,
+                                            })
+                                          }
+                                          className="group relative block h-full w-full cursor-zoom-in"
+                                        >
+                                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                                          <img
+                                            src={item.evidenceUrl}
+                                            alt="Bukti Pendukung"
+                                            className="h-full max-h-[280px] w-full rounded-xl object-contain transition-opacity hover:opacity-90"
+                                          />
+                                          <div className="absolute inset-0 flex items-center justify-center gap-1 rounded-xl bg-black/40 text-[10px] font-bold text-white opacity-0 transition-opacity group-hover:opacity-100">
+                                            <ZoomIn className="h-3.5 w-3.5" /> Perbesar Gambar
+                                          </div>
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <a
+                                        href={item.evidenceUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-bold text-indigo-500 hover:underline"
+                                      >
+                                        <FileText className="h-4 w-4" /> Buka Lampiran Bukti
+                                        (PDF/Dokumen)
+                                      </a>
+                                    )
+                                  ) : item.attachments && item.attachments.length > 0 ? (
+                                    <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                                      <GantiLiburAttachmentLinks
+                                        attachments={item.attachments}
+                                      />
+                                    </div>
+                                  ) : (
+                                    <div className="flex h-[calc(100%-1.25rem)] min-h-[160px] items-center justify-center rounded-2xl border border-dashed border-slate-200 text-xs font-semibold text-slate-400">
+                                      Tidak ada dokumen pendukung
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {canEdit && canReview && (
+                              <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
+                                <Button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (item.kind === 'paid_leave') {
+                                      openDeclineDialog(
+                                        'paid_leave',
+                                        item.raw,
+                                        `Tolak Cuti Tahunan - ${item.employeeName}`,
+                                      );
+                                    } else if (item.kind === 'ganti_libur') {
+                                      openDeclineDialog(
+                                        'ganti_libur',
+                                        item.raw,
+                                        `Tolak Ganti Libur - ${item.employeeName}`,
+                                        item.attendanceCheck
+                                          ? gantiLiburDeclineSuggestion(
+                                              item.attendanceCheck.verdict,
+                                            )
+                                          : '',
+                                      );
+                                    } else if (item.kind === 'official_leave') {
+                                      openDeclineDialog(
+                                        'official_leave',
+                                        item.raw,
+                                        `Tolak Izin / Presensi - ${item.employeeName}`,
+                                      );
+                                    } else if (item.kind === 'satpam_absence') {
+                                      openDeclineDialog(
+                                        'satpam_absence',
+                                        item.raw,
+                                        `Tolak Pengajuan Satpam - ${item.employeeName}`,
+                                      );
+                                    }
+                                  }}
+                                  disabled={working}
+                                  variant="outline"
+                                  className="flex h-9 cursor-pointer items-center gap-1.5 rounded-xl border-rose-200 bg-white px-4 text-xs font-bold text-rose-600 shadow-sm hover:bg-rose-50"
+                                >
+                                  <X className="h-3.5 w-3.5" /> {isSupersede ? 'Tolak Ulang' : 'Tolak'}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (item.kind === 'paid_leave') {
+                                      void onReviewPaidLeave(item.raw, 'approve');
+                                    } else if (item.kind === 'ganti_libur') {
+                                      void onReviewGantiLibur(item.raw, 'approve');
+                                    } else if (item.kind === 'official_leave') {
+                                      void onReviewOfficialLeave(item.raw, 'approve');
+                                    } else if (item.kind === 'satpam_absence') {
+                                      void onReviewSatpamAbsence(item.raw, approveAction);
+                                    }
+                                  }}
+                                  disabled={working}
+                                  className="flex h-9 cursor-pointer items-center gap-1.5 rounded-xl bg-indigo-600 px-5 text-xs font-bold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95"
+                                >
+                                  <Check className="h-3.5 w-3.5" />
+                                  {isSupersede ? 'Setujui Ulang' : 'Setujui'}
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
                     )}
-                  <p className="text-sm text-slate-600">{absence.reason}</p>
-                  <p className="mt-1 text-xs font-semibold uppercase text-slate-400">
-                    {decisionStatusLabel(absence.status)}
-                    {absence.late ? ' · diajukan terlambat' : ''}
-                    {requestType === 'izin_resmi' && absence.status === 'approved'
-                      ? payrollExcludedFromHarian
-                        ? absence.payrollExclusionReason === 'NO_SCHEDULED_DUTY'
-                          ? ' · tanpa tambahan Harian (tanpa regu/jadwal)'
-                          : ' · tanpa tambahan Harian'
-                        : ` · ${money(absence.approvedAmount || 12_500)}`
-                      : ''}
-                  </p>
-                </div>
-                {canEdit &&
-                  (requestType === 'izin_resmi' || absence.status === 'pending') && (
-                    <div className="flex flex-wrap justify-end gap-2">
-                      {absence.status !== 'approved' &&
-                        (requestType === 'izin_resmi' || absence.status === 'pending') && (
-                          <Button
-                            className="min-h-12 bg-emerald-600 hover:bg-emerald-700"
-                            disabled={working}
-                            onClick={() => void onReview(absence, approveAction)}
-                          >
-                            Setujui
-                          </Button>
-                        )}
-                      {absence.status !== 'declined' &&
-                        (requestType === 'izin_resmi' || absence.status === 'pending') && (
-                          <Button
-                            variant="outline"
-                            className="min-h-12 border-rose-200 text-rose-700"
-                            disabled={working}
-                            onClick={() => void onReview(absence, declineAction)}
-                          >
-                            Tolak
-                          </Button>
-                        )}
-                    </div>
-                  )}
-              </article>
-            );
-          })
+                  </React.Fragment>
+                );
+              })}
+            </TableBody>
+          </Table>
         )}
-      </div>
-    </section>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -599,26 +1211,17 @@ export default function PekaryaAttendancePage() {
   const { profile } = useAuth();
   const month = Number(searchParams.get('month') || new Date().getMonth() + 1);
   const year = Number(searchParams.get('year') || new Date().getFullYear());
-  const permittedAttendanceCategory = profile?.permittedCategories?.find(
-    (item) => item.trim().toUpperCase() !== 'SATPAM',
-  );
-  const category = (
-    searchParams.get('category') ||
-    (profile?.role === 'satker_head'
-      ? permittedAttendanceCategory
-        ? ALL_BLUE_COLLAR_CATEGORY
-        : profile.permittedCategories?.[0]
-      : ['super_admin', 'finance_verifier'].includes(profile?.role || '')
-        ? ALL_BLUE_COLLAR_CATEGORY
-        : '') ||
-    ''
-  ).toUpperCase();
   // Whether this account can see Satpam data at all — mirrors the check the
   // review endpoints themselves use, so the toggle never offers a tab that
   // would just come back empty/forbidden.
   const canViewSatpamCategory =
     ['super_admin', 'finance_verifier'].includes(profile?.role || '') ||
     Boolean(profile?.permittedCategories?.includes('SATPAM'));
+  const rawCategoryParam = searchParams.get('category')?.trim().toUpperCase();
+  const category =
+    rawCategoryParam === 'SATPAM' && canViewSatpamCategory
+      ? 'SATPAM'
+      : ALL_BLUE_COLLAR_CATEGORY;
   const setCategory = useCallback(
     (nextCategory: string) => {
       const params = new URLSearchParams(searchParams.toString());
@@ -636,8 +1239,6 @@ export default function PekaryaAttendancePage() {
   const [selectedEvidence, setSelectedEvidence] = useState<{
     url: string;
     title: string;
-    activityDate: string;
-    auditMetadata?: PekaryaOfficialLeaveRequest['evidenceAuditMetadata'];
   } | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [correction, setCorrection] = useState<CorrectionState | null>(null);
@@ -658,6 +1259,15 @@ export default function PekaryaAttendancePage() {
   >('plans');
   const [satpamAttendanceNotice, setSatpamAttendanceNotice] = useState('');
   const [satpamSubmissionNotice, setSatpamSubmissionNotice] = useState('');
+  const [paidLeaves, setPaidLeaves] = useState<AnnualPaidLeaveRequest[]>([]);
+  const [gantiLiburs, setGantiLiburs] = useState<GantiLiburRequest[]>([]);
+  const [declineTarget, setDeclineTarget] = useState<{
+    type: 'official_leave' | 'satpam_absence' | 'paid_leave' | 'ganti_libur';
+    item: any;
+    title: string;
+    defaultReason?: string;
+  } | null>(null);
+  const [declineReason, setDeclineReason] = useState('');
   const [linkTarget, setLinkTarget] = useState<DepartmentUnmatchedRow | null>(null);
   const [linkEmployeeId, setLinkEmployeeId] = useState('');
   const [linkSearch, setLinkSearch] = useState('');
@@ -677,11 +1287,21 @@ export default function PekaryaAttendancePage() {
       (period < '2026-08' && category !== 'SATPAM')
     ) {
       setData(null);
+      setPaidLeaves([]);
+      setGantiLiburs([]);
       return;
     }
     setLoading(true);
     setError('');
     try {
+      const paidLeavesPromise = authenticatedJson<{ requests: AnnualPaidLeaveRequest[] }>(
+        `/api/payroll/paid-leave/review?year=${year}&period=${encodeURIComponent(period)}&status=all`,
+      ).catch(() => ({ requests: [] }));
+
+      const gantiLibursPromise = authenticatedJson<{ requests: GantiLiburRequest[] }>(
+        `/api/payroll/ganti-libur/review?dayOffPeriod=${encodeURIComponent(period)}&status=all`,
+      ).catch(() => ({ requests: [] }));
+
       if (category === 'SATPAM') {
         setSatpamAttendanceNotice('');
         setSatpamSubmissionNotice('');
@@ -706,7 +1326,7 @@ export default function PekaryaAttendancePage() {
             mismatches: [],
           };
         });
-        const [attendance, dutyPlans, absences, reconciliation] =
+        const [attendance, dutyPlans, absences, reconciliation, paidLeavesRes, gantiLibursRes] =
           await Promise.all([
             attendancePromise,
             authenticatedJson<SatpamDutyPlanAdminView>(
@@ -718,9 +1338,13 @@ export default function PekaryaAttendancePage() {
             authenticatedJson<SatpamReconciliationView>(
               `/api/satpam/duty-reconciliation?period=${encodeURIComponent(period)}&refresh=${canEdit ? 'true' : 'false'}`,
             ),
+            paidLeavesPromise,
+            gantiLibursPromise,
           ]);
         setData(attendance);
         setSatpamOperations({ dutyPlans, absences, reconciliation });
+        setPaidLeaves(paidLeavesRes.requests || []);
+        setGantiLiburs(gantiLibursRes.requests || []);
       } else {
         setSatpamAttendanceNotice('');
         setSatpamSubmissionNotice('');
@@ -737,27 +1361,36 @@ export default function PekaryaAttendancePage() {
                 return { requests: [] };
               })
             : Promise.resolve(null);
-        const [result, submissions] = await Promise.all([
+        const [result, submissions, paidLeavesRes, gantiLibursRes] = await Promise.all([
           authenticatedJson<AttendanceView>(
             `/api/attendance/pekarya?period=${encodeURIComponent(period)}&category=${encodeURIComponent(category)}`,
           ),
           satpamSubmissionsPromise,
+          paidLeavesPromise,
+          gantiLibursPromise,
         ]);
         setData(result);
         setSatpamSubmissions(submissions);
         setSatpamOperations(null);
+        setPaidLeaves(paidLeavesRes.requests || []);
+        setGantiLiburs(gantiLibursRes.requests || []);
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Gagal memuat presensi Pekarya.');
     } finally {
       setLoading(false);
     }
-  }, [canEdit, canViewSatpamCategory, category, period]);
+  }, [canEdit, canViewSatpamCategory, category, period, year]);
 
   const reviewAbsence = async (
     absence: SatpamAbsenceAdminView['requests'][number],
     action: 'approve' | 'decline' | 'supersede_approve' | 'supersede_decline',
+    reason = '',
   ) => {
+    if (action.endsWith('decline') && !reason.trim()) {
+      setError('Alasan penolakan pengajuan satpam wajib diisi.');
+      return;
+    }
     const reportType = satpamAttendanceReportType(absence);
     setWorking(true);
     setError('');
@@ -772,6 +1405,7 @@ export default function PekaryaAttendancePage() {
           absenceRequestId: absence.id,
           action,
           expectedRevision: absence.revision,
+          reason: reason.trim() || undefined,
         }),
       });
       const isUnassignedSatpam =
@@ -833,7 +1467,12 @@ export default function PekaryaAttendancePage() {
   const reviewOfficialLeave = async (
     leave: PekaryaOfficialLeaveRequest,
     action: 'approve' | 'decline',
+    reason = '',
   ) => {
+    if (action === 'decline' && !reason.trim()) {
+      setError('Alasan penolakan izin resmi wajib diisi.');
+      return;
+    }
     setWorking(true);
     setError('');
     try {
@@ -844,6 +1483,7 @@ export default function PekaryaAttendancePage() {
           officialLeaveRequestId: leave.id,
           action,
           expectedRevision: leave.revision,
+          reason: reason.trim() || undefined,
         }),
       });
       setMessage(
@@ -866,6 +1506,262 @@ export default function PekaryaAttendancePage() {
       setWorking(false);
     }
   };
+
+  const reviewPaidLeave = async (
+    item: AnnualPaidLeaveRequest,
+    action: 'approve' | 'decline',
+    reason = '',
+  ) => {
+    if (action === 'decline' && !reason.trim()) {
+      setError('Alasan penolakan cuti tahunan wajib diisi.');
+      return;
+    }
+    setWorking(true);
+    setError('');
+    try {
+      await authenticatedJson('/api/payroll/paid-leave/review', {
+        method: 'POST',
+        body: JSON.stringify({
+          requestId: createFinancialRequestId(`annual-paid-leave-${action}`),
+          annualPaidLeaveRequestId: item.id,
+          action,
+          expectedRevision: item.revision,
+          reason: reason.trim(),
+        }),
+      });
+      if (action === 'approve') {
+        try {
+          await propagateUraianToSlips({
+            scope: 'pekarya',
+            period: item.period,
+            jobCategory: item.category,
+          });
+        } catch (propagateError) {
+          console.error('Annual paid leave propagation failed:', propagateError);
+        }
+      }
+      setMessage(
+        action === 'approve'
+          ? `Cuti tahunan ${item.employeeName || item.employeeId} disetujui.`
+          : `Cuti tahunan ${item.employeeName || item.employeeId} ditolak.`,
+      );
+      await load();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'Gagal memutuskan pengajuan cuti tahunan.',
+      );
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const reviewGantiLibur = async (
+    item: GantiLiburRequest,
+    action: 'approve' | 'decline',
+    reason = '',
+  ) => {
+    if (action === 'decline' && !reason.trim()) {
+      setError('Alasan penolakan ganti libur wajib diisi.');
+      return;
+    }
+    setWorking(true);
+    setError('');
+    try {
+      const res = await authenticatedJson<{ payrollWarning?: string }>(
+        '/api/payroll/ganti-libur/review',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            requestId: createFinancialRequestId(`ganti-libur-${action}`),
+            gantiLiburRequestId: item.id,
+            action,
+            expectedRevision: item.revision,
+            reason: reason.trim(),
+          }),
+        },
+      );
+      if (action === 'approve') {
+        try {
+          await propagateUraianToSlips({
+            scope: 'pekarya',
+            period: item.dayOffPeriod,
+            jobCategory: item.category,
+          });
+        } catch (propagateError) {
+          console.error('Ganti libur propagation failed:', propagateError);
+        }
+      }
+      setMessage(
+        `${
+          action === 'approve'
+            ? `Ganti libur ${item.employeeName || item.employeeId} disetujui.`
+            : `Ganti libur ${item.employeeName || item.employeeId} ditolak.`
+        }${res.payrollWarning ? ` ${res.payrollWarning}` : ''}`,
+      );
+      await load();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'Gagal memutuskan pengajuan ganti libur.',
+      );
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const openDeclineDialog = (
+    type: 'official_leave' | 'satpam_absence' | 'paid_leave' | 'ganti_libur',
+    item: any,
+    title: string,
+    defaultReason = '',
+  ) => {
+    setDeclineTarget({ type, item, title, defaultReason });
+    setDeclineReason(defaultReason);
+  };
+
+  const handleConfirmDecline = async () => {
+    if (!declineTarget) return;
+    const reason = declineReason.trim();
+    if (!reason) {
+      setError('Alasan penolakan wajib diisi.');
+      return;
+    }
+    const target = declineTarget;
+    setDeclineTarget(null);
+    setDeclineReason('');
+    if (target.type === 'paid_leave') {
+      await reviewPaidLeave(target.item as AnnualPaidLeaveRequest, 'decline', reason);
+    } else if (target.type === 'ganti_libur') {
+      await reviewGantiLibur(target.item as GantiLiburRequest, 'decline', reason);
+    } else if (target.type === 'official_leave') {
+      await reviewOfficialLeave(target.item as PekaryaOfficialLeaveRequest, 'decline', reason);
+    } else if (target.type === 'satpam_absence') {
+      const absence = target.item as SatpamAbsenceAdminView['requests'][number];
+      const declineAction = absence.status === 'pending' ? 'decline' : 'supersede_decline';
+      await reviewAbsence(absence, declineAction, reason);
+    }
+  };
+
+  const handleBulkApproveSubmissions = async (items: BlueCollarSubmissionItem[]) => {
+    if (items.length === 0) return;
+    setWorking(true);
+    setError('');
+    setMessage('');
+    let successCount = 0;
+    const errors: string[] = [];
+
+    for (const item of items) {
+      try {
+        if (item.kind === 'official_leave') {
+          await authenticatedJson('/api/attendance/pekarya/official-leave/review', {
+            method: 'POST',
+            body: JSON.stringify({
+              requestId: createFinancialRequestId('pekarya-official-leave-bulk-approve'),
+              officialLeaveRequestId: item.id,
+              action: 'approve',
+              expectedRevision: item.raw.revision,
+            }),
+          });
+        } else if (item.kind === 'satpam_absence') {
+          await authenticatedJson('/api/satpam/absences/review', {
+            method: 'POST',
+            body: JSON.stringify({
+              requestId: createFinancialRequestId('satpam-absence-bulk-approve'),
+              absenceRequestId: item.id,
+              action: 'approve',
+              expectedRevision: item.raw.revision,
+            }),
+          });
+        } else if (item.kind === 'paid_leave') {
+          await authenticatedJson('/api/payroll/paid-leave/review', {
+            method: 'POST',
+            body: JSON.stringify({
+              requestId: createFinancialRequestId('annual-paid-leave-bulk-approve'),
+              annualPaidLeaveRequestId: item.id,
+              action: 'approve',
+              expectedRevision: item.raw.revision,
+            }),
+          });
+          try {
+            await propagateUraianToSlips({
+              scope: 'pekarya',
+              period: item.raw.period,
+              jobCategory: item.raw.category,
+            });
+          } catch (e) {
+            console.error('Paid leave propagation error:', e);
+          }
+        } else if (item.kind === 'ganti_libur') {
+          await authenticatedJson('/api/payroll/ganti-libur/review', {
+            method: 'POST',
+            body: JSON.stringify({
+              requestId: createFinancialRequestId('ganti-libur-bulk-approve'),
+              gantiLiburRequestId: item.id,
+              action: 'approve',
+              expectedRevision: item.raw.revision,
+            }),
+          });
+          try {
+            await propagateUraianToSlips({
+              scope: 'pekarya',
+              period: item.raw.dayOffPeriod,
+              jobCategory: item.raw.category,
+            });
+          } catch (e) {
+            console.error('Ganti libur propagation error:', e);
+          }
+        }
+        successCount++;
+      } catch (cause) {
+        errors.push(
+          `${item.employeeName} (${item.date}): ${cause instanceof Error ? cause.message : 'Gagal menyetujui'}`,
+        );
+      }
+    }
+
+    setWorking(false);
+    if (errors.length > 0) {
+      setError(`Berhasil menyetujui ${successCount} pengajuan, tetapi ada kegagalan:\n${errors.join('\n')}`);
+    } else {
+      setMessage(`Berhasil menyetujui ${successCount} pengajuan sekaligus.`);
+    }
+    await load();
+  };
+
+  const displayPaidLeaves = useMemo(() => {
+    return paidLeaves.filter((item) => {
+      if (item.employeeKind === 'loyalis') return false;
+      if (category === ALL_BLUE_COLLAR_CATEGORY) {
+        return canViewSatpamCategory ? true : item.category !== 'SATPAM';
+      }
+      return item.category === category;
+    });
+  }, [category, paidLeaves, canViewSatpamCategory]);
+
+  const displayGantiLiburs = useMemo(() => {
+    return gantiLiburs.filter((item) => {
+      if (item.employeeKind === 'loyalis') return false;
+      if (category === ALL_BLUE_COLLAR_CATEGORY) {
+        return canViewSatpamCategory ? true : item.category !== 'SATPAM';
+      }
+      return item.category === category;
+    });
+  }, [category, gantiLiburs, canViewSatpamCategory]);
+
+  const satpamPaidLeaves = useMemo(() => {
+    return paidLeaves.filter(
+      (item) => item.employeeKind !== 'loyalis' && item.category === 'SATPAM',
+    );
+  }, [paidLeaves]);
+
+  const satpamGantiLiburs = useMemo(() => {
+    return gantiLiburs.filter(
+      (item) => item.employeeKind !== 'loyalis' && item.category === 'SATPAM',
+    );
+  }, [gantiLiburs]);
 
   const savePlanCorrection = async () => {
     if (!planCorrection) return;
@@ -1194,7 +2090,7 @@ export default function PekaryaAttendancePage() {
             <p className="font-bold">Semua pegawai blue collar</p>
             <p className="mt-1 text-sm">
               Daftar ini menggabungkan seluruh kategori yang memakai upah
-              presensi dan menampilkan pengajuan Satpam di bagian terpisah.
+              presensi beserta seluruh pengajuan presensi, cuti, dan ganti libur (termasuk Satpam) dalam satu card utama.
               Pembayaran shift Satpam tetap bersumber dari laporan Ketua Shift.
             </p>
           </div>
@@ -1290,7 +2186,11 @@ export default function PekaryaAttendancePage() {
                 ['plans', 'Rencana Dinas'],
                 [
                   'absences',
-                  `Pengajuan (${satpamOperations.absences.requests.filter((request) => request.status === 'pending').length})`,
+                  `Pengajuan (${
+                    satpamOperations.absences.requests.filter((request) => request.status === 'pending').length +
+                    satpamPaidLeaves.filter((leave) => leave.status === 'pending').length +
+                    satpamGantiLiburs.filter((gl) => gl.status === 'pending').length
+                  })`,
                 ],
                 ['reconciliation', 'Bonus & Kewajiban'],
                 ['mismatches', `Presensi (${data.mismatches.length})`],
@@ -1406,11 +2306,22 @@ export default function PekaryaAttendancePage() {
           )}
 
           {satpamOperations && satpamTab === 'absences' && (
-            <SatpamSubmissionsSection
-              requests={satpamOperations.absences.requests}
+            <BlueCollarSubmissionsCard
+              category="SATPAM"
+              canViewSatpamCategory={canViewSatpamCategory}
               canEdit={canEdit}
               working={working}
-              onReview={reviewAbsence}
+              profileRole={profile?.role}
+              satpamRequests={satpamOperations.absences.requests}
+              paidLeaves={satpamPaidLeaves}
+              gantiLiburs={satpamGantiLiburs}
+              onReviewOfficialLeave={reviewOfficialLeave}
+              onReviewSatpamAbsence={reviewAbsence}
+              onReviewPaidLeave={reviewPaidLeave}
+              onReviewGantiLibur={reviewGantiLibur}
+              openDeclineDialog={openDeclineDialog}
+              onBulkApprove={handleBulkApproveSubmissions}
+              setSelectedEvidence={setSelectedEvidence}
             />
           )}
 
@@ -1637,99 +2548,29 @@ export default function PekaryaAttendancePage() {
             )}
           </section>
 
-          <section className="overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-sm">
-            <div className="border-b border-indigo-100 bg-indigo-50/50 p-5">
-              <h2 className="font-bold text-slate-900">Pengajuan Presensi Pekarya</h2>
-              <p className="mt-1 text-sm text-slate-600">
-                Laporan scan yang disetujui memakai jam yang diajukan. Izin resmi
-                dicatat sebagai presensi penuh 07:30–14:00 dan dihitung sesuai
-                kalender upah.
-              </p>
-            </div>
-            <div className="divide-y divide-slate-100">
-              {(data.officialLeaves || []).length === 0 ? (
-                <div className="p-6 text-center text-slate-500">
-                  Belum ada pengajuan presensi pada periode ini.
-                </div>
-              ) : (
-                data.officialLeaves.map((leave) => {
-                  const reportType = pekaryaAttendanceReportType(leave);
-                  return (
-                    <article key={leave.id} className="space-y-3 p-5">
-                      <div>
-                        <p className="font-bold text-slate-900">
-                          {leave.employeeName || leave.employeeId} · {leave.date}
-                        </p>
-                        <p className="text-sm font-semibold text-indigo-700">
-                          {category === ALL_BLUE_COLLAR_CATEGORY
-                            ? `${categoryLabel(leave.category)} · `
-                            : ''}
-                          {reportType === 'scan'
-                            ? `Scan Masuk & Scan Keluar · ${leave.scanIn?.slice(0, 5) || '--:--'}–${leave.scanOut?.slice(0, 5) || '--:--'}`
-                            : 'Izin Resmi · 07:30–14:00'}
-                        </p>
-                        <p className="text-sm text-slate-600">{leave.reason}</p>
-                        <p className="mt-1 text-xs font-semibold uppercase text-slate-400">
-                          {decisionStatusLabel(leave.status)}
-                          {leave.status === 'approved' && leave.approvedAmount
-                            ? ` · ${money(leave.approvedAmount)}`
-                            : ''}
-                        </p>
-                        {leave.evidenceUrl && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setSelectedEvidence({
-                                url: leave.evidenceUrl!,
-                                title: `Foto Bukti Presensi ${leave.employeeName || leave.employeeId}`,
-                                activityDate: leave.date,
-                                auditMetadata: leave.evidenceAuditMetadata,
-                              })
-                            }
-                            className="mt-2 flex min-h-10 items-center gap-1.5 rounded-lg bg-blue-600 px-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700"
-                          >
-                            <Eye className="h-4 w-4" />
-                            Lihat Foto Bukti
-                          </button>
-                        )}
-                      </div>
-                      {canEdit && leave.status === 'pending' && (
-                        <div className="flex flex-wrap justify-end gap-2">
-                          <Button
-                            className="min-h-12 bg-emerald-600 hover:bg-emerald-700"
-                            disabled={working}
-                            onClick={() => void reviewOfficialLeave(leave, 'approve')}
-                          >
-                            Setujui
-                          </Button>
-                          <Button
-                            variant="outline"
-                            className="min-h-12 border-rose-200 text-rose-700"
-                            disabled={working}
-                            onClick={() => void reviewOfficialLeave(leave, 'decline')}
-                          >
-                            Tolak
-                          </Button>
-                        </div>
-                      )}
-                    </article>
-                  );
-                })
-              )}
-            </div>
-          </section>
-
-          {category === ALL_BLUE_COLLAR_CATEGORY &&
-            canViewSatpamCategory &&
-            satpamSubmissions && (
-              <SatpamSubmissionsSection
-                requests={satpamSubmissions.requests}
-                notice={satpamSubmissionNotice}
-                canEdit={canEdit}
-                working={working}
-                onReview={reviewAbsence}
-              />
-            )}
+          <BlueCollarSubmissionsCard
+            category={category}
+            canViewSatpamCategory={canViewSatpamCategory}
+            canEdit={canEdit}
+            working={working}
+            profileRole={profile?.role}
+            satpamSubmissionNotice={satpamSubmissionNotice}
+            officialLeaves={data.officialLeaves || []}
+            satpamRequests={
+              category === ALL_BLUE_COLLAR_CATEGORY && canViewSatpamCategory
+                ? satpamSubmissions?.requests || []
+                : []
+            }
+            paidLeaves={displayPaidLeaves}
+            gantiLiburs={displayGantiLiburs}
+            onReviewOfficialLeave={reviewOfficialLeave}
+            onReviewSatpamAbsence={reviewAbsence}
+            onReviewPaidLeave={reviewPaidLeave}
+            onReviewGantiLibur={reviewGantiLibur}
+            openDeclineDialog={openDeclineDialog}
+            onBulkApprove={handleBulkApproveSubmissions}
+            setSelectedEvidence={setSelectedEvidence}
+          />
 
           <div className="flex justify-between items-center px-1">
             <span className="text-[11px] text-slate-500 font-bold">
@@ -2485,12 +3326,64 @@ export default function PekaryaAttendancePage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={Boolean(declineTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeclineTarget(null);
+            setDeclineReason('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{declineTarget?.title || 'Tolak Pengajuan'}</DialogTitle>
+            <DialogDescription>
+              Masukkan alasan penolakan. Alasan ini akan tercatat dan dapat dilihat oleh pemohon.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="decline-reason">Alasan Penolakan</Label>
+              <textarea
+                id="decline-reason"
+                rows={3}
+                maxLength={500}
+                className="w-full rounded-xl border border-slate-300 p-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                placeholder="Contoh: Hari kerja pengganti tidak memenuhi ketentuan."
+                value={declineReason}
+                onChange={(e) => setDeclineReason(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-12"
+              onClick={() => {
+                setDeclineTarget(null);
+                setDeclineReason('');
+              }}
+            >
+              Batal
+            </Button>
+            <Button
+              type="button"
+              className="min-h-12 bg-rose-600 text-white hover:bg-rose-700"
+              disabled={working || !declineReason.trim()}
+              onClick={() => void handleConfirmDecline()}
+            >
+              Konfirmasi Tolak
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {selectedEvidence && (
-        <ImageExifViewer
+        <EvidenceLightbox
           imageUrl={selectedEvidence.url}
           title={selectedEvidence.title}
-          activityDate={selectedEvidence.activityDate}
-          auditMetadata={selectedEvidence.auditMetadata}
           isOpen={Boolean(selectedEvidence)}
           onClose={() => setSelectedEvidence(null)}
         />

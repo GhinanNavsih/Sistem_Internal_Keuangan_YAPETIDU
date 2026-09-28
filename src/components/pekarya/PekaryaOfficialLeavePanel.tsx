@@ -34,7 +34,7 @@ import {
   savePekaryaLeaveDraft,
   clearPekaryaLeaveDraft,
 } from '@/lib/payroll/leaveDraft';
-import { ImageExifViewer } from '@/components/ImageExifViewer';
+import { EvidenceLightbox } from '@/components/EvidenceLightbox';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -122,11 +122,17 @@ export function PekaryaOfficialLeavePanel(props: {
   } | null>(null);
   const evidenceInputRef = useRef<HTMLInputElement>(null);
 
+  const [working, setWorking] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
   // Restore draft from localStorage upon mount
   useEffect(() => {
     if (!autoSaveDraft || draftHydratedRef.current || !employeeId) return;
     const draft = readPekaryaLeaveDraft(employeeId);
     if (draft) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (draft.date) setDate(draft.date);
       if (draft.reportType) setReportType(draft.reportType);
       if (draft.scanIn) setScanIn(draft.scanIn);
@@ -176,10 +182,6 @@ export function PekaryaOfficialLeavePanel(props: {
       effectiveDate >= selectedPeriodData.startDate &&
       effectiveDate <= selectedPeriodData.endDate,
   );
-  const [working, setWorking] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
 
   const scanRangeInvalid =
     activeReportType === 'scan' &&
@@ -661,14 +663,11 @@ export function PekaryaOfficialLeavePanel(props: {
   );
 
   const evidenceViewer = selectedExifImage ? (
-    <ImageExifViewer
+    <EvidenceLightbox
       imageUrl={selectedExifImage.url}
       title={selectedExifImage.title}
-      auditMetadata={selectedExifImage.auditMetadata}
-      activityDate={effectiveDate}
       isOpen={Boolean(selectedExifImage)}
       onClose={() => setSelectedExifImage(null)}
-      showMetadata={false}
     />
   ) : null;
 

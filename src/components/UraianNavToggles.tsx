@@ -74,6 +74,9 @@ export default function UraianNavToggles() {
     ) {
       params.delete('category');
     }
+    if (tab === 'presensi_pekarya') {
+      params.set('category', ALL_BLUE_COLLAR_CATEGORY);
+    }
     const str = params.toString();
     return str ? `?${str}` : '';
   }, [searchParams]);

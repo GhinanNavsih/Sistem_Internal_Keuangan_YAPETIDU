@@ -185,12 +185,10 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
 
   const attendanceCategoryOptions = useMemo(() => {
     if (activeTab !== 'presensi_pekarya') return allowedCategories;
-    const hasAttendanceCategory = allowedCategories.some(
-      (item) => item !== 'SATPAM',
-    );
-    return hasAttendanceCategory
-      ? [ALL_BLUE_COLLAR_CATEGORY, ...allowedCategories]
-      : allowedCategories;
+    return [
+      ALL_BLUE_COLLAR_CATEGORY,
+      ...allowedCategories.filter((item) => item !== ALL_BLUE_COLLAR_CATEGORY),
+    ];
   }, [activeTab, allowedCategories]);
 
   const getCleanParamsString = useCallback((tab: string) => {
@@ -271,20 +269,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
         : allowedCategories;
     if (categoryOptions.length > 0) {
       if (category && categoryOptions.includes(category)) return;
-      const julySatpamDefault =
-        activeTab === 'presensi_pekarya' &&
-        year === 2026 &&
-        month === 7 &&
-        categoryOptions.includes('SATPAM') &&
-        (profile.role === 'super_admin' ||
-          profile.role === 'finance_verifier' ||
-          profile.permittedCategories?.some(
-            (item) => item.trim().toUpperCase() === 'SATPAM',
-          ));
-      params.set(
-        'category',
-        julySatpamDefault ? 'SATPAM' : categoryOptions[0],
-      );
+      params.set('category', categoryOptions[0]);
     } else {
       if (!category) return;
       params.delete('category');

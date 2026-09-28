@@ -18,7 +18,6 @@ import {
   AlertTriangle,
   Info,
   FileImage,
-  XCircle
 } from 'lucide-react';
 
 interface ImageExifViewerProps {
@@ -42,7 +41,7 @@ function formatCapturedAt(value: string | null | undefined): string {
 
 export function ImageExifViewer({
   imageUrl,
-  title = 'Bukti Transaksi',
+  title = 'Berkas Bukti',
   activityDate,
   isOpen,
   onClose,
@@ -77,7 +76,7 @@ export function ImageExifViewer({
             <p className="text-xs font-medium text-slate-500 mt-0.5">
               {showMetadata
                 ? 'Metadata direkam saat foto asli diunggah'
-                : 'Pratinjau berkas bukti transaksi yang diunggah'}
+                : 'Pratinjau berkas bukti yang diunggah'}
             </p>
           </div>
         </DialogHeader>
@@ -89,7 +88,7 @@ export function ImageExifViewer({
               <div className="space-y-3">
                 <h4 className="text-xs font-black text-slate-900 tracking-wide uppercase flex items-center gap-1.5">
                   <FileImage className="w-4 h-4 text-blue-600" />
-                  <span>Berkas Bukti Transaksi</span>
+                  <span>Berkas Bukti</span>
                 </h4>
                 <div className="bg-slate-950 rounded-2xl overflow-hidden flex items-center justify-center min-h-[320px] max-h-[480px] relative shadow-inner border border-slate-800 p-2">
                   {isPdf ? (
