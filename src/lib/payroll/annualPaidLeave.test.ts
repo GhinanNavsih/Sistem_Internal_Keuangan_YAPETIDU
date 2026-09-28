@@ -10,6 +10,7 @@ import {
   annualPaidLeaveRequestId,
   annualPaidLeaveTableFigures,
   calculateAnnualPaidLeaveBalance,
+  canManageAnnualPaidLeaveBalance,
   canReviewAnnualPaidLeave,
   completedServiceYears,
   isAnnualPaidLeaveEligible,
@@ -157,6 +158,79 @@ test('review scope follows employee kind and permitted blue-collar category', ()
       { kind: 'loyalis', category: 'LOYALIS' },
     ),
     true,
+  );
+});
+
+test('balance management allows loyalis_admin and super_admin to manage both Loyalis and Pekarya balances', () => {
+  // Loyalis admin can manage both Loyalis and Pekarya balances
+  assert.equal(
+    canManageAnnualPaidLeaveBalance(
+      { role: 'loyalis_admin', permittedCategories: [] },
+      { kind: 'loyalis', category: 'LOYALIS' },
+    ),
+    true,
+  );
+  assert.equal(
+    canManageAnnualPaidLeaveBalance(
+      { role: 'loyalis_admin', permittedCategories: [] },
+      { kind: 'blue_collar', category: 'TEKNISI' },
+    ),
+    true,
+  );
+  assert.equal(
+    canManageAnnualPaidLeaveBalance(
+      { role: 'loyalis_admin', permittedCategories: [] },
+      { kind: 'blue_collar', category: 'SATPAM' },
+    ),
+    true,
+  );
+
+  // Super admin can manage both
+  assert.equal(
+    canManageAnnualPaidLeaveBalance(
+      { role: 'super_admin', permittedCategories: [] },
+      { kind: 'blue_collar', category: 'SATPAM' },
+    ),
+    true,
+  );
+  assert.equal(
+    canManageAnnualPaidLeaveBalance(
+      { role: 'super_admin', permittedCategories: [] },
+      { kind: 'loyalis', category: 'LOYALIS' },
+    ),
+    true,
+  );
+
+  // Satker head can only manage blue collar for permitted categories
+  assert.equal(
+    canManageAnnualPaidLeaveBalance(
+      { role: 'satker_head', permittedCategories: ['TEKNISI'] },
+      { kind: 'blue_collar', category: 'TEKNISI' },
+    ),
+    true,
+  );
+  assert.equal(
+    canManageAnnualPaidLeaveBalance(
+      { role: 'satker_head', permittedCategories: ['TEKNISI'] },
+      { kind: 'blue_collar', category: 'SATPAM' },
+    ),
+    false,
+  );
+  assert.equal(
+    canManageAnnualPaidLeaveBalance(
+      { role: 'satker_head', permittedCategories: ['TEKNISI'] },
+      { kind: 'loyalis', category: 'LOYALIS' },
+    ),
+    false,
+  );
+
+  // Other roles cannot manage balances
+  assert.equal(
+    canManageAnnualPaidLeaveBalance(
+      { role: 'honorer', permittedCategories: [] },
+      { kind: 'blue_collar', category: 'TEKNISI' },
+    ),
+    false,
   );
 });
 

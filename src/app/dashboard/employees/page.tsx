@@ -2167,9 +2167,6 @@ export default function EmployeesPage() {
             {leaveBalancesQuery.isError && (
               <span className="text-rose-600"> Sisa cuti gagal dimuat.</span>
             )}
-            {isLoyalisAdmin && activeTab === 'blue' && (
-              <span> Sisa cuti Pekarya dikelola Kepala SatKer, sehingga tidak tampil di sini.</span>
-            )}
           </p>
         )}
 

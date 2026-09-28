@@ -5,6 +5,7 @@ import { HttpError } from '@/lib/server/auth';
 import {
   annualPaidLeaveBalanceId,
   annualPaidLeaveQualifyingDate,
+  canManageAnnualPaidLeaveBalance,
   canReviewAnnualPaidLeave,
   type AnnualPaidLeaveEmployeeKind,
   type AnnualPaidLeaveRequest,
@@ -227,6 +228,13 @@ export function reviewerCanAccessAnnualPaidLeave(
   employee: Pick<AnnualPaidLeaveEmployee, 'kind' | 'category'>,
 ): boolean {
   return canReviewAnnualPaidLeave(actor, employee);
+}
+
+export function reviewerCanAccessAnnualPaidLeaveBalance(
+  actor: AuthenticatedProfile,
+  employee: Pick<AnnualPaidLeaveEmployee, 'kind' | 'category'>,
+): boolean {
+  return canManageAnnualPaidLeaveBalance(actor, employee);
 }
 
 export interface AnnualPaidLeavePayrollPost {

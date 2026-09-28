@@ -304,6 +304,20 @@ export function canReviewAnnualPaidLeave(
   );
 }
 
+export function canManageAnnualPaidLeaveBalance(
+  reviewer: { role: string; permittedCategories?: readonly string[] },
+  employee: { kind: AnnualPaidLeaveEmployeeKind; category?: string },
+): boolean {
+  if (reviewer.role === 'super_admin' || reviewer.role === 'loyalis_admin') return true;
+  if (employee.kind === 'loyalis') return false;
+  return (
+    reviewer.role === 'satker_head' &&
+    (reviewer.permittedCategories || [])
+      .map((category) => category.trim().toUpperCase())
+      .includes(String(employee.category || '').trim().toUpperCase())
+  );
+}
+
 export type AnnualPaidLeaveDecisionIssue =
   | 'period_closed'
   | 'immutable_slip'

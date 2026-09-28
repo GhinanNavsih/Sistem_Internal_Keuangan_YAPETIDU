@@ -16,7 +16,7 @@ import {
   annualPaidLeaveEmployeeDataMatches,
   annualPaidLeaveEmployeeFromData,
   loadAnnualPaidLeaveEmployee,
-  reviewerCanAccessAnnualPaidLeave,
+  reviewerCanAccessAnnualPaidLeaveBalance,
 } from '@/lib/server/annualPaidLeave';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import {
@@ -72,11 +72,9 @@ export async function GET(request: NextRequest) {
     const year = parseYear(request.nextUrl.searchParams.get('year'));
     const asOfDate = jakartaToday();
     const balanceReferenceDate = annualPaidLeaveBalanceReferenceDate(year, asOfDate);
-    const kinds: AnnualPaidLeaveEmployeeKind[] = actor.role === 'loyalis_admin'
-      ? ['loyalis']
-      : actor.role === 'satker_head'
-        ? ['blue_collar']
-        : ['loyalis', 'blue_collar'];
+    const kinds: AnnualPaidLeaveEmployeeKind[] = actor.role === 'satker_head'
+      ? ['blue_collar']
+      : ['loyalis', 'blue_collar'];
 
     const snapshots = await Promise.all(
       kinds.map((kind) =>
@@ -111,7 +109,7 @@ export async function GET(request: NextRequest) {
           !employee.active ||
           !employee.category ||
           entitlementDays < 1 ||
-          !reviewerCanAccessAnnualPaidLeave(actor, employee)
+          !reviewerCanAccessAnnualPaidLeaveBalance(actor, employee)
         ) {
           return [];
         }
@@ -215,7 +213,7 @@ export async function POST(request: NextRequest) {
     if (employee.kind === 'blue_collar' && !employee.category) {
       throw new HttpError(409, 'Kategori pekerjaan pegawai belum diisi.');
     }
-    if (!reviewerCanAccessAnnualPaidLeave(actor, employee)) {
+    if (!reviewerCanAccessAnnualPaidLeaveBalance(actor, employee)) {
       throw new HttpError(403, 'Anda tidak berwenang mengatur saldo pegawai ini.');
     }
     const asOfDate = jakartaToday();
