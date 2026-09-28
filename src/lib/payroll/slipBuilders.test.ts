@@ -54,6 +54,22 @@ test('Loyalis earnings derive from the profile and the pay rules', () => {
   assert.equal(amountOf(earnings, 'Instruksional'), 300_000);
 });
 
+test('dated child stops contributing to Loyalis earnings in the graduation month', () => {
+  const employee = {
+    family_allowance_metrics: {
+      spouse_count: 1,
+      dependents: [{ id: 'one', level: 'S2', enrolled_at: '2024-09-01' }],
+      children_pt: 1,
+    },
+  };
+  const buildFor = (period: string) => buildInitialEarnings(
+    employee, 4_000_000, 'loyalis', undefined, undefined, undefined,
+    undefined, undefined, undefined, 0, 0, period,
+  );
+  assert.equal(amountOf(buildFor('2026-08'), 'T. Keluarga'), 700_000);
+  assert.equal(amountOf(buildFor('2026-09'), 'T. Keluarga'), 200_000);
+});
+
 test('the highest structural position is paid in full and the rest halved', () => {
   const earnings = buildInitialEarnings(
     {

@@ -678,6 +678,12 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // A Loyalis submits school proof and an employee admin reviews it through
+    // authenticated APIs; clients cannot forge a decision or payroll change.
+    match /FamilyAllowanceRequests/{requestId} {
+      allow read, write: if false;
+    }
+
     // Everything not explicitly listed is denied.
     match /{document=**} {
       allow read, write: if false;

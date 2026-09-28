@@ -44,6 +44,7 @@ import {
 } from '@/lib/payroll/payrollTax';
 import { UserRole } from '@/lib/payroll/roles';
 import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
+import { synchronizeFamilyAllowanceEarnings } from '@/lib/payroll/familyAllowance';
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -76,6 +77,7 @@ interface PaySlipDialogProps {
   employeeNo: number;
   gapok: number;
   period: string; // e.g. "Mei 2026"
+  periodToken: string; // YYYY-MM
   periodClosed: boolean;
   slipState: SlipState | null;
   onSave: (
@@ -161,6 +163,7 @@ export default function PaySlipDialog({
   employeeNo,
   gapok,
   period,
+  periodToken,
   periodClosed,
   slipState,
   onSave,
@@ -249,7 +252,11 @@ export default function PaySlipDialog({
         employee.employment?.jobCategory === 'SATPAM'
           ? mergeSatpamLegacyBonusIntoTunjangan(slipState.earnings)
           : slipState.earnings;
-      initEarnings = JSON.parse(JSON.stringify(savedEarnings));
+      initEarnings = JSON.parse(JSON.stringify(
+        activeTab === 'loyalis' && slipState.status === 'draft'
+          ? synchronizeFamilyAllowanceEarnings(savedEarnings, employee.family_allowance_metrics, periodToken)
+          : savedEarnings,
+      ));
     } else if (activeTab !== 'loyalis' && pekaryaPreview) {
       // No saved slip: open on the live matrix-based preview rather than the
       // profile snapshot, so the modal and the employee's own payslip agree.
@@ -270,7 +277,8 @@ export default function PaySlipDialog({
         tunjanganKepangkatan,
         customColumns,
         presenceBonus,
-        presensiEarning
+        presensiEarning,
+        periodToken
       );
     }
 
@@ -304,6 +312,7 @@ export default function PaySlipDialog({
     setFreshRecalculated(null);
   }, [
     open,
+    periodToken,
     employee,
     gapok,
     slipState,

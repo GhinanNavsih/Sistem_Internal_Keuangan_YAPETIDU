@@ -202,6 +202,7 @@ export async function GET(request: NextRequest) {
       [],
       presenceAmounts.presenceBonus,
       presenceAmounts.presensiEarning,
+      period,
     );
     const deductions = buildInitialDeductions(
       employee,

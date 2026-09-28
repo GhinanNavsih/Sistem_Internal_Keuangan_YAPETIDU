@@ -23,6 +23,7 @@ import { generateLegalitasPimpinanXlsx } from '@/utils/generateLegalitasPimpinan
 import { calculateGapok } from '@/utils/payrollLogic';
 import { resolveGapokFromSlip } from '@/lib/payroll/slipBuilders';
 import { recalculateSlipTaxes } from '@/lib/payroll/payrollTax';
+import { eligibleFamilyMetrics, familyAllowancePercentage, familyAllowancePeriodDate } from '@/lib/payroll/familyAllowance';
 
 interface EmployeeRow {
   id: string;
@@ -67,7 +68,8 @@ function buildInitialEarnings(
   tunjanganFungsional?: number,
   presenceBonus = 0,
   presensiEarning = 0,
-  tunjanganKepangkatan?: number
+  tunjanganKepangkatan?: number,
+  targetDate: Date = new Date()
 ): PaySlipField[] {
   const earnings: PaySlipField[] = [];
 
@@ -76,16 +78,7 @@ function buildInitialEarnings(
     earnings.push({ label: 'Gaji Pokok', amount: gapok });
     
     // Tunjangan Keluarga formula
-    const metrics = emp.family_allowance_metrics;
-    let spouseCount = 0, sd = 0, sltp = 0, slta = 0, pt = 0;
-    if (metrics) {
-      spouseCount = Number(metrics.spouse_count) || 0;
-      sd = Number(metrics.children_sd) || 0;
-      sltp = Number(metrics.children_sltp) || 0;
-      slta = Number(metrics.children_slta) || 0;
-      pt = Number(metrics.children_pt) || 0;
-    }
-    const familyPct = (spouseCount * 0.05) + (sd * 0.05) + (sltp * 0.075) + (slta * 0.1) + (pt * 0.125);
+    const familyPct = familyAllowancePercentage(eligibleFamilyMetrics(emp.family_allowance_metrics, familyAllowancePeriodDate(targetDate)));
     const tunjKeluarga = Math.round(gapok * familyPct);
     earnings.push({ label: 'Tunjangan Keluarga', amount: tunjKeluarga });
 
@@ -283,7 +276,7 @@ export default function LegalitasPimpinanDialog({
         const pDeduction = getLoyalisPresenceDeduction ? getLoyalisPresenceDeduction(emp.id) : 0;
         const presEarning = getLoyalisPresensiEarning ? getLoyalisPresensiEarning(emp.id) : 0;
         const presDeduction = getLoyalisPresensiDeduction ? getLoyalisPresensiDeduction(emp.id) : 0;
-        earnings = buildInitialEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance, pBonus, presEarning, kepangkatanAllowanceMap?.[emp.id] ?? 0);
+        earnings = buildInitialEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance, pBonus, presEarning, kepangkatanAllowanceMap?.[emp.id] ?? 0, targetDate);
         deductions = buildInitialDeductions(emp.raw, kopUnipdu, pDeduction, presDeduction, kopSaving);
       }
       totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);

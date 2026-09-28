@@ -12,6 +12,12 @@
  * from it onwards.
  */
 import { normalizeNipy } from './payroll/attendance';
+import {
+  todayInJakarta,
+  eligibleFamilyMetrics,
+  validateDependentHistory,
+  type DependentEnrollment,
+} from '@/lib/payroll/familyAllowance';
 
 export const EMPLOYEE_CONVERSION_REASON_MIN_LENGTH = 8;
 export const EMPLOYEE_CONVERSION_REASON_MAX_LENGTH = 500;
@@ -63,6 +69,9 @@ export interface LoyalisConversionInput {
   childrenSltp: number;
   childrenSlta: number;
   childrenPt: number;
+  childrenS1: number;
+  childrenS2: number;
+  dependentEnrollments: DependentEnrollment[];
 }
 
 export type LoyalisConversionInputErrors = Partial<
@@ -316,6 +325,9 @@ export function prefillLoyalisConversionInput(
     childrenSltp: 0,
     childrenSlta: 0,
     childrenPt: 0,
+    childrenS1: 0,
+    childrenS2: 0,
+    dependentEnrollments: [],
   };
 }
 
@@ -347,6 +359,19 @@ export function parseLoyalisConversionInput(value: unknown): LoyalisConversionIn
     childrenSltp: Number(input.childrenSltp),
     childrenSlta: Number(input.childrenSlta),
     childrenPt: Number(input.childrenPt),
+    childrenS1: Number(input.childrenS1),
+    childrenS2: Number(input.childrenS2),
+    dependentEnrollments: Array.isArray(input.dependentEnrollments)
+      ? input.dependentEnrollments.map((raw) => {
+          const entry = asRecord(raw);
+          return {
+            id: text(entry.id),
+            level: text(entry.level) as DependentEnrollment['level'],
+            enrolled_at: text(entry.enrolled_at),
+            ...(entry.ended_at ? { ended_at: text(entry.ended_at) } : {}),
+          };
+        })
+      : [],
   };
 }
 
@@ -395,11 +420,27 @@ export function validateLoyalisConversionInput(
     'childrenSltp',
     'childrenSlta',
     'childrenPt',
+    'childrenS1',
+    'childrenS2',
   ] as const) {
     const amount = input[field];
-    if (!Number.isSafeInteger(amount) || amount < 0 || amount > 20) {
+    if (!Number.isSafeInteger(amount) || amount < 0 || amount > (field === 'spouseCount' ? 1 : 20)) {
       errors[field] = 'Jumlah tidak valid.';
     }
+  }
+  try {
+    validateDependentHistory({ dependents: input.dependentEnrollments }, todayInJakarta());
+    if (input.dependentEnrollments.some((item) => item.level === 'PT')) {
+      throw new Error('Jenjang kuliah wajib dipilih S1 atau S2.');
+    }
+    const counts = eligibleFamilyMetrics({ dependents: input.dependentEnrollments }, todayInJakarta());
+    if (counts.children_sd !== input.childrenSd || counts.children_sltp !== input.childrenSltp ||
+      counts.children_slta !== input.childrenSlta || counts.children_s1 !== input.childrenS1 ||
+      counts.children_s2 !== input.childrenS2 || counts.children_pt !== input.childrenPt) {
+      throw new Error('Jumlah anak dan tanggal masuknya belum sesuai.');
+    }
+  } catch (error) {
+    errors.dependentEnrollments = error instanceof Error ? error.message : 'Tanggal masuk anak tidak valid.';
   }
   return errors;
 }
@@ -461,6 +502,9 @@ export function buildLoyalisEmployeeDocument(
       children_sltp: count(input.childrenSltp),
       children_slta: count(input.childrenSlta),
       children_pt: count(input.childrenPt),
+      children_s1: count(input.childrenS1),
+      children_s2: count(input.childrenS2),
+      ...(input.dependentEnrollments.length > 0 ? { dependents: input.dependentEnrollments } : {}),
     },
     ziz: { deductionAmount: money(asRecord(data.ziz).deductionAmount) },
     savings: { deductionAmount: money(asRecord(data.savings).deductionAmount) },

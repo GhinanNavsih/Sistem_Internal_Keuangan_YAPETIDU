@@ -24,6 +24,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   Compass,
+  GraduationCap,
   KeyRound,
   Loader2,
   Menu as MenuIcon,
@@ -127,6 +128,15 @@ export default function EmployeeNavigationMenu() {
             >
               <Banknote className="text-emerald-500" />
               Slip Gaji
+            </DropdownMenuItem>
+          )}
+          {isLoyalis && pathname !== '/employee/family-allowance' && (
+            <DropdownMenuItem
+              className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+              render={<Link href="/employee/family-allowance" />}
+            >
+              <GraduationCap className="text-indigo-500" />
+              Pengajuan T. Keluarga
             </DropdownMenuItem>
           )}
           {isSopir && pathname !== '/employee/driver-history' && (

@@ -4,6 +4,7 @@ import { calculatePayrollTotals, validateMoneyFields } from '@/lib/payroll/domai
 import { recalculateSlipTaxes } from '@/lib/payroll/payrollTax';
 import { canVerifyPayroll } from '@/lib/payroll/roles';
 import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
+import { synchronizeFamilyAllowanceEarnings } from '@/lib/payroll/familyAllowance';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import { AuthenticatedProfile, HttpError } from '@/lib/server/auth';
 import {
@@ -283,13 +284,14 @@ export async function verifyAndLockWithKoperasi(
   }
 
   return adminDb.runTransaction(async (transaction) => {
-    const [slipSnapshot, periodSnapshot, operationSnapshot, idempotencySnapshot, blueSnapshot] =
+    const [slipSnapshot, periodSnapshot, operationSnapshot, idempotencySnapshot, blueSnapshot, loyalisSnapshot] =
       await Promise.all([
         transaction.get(slipRef),
         transaction.get(periodRef),
         transaction.get(operationRef),
         transaction.get(idempotencyRef),
         transaction.get(blueRef),
+        transaction.get(loyalisRef),
       ]);
     if (idempotencySnapshot.exists) {
       const previous = idempotencySnapshot.data()!;
@@ -341,9 +343,16 @@ export async function verifyAndLockWithKoperasi(
     const isSatpam =
       blueSnapshot.exists &&
       blueSnapshot.data()?.employment?.jobCategory === 'SATPAM';
-    const earnings = isSatpam
+    const validatedForCollar = isSatpam
       ? mergeSatpamLegacyBonusIntoTunjangan(validatedEarnings)
       : validatedEarnings;
+    const earnings = loyalisSnapshot.exists
+      ? synchronizeFamilyAllowanceEarnings(
+          validatedForCollar,
+          loyalisSnapshot.data()?.family_allowance_metrics,
+          command.period,
+        )
+      : validatedForCollar;
     const deductions = validateMoneyFields(before.deductions, 'deductions');
     // Sealing re-derives the tax from the rows being sealed, so the locked
     // snapshot's hash covers a Gaji Bersih that is internally consistent.

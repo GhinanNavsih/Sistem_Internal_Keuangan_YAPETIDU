@@ -60,6 +60,35 @@ test('a persisted slip remains authoritative over fallback calculations', () => 
   );
 });
 
+test('a Loyalis draft preview removes a graduated child but a locked slip stays historical', () => {
+  const employee = {
+    family_allowance_metrics: {
+      spouse_count: 1,
+      dependents: [{ id: 'child', level: 'SD', enrolled_at: '2020-07-01' }],
+    },
+  };
+  const saved = {
+    earnings: [{ label: 'Gaji Pokok', amount: 4_000_000 }, { label: 'T. Keluarga', amount: 400_000 }],
+    deductions: [],
+  };
+  assert.equal(buildDashboardSlipData(employee, 'loyalis', { ...saved, status: 'draft' }, inputs)
+    .earnings[1].amount, 200_000);
+  assert.equal(buildDashboardSlipData(employee, 'loyalis', { ...saved, status: 'locked' }, inputs)
+    .earnings[1].amount, 400_000);
+});
+
+test('a Loyalis draft also refreshes T. Keluarga from legacy profile counts', () => {
+  const employee = { family_allowance_metrics: { spouse_count: 0, children_sd: 1 } };
+  const saved = {
+    earnings: [{ label: 'Gaji Pokok', amount: 4_000_000 }, { label: 'T. Keluarga', amount: 400_000 }],
+    deductions: [],
+  };
+  assert.equal(buildDashboardSlipData(employee, 'loyalis', { ...saved, status: 'draft' }, inputs)
+    .earnings[1].amount, 200_000);
+  assert.equal(buildDashboardSlipData(employee, 'loyalis', { ...saved, status: 'locked' }, inputs)
+    .earnings[1].amount, 400_000);
+});
+
 test('a persisted tax selection is exposed separately and recalculated from its rows', () => {
   const data = buildDashboardSlipData(
     { id: 'pekarya-1', employment: { jobCategory: 'SOPIR' } },

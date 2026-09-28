@@ -66,6 +66,7 @@ import { usePayrollCacheInvalidation } from '@/lib/queries/hooks';
 import { useBulkEmail, ESTIMATED_SECONDS_PER_EMAIL, type QueueItem } from '@/lib/BulkEmailContext';
 import { Employee, SalaryMatrix, BlueCollarEmployee, UraianGajiDocument, UraianEntry } from '@/types';
 import PaySlipDialog, { SlipState, buildInitialEarnings, buildInitialDeductions } from '@/components/PaySlipDialog';
+import { eligibleFamilyMetrics, familyAllowancePeriodDate, synchronizeFamilyAllowanceEarnings } from '@/lib/payroll/familyAllowance';
 import { normalizeTaxFields, recalculateSlipTaxes } from '@/lib/payroll/payrollTax';
 import { PekaryaSlipPreview } from '@/lib/payroll/pekaryaSlipPreview';
 import * as XLSX from 'xlsx';
@@ -1346,9 +1347,16 @@ export default function PayrollValidationDashboard() {
     // If there is already a saved slip state, return its saved earnings and deductions
     const savedSlip = slipStates[emp.id];
     if (savedSlip && Array.isArray(savedSlip.earnings)) {
-      const savedEarnings = emp.raw.employment?.jobCategory === 'SATPAM'
+      const storedEarnings = emp.raw.employment?.jobCategory === 'SATPAM'
         ? mergeSatpamLegacyBonusIntoTunjangan(savedSlip.earnings)
         : savedSlip.earnings;
+      const savedEarnings = payrollCollar === 'loyalis' && savedSlip.status === 'draft'
+        ? synchronizeFamilyAllowanceEarnings(
+            storedEarnings,
+            emp.raw.family_allowance_metrics,
+            `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`,
+          )
+        : storedEarnings;
       const savedDeductions = savedSlip.deductions || [];
       return {
         earnings: savedEarnings,
@@ -1383,7 +1391,8 @@ export default function PayrollValidationDashboard() {
         kepangkatanAllowanceMap[emp.id] ?? 0,
         [],
         getLoyalisPresenceBonus(emp.id),
-        getLoyalisPresensiEarning(emp.id)
+        getLoyalisPresensiEarning(emp.id),
+        `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`
       );
 
     const deductions = payrollCollar !== 'loyalis' && !pekaryaPreview
@@ -1438,7 +1447,7 @@ export default function PayrollValidationDashboard() {
       isLoyalis,
       niy: isLoyalis ? emp.raw.personal_info?.employee_id_niy || '' : '',
       npwp: isLoyalis ? emp.raw.personal_info?.tax_id_npwp || '' : '',
-      familyMetrics: isLoyalis ? emp.raw.family_allowance_metrics : undefined,
+      familyMetrics: isLoyalis ? eligibleFamilyMetrics(emp.raw.family_allowance_metrics, familyAllowancePeriodDate(targetDate)) : undefined,
       gradeLevel: isLoyalis ? (emp.raw.academic_and_tier?.level_code || emp.gradeLevel || '') : '',
       yearsOfService: isLoyalis ? calculateYearsOfService(recognitionDate, targetDate) : 0,
       baseDate: isLoyalis && recognitionDate ? recognitionDate.toISOString() : '',
@@ -2627,7 +2636,8 @@ export default function PayrollValidationDashboard() {
             freshKepangkatanAllowance,
             [],
             getFreshPresenceBonus(emp.id),
-            getFreshPresensiEarning(emp.id)
+            getFreshPresensiEarning(emp.id),
+            periodToken
           );
 
         const freshDeductions = buildInitialDeductions(
@@ -3094,7 +3104,8 @@ export default function PayrollValidationDashboard() {
         freshKepangkatanAllowance,
         [], // customColumns
         getFreshPresenceBonus(employeeId),
-        getFreshPresensiEarning(employeeId)
+        getFreshPresensiEarning(employeeId),
+        periodToken
       );
     } else {
       const refreshedPreviews = await fetchPekaryaPreviews();
@@ -3961,6 +3972,7 @@ export default function PayrollValidationDashboard() {
         employeeNo={selectedEmployee?.rowIndex ?? 0}
         gapok={selectedEmployee ? getPekaryaGapok(selectedEmployee) : 0}
         period={payrollPeriod}
+        periodToken={`${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`}
         periodClosed={attendancePeriodStatus === 'closed'}
         slipState={selectedEmployee ? slipStates[selectedEmployee.id] ?? null : null}
         onSave={handleSlipSave}

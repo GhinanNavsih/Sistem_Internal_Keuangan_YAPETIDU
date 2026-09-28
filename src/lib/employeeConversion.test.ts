@@ -128,6 +128,21 @@ test('parsing an untrusted payload normalizes and never trusts unknown types', (
   );
 });
 
+test('conversion cannot create an undated child allowance', () => {
+  const input = {
+    ...prefillLoyalisConversionInput(pekarya),
+    departmentUnit: 'BAK',
+    loyalisType: 'Admin' as const,
+    childrenS1: 1,
+    childrenPt: 1,
+    dependentEnrollments: [{ id: 'student', level: 'S1' as const, enrolled_at: '' }],
+  };
+  assert.match(
+    validateLoyalisConversionInput(input, { canSetLevelCode: true }).dependentEnrollments || '',
+    /Tanggal pertama masuk S1/,
+  );
+});
+
 test('the Loyalis document maps Pekarya fields and moves the NIPY', () => {
   const document = buildLoyalisEmployeeDocument(pekarya, {
     ...prefillLoyalisConversionInput(pekarya),
@@ -137,6 +152,10 @@ test('the Loyalis document maps Pekarya fields and moves the NIPY', () => {
     bpjsKes: 50000,
     spouseCount: 1,
     childrenSd: 2,
+    dependentEnrollments: [
+      { id: 'sd-1', level: 'SD', enrolled_at: '2022-07-01' },
+      { id: 'sd-2', level: 'SD', enrolled_at: '2023-07-01' },
+    ],
   });
   assert.equal(at(document, 'nipy'), '15010320001');
   assert.equal(at(document, 'personal_info.employee_id_niy'), '15010320001');
@@ -154,6 +173,7 @@ test('the Loyalis document maps Pekarya fields and moves the NIPY', () => {
   assert.equal(at(document, 'salaryProfile.tunjanganBeras'), 75000);
   assert.equal(at(document, 'salaryProfile.salaryGradeCode'), undefined);
   assert.equal(at(document, 'family_allowance_metrics.children_sd'), 2);
+  assert.equal((at(document, 'family_allowance_metrics.dependents') as unknown[]).length, 2);
   assert.equal(at(document, 'koperasiAuthUid'), 'kop-uid-1');
   assert.equal(at(document, 'koperasiUserId'), 'kop-user-1');
 });

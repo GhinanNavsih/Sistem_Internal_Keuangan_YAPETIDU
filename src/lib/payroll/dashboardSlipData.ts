@@ -6,6 +6,7 @@ import {
   SlipField,
 } from '@/lib/payroll/slipBuilders';
 import { recalculateSlipTaxes } from '@/lib/payroll/payrollTax';
+import { synchronizeFamilyAllowanceEarnings } from '@/lib/payroll/familyAllowance';
 import { loyalisPresenceAmounts } from '@/lib/payroll/uraianPropagation';
 import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
 import { SalaryMatrix } from '@/types';
@@ -41,6 +42,7 @@ export interface DashboardPeriodInputs {
 }
 
 export interface DashboardSavedSlip {
+  status?: string;
   earnings?: SlipField[];
   deductions?: SlipField[];
   taxes?: SlipField[];
@@ -94,10 +96,17 @@ export function buildDashboardSlipData(
   inputs: DashboardPeriodInputs,
 ): DashboardSlipData {
   if (Array.isArray(savedSlip?.earnings)) {
-    const earnings =
+    const storedEarnings =
       collar === 'pekarya' && employee.employment?.jobCategory === 'SATPAM'
         ? mergeSatpamLegacyBonusIntoTunjangan(savedSlip.earnings)
         : savedSlip.earnings;
+    const earnings = collar === 'loyalis' && savedSlip.status === 'draft'
+      ? synchronizeFamilyAllowanceEarnings(
+          storedEarnings,
+          employee.family_allowance_metrics,
+          `${inputs.targetDate.getFullYear()}-${String(inputs.targetDate.getMonth() + 1).padStart(2, '0')}`,
+        )
+      : storedEarnings;
     const deductions = savedSlip.deductions || [];
     return {
       earnings,
@@ -157,6 +166,7 @@ export function buildDashboardSlipData(
         [],
         presenceBonus,
         presensiEarning,
+        period.replace('_', '-'),
       ),
     deductions: buildInitialDeductions(
       employee,

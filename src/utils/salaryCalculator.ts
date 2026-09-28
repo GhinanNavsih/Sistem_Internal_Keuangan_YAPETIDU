@@ -1,6 +1,7 @@
 import { BlueCollarEmployee, UraianEntry } from '@/types';
 import { REKAP_COLUMNS, computeSlipAmount } from '@/utils/rekapConfig';
 import { normalizeSatpamUraianEntry } from '@/lib/payroll/satpamCompensation';
+import { eligibleFamilyMetrics, familyAllowancePercentage, familyAllowancePeriodDate } from '@/lib/payroll/familyAllowance';
 
 /**
  * Calculates the total structural allowance based on the descending-halving rules.
@@ -32,23 +33,16 @@ export function calculateTotalEarnings(
   tunjanganFungsional?: number,
   presenceBonus = 0,
   presensiEarning = 0,
-  tunjanganKepangkatan?: number
+  tunjanganKepangkatan?: number,
+  targetDate: Date = new Date()
 ): number {
   if (emp.employeeId?.startsWith('Loyalis_') || emp.id?.startsWith('Loyalis_') || emp.personal_info) {
     // White Collar / Loyalis calculations
     let total = gapok;
 
     // Tunjangan Keluarga formula
-    const metrics = emp.family_allowance_metrics;
-    let spouseCount = 0, sd = 0, sltp = 0, slta = 0, pt = 0;
-    if (metrics) {
-      spouseCount = Number(metrics.spouse_count) || 0;
-      sd = Number(metrics.children_sd) || 0;
-      sltp = Number(metrics.children_sltp) || 0;
-      slta = Number(metrics.children_slta) || 0;
-      pt = Number(metrics.children_pt) || 0;
-    }
-    const familyPct = (spouseCount * 0.05) + (sd * 0.05) + (sltp * 0.075) + (slta * 0.1) + (pt * 0.125);
+    const metrics = eligibleFamilyMetrics(emp.family_allowance_metrics, familyAllowancePeriodDate(targetDate));
+    const familyPct = familyAllowancePercentage(metrics);
     const tunjKeluarga = Math.round(gapok * familyPct);
     total += tunjKeluarga;
 

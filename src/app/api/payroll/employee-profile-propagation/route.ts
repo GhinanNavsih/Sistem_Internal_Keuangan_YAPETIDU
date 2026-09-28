@@ -217,6 +217,7 @@ export async function POST(request: NextRequest) {
         [],
         0,
         0,
+        periodToken,
       );
       const freshDeductions = buildInitialDeductions(raw, collar, 0, 0, 0, 0);
 

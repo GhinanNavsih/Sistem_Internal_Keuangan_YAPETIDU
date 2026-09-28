@@ -20,6 +20,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
+import FamilyAllowanceFields from './FamilyAllowanceFields';
 import {
   Select,
   SelectContent,
@@ -109,30 +110,6 @@ function IssueList({ issues, tone }: { issues: EmployeeConversionIssue[]; tone: 
     </ul>
   );
 }
-
-/**
- * A number input that can be emptied while typing. It keeps its own draft text
- * and reports a number upstream (an empty draft counts as 0), so the stored
- * value never snaps back into the field and blocks deleting the last digit.
- */
-function NumberField({ value, onValue }: { value: number; onValue: (value: number) => void }) {
-  const [draft, setDraft] = useState(() => String(value));
-  return (
-    <Input
-      type="number"
-      min={0}
-      inputMode="numeric"
-      placeholder="0"
-      value={draft}
-      onChange={(event) => {
-        setDraft(event.target.value);
-        onValue(event.target.value === '' ? 0 : Number(event.target.value));
-      }}
-      className="rounded-xl"
-    />
-  );
-}
-
 
 function FieldError({ message }: { message?: string }) {
   return message ? <p className="text-[11px] font-semibold text-rose-600">{message}</p> : null;
@@ -487,21 +464,30 @@ function ConversionFlow({
               </div>
               <div className="col-span-2 rounded-2xl border border-slate-100 bg-slate-50/60 p-4 space-y-3">
                 <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Tunjangan Keluarga</p>
-                <div className="grid grid-cols-5 gap-2">
-                  {([
-                    ['spouseCount', 'Pasangan'],
-                    ['childrenSd', 'Anak SD'],
-                    ['childrenSltp', 'Anak SLTP'],
-                    ['childrenSlta', 'Anak SLTA'],
-                    ['childrenPt', 'Anak PT'],
-                  ] as const).map(([key, label]) => (
-                    <div key={key} className="space-y-1">
-                      <Label className="text-[11px]">{label}</Label>
-                      <NumberField value={form[key]} onValue={(value) => update(key, value)} />
-                      {showErrors && <FieldError message={errors[key]} />}
-                    </div>
-                  ))}
-                </div>
+                <FamilyAllowanceFields
+                  value={{
+                    spouse_count: form.spouseCount,
+                    children_sd: form.childrenSd,
+                    children_sltp: form.childrenSltp,
+                    children_slta: form.childrenSlta,
+                    children_s1: form.childrenS1,
+                    children_s2: form.childrenS2,
+                    children_pt: form.childrenPt,
+                    dependents: form.dependentEnrollments,
+                  }}
+                  onChange={metrics => setForm(current => current ? {
+                    ...current,
+                    spouseCount: Number(metrics.spouse_count) || 0,
+                    childrenSd: Number(metrics.children_sd) || 0,
+                    childrenSltp: Number(metrics.children_sltp) || 0,
+                    childrenSlta: Number(metrics.children_slta) || 0,
+                    childrenS1: Number(metrics.children_s1) || 0,
+                    childrenS2: Number(metrics.children_s2) || 0,
+                    childrenPt: Number(metrics.children_pt) || 0,
+                    dependentEnrollments: metrics.dependents || [],
+                  } : current)}
+                />
+                {showErrors && <FieldError message={errors.dependentEnrollments} />}
               </div>
               <p className="col-span-2 text-xs text-slate-500">
                 NIK, telepon, email, rekening, potongan, Tunjangan Beras dan akun Koperasi disalin dari data Pekarya.

@@ -28,6 +28,8 @@ export interface PaySlipData {
     children_sltp: number;
     children_slta: number;
     children_pt: number;
+    children_s1?: number;
+    children_s2?: number;
   };
   gradeLevel?: string;
   yearsOfService?: number;
@@ -1095,11 +1097,11 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
         title: '2. Tunjangan Keluarga',
         bullets: [
           'Dihitung dari persentase anggota keluarga terdaftar:',
-          'Suami/Istri: 5% (maks 1) | Anak SD: 5% | Anak SLTP: 7.5% | Anak SLTA: 10% | Anak PT: 12.5%.'
+          'Suami/Istri: 5% (maks 1) | Anak SD: 5% | Anak SLTP: 7.5% | Anak SLTA: 10% | Anak S1/S2: 12.5%.'
         ],
         params: [
           { label: 'Tanggungan Suami/Istri', val: `${famMetrics.spouse_count} orang (5%)` },
-          { label: 'Tanggungan Anak (SD/SLTP/SLTA/PT)', val: `${famMetrics.children_sd}/${famMetrics.children_sltp}/${famMetrics.children_slta}/${famMetrics.children_pt} orang` },
+          { label: 'Tanggungan Anak (SD/SLTP/SLTA/S1/S2)', val: `${famMetrics.children_sd}/${famMetrics.children_sltp}/${famMetrics.children_slta}/${famMetrics.children_s1 || 0}/${famMetrics.children_s2 || 0} orang${famMetrics.children_pt > (famMetrics.children_s1 || 0) + (famMetrics.children_s2 || 0) ? ` (+${famMetrics.children_pt - (famMetrics.children_s1 || 0) - (famMetrics.children_s2 || 0)} PT lama)` : ''}` },
           { label: 'Persentase Total', val: `${(((famMetrics.spouse_count * 0.05) + (famMetrics.children_sd * 0.05) + (famMetrics.children_sltp * 0.075) + (famMetrics.children_slta * 0.1) + (famMetrics.children_pt * 0.125)) * 100).toFixed(1)}%` },
           { label: 'Tunjangan Keluarga', val: formatIDR(tunjKeluargaVal), highlight: true }
         ]

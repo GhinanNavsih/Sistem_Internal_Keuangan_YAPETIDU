@@ -45,7 +45,7 @@ import {
   ArrowLeft,
   Loader2,
   Users,
-  CreditCard,
+  GraduationCap,
   CheckCircle2,
   AlertCircle,
   ShieldCheck,
@@ -102,6 +102,20 @@ import { matchFunctionalAllowance } from '@/lib/payroll/salaryMatrix';
 import { annualPaidLeaveTableFigures } from '@/lib/payroll/annualPaidLeave';
 import StructuralPositionPicker from '@/components/employee/StructuralPositionPicker';
 import ConvertToLoyalisDialog from '@/components/employee/ConvertToLoyalisDialog';
+import FamilyAllowanceFields from '@/components/employee/FamilyAllowanceFields';
+import FamilyAllowanceReviewCard from '@/components/employee/FamilyAllowanceReviewCard';
+import {
+  todayInJakarta,
+  eligibleFamilyMetrics,
+  dependentChildren,
+  dependentHistory,
+  graduationDate,
+  isDateOnly,
+  pendingGraduatedChildren,
+  validateDependentHistory,
+  withCurrentFamilyCounts,
+  type FamilyAllowanceMetrics,
+} from '@/lib/payroll/familyAllowance';
 import {
   conversionPeriodLabel,
   readConversionFromLink,
@@ -542,6 +556,30 @@ function getObjectDiff(oldObj: any, newObj: any, prefix = ''): FieldChange[] {
   return diffs;
 }
 
+function familyDependentDiffs(oldMetrics: FamilyAllowanceMetrics | undefined, newMetrics: FamilyAllowanceMetrics | undefined): FieldChange[] {
+  const oldEntries = dependentHistory(oldMetrics);
+  const newEntries = dependentHistory(newMetrics);
+  const oldById = new Map(oldEntries.map(entry => [entry.id, entry]));
+  const newById = new Map(newEntries.map(entry => [entry.id, entry]));
+  const describe = (entry: (typeof oldEntries)[number] | undefined, metrics: FamilyAllowanceMetrics | undefined) => {
+    if (!entry) return null;
+    const number = dependentChildren(metrics).findIndex(child => child.stages.some(stage => stage.id === entry.id)) + 1;
+    const graduation = entry.level !== 'PT' && isDateOnly(entry.enrolled_at)
+      ? graduationDate(entry.enrolled_at, entry.level) : null;
+    return `Anak ${number}; ${entry.level}; masuk ${entry.enrolled_at || 'belum dicatat'}${graduation ? `; lulus ${graduation}` : ''}${entry.ended_at ? `; dihentikan ${entry.ended_at}` : ''}${entry.no_further_study ? '; tidak lanjut sekolah' : ''}; ID anak ${entry.child_id || entry.id}`;
+  };
+  const ids = new Set([...oldById.keys(), ...newById.keys()]);
+  return [...ids].flatMap(id => {
+    const oldValue = describe(oldById.get(id), oldMetrics);
+    const newValue = describe(newById.get(id), newMetrics);
+    return oldValue === newValue ? [] : [{
+      field: `family_allowance_metrics.dependents.${id}`,
+      oldValue,
+      newValue,
+    }];
+  });
+}
+
 const STRUCTURAL_POSITIONS_FIELD = 'employment_profile.structural_positions';
 
 /**
@@ -779,6 +817,20 @@ export default function EmployeesPage() {
   };
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isGraduationDialogOpen, setIsGraduationDialogOpen] = useState(false);
+  const [focusChildId, setFocusChildId] = useState<string | null>(null);
+  const [familyReviewToday, setFamilyReviewToday] = useState(todayInJakarta);
+  useEffect(() => {
+    const interval = window.setInterval(() => setFamilyReviewToday(todayInJakarta()), 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
+  const pendingGraduations = useMemo(() => pageEmployeesLoyalis
+    .filter(getEmpIsActive)
+    .flatMap(employee => pendingGraduatedChildren(employee.family_allowance_metrics, familyReviewToday)
+      .map(child => ({ employee, ...child })))
+    .sort((left, right) => left.graduatedAt.localeCompare(right.graduatedAt) ||
+      getEmpName(left.employee).localeCompare(getEmpName(right.employee))),
+  [pageEmployeesLoyalis, familyReviewToday]);
   const [editingEmployee, setEditingEmployee] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
   const isSavingRef = useRef(false);
@@ -906,7 +958,7 @@ export default function EmployeesPage() {
         academic_and_tier: { education_level: '', education_code: '', functional_tier: '', level_code: '', base_salary_tier: '' },
         loyalisType: '',
         isDosen: null,
-        family_allowance_metrics: { spouse_count: 0, children_sd: 0, children_sltp: 0, children_slta: 0, children_pt: 0 },
+        family_allowance_metrics: { spouse_count: 0, children_sd: 0, children_sltp: 0, children_slta: 0, children_s1: 0, children_s2: 0, children_pt: 0, dependents: [] },
         ziz: { deductionAmount: 0 },
         savings: { deductionAmount: 0 },
         pinlu: { deductionAmount: 0 },
@@ -994,7 +1046,10 @@ export default function EmployeesPage() {
   const fetchEmployees = async () => {
     try {
       setLocalLoading(true);
-      await refreshData();
+      await Promise.all([
+        refreshData(),
+        ...(isLoyalisAdmin ? [loyalisAdminLoyalisQuery.refetch(), loyalisAdminBlueCollarQuery.refetch()] : []),
+      ]);
     } catch (err) {
       console.error('Error refreshing employees:', err);
     } finally {
@@ -1113,6 +1168,7 @@ export default function EmployeesPage() {
 
   const handleOpenAdd = () => {
     setEditingEmployee(null);
+    setFocusChildId(null);
     structuralPositionsEditedRef.current = false;
     setFormData(resetForm(activeTab));
     setIsCustomDept(false);
@@ -1129,7 +1185,7 @@ export default function EmployeesPage() {
     return '';
   };
 
-  const handleOpenEdit = (emp: any) => {
+  const handleOpenEdit = (emp: any, childId?: string) => {
     const convertedTo = activeTab === 'blue' ? readConversionToLink(emp) : null;
     if (convertedTo) {
       // Reactivating or editing the closed Pekarya record would put the same
@@ -1141,6 +1197,7 @@ export default function EmployeesPage() {
       return;
     }
     setEditingEmployee(emp);
+    setFocusChildId(childId || null);
     structuralPositionsEditedRef.current = false;
     setIsCustomDept(false);
     setCustomDeptValue('');
@@ -1233,6 +1290,15 @@ export default function EmployeesPage() {
       }
 
       if (activeTab === 'loyalis') {
+        const familyMetrics = formData.family_allowance_metrics || {};
+        const spouseCount = Number(familyMetrics.spouse_count);
+        if (!Number.isSafeInteger(spouseCount) || spouseCount < 0 || spouseCount > 1) {
+          throw new Error('Jumlah pasangan harus 0 atau 1.');
+        }
+        validateDependentHistory(familyMetrics, todayInJakarta());
+        const currentFamilyMetrics = Array.isArray(familyMetrics.dependents)
+          ? withCurrentFamilyCounts(familyMetrics, todayInJakarta())
+          : familyMetrics;
         const toTimestamp = (dateString: string) => {
           if (!dateString) return null;
           const d = new Date(dateString);
@@ -1298,12 +1364,12 @@ export default function EmployeesPage() {
             base_salary_tier: formData.academic_and_tier?.base_salary_tier !== undefined && formData.academic_and_tier?.base_salary_tier !== '' ? Number(formData.academic_and_tier.base_salary_tier) : null,
           },
           family_allowance_metrics: {
-            ...(formData.family_allowance_metrics || {}),
-            spouse_count: Number(formData.family_allowance_metrics?.spouse_count) || 0,
-            children_sd: Number(formData.family_allowance_metrics?.children_sd) || 0,
-            children_sltp: Number(formData.family_allowance_metrics?.children_sltp) || 0,
-            children_slta: Number(formData.family_allowance_metrics?.children_slta) || 0,
-            children_pt: Number(formData.family_allowance_metrics?.children_pt) || 0,
+            ...currentFamilyMetrics,
+            spouse_count: spouseCount,
+            children_sd: Number(currentFamilyMetrics.children_sd) || 0,
+            children_sltp: Number(currentFamilyMetrics.children_sltp) || 0,
+            children_slta: Number(currentFamilyMetrics.children_slta) || 0,
+            children_pt: Number(currentFamilyMetrics.children_pt) || 0,
           },
           ziz: {
             ...(formData.ziz || {}),
@@ -1376,7 +1442,12 @@ export default function EmployeesPage() {
 
       let changedFields: string[] = [];
       if (editingEmployee) {
-        const rawDiffs = getObjectDiff(editingEmployee, final);
+        const rawDiffs = getObjectDiff(editingEmployee, final)
+          .filter(diff => !diff.field.startsWith('family_allowance_metrics.dependents'));
+        rawDiffs.push(...familyDependentDiffs(
+          editingEmployee.family_allowance_metrics,
+          final.family_allowance_metrics,
+        ));
         const diffs = isLoyalisAdmin ? redactStructuralPositionDiffs(rawDiffs, editingEmployee, final) : rawDiffs;
         changedFields = diffs.map(diff => diff.field);
         // Loyalis-only: point out changes to a field whose money shows up under a
@@ -1923,7 +1994,7 @@ export default function EmployeesPage() {
 
     if (activeTab === 'loyalis') {
       exportData = filtered.map(emp => {
-        const metrics = emp.family_allowance_metrics || {};
+        const metrics = eligibleFamilyMetrics(emp.family_allowance_metrics, todayInJakarta());
         return {
           'ID Pegawai': getEmpId(emp),
           'Nama Lengkap': getEmpName(emp),
@@ -1949,7 +2020,14 @@ export default function EmployeesPage() {
           'Anak SD': Number(metrics.children_sd) || 0,
           'Anak SLTP': Number(metrics.children_sltp) || 0,
           'Anak SLTA': Number(metrics.children_slta) || 0,
-          'Anak Perguruan Tinggi': Number(metrics.children_pt) || 0,
+          'Anak Kuliah S1': metrics.children_s1,
+          'Anak Kuliah S2': metrics.children_s2,
+          'Anak Perguruan Tinggi (total)': metrics.children_pt,
+          'Riwayat Tanggal Masuk Anak': dependentChildren(emp.family_allowance_metrics)
+            .map((child, index) => `Anak ${index + 1}: ${child.stages.map(item =>
+              `${item.level}: ${item.enrolled_at || 'belum dicatat'}${item.ended_at ? ` (dihentikan ${item.ended_at})` : ''}${item.no_further_study ? ' (tidak lanjut)' : ''}`,
+            ).join(' → ')}`)
+            .join('; '),
         };
       });
     } else {
@@ -1994,11 +2072,21 @@ export default function EmployeesPage() {
     XLSX.writeFile(workbook, `Master_Pegawai_YAPETIDU_${fileLabel}_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
+  const showFamilyAllowanceReview =
+    activeTab === 'loyalis' && (isLoyalisAdmin || profile?.role === 'super_admin');
+
   const statsCards = [
     { label: 'Total Pegawai', value: employees.length, icon: <Users className="w-5 h-5" />, color: 'indigo' },
     { label: 'Aktif', value: employees.filter(e => getEmpIsActive(e)).length, icon: <CheckCircle2 className="w-5 h-5" />, color: 'emerald' },
     { label: 'Non-Aktif', value: employees.filter(e => !getEmpIsActive(e)).length, icon: <AlertCircle className="w-5 h-5" />, color: 'amber' },
-    { label: 'Payroll Eligible', value: employees.filter(e => activeTab === 'loyalis' ? getEmpIsActive(e) : (e.flags?.isPayrollEligible ?? true)).length, icon: <CreditCard className="w-5 h-5" />, color: 'purple' },
+    {
+      label: 'Anak Lulus Perlu Ditinjau',
+      value: activeTab === 'loyalis' ? pendingGraduations.length : 0,
+      icon: <GraduationCap className="w-5 h-5" />,
+      color: 'amber',
+      highlight: activeTab === 'loyalis' && pendingGraduations.length > 0,
+      onClick: activeTab === 'loyalis' ? () => setIsGraduationDialogOpen(true) : undefined,
+    },
   ];
 
   return (
@@ -2099,17 +2187,74 @@ export default function EmployeesPage() {
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          {statsCards.map((stat, i) => (
-            <Card key={i} className="p-5 bg-white border-none shadow-[0_8px_30px_rgb(0,0,0,0.02)] rounded-2xl flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-xl bg-${stat.color}-50 text-${stat.color}-500 flex items-center justify-center`}>
-                {stat.icon}
-              </div>
-              <div>
-                <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">{stat.label}</p>
-                <p className="text-2xl font-bold">{stat.value}</p>
-              </div>
-            </Card>
-          ))}
+          {statsCards.map((stat, i) => {
+            const cardContent = (
+              <>
+                <div className={`w-12 h-12 rounded-xl bg-${stat.color}-50 text-${stat.color}-500 flex items-center justify-center shrink-0`}>
+                  {stat.icon}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs text-slate-500 font-medium uppercase tracking-wider truncate" title={stat.label}>
+                    {stat.label}
+                  </p>
+                  <p className={`text-2xl font-bold ${stat.highlight ? 'text-amber-600' : 'text-slate-900'}`}>
+                    {stat.value}
+                  </p>
+                </div>
+              </>
+            );
+
+            // On the Loyalis tab the last card is split in two: the graduation
+            // review on the left, the family-allowance requests on the right.
+            if (stat.onClick && showFamilyAllowanceReview) {
+              return (
+                <div
+                  key={i}
+                  className="grid grid-cols-2 divide-x divide-slate-100 overflow-hidden rounded-2xl bg-white shadow-[0_8px_30px_rgb(0,0,0,0.02)]"
+                >
+                  <button
+                    type="button"
+                    onClick={stat.onClick}
+                    title="Klik untuk membuka daftar anak yang perlu ditinjau"
+                    className="flex w-full cursor-pointer flex-col items-center justify-center gap-3 p-5 text-center transition-colors hover:bg-slate-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-indigo-600"
+                  >
+                    <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-500">
+                      {stat.icon}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block min-h-9 text-xs font-medium uppercase leading-snug tracking-wider text-slate-500">
+                        {stat.label}
+                      </span>
+                      <span className={`block text-2xl font-bold tabular-nums ${stat.highlight ? 'text-amber-600' : 'text-slate-900'}`}>
+                        {stat.value}
+                      </span>
+                    </span>
+                  </button>
+                  <FamilyAllowanceReviewCard onApproved={fetchEmployees} />
+                </div>
+              );
+            }
+
+            if (stat.onClick) {
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={stat.onClick}
+                  title="Klik untuk membuka daftar anak yang perlu ditinjau"
+                  className="p-5 bg-white border-none shadow-[0_8px_30px_rgb(0,0,0,0.02)] rounded-2xl flex items-center gap-4 text-left transition-all hover:bg-slate-50 hover:shadow-md cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                >
+                  {cardContent}
+                </button>
+              );
+            }
+
+            return (
+              <Card key={i} className="p-5 bg-white border-none shadow-[0_8px_30px_rgb(0,0,0,0.02)] rounded-2xl flex items-center gap-4">
+                {cardContent}
+              </Card>
+            );
+          })}
         </div>
 
         {/* Table View Mode Toggle */}
@@ -2869,6 +3014,37 @@ export default function EmployeesPage() {
         }}
       />
 
+      <Dialog open={isGraduationDialogOpen} onOpenChange={setIsGraduationDialogOpen}>
+        <DialogContent className="w-[92vw] !max-w-3xl rounded-2xl bg-white p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold">Anak Loyalis yang Sudah Lulus</DialogTitle>
+            <DialogDescription>
+              {pendingGraduations.length} anak perlu ditinjau berdasarkan tanggal pertama masuk yang tercatat. Tunjangan jenjang lama berakhir otomatis pada tanggal lulus.
+              Buka data karyawan untuk mencatat jenjang berikutnya atau keputusan tidak lanjut, lalu simpan.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
+            {pendingGraduations.length === 0 ? (
+              <p className="rounded-xl border border-slate-200 p-5 text-center text-sm text-slate-500">Belum ada anak yang perlu ditinjau.</p>
+            ) : pendingGraduations.map(child => (
+              <div key={`${getEmpId(child.employee)}-${child.id}`}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 p-4">
+                <div className="min-w-0">
+                  <p className="font-semibold text-slate-900">{getEmpName(child.employee)} · Anak {child.childNumber}</p>
+                  <p className="text-xs text-slate-500">{getEmpId(child.employee)} · {child.latest.level} · masuk {child.latest.enrolled_at} · lulus {child.graduatedAt}</p>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={() => {
+                  setIsGraduationDialogOpen(false);
+                  window.setTimeout(() => handleOpenEdit(child.employee, child.id), 0);
+                }}>
+                  Edit data karyawan
+                </Button>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* CRUD Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="!max-w-5xl w-[90vw] rounded-[28px] border-none shadow-2xl p-0 overflow-hidden bg-white">
@@ -3194,13 +3370,8 @@ export default function EmployeesPage() {
                   </div>
                   <div className="col-span-3 pt-2 border-t border-slate-100 space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Tanggungan Keluarga (Untuk Tunjangan)</h3>
-                    <div className="grid grid-cols-5 gap-3">
-                      <div className="space-y-2"><Label>Pasangan</Label><Input type="number" value={formData.family_allowance_metrics?.spouse_count ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'spouse_count', e.target.value)} className="rounded-xl border-slate-200" /></div>
-                      <div className="space-y-2"><Label>Anak SD</Label><Input type="number" value={formData.family_allowance_metrics?.children_sd ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'children_sd', e.target.value)} className="rounded-xl border-slate-200" /></div>
-                      <div className="space-y-2"><Label>Anak SLTP</Label><Input type="number" value={formData.family_allowance_metrics?.children_sltp ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'children_sltp', e.target.value)} className="rounded-xl border-slate-200" /></div>
-                      <div className="space-y-2"><Label>Anak SLTA</Label><Input type="number" value={formData.family_allowance_metrics?.children_slta ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'children_slta', e.target.value)} className="rounded-xl border-slate-200" /></div>
-                      <div className="space-y-2"><Label>Anak Kuliah</Label><Input type="number" value={formData.family_allowance_metrics?.children_pt ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'children_pt', e.target.value)} className="rounded-xl border-slate-200" /></div>
-                    </div>
+                    <FamilyAllowanceFields value={formData.family_allowance_metrics} focusChildId={focusChildId}
+                      onChange={family_allowance_metrics => setFormData((prev: FormData) => ({ ...prev, family_allowance_metrics }))} />
                   </div>
                   <div className="col-span-3 pt-4 border-t border-slate-100 space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">

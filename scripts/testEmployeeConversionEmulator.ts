@@ -178,6 +178,9 @@ async function main() {
     childrenSltp: 0,
     childrenSlta: 0,
     childrenPt: 0,
+    childrenS1: 0,
+    childrenS2: 0,
+    dependentEnrollments: [],
   };
   const command = {
     employeeId: 'BC_901',

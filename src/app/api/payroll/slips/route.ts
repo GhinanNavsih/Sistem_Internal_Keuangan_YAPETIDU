@@ -37,6 +37,7 @@ import {
 } from '@/lib/server/pekaryaSlipPreview';
 import { isPayrollEmployeeEligible } from '@/lib/payroll/payrollRoster';
 import { employeeInPayrollPeriod } from '@/lib/employeeConversion';
+import { synchronizeFamilyAllowanceEarnings } from '@/lib/payroll/familyAllowance';
 import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
 import { DRIFT_NOTICES_COLLECTION } from '@/lib/payroll/slipPropagation';
 import {
@@ -623,6 +624,13 @@ export async function POST(request: NextRequest) {
               // the client's own unverified figure.
               earnings = forceGapokAmount(earnings, resolution.amount);
             }
+          }
+          if (loyalisEmployeeSnapshot.exists) {
+            earnings = synchronizeFamilyAllowanceEarnings(
+              earnings,
+              loyalisEmployeeSnapshot.data()?.family_allowance_metrics,
+              command.period,
+            );
           }
           const plannedLoanIds = new Set(
             koperasiInstallmentPlan?.loans.map((loan) => loan.loanId) || [],

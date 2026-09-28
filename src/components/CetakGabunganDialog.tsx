@@ -14,6 +14,7 @@ import { FileText, Printer } from 'lucide-react';
 import { generateGabunganPdf, GabunganRow } from '@/utils/generateGabunganPdf';
 import { calculateGapok } from '@/utils/payrollLogic';
 import { calculateStructuralAllowance } from '@/utils/salaryCalculator';
+import { eligibleFamilyMetrics, familyAllowancePeriodDate } from '@/lib/payroll/familyAllowance';
 
 interface EmployeeRow {
   id: string;
@@ -139,7 +140,7 @@ export default function CetakGabunganDialog({
       const fallbackGapok = emp.gradeLevel && emp.gradeLevel.trim() !== '' ? calculateGapok(emp, salaryMatrix, targetDate) : 0;
 
       let spouseCount = 0, sd = 0, sltp = 0, slta = 0, pt = 0;
-      const metrics = raw.family_allowance_metrics;
+      const metrics = eligibleFamilyMetrics(raw.family_allowance_metrics, familyAllowancePeriodDate(targetDate));
       if (metrics) {
         spouseCount = Number(metrics.spouse_count) || 0;
         sd = Number(metrics.children_sd) || 0;

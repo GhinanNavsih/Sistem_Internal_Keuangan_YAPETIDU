@@ -98,6 +98,15 @@ service firebase.storage {
       allow delete: if false;
     }
 
+    // Proof of a child's current enrollment, submitted by the linked Loyalis
+    // through the protected request API and reviewed by employee admins.
+    match /family_allowance_requests/{employeeId}/{filename} {
+      allow read: if isFinance() || isLoyalisAdmin() ||
+        (hasActiveProfile() && profile().get('linkedEmployeeId', '') == employeeId);
+      allow create, update: if false;
+      allow delete: if false;
+    }
+
     // Surat resmi (photo, scan or PDF) attached to a Loyalis ganti libur
     // request. Uploaded through /api/uploads/ganti-libur and read back by
     // the request API, which stores the token download URL on the request.

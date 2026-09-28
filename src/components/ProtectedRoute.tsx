@@ -19,6 +19,7 @@ const LOYALIS_ROUTES = [
   // Keep the legacy URL reachable so its page can redirect old bookmarks.
   '/employee/presensi-correction',
   '/employee/leave',
+  '/employee/family-allowance',
   '/employee/facility-reports',
   '/employee/simpan-pinjam',
 ];

@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { FileText, Printer } from 'lucide-react';
 import { generateVakasiPimpinanStafPdf, VakasiPimpinanStafRow } from '@/utils/generateVakasiPimpinanStafPdf';
 import { calculateGapok } from '@/utils/payrollLogic';
+import { eligibleFamilyMetrics, familyAllowancePeriodDate } from '@/lib/payroll/familyAllowance';
 
 interface EmployeeRow {
   id: string;
@@ -99,7 +100,7 @@ export default function CetakVakasiPimpinanStafDialog({
 
       // T. Keluarga
       let spouseCount = 0, sd = 0, sltp = 0, slta = 0, pt = 0;
-      const metrics = raw.family_allowance_metrics;
+      const metrics = eligibleFamilyMetrics(raw.family_allowance_metrics, familyAllowancePeriodDate(targetDate));
       if (metrics) {
         spouseCount = Number(metrics.spouse_count) || 0;
         sd = Number(metrics.children_sd) || 0;

@@ -49,9 +49,11 @@ import { generatePaySlipPdf, PaySlipField, PaySlipData } from '@/utils/generateP
 import {
   PAYROLL_TAX_THRESHOLD,
   normalizeTaxFields,
+  recalculateSlipTaxes,
 } from '@/lib/payroll/payrollTax';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import { authenticatedJson } from '@/lib/payroll/client';
+import { eligibleFamilyMetrics, familyAllowancePercentage, familyAllowancePeriodDate, synchronizeFamilyAllowanceEarnings } from '@/lib/payroll/familyAllowance';
 import { activityBelongsToPayrollPeriod } from '@/lib/payroll/pekaryaSpj';
 import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
 import {
@@ -1298,9 +1300,12 @@ export default function EmployeePayslipPage() {
         if (savedSlip) setPekaryaPreviewError(null);
         setConfirmedSlip(null);
         setIsConfirmed(false);
-        const savedEarnings = savedSlip
+        const storedEarnings = savedSlip
           ? normalizeSlipFields(savedSlip.earnings)
           : [];
+        const savedEarnings = savedSlip && isLoyalis && savedSlip.status === 'draft'
+          ? synchronizeFamilyAllowanceEarnings(storedEarnings, employee.family_allowance_metrics, periodToken)
+          : storedEarnings;
         const shouldOverlayCurrentAttendance =
           Boolean(savedSlip) &&
           periodToken >= '2026-08' &&
@@ -1323,7 +1328,11 @@ export default function EmployeePayslipPage() {
         );
         // No saved slip means no tax has been applied yet: tax is never
         // predicted locally, only shown once Finance has saved it.
-        setCalculatedTaxes(savedSlip ? normalizeTaxFields(savedSlip.taxes) : []);
+        setCalculatedTaxes(savedSlip
+          ? savedSlip.status === 'draft' && isLoyalis
+            ? recalculateSlipTaxes(savedSlip, savedEarnings, normalizeSlipFields(savedSlip.deductions))
+            : normalizeTaxFields(savedSlip.taxes)
+          : []);
         setPresenceInfo(loadedPresenceInfo);
         setVakasiEvents(loadedVakasiEvents);
         setKepangkatanDesignations({});
@@ -1563,13 +1572,8 @@ export default function EmployeePayslipPage() {
     const baseDate = employeeData.dateRecognized || employeeData.joinDate;
     const years = baseDate ? calculateYearsOfService(baseDate, targetDate) : 0;
 
-    const famMetrics = employeeData.family_allowance_metrics;
-    const spouseCount = Number(famMetrics?.spouse_count) || 0;
-    const sd = Number(famMetrics?.children_sd) || 0;
-    const sltp = Number(famMetrics?.children_sltp) || 0;
-    const slta = Number(famMetrics?.children_slta) || 0;
-    const pt = Number(famMetrics?.children_pt) || 0;
-    const familyPct = (spouseCount * 0.05) + (sd * 0.05) + (sltp * 0.075) + (slta * 0.1) + (pt * 0.125);
+    const famMetrics = eligibleFamilyMetrics(employeeData.family_allowance_metrics, familyAllowancePeriodDate(targetDate));
+    const familyPct = familyAllowancePercentage(famMetrics);
 
     const positions = employeeData.employment_profile?.structural_positions || [];
 
@@ -1597,11 +1601,13 @@ export default function EmployeePayslipPage() {
     return {
       years,
       baseDate,
-      spouseCount,
-      sd,
-      sltp,
-      slta,
-      pt,
+      spouseCount: famMetrics.spouse_count,
+      sd: famMetrics.children_sd,
+      sltp: famMetrics.children_sltp,
+      slta: famMetrics.children_slta,
+      s1: famMetrics.children_s1,
+      s2: famMetrics.children_s2,
+      pt: famMetrics.children_pt,
       familyPct,
       positions,
       gapokVal,
@@ -1661,7 +1667,7 @@ export default function EmployeePayslipPage() {
       isLoyalis: isLoyalis,
       niy: employeeData.personal_info?.employee_id_niy || '',
       npwp: employeeData.personal_info?.tax_id_npwp || '',
-      familyMetrics: employeeData.family_allowance_metrics,
+      familyMetrics: eligibleFamilyMetrics(employeeData.family_allowance_metrics, familyAllowancePeriodDate(targetDate)),
       gradeLevel: employeeData.gradeLevel,
       yearsOfService: userVariables?.years,
       baseDate: userVariables?.baseDate,
@@ -2128,7 +2134,7 @@ export default function EmployeePayslipPage() {
                                 {item.id === 'keluarga' && (
                                   <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
                                     <DocRow label="Tanggungan Suami/Istri" value={`${userVariables.spouseCount} orang (${userVariables.spouseCount * 5}%)`} />
-                                    <DocRow label="Tanggungan Anak (SD/SLTP/SLTA/PT)" value={`${userVariables.sd}/${userVariables.sltp}/${userVariables.slta}/${userVariables.pt} orang`} />
+                                    <DocRow label="Tanggungan Anak (SD/SLTP/SLTA/S1/S2)" value={`${userVariables.sd}/${userVariables.sltp}/${userVariables.slta}/${userVariables.s1}/${userVariables.s2} orang${userVariables.pt > userVariables.s1 + userVariables.s2 ? ` (+${userVariables.pt - userVariables.s1 - userVariables.s2} PT lama)` : ''}`} />
                                     <DocRow label="Persentase Total" value={`${(userVariables.familyPct * 100).toFixed(1)}%`} />
                                     <DocRow label="Tunjangan Keluarga" value={formatIDR(userVariables.tunjKeluargaVal)} highlight />
                                   </div>

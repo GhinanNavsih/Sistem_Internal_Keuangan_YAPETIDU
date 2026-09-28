@@ -244,6 +244,7 @@ async function collectLoyalisTargets(command: PropagationCommand): Promise<SlipT
         [],
         amounts.presenceBonus,
         amounts.presensiEarning,
+        command.periodToken,
       ),
       freshDeductions: buildInitialDeductions(
         employeeDoc.data(),
