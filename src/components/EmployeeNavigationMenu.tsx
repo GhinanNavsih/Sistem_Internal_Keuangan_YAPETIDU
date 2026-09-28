@@ -14,12 +14,14 @@ import {
   getFacilityReportsPath,
   isBlueCollarFacilityDashboardUser,
 } from '@/lib/facilityReports';
+import { VENUE_INSPECTION_PATH } from '@/lib/venueInspection';
 import { Button } from '@/components/ui/button';
 import { FloatingSnackbar, type SnackbarMessage } from '@/components/ui/floating-snackbar';
 import {
   Banknote,
   CalendarCheck,
   CalendarDays,
+  ClipboardCheck,
   ClipboardList,
   Compass,
   KeyRound,
@@ -154,6 +156,15 @@ export default function EmployeeNavigationMenu() {
               {isBlueCollarFacilityDashboardUser(currentProfile)
                 ? 'Perbaiki Fasilitas'
                 : 'Lapor Fasilitas'}
+            </DropdownMenuItem>
+          )}
+          {isBlueCollarFacilityDashboardUser(currentProfile) && pathname !== VENUE_INSPECTION_PATH && (
+            <DropdownMenuItem
+              className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+              render={<Link href={VENUE_INSPECTION_PATH} />}
+            >
+              <ClipboardCheck className="text-sky-500" />
+              Pemeriksaan Ruang
             </DropdownMenuItem>
           )}
           {(isLoyalis || isBlueCollarHonorer) && pathname !== '/employee/simpan-pinjam' && (

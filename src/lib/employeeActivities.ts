@@ -3,6 +3,7 @@ import {
   FACILITY_REPORT_DASHBOARD_PATH,
   isBlueCollarFacilityDashboardUser,
 } from '@/lib/facilityReports';
+import { VENUE_INSPECTION_PATH } from '@/lib/venueInspection';
 
 export const EMPLOYEE_ACTIVITY_PATHS = {
   satpam: '/employee/activities/satpam',
@@ -129,6 +130,14 @@ export function getEmployeeRouteRedirect(
 
   if (
     pathname === FACILITY_REPORT_DASHBOARD_PATH &&
+    isBlueCollarFacilityDashboardUser(profile)
+  ) {
+    return null;
+  }
+
+  // Teknisi and Kebersihan also check rooms in after use (Pemeriksaan Ruang).
+  if (
+    pathname === VENUE_INSPECTION_PATH &&
     isBlueCollarFacilityDashboardUser(profile)
   ) {
     return null;

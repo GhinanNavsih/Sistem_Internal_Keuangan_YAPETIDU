@@ -124,6 +124,8 @@ export const SIMPEL_BOOKINGS_COLLECTION = 'simpel_bookings';
 export const SIMPEL_BUILDINGS_COLLECTION = 'simpel_gedung';
 export const SIMPEL_EQUIPMENT_COLLECTION = 'simpel_fasilitas';
 export const SIMPEL_NOTIFICATIONS_COLLECTION = 'simpel_emails';
+/** SIMPEL's repair log ("Perbaikan"), fed by the return check. */
+export const SIMPEL_MAINTENANCE_COLLECTION = 'simpel_maintenance';
 /**
  * One document per date that every SAKU reservation for that date reads and
  * writes inside its transaction, so two reservations for the same day run one

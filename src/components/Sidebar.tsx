@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { canReserveVenues } from '@/lib/payroll/roles';
 import { VENUE_RESERVATION_PATH } from '@/lib/venueReservation';
+import { VENUE_INSPECTION_PATH } from '@/lib/venueInspection';
 import { Button } from '@/components/ui/button';
 import {
   LayoutDashboard,
@@ -15,6 +16,7 @@ import {
   FileSpreadsheet,
   Banknote,
   CalendarCheck,
+  ClipboardCheck,
   Coins,
   BarChart3,
   LogOut,
@@ -100,6 +102,13 @@ export default function Sidebar() {
       name: 'Reservasi Ruang',
       path: VENUE_RESERVATION_PATH,
       icon: CalendarCheck
+    },
+    {
+      // Return checks after a room is used. Teknisi/Kebersihan reach it from
+      // their employee menu; Super Admin sees it here.
+      name: 'Pemeriksaan Ruang',
+      path: VENUE_INSPECTION_PATH,
+      icon: ClipboardCheck
     },
     {
       // Starts the "monitoring" group — rendered below a separator so the

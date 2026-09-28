@@ -23,11 +23,13 @@ src/
 │   ├── api/                       # 18 route groups / ~59 endpoints: admin, attendance, auth, employee,
 │   │                              #   driver-journeys, events, facility-reports, koperasi, maps, payroll,
 │   │                              #   pekarya, satpam, uploads, parse-rekap, calculate-route, proxy-image,
-│   │                              #   venue-reservations (SIMPEL bridge, see Venue Reservations below)
+│   │                              #   venue-reservations (SIMPEL bridge, see Venue Reservations below),
+│   │                              #   venue-inspections (return checks, see Venue Inspections below)
 │   ├── dashboard/
 │   │   ├── employees/             # Employee master data admin
 │   │   ├── users/                 # User/role management
 │   │   ├── reservasi-ruang/       # Venue reservations in SIMPEL UNIPDU (Kepala SatKer Loyalis + Super Admin)
+│   │   ├── pemeriksaan-ruang/     # Return checks after a room is used (Teknisi/Kebersihan honorer + Super Admin)
 │   │   └── payroll/
 │   │       ├── page.tsx           # Payroll Bulanan landing
 │   │       ├── activity-review/   # Approve/audit honorer activity + SOPIR trip reports
@@ -57,6 +59,7 @@ src/
 │   │                              #   Vakasi Lain-lain/Pimpinan-Staf, Kegiatan Loyalis, Gabungan)
 │   ├── pekarya/ , satpam/         # Domain-specific panels (leave, duty/absence, shift-swap)
 │   ├── venue/                     # VenueReservationDialog (3-step booking wizard) + OptionPicker (tap-to-choose cards)
+│   │                              #   + ReturnInspectionDialog (SIMPEL's "Pemeriksaan pengembalian" modal)
 │   ├── employee/activities/       # Split-out activity reporting: {Satpam,Sopir,Pekarya}ActivitiesView
 │   │                              #   + shared EmployeeActivitiesWorkspace, ActivityFormDialog,
 │   │                              #   ActivityHistoryPanel, activityModel (state hook), activityShared
@@ -67,6 +70,7 @@ src/
 │   ├── koperasi-admin.ts          # Admin SDK for the secondary Koperasi project
 │   ├── simpel-admin.ts            # Admin SDK for the SIMPEL UNIPDU project (venue reservations)
 │   ├── venueReservation.ts        # Pure venue-reservation rules (+ .test.ts); see Venue Reservations
+│   ├── venueInspection.ts         # Pure return-check / repair-log rules (+ .test.ts); see Venue Inspections
 │   ├── AuthContext.tsx / DashboardDataContext.tsx / BulkEmailContext.tsx
 │   ├── server/                    # Server-only helpers: audit.ts, auth.ts, attendanceStore.ts,
 │   │                              #   satpamDutyPlan.ts, satpamFlexibility.ts, koperasiPayrollBridge.ts,
@@ -93,7 +97,7 @@ Roles are defined in `src/lib/payroll/roles.ts` (`USER_ROLES`) and enforced by r
 - `satker_head`: Department head for blue collar (Pekarya) operations. Confined to `/dashboard/payroll/activity-review`, `/dashboard/payroll/uraian*`, `/dashboard/payroll/driver-journeys*`, `/dashboard/payroll/pekarya-dashboard*`, `/dashboard/payroll/facility-reports*`.
 - `satker_head_loyalis`: Department head for Loyalis operations. Confined to `/dashboard/payroll/uraian*` and `/dashboard/reservasi-ruang` (venue reservations, reached from the 4th tab of `SatkerPekaryaNavBar`; SatKer heads get no sidebar).
 - `loyalis_admin` (Loyalis Admin): the merger of the retired Employee Admin (`employee_admin`) and PJ Presensi Loyalis (`loyalis_presence_admin`) roles. Confined to `LOYALIS_ADMIN_PATHS` in `roles.ts`: `/dashboard/employees` (home), `/dashboard/payroll/uraian/presensi-loyalis-raw` and `/dashboard/payroll/uraian/presence-corrections`, linked together by a "Data Pegawai" tab in `UraianNavToggles` (no sidebar). Edits employee profiles (`EMPLOYEE_PROFILE_EDITOR_ROLES`) and attendance identities, issues Pekarya NIPY, uploads the monthly attendance workbook, runs the Loyalis presence calculator, reviews Loyalis presence corrections and Loyalis annual leave. `normalizeUserRole` reads a profile still stored with a retired id as `loyalis_admin`, and the Firestore/Storage rules' `isLoyalisAdmin()` accepts them, until `npm run migrate:loyalis-admin-role -- --apply` has rewritten every profile.
-- `honorer`: Generic honorer/blue-collar portal role. Confined to `/employee/*`, and further narrowed to a single activity workflow (see below). Also has Loyalis-style access to `/employee/facility-reports` and `/employee/simpan-pinjam` (Koperasi UNIPDU membership isn't Loyalis-exclusive — a blue-collar employee's `koperasiAuthUid` lives on their `Employees_BlueCollar` doc).
+- `honorer`: Generic honorer/blue-collar portal role. Confined to `/employee/*`, and further narrowed to a single activity workflow (see below). Teknisi/Kebersihan honorer (`isBlueCollarFacilityDashboardUser`) may also open `/dashboard/payroll/facility-reports` and `/dashboard/pemeriksaan-ruang` (`getEmployeeRouteRedirect`). Also has Loyalis-style access to `/employee/facility-reports` and `/employee/simpan-pinjam` (Koperasi UNIPDU membership isn't Loyalis-exclusive — a blue-collar employee's `koperasiAuthUid` lives on their `Employees_BlueCollar` doc).
 - `loyalis`: Confined to a fixed Loyalis route set: `/employee/payslip`, `/employee/leave`, `/employee/facility-reports`, `/employee/simpan-pinjam`. The legacy `/employee/presensi-correction` URL redirects to `/employee/leave`.
 - `ketua_shift_satpam`: Satpam shift lead. Confined to `/employee/activities/satpam`, `/employee/satpam-duty-plan`, `/employee/leave`, `/employee/payslip`, `/employee/facility-reports`, `/employee/simpan-pinjam` — reports daily work, maintains the once-per-period duty plan, views own payslip.
 
@@ -129,7 +133,7 @@ Never re-derive the workflow locally (e.g. `permittedCategories[0] === 'SOPIR'`)
 
 **`Koperasi Unipdu` (secondary Firebase app)**: accessed via `secondaryApp`/`secondaryDb` (client) and `koperasiAdminDb()` in `src/lib/koperasi-admin.ts` (server, separate service-account credential). Collections: `simpanPinjam` (loan/savings records — writes go through `koperasiAdminDb()` only) and `users` (Koperasi-project member records, matched to primary-app employees via `koperasiAuthUid`).
 
-**`SIMPEL UNIPDU` (third Firebase project, `peminjaman-fasilitas-be85b`)**: the campus facility-lending app (separate repo `~/Documents/simpel-unipdu`, client-only Next.js, no server of its own). Accessed only server-side via `simpelAdminDb()` in `src/lib/simpel-admin.ts` (key: `simpel-service-account.json`, `SIMPEL_SERVICE_ACCOUNT`, or `SIMPEL_CLIENT_EMAIL` + `SIMPEL_PRIVATE_KEY`; the project comes from the key, so a scratch key means a scratch project). SAKU reads `simpel_gedung`, `simpel_fasilitas`, `simpel_bookings`, and writes `simpel_bookings` (reservations), `simpel_emails` (SIMPEL's in-app notification bell) and `simpel_saku_locks` (per-date transaction lock, SAKU-only).
+**`SIMPEL UNIPDU` (third Firebase project, `peminjaman-fasilitas-be85b`)**: the campus facility-lending app (separate repo `~/Documents/simpel-unipdu`, client-only Next.js, no server of its own). Accessed only server-side via `simpelAdminDb()` in `src/lib/simpel-admin.ts` (key: `simpel-service-account.json`, `SIMPEL_SERVICE_ACCOUNT`, or `SIMPEL_CLIENT_EMAIL` + `SIMPEL_PRIVATE_KEY`; the project comes from the key, so a scratch key means a scratch project). SAKU reads `simpel_gedung`, `simpel_fasilitas`, `simpel_bookings`, `simpel_maintenance`, and writes `simpel_bookings` (reservations, return checks), `simpel_emails` (SIMPEL's in-app notification bell), `simpel_saku_locks` (per-date transaction lock, SAKU-only), and — from Pemeriksaan Ruang only — `simpel_maintenance` (repair log), stock fields of `simpel_fasilitas` and the `inventarisList`/`ruanganList` arrays of `simpel_gedung`.
 
 Legacy/migration-only collections (`MasterData`, unsuffixed `Employees`) exist only in one-off `scripts/`, superseded by the collections above — don't treat them as live schema.
 
@@ -148,6 +152,14 @@ Kepala SatKer Loyalis books a room plus equipment at `/dashboard/reservasi-ruang
 - **Testing**: Super Admin sees every SAKU reservation. Point the key at a scratch project before test bookings, since they are instantly real for Pekarya.
 
 ---
+
+## Venue Inspections (Pemeriksaan Ruang)
+
+Teknisi and Kebersihan honorer check a room in after use at `/dashboard/pemeriksaan-ruang` (employee menu item "Pemeriksaan Ruang"; Super Admin via the sidebar). It is a port of SIMPEL's maintenance page (`src/app/dashboard/maintenance/page.tsx` in simpel-unipdu): tab **Pengembalian** (the return check, modal replicated in `ReturnInspectionDialog`) and tab **Perbaikan** (SIMPEL's repair log). It covers **every** SIMPEL booking waiting for a check, not only SAKU-made ones (the user's decision), so it is the one place SAKU writes to bookings SIMPEL created. Access: `canInspectVenues` (Super Admin or `isBlueCollarFacilityDashboardUser`), checked by the route guard, the menu and `/api/venue-inspections`.
+
+- **Rules** (`src/lib/venueInspection.ts`, pure and tested): which bookings wait (`awaitsReturnCheck`: `disetujui`, or `selesai` with equipment, and no `checkInSelesai`), the checklist (`buildInspectionChecklist`: room `fasilitasBawaan` + handed-over/requested equipment minus fixtures), submission validation (every item decided; the client's item keys must match the checklist rebuilt from SIMPEL's current data, else 409), and the write plans `planCheckIn` / `planRepairResolution`. They reproduce SIMPEL's `submitCheckIn` / `handleResolveRepair`: booking → `selesai` + `checkInSelesai`; campus item `terpinjam` −= borrowed, "Rusak Berat" units leave `totalStok`; building item "Rusak Berat" units leave `inventarisList[].jumlah`; a room needing care becomes `status: 'Maintenance'` (blocks new SAKU bookings); a `simpel_maintenance` log per problem; notifications to SIMPEL's bell. Deliberate differences, all safe-side: exact names win over SIMPEL's contains-either-way match; damage to an item in no catalog is still logged (SIMPEL drops it); closing a SAKU log (`source: 'saku'`, `sakuTarget`) also restores building stock and reopens the room once its last open log is closed (SIMPEL leaves both). SIMPEL's own logs close the SIMPEL way. If SIMPEL's check-in logic changes, change these too.
+- **Server** (`src/lib/server/venueInspections.ts`): check-in and repair each run in one transaction on SIMPEL's database; the booking/log is re-read inside it, so a room checked in a moment ago (in either app, or by another Pekarya) is refused with 409, and stock/building docs are read fresh before arrays are written back whole (other fields such as photos are preserved). Audit entries (`VENUE_RETURN_CHECKED`, `VENUE_REPAIR_RESOLVED`) go to SAKU's `audit_logs`.
+- **Testing**: `npm run test:venue-inspection:integration` (Firestore emulator, project `demo-venue-inspection`; needs Java). A check in the real app writes to SIMPEL immediately.
 
 ## Pekarya → Loyalis conversion ("Alihkan ke Loyalis")
 
@@ -225,7 +237,7 @@ Physical presence printouts are parsed via the [/api/parse-rekap](file:///Users/
 
 - **Run dev environment**: `npm run dev`
 - **Build application**: `npm run build`
-- **Test**: `npm test` (runs `tsx --test` over the payroll/server/util test suite directly); emulator integration tests: `test:kjm:integration`, `test:employee-conversion:integration`
+- **Test**: `npm test` (runs `tsx --test` over the payroll/server/util test suite directly); emulator integration tests: `test:kjm:integration`, `test:employee-conversion:integration`, `test:venue-inspection:integration`
 
 `scripts/` holds ~125 files; only the ones below are wired into `package.json`. The rest are ad hoc one-off migration/inspection scripts (`inspect*`, `check*`, `compare*`, `find*`, etc.) run directly via `tsx scripts/<file>.ts` — don't assume every script has an npm entry.
 

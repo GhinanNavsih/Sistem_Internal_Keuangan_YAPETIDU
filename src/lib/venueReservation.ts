@@ -94,6 +94,8 @@ export interface SimpelBooking {
   suratName?: string;
   suratBase64?: string;
   suratFiles?: Array<{ name: string; base64: string }>;
+  /** Set by the return check (SIMPEL's maintenance page or SAKU's Pemeriksaan Ruang). */
+  checkInSelesai?: boolean;
 }
 
 /** The fields the availability rules need from a booking. */
@@ -240,6 +242,7 @@ export function normalizeSimpelBooking(id: string, raw: unknown): SimpelBooking 
     sakuGroupDates: Array.isArray(data.sakuGroupDates) ? textList(data.sakuGroupDates) : undefined,
     sakuGroupIndex: wholeNumber(data.sakuGroupIndex) ?? undefined,
     sakuGroupTotal: wholeNumber(data.sakuGroupTotal) ?? undefined,
+    checkInSelesai: optionalFlag('checkInSelesai'),
   };
 }
 
@@ -1278,6 +1281,7 @@ export function buildSimpelEmailHtml(
   intro: string,
   details: { label: string; value: string }[],
   alertText?: string,
+  footer = 'Email ini dikirim otomatis oleh Sistem SIMPEL UNIPDU atas reservasi dari aplikasi SAKU. Mohon tidak membalas email ini.',
 ): string {
   const rows = details
     .map(
@@ -1314,7 +1318,7 @@ export function buildSimpelEmailHtml(
         ${alertBlock}
       </div>
       <div style="margin-top: 20px; text-align: center; font-size: 9px; color: #a0aec0;">
-        <p>Email ini dikirim otomatis oleh Sistem SIMPEL UNIPDU atas reservasi dari aplikasi SAKU. Mohon tidak membalas email ini.</p>
+        <p>${escapeHtml(footer)}</p>
       </div>
     </div>
   `;
