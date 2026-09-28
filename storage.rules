@@ -62,6 +62,10 @@ service firebase.storage {
       allow read, write: if false;
     }
 
+    match /satker-finance/{allPaths=**} {
+      allow read, write: if false;
+    }
+
     // Writes below are server-only: Storage Rules' cross-service
     // firestore.get()/firestore.exists() calls (used by hasActiveProfile(),
     // isFinance(), payrollPeriodOpen(), etc.) do not reliably evaluate for

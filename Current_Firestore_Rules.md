@@ -113,6 +113,23 @@ service cloud.firestore {
       allow get: if signedIn() && (request.auth.uid == uid || isSuperAdmin());
       allow list: if isSuperAdmin();
       allow create, update, delete: if false;
+      match /satkerFinancialNotifications/{notificationId} {
+        allow read, write: if false;
+      }
+    }
+
+    // The accounting module uses authenticated server APIs so no browser can
+    // rewrite journal lines, opening balances, approvals, or audit history.
+    match /SatkerFinancialUnits/{unitId} { allow read, write: if false; }
+    match /SatkerFinancialAccounts/{code} { allow read, write: if false; }
+    match /SatkerFinancialCatalogMeta/{id} { allow read, write: if false; }
+    match /SatkerFinancialConfigAudit/{id} { allow read, write: if false; }
+    match /SatkerFinancialYears/{yearId} {
+      allow read, write: if false;
+      match /entries/{entryId} { allow read, write: if false; }
+      match /reports/{monthId} { allow read, write: if false; }
+      match /reportRevisions/{revisionId} { allow read, write: if false; }
+      match /audit/{eventId} { allow read, write: if false; }
     }
 
     // Read-only compatibility for historical employee references. New records

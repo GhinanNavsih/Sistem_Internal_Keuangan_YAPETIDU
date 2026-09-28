@@ -83,7 +83,8 @@ export default function ProtectedRoute({
           // and the venue reservation page
           if (
             !pathname.startsWith('/dashboard/payroll/uraian') &&
-            !isVenueReservationPath(pathname)
+            !isVenueReservationPath(pathname) &&
+            pathname !== '/dashboard/satker-finance'
           ) {
             router.replace('/dashboard/payroll/uraian');
           }
@@ -99,9 +100,11 @@ export default function ProtectedRoute({
           const redirectPath = getEmployeeRouteRedirect(currentProfile, pathname);
           if (redirectPath) router.replace(redirectPath);
         } else if (currentProfile.role === 'finance_verifier') {
-          if (!pathname.startsWith('/dashboard/payroll')) {
+          if (!pathname.startsWith('/dashboard/payroll') && pathname !== '/dashboard/satker-finance') {
             router.replace('/dashboard/payroll');
           }
+        } else if (currentProfile.role === 'satker_finance_admin' || currentProfile.role === 'rector_finance') {
+          if (pathname !== '/dashboard/satker-finance') router.replace('/dashboard/satker-finance');
         } else if (currentProfile.role === 'loyalis') {
           // Loyalis employees can access payslip, the shared leave page, and employee services.
           if (!LOYALIS_ROUTES.includes(pathname)) {
@@ -150,7 +153,8 @@ export default function ProtectedRoute({
   if (
     profile.role === 'satker_head_loyalis' &&
     !pathname.startsWith('/dashboard/payroll/uraian') &&
-    !isVenueReservationPath(pathname)
+    !isVenueReservationPath(pathname) &&
+    pathname !== '/dashboard/satker-finance'
   ) {
     return null;
   }
@@ -167,10 +171,15 @@ export default function ProtectedRoute({
   }
   if (
     profile.role === 'finance_verifier' &&
-    !pathname.startsWith('/dashboard/payroll')
+    !pathname.startsWith('/dashboard/payroll') &&
+    pathname !== '/dashboard/satker-finance'
   ) {
     return null;
   }
+  if (
+    (profile.role === 'satker_finance_admin' || profile.role === 'rector_finance') &&
+    pathname !== '/dashboard/satker-finance'
+  ) return null;
   if (profile.role === 'loyalis' && !LOYALIS_ROUTES.includes(pathname)) {
     return null;
   }

@@ -97,6 +97,11 @@ export default function Sidebar() {
       icon: Banknote
     },
     {
+      name: 'Keuangan SatKer',
+      path: '/dashboard/satker-finance',
+      icon: FileSpreadsheet
+    },
+    {
       // Books rooms in SIMPEL UNIPDU. Kepala SatKer Loyalis reach the same page
       // from their own top bar (SatkerPekaryaNavBar) — they get no sidebar.
       name: 'Reservasi Ruang',
@@ -128,7 +133,7 @@ export default function Sidebar() {
   ].filter(item => {
     if (item.path === VENUE_RESERVATION_PATH) return canReserveVenues(currentProfile.role);
     if (currentProfile.role === 'super_admin') return true;
-    return item.path === '/dashboard/payroll';
+    return item.path === '/dashboard/payroll' || item.path === '/dashboard/satker-finance';
   });
 
   const getIsActive = (item: typeof menuItems[0]) => {

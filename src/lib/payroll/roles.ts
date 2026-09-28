@@ -3,6 +3,8 @@ export const USER_ROLES = [
   'finance_verifier',
   'satker_head',
   'satker_head_loyalis',
+  'satker_finance_admin',
+  'rector_finance',
   'loyalis_admin',
   'honorer',
   'loyalis',

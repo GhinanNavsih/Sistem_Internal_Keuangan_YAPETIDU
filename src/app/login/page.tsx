@@ -91,6 +91,8 @@ export default function LoginPage() {
         router.replace('/dashboard/payroll/activity-review');
       } else if (roleStr === 'satker_head_loyalis') {
         router.replace('/dashboard/payroll/uraian');
+      } else if (roleStr === 'satker_finance_admin' || roleStr === 'rector_finance') {
+        router.replace('/dashboard/satker-finance');
       } else if (roleStr === 'loyalis_admin') {
         router.replace(LOYALIS_ADMIN_HOME_PATH);
       } else {

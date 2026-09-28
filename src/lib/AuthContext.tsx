@@ -288,6 +288,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         window.location.href = '/dashboard/payroll/activity-review';
       } else if (roleStr === 'satker_head_loyalis') {
         window.location.href = '/dashboard/payroll/uraian';
+      } else if (roleStr === 'satker_finance_admin' || roleStr === 'rector_finance') {
+        window.location.href = '/dashboard/satker-finance';
       } else if (roleStr === 'loyalis_admin') {
         window.location.href = LOYALIS_ADMIN_HOME_PATH;
       } else {

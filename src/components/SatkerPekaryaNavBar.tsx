@@ -49,7 +49,6 @@ export default function SatkerPekaryaNavBar() {
   )}`;
   const activityUrl = `/dashboard/payroll/activity-review?month=${month}&year=${year}`;
   const journeysUrl = `/dashboard/payroll/driver-journeys?month=${month}&year=${year}`;
-  const dashboardUrl = `/dashboard/payroll/pekarya-dashboard?month=${month}&year=${year}`;
   const facilityUrl = '/dashboard/payroll/facility-reports';
   const vakasiUrl = `/dashboard/payroll/uraian/vakasi-loyalis${withPeriod('')}`;
   const proposalUrl = `/dashboard/payroll/uraian/proposal-kegiatan${withPeriod('')}`;
@@ -58,7 +57,6 @@ export default function SatkerPekaryaNavBar() {
 
   const isActivity = pathname.startsWith('/dashboard/payroll/activity-review');
   const isJourneys = pathname.startsWith('/dashboard/payroll/driver-journeys');
-  const isDashboard = pathname.startsWith('/dashboard/payroll/pekarya-dashboard');
   const isFacility = pathname.startsWith('/dashboard/payroll/facility-reports');
   const isUraian =
     pathname.startsWith('/dashboard/payroll/uraian/rekap-pekarya') ||
@@ -139,6 +137,13 @@ export default function SatkerPekaryaNavBar() {
                 <ClipboardCheck className="w-4 h-4" />
                 <span>Pelaporan Kegiatan</span>
               </button>
+              <button
+                onClick={() => router.push('/dashboard/satker-finance')}
+                className={navBtnClass(pathname === '/dashboard/satker-finance')}
+              >
+                <BarChart3 className="w-4 h-4" />
+                <span>Keuangan SatKer</span>
+              </button>
               {canReserveVenues(profile?.role) && (
                 <button
                   onClick={() => router.push(VENUE_RESERVATION_PATH)}
@@ -176,13 +181,6 @@ export default function SatkerPekaryaNavBar() {
                   <span>Pre-Otorisasi</span>
                 </button>
               )}
-              <button
-                onClick={() => router.push(dashboardUrl)}
-                className={navBtnClass(isDashboard)}
-              >
-                <BarChart3 className="w-4 h-4" />
-                <span>Dashboard Pekarya</span>
-              </button>
               <button
                 onClick={() => router.push(attendanceUrl)}
                 className={navBtnClass(isAttendance)}

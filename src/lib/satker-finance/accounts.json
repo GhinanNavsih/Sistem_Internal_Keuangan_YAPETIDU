@@ -1,0 +1,1292 @@
+[
+  {
+    "code": "10000",
+    "name": "KAS",
+    "type": "AKTIVA",
+    "normalBalance": "DEBIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": true,
+    "cashEquivalent": true,
+    "cashFlowSection": null
+  },
+  {
+    "code": "11000",
+    "name": "BANK",
+    "type": "AKTIVA",
+    "normalBalance": null,
+    "reportTarget": null,
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "11001",
+    "name": "Bank Mandiri",
+    "type": "AKTIVA",
+    "normalBalance": "DEBIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": true,
+    "cashEquivalent": true,
+    "cashFlowSection": null
+  },
+  {
+    "code": "11002",
+    "name": "",
+    "type": "AKTIVA",
+    "normalBalance": "DEBIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "12000",
+    "name": "PIUTANG",
+    "type": "AKTIVA",
+    "normalBalance": null,
+    "reportTarget": null,
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "12001",
+    "name": "Piutang Puskom",
+    "type": "AKTIVA",
+    "normalBalance": "DEBIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "12002",
+    "name": "",
+    "type": "AKTIVA",
+    "normalBalance": "DEBIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "12003",
+    "name": "",
+    "type": "AKTIVA",
+    "normalBalance": "DEBIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "12004",
+    "name": "",
+    "type": "AKTIVA",
+    "normalBalance": "DEBIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "12005",
+    "name": "",
+    "type": "AKTIVA",
+    "normalBalance": "DEBIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "13000",
+    "name": "AKTIVA TETAP",
+    "type": "AKTIVA",
+    "normalBalance": null,
+    "reportTarget": null,
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "INVESTING"
+  },
+  {
+    "code": "13001",
+    "name": "- Tanah",
+    "type": "AKTIVA",
+    "normalBalance": "DEBIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "INVESTING"
+  },
+  {
+    "code": "13002",
+    "name": "- Gedung",
+    "type": "AKTIVA",
+    "normalBalance": "DEBIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "INVESTING"
+  },
+  {
+    "code": "13003",
+    "name": "- Kendaraan",
+    "type": "AKTIVA",
+    "normalBalance": "DEBIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "INVESTING"
+  },
+  {
+    "code": "13004",
+    "name": "- Sarana & Perlengkapan",
+    "type": "AKTIVA",
+    "normalBalance": "DEBIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "INVESTING"
+  },
+  {
+    "code": "13005",
+    "name": "- Alat-Alat Laboratorium",
+    "type": "AKTIVA",
+    "normalBalance": "DEBIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "INVESTING"
+  },
+  {
+    "code": "13006",
+    "name": "",
+    "type": "AKTIVA",
+    "normalBalance": "DEBIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "INVESTING"
+  },
+  {
+    "code": "13007",
+    "name": "",
+    "type": "AKTIVA",
+    "normalBalance": "DEBIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "INVESTING"
+  },
+  {
+    "code": "13011",
+    "name": "- Akum Dep Gedung",
+    "type": "AKTIVA",
+    "normalBalance": "CREDIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "INVESTING"
+  },
+  {
+    "code": "13012",
+    "name": "- Akum.Dep Kendaraan",
+    "type": "AKTIVA",
+    "normalBalance": "CREDIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "INVESTING"
+  },
+  {
+    "code": "13013",
+    "name": "- Akum.Dep.Sarana & Perlengkapan",
+    "type": "AKTIVA",
+    "normalBalance": "CREDIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "INVESTING"
+  },
+  {
+    "code": "13014",
+    "name": "- Akum Dep.Alat-Alat Laboratorium",
+    "type": "AKTIVA",
+    "normalBalance": "CREDIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "INVESTING"
+  },
+  {
+    "code": "13015",
+    "name": "",
+    "type": "AKTIVA",
+    "normalBalance": "DEBIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "INVESTING"
+  },
+  {
+    "code": "13016",
+    "name": "",
+    "type": "AKTIVA",
+    "normalBalance": "DEBIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "INVESTING"
+  },
+  {
+    "code": "20000",
+    "name": "HUTANG",
+    "type": "HUTANG",
+    "normalBalance": null,
+    "reportTarget": null,
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "FINANCING"
+  },
+  {
+    "code": "20001",
+    "name": "Hutang Lain-Lain",
+    "type": "HUTANG",
+    "normalBalance": "CREDIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "FINANCING"
+  },
+  {
+    "code": "20002",
+    "name": "",
+    "type": "HUTANG",
+    "normalBalance": "CREDIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "FINANCING"
+  },
+  {
+    "code": "20003",
+    "name": "",
+    "type": "HUTANG",
+    "normalBalance": "CREDIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "FINANCING"
+  },
+  {
+    "code": "20004",
+    "name": "",
+    "type": "HUTANG",
+    "normalBalance": "CREDIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "FINANCING"
+  },
+  {
+    "code": "20005",
+    "name": "",
+    "type": "HUTANG",
+    "normalBalance": "CREDIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "FINANCING"
+  },
+  {
+    "code": "30000",
+    "name": "MODAL",
+    "type": "MODAL",
+    "normalBalance": "CREDIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "FINANCING"
+  },
+  {
+    "code": "40000",
+    "name": "PENDAPATAN",
+    "type": "TERIMA",
+    "normalBalance": null,
+    "reportTarget": null,
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "41000",
+    "name": "Droping Universitas",
+    "type": "TERIMA",
+    "normalBalance": "CREDIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "42000",
+    "name": "Penerimaan Lain",
+    "type": "TERIMA",
+    "normalBalance": "CREDIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "42001",
+    "name": "",
+    "type": "TERIMA",
+    "normalBalance": "CREDIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "42002",
+    "name": "",
+    "type": "TERIMA",
+    "normalBalance": "CREDIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "42003",
+    "name": "",
+    "type": "TERIMA",
+    "normalBalance": "CREDIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "42004",
+    "name": "",
+    "type": "TERIMA",
+    "normalBalance": "CREDIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "42005",
+    "name": "",
+    "type": "TERIMA",
+    "normalBalance": "CREDIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "42006",
+    "name": "",
+    "type": "TERIMA",
+    "normalBalance": "CREDIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "42007",
+    "name": "",
+    "type": "TERIMA",
+    "normalBalance": "CREDIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "42008",
+    "name": "",
+    "type": "TERIMA",
+    "normalBalance": "CREDIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "42009",
+    "name": "",
+    "type": "TERIMA",
+    "normalBalance": "CREDIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "42010",
+    "name": "",
+    "type": "TERIMA",
+    "normalBalance": "CREDIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "50000",
+    "name": "PENGELUARAN",
+    "type": "KELUAR",
+    "normalBalance": null,
+    "reportTarget": null,
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "51000",
+    "name": "Vakasi",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "51101",
+    "name": "Vakasi Tutor Pelatihan Flutter",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "51102",
+    "name": "Koordinator dan sarpras pelatihan puskom",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "51103",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "51104",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "51105",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "51106",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "51107",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "51108",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "51109",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "51110",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "51111",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "51112",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "51113",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "51114",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "51115",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "51116",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "51117",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "51118",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "51119",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "51120",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52000",
+    "name": "Maintenance",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52100",
+    "name": "Maintenance Fakultas",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52101",
+    "name": "Maintenance UPT dan Penunjang",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52102",
+    "name": "Maintenance Yayasan",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52103",
+    "name": "Maintenance Universitas",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52104",
+    "name": "KONSUMSI",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52105",
+    "name": "Maintenance Studio Musik Unipdu",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52106",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52107",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52108",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52109",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52110",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52111",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52112",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52113",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52114",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52115",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52116",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52117",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52118",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52119",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52120",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52121",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52122",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52123",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52124",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52125",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52200",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52201",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52202",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52300",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52400",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52500",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52600",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52700",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52800",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "52900",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "53000",
+    "name": "Jaringan internet",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "53100",
+    "name": "Jaringan Fakultas",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "53101",
+    "name": "Jaringan UPT dan penunjang",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "53102",
+    "name": "Jaringan Yayasan",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "53103",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "53104",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "53105",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "53106",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "53107",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "53108",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "53109",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "53110",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "53200",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "53201",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "53202",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "53300",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "53400",
+    "name": "Pengadaan Fakultas",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "53500",
+    "name": "Pengadaan UPT",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "53600",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "53700",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "53800",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "53900",
+    "name": "",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": false,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "54000",
+    "name": "Lain-lain yayasan",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "54100",
+    "name": "lain-lain",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "54101",
+    "name": "Admin Bank",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  },
+  {
+    "code": "54102",
+    "name": "Biaya Pemindahbukuan e-Banking",
+    "type": "KELUAR",
+    "normalBalance": "DEBIT",
+    "reportTarget": "INCOME_STATEMENT",
+    "postable": true,
+    "cashEquivalent": false,
+    "cashFlowSection": "OPERATING"
+  }
+]

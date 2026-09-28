@@ -141,6 +141,8 @@ export default function UserManagementPage() {
         router.push('/dashboard/payroll/activity-review');
       } else if (roleStr === 'satker_head_loyalis') {
         router.push('/dashboard/payroll/uraian');
+      } else if (roleStr === 'satker_finance_admin' || roleStr === 'rector_finance') {
+        router.push('/dashboard/satker-finance');
       } else if (roleStr === 'loyalis_admin') {
         router.push(LOYALIS_ADMIN_HOME_PATH);
       } else {
@@ -802,6 +804,8 @@ export default function UserManagementPage() {
                       >
                         <option value="satker_head">Kepala Satuan Kerja Pekarya (SatKer Pekarya)</option>
                         <option value="satker_head_loyalis">Kepala Satuan Kerja Loyalis (SatKer Loyalis)</option>
+                        <option value="satker_finance_admin">Sekretariat Keuangan SatKer</option>
+                        <option value="rector_finance">Pengesah Keuangan Rektorat</option>
                         <option value="loyalis_admin">Loyalis Admin (Data Pegawai & Presensi Loyalis)</option>
                         <option value="super_admin">Super Administrator (BAK)</option>
                         <option value="finance_verifier">Badan Keuangan (Verifikator)</option>
@@ -814,6 +818,8 @@ export default function UserManagementPage() {
                       <div className="mt-3 p-3.5 rounded-xl border border-slate-200 bg-slate-50/50">
                         {newRole === 'satker_head' && <span className="text-xs text-slate-600 leading-relaxed block">Dapat login dan melakukan scan presensi HANYA pada job category yang diberikan akses. Dilarang membuka menu dashboard lain.</span>}
                         {newRole === 'satker_head_loyalis' && <span className="text-xs text-slate-600 leading-relaxed block">Dapat login dan mengelola data vakasi/kehadiran Loyalis pada halaman Vakasi Tambahan. Dilarang membuka menu dashboard lain.</span>}
+                        {newRole === 'satker_finance_admin' && <span className="text-xs text-slate-600 leading-relaxed block">Mencatat jurnal dan mengirim laporan untuk SatKer yang ditugaskan di modul Keuangan SatKer.</span>}
+                        {newRole === 'rector_finance' && <span className="text-xs text-slate-600 leading-relaxed block">Memeriksa dan mengesahkan laporan SatKer yang sudah disetujui Kepala BAK.</span>}
                         {newRole === 'loyalis_admin' && <span className="text-xs text-slate-600 leading-relaxed block">Mengelola data induk pegawai (Master Data Pegawai) serta presensi Loyalis: kalkulator presensi bulanan, koreksi presensi, dan cuti Loyalis. Dilarang membuka menu dashboard lain.</span>}
                         {newRole === 'super_admin' && <span className="text-xs text-slate-600 leading-relaxed block">Akses penuh dan bebas ke semua fitur sistem payroll, Legalitas, dan manajemen user.</span>}
                         {newRole === 'finance_verifier' && <span className="text-xs text-slate-600 leading-relaxed block">Memverifikasi sekaligus mengunci draf payroll, lalu membuat instruksi pembayaran.</span>}
@@ -851,6 +857,8 @@ export default function UserManagementPage() {
                         <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100 text-emerald-800 text-xs leading-relaxed font-medium">
                           Loyalis Admin secara otomatis memiliki akses penuh ke <strong>seluruh</strong> data pegawai (Master Data Pegawai) dan ke presensi Loyalis (kalkulator presensi, koreksi presensi, cuti Loyalis). Checkbox dinonaktifkan.
                         </div>
+                      ) : newRole === 'satker_finance_admin' || newRole === 'rector_finance' ? (
+                        <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-800 text-xs leading-relaxed">Akses unit keuangan ditetapkan di halaman Keuangan SatKer oleh Super Administrator.</div>
                       ) : newRole === 'satker_head_loyalis' ? (
                         <div className="p-4 rounded-2xl bg-violet-50/50 border border-violet-100 text-violet-800 text-xs leading-relaxed font-medium">
                           Kepala Satuan Kerja Loyalis secara otomatis memiliki wewenang untuk <strong>seluruh</strong> data Loyalis. Checkbox dinonaktifkan.
@@ -1532,6 +1540,8 @@ export default function UserManagementPage() {
                     >
                       <option value="satker_head">Kepala Satuan Kerja Pekarya (SatKer Pekarya)</option>
                       <option value="satker_head_loyalis">Kepala Satuan Kerja Loyalis (SatKer Loyalis)</option>
+                      <option value="satker_finance_admin">Sekretariat Keuangan SatKer</option>
+                      <option value="rector_finance">Pengesah Keuangan Rektorat</option>
                       <option value="loyalis_admin">Loyalis Admin (Data Pegawai & Presensi Loyalis)</option>
                       <option value="super_admin">Super Administrator (BAK)</option>
                       <option value="finance_verifier">Badan Keuangan (Verifikator)</option>
@@ -1546,6 +1556,8 @@ export default function UserManagementPage() {
                     <span className="font-bold text-slate-800 text-[11px] block">Ringkasan Hak Akses:</span>
                     {editRole === 'satker_head' && <span>Dapat melakukan scan presensi dan approval kegiatan pada unit kerja yang diizinkan.</span>}
                     {editRole === 'satker_head_loyalis' && <span>Mengelola data vakasi & laporan kehadiran Loyalis secara penuh.</span>}
+                    {editRole === 'satker_finance_admin' && <span>Mencatat dan melaporkan keuangan SatKer yang ditugaskan.</span>}
+                    {editRole === 'rector_finance' && <span>Mengesahkan laporan keuangan SatKer setelah pemeriksaan BAK.</span>}
                     {editRole === 'loyalis_admin' && <span>Mengelola Master Data Pegawai (White Collar & Blue Collar) serta presensi Loyalis: kalkulator presensi, koreksi presensi, dan cuti Loyalis.</span>}
                     {editRole === 'super_admin' && <span>Akses penuh bypass ke seluruh modul payroll, legalitas, dan pengaturan pengguna.</span>}
                     {editRole === 'finance_verifier' && <span>Memverifikasi dan mengunci draf payroll, lalu membuat instruksi pembayaran.</span>}
@@ -1575,6 +1587,8 @@ export default function UserManagementPage() {
                     <div className="p-4 rounded-xl bg-emerald-50/80 border border-emerald-200/80 text-emerald-900 text-xs font-medium leading-relaxed">
                       Loyalis Admin memiliki hak akses penuh ke <strong>seluruh data pegawai</strong> dan <strong>presensi Loyalis</strong>. Pilihan unit dinonaktifkan.
                     </div>
+                  ) : editRole === 'satker_finance_admin' || editRole === 'rector_finance' ? (
+                    <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-800 text-xs">Akses unit keuangan diatur di halaman Keuangan SatKer oleh Super Administrator.</div>
                   ) : editRole === 'satker_head_loyalis' ? (
                     <div className="p-4 rounded-xl bg-violet-50/80 border border-violet-200/80 text-violet-900 text-xs font-medium leading-relaxed">
                       Kepala Satuan Kerja Loyalis secara otomatis memiliki hak akses penuh ke <strong>seluruh unit Loyalis</strong>.
