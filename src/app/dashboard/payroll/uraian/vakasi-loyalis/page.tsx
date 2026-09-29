@@ -26,6 +26,7 @@ import {
   XCircle, Lock, FileSpreadsheet, Banknote, ExternalLink
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import {
   collection, doc, setDoc, serverTimestamp, query, where, onSnapshot
 } from 'firebase/firestore';
@@ -201,7 +202,7 @@ export default function VakasiLoyalisPage() {
     const pekarya = (blueCollarQuery.data || [])
       .filter((d: any) => d.employment?.status === 'active')
       .map((d: any) => {
-        const jobCategory = String(d.employment?.jobCategory || '').trim();
+        const jobCategory = jobCategoryForPayrollPeriod(d, periodToken).trim();
         return {
           id: d.id,
           name: d.name || '',
@@ -214,7 +215,7 @@ export default function VakasiLoyalisPage() {
       .filter((employee: any) => employee.jobCategory);
 
     return [...loyalis, ...pekarya].sort((a, b) => a.name.localeCompare(b.name, 'id'));
-  }, [loyalisQuery.data, blueCollarQuery.data]);
+  }, [loyalisQuery.data, blueCollarQuery.data, periodToken]);
 
   // ── Departments ──
   const { data: departments = [] } = useDepartments();

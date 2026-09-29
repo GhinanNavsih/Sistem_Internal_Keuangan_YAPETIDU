@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import admin, { adminDb } from '@/lib/firebase-admin';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { calculatePayrollTotals, validateMoneyFields } from '@/lib/payroll/domain';
 import { recalculateSlipTaxes } from '@/lib/payroll/payrollTax';
 import { canVerifyPayroll } from '@/lib/payroll/roles';
@@ -342,7 +343,7 @@ export async function verifyAndLockWithKoperasi(
     const validatedEarnings = validateMoneyFields(before.earnings, 'earnings');
     const isSatpam =
       blueSnapshot.exists &&
-      blueSnapshot.data()?.employment?.jobCategory === 'SATPAM';
+      jobCategoryForPayrollPeriod(blueSnapshot.data()!, command.period.replace('_', '-')) === 'SATPAM';
     const validatedForCollar = isSatpam
       ? mergeSatpamLegacyBonusIntoTunjangan(validatedEarnings)
       : validatedEarnings;

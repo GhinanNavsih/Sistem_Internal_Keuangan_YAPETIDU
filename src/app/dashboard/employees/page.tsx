@@ -78,6 +78,7 @@ import {
   doc,
   getDocFromServer,
   setDoc,
+  runTransaction,
   deleteDoc,
   addDoc,
   serverTimestamp,
@@ -93,6 +94,7 @@ import {
   useJabatanStruktural,
   useMatrixActiveVersion,
   useMatrixRows,
+  useSatpamShiftTeams,
 } from '@/lib/queries/hooks';
 import { referenceKeys } from '@/lib/queries/keys';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
@@ -832,6 +834,30 @@ export default function EmployeesPage() {
       getEmpName(left.employee).localeCompare(getEmpName(right.employee))),
   [pageEmployeesLoyalis, familyReviewToday]);
   const [editingEmployee, setEditingEmployee] = useState<any | null>(null);
+  const initialBlueFormDataRef = useRef<any | null>(null);
+  const categoryTransferRequestIdRef = useRef<string | null>(null);
+  const [categoryEffectiveFrom, setCategoryEffectiveFrom] = useState(todayInJakarta);
+  const [replacementEmployeeId, setReplacementEmployeeId] = useState('');
+  const satpamTeamsQuery = useSatpamShiftTeams(
+    isDialogOpen && activeTab === 'blue' && editingEmployee?.employment?.jobCategory === 'SATPAM',
+  );
+  const satpamTeams: Array<{ id: string; ketuaShiftId?: string; memberEmployeeIds?: string[] }> =
+    satpamTeamsQuery.data || [];
+  const editingSatpamTeam = satpamTeams.find((team) =>
+    Array.isArray(team.memberEmployeeIds) &&
+    team.memberEmployeeIds.includes(getEmpId(editingEmployee || {})),
+  );
+  const availableSatpamReplacements = pageEmployeesBlueCollar
+    .filter((employee) =>
+      employee.employment?.jobCategory === 'SATPAM' &&
+      employee.employment?.status === 'active' &&
+      employee.flags?.isActive !== false &&
+      !satpamTeams.some((team: any) =>
+        team.ketuaShiftId === getEmpId(employee) ||
+        (Array.isArray(team.memberEmployeeIds) && team.memberEmployeeIds.includes(getEmpId(employee))),
+      ),
+    )
+    .sort((left, right) => getEmpName(left).localeCompare(getEmpName(right), 'id'));
   const [saving, setSaving] = useState(false);
   const isSavingRef = useRef(false);
   const structuralPositionsEditedRef = useRef(false);
@@ -1197,6 +1223,9 @@ export default function EmployeesPage() {
       return;
     }
     setEditingEmployee(emp);
+    setCategoryEffectiveFrom(todayInJakarta());
+    setReplacementEmployeeId('');
+    categoryTransferRequestIdRef.current = null;
     setFocusChildId(childId || null);
     structuralPositionsEditedRef.current = false;
     setIsCustomDept(false);
@@ -1241,7 +1270,7 @@ export default function EmployeesPage() {
       const normalizedGradeCode = emp.salaryProfile?.salaryGradeCode
         ? emp.salaryProfile.salaryGradeCode.trim()
         : '';
-      setFormData({
+      const preparedBlueFormData = {
         ...emp,
         employment: {
           status: 'active',
@@ -1255,7 +1284,9 @@ export default function EmployeesPage() {
           ...emp.salaryProfile,
           salaryGradeCode: normalizedGradeCode,
         }
-      });
+      };
+      initialBlueFormDataRef.current = preparedBlueFormData;
+      setFormData(preparedBlueFormData);
     }
     setIsDialogOpen(true);
   };
@@ -1267,6 +1298,41 @@ export default function EmployeesPage() {
       isSavingRef.current = true;
       setSaving(true);
       setMessage(null);
+
+      if (
+        activeTab === 'blue' && editingEmployee &&
+        formData.employment?.jobCategory !== editingEmployee.employment?.jobCategory
+      ) {
+        const otherEdits = getObjectDiff(initialBlueFormDataRef.current, formData)
+          .filter((change) => change.field !== 'employment.jobCategory');
+        if (otherEdits.length > 0) {
+          throw new Error('Simpan perubahan data lain terlebih dahulu. Perpindahan kategori harus disimpan sendiri agar riwayat payroll dan regu tetap konsisten.');
+        }
+        if (satpamTeamsQuery.isLoading && editingEmployee.employment?.jobCategory === 'SATPAM') {
+          throw new Error('Regu Satpam sedang dimuat. Tunggu sebentar lalu simpan ulang.');
+        }
+        if (satpamTeamsQuery.isError && editingEmployee.employment?.jobCategory === 'SATPAM') {
+          throw new Error('Regu Satpam tidak dapat diperiksa. Muat ulang sebelum memindahkan kategori.');
+        }
+        await authenticatedJson('/api/admin/employee-category-transfers', {
+          method: 'POST',
+          body: JSON.stringify({
+            employeeId: getEmpId(editingEmployee),
+            fromCategory: editingEmployee.employment?.jobCategory,
+            toCategory: formData.employment?.jobCategory,
+            effectiveFrom: categoryEffectiveFrom,
+            replacementEmployeeId: replacementEmployeeId || undefined,
+            requestId: categoryTransferRequestIdRef.current ||
+              (categoryTransferRequestIdRef.current = createFinancialRequestId('category-transfer')),
+          }),
+        });
+        categoryTransferRequestIdRef.current = null;
+        setMessage({ type: 'success', text: 'Kategori Pekarya diperbarui. Riwayat payroll dan akun pegawai ikut disesuaikan.' });
+        setIsDialogOpen(false);
+        await fetchEmployees();
+        void satpamTeamsQuery.refetch();
+        return;
+      }
 
       let employeeId = editingEmployee ? getEmpId(editingEmployee) : '';
       if (!employeeId) {
@@ -1588,7 +1654,21 @@ export default function EmployeesPage() {
           );
         }
       }
-      await setDoc(doc(db, currentTab.collection, employeeId), employeeWritePayload, { merge: true });
+      const employeeDocRef = doc(db, currentTab.collection, employeeId);
+      if (activeTab === 'blue' && editingEmployee) {
+        await runTransaction(db, async (transaction) => {
+          const latest = await transaction.get(employeeDocRef);
+          if (!latest.exists() ||
+              latest.data().employment?.jobCategory !== editingEmployee.employment?.jobCategory ||
+              JSON.stringify(latest.data().employment?.jobCategoryHistory || []) !==
+                JSON.stringify(editingEmployee.employment?.jobCategoryHistory || [])) {
+            throw new Error('Kategori atau riwayat Pekarya telah berubah. Muat ulang data sebelum menyimpan.');
+          }
+          transaction.set(employeeDocRef, employeeWritePayload, { merge: true });
+        });
+      } else {
+        await setDoc(employeeDocRef, employeeWritePayload, { merge: true });
+      }
       let koperasiBankNote = '';
       if (editingEmployee?.koperasiAuthUid || editingEmployee?.koperasiUserId) {
         const collectionName = currentTab.collection as KoperasiEmployeeCollection;
@@ -3779,6 +3859,40 @@ export default function EmployeesPage() {
                         <SelectContent>{JOB_CATEGORIES.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
+                    {editingEmployee &&
+                      formData.employment?.jobCategory !== editingEmployee.employment?.jobCategory && (
+                        <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                          <Label htmlFor="category-effective-from">Tanggal Efektif Kategori</Label>
+                          <Input
+                            id="category-effective-from"
+                            type="date"
+                            value={categoryEffectiveFrom}
+                            onChange={(event) => setCategoryEffectiveFrom(event.target.value)}
+                          />
+                          <p className="text-xs text-amber-900">
+                            Simpan pada tanggal 1 bulan payroll yang baru. Riwayat bulan sebelumnya tetap memakai kategori lama. Simpan perubahan data lain secara terpisah.
+                          </p>
+                          {editingEmployee.employment?.jobCategory === 'SATPAM' &&
+                            formData.employment?.jobCategory !== 'SATPAM' &&
+                            editingSatpamTeam && (
+                              <div className="space-y-2">
+                                <Label>Pengganti di {editingSatpamTeam.id}</Label>
+                                <Select value={replacementEmployeeId} onValueChange={(value) => setReplacementEmployeeId(value || '')}>
+                                  <SelectTrigger className="rounded-xl border-amber-200 bg-white">
+                                    <SelectValue placeholder="Pilih Satpam yang belum masuk regu" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {availableSatpamReplacements.map((employee) => (
+                                      <SelectItem key={getEmpId(employee)} value={getEmpId(employee)}>
+                                        {getEmpName(employee)} ({getEmpId(employee)})
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            )}
+                        </div>
+                      )}
                     <div className="space-y-2">
                       <Label>Tanggal Mulai Kerja</Label>
                       <Input

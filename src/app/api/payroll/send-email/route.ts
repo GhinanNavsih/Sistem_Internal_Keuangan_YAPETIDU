@@ -7,6 +7,7 @@ import {
 } from '@/lib/payroll/domain';
 import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
 import { FINANCE_ROLES } from '@/lib/payroll/roles';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import {
   errorResponse,
@@ -26,7 +27,7 @@ function escapeHtml(value: string): string {
     .replaceAll("'", '&#039;');
 }
 
-async function getPayrollEmployee(employeeId: string) {
+async function getPayrollEmployee(employeeId: string, period: string) {
   for (const collectionName of ['Employees_BlueCollar', 'Employees_Loyalis']) {
     const snapshot = await adminDb.collection(collectionName).doc(employeeId).get();
     if (snapshot.exists) {
@@ -34,7 +35,9 @@ async function getPayrollEmployee(employeeId: string) {
       return {
         name: String(data.name || data.personal_info?.name || ''),
         email: String(data.email || data.personal_info?.email || ''),
-        jobCategory: String(data.employment?.jobCategory || ''),
+        jobCategory: collectionName === 'Employees_BlueCollar'
+          ? jobCategoryForPayrollPeriod(data, period)
+          : '',
       };
     }
   }
@@ -76,7 +79,7 @@ export async function POST(request: NextRequest) {
       throw new HttpError(409, 'Email hanya dapat dikirim untuk slip terkunci.');
     }
     const slip = slipSnapshot.data()! as PayrollSlipStateDocument;
-    const employee = await getPayrollEmployee(employeeId);
+    const employee = await getPayrollEmployee(employeeId, dbPeriod.replace('_', '-'));
     if (!employee.email || !employee.name) {
       throw new HttpError(409, 'Nama atau email resmi karyawan belum lengkap.');
     }

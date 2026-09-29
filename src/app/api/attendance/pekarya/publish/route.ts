@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     }
     let publishCategories: string[] = [];
     if (category === ALL_BLUE_COLLAR_CATEGORY) {
-      const activeCategories = await listActivePekaryaAttendanceCategories();
+      const activeCategories = await listActivePekaryaAttendanceCategories(period);
       if (actor.role === 'super_admin') {
         publishCategories = activeCategories;
       } else {

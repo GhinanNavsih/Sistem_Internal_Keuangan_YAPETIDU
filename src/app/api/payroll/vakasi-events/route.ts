@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { assertRequestId, isImmutablePayrollStatus } from '@/lib/payroll/domain';
 import { URAIAN_EDITOR_ROLES } from '@/lib/payroll/roles';
 import {
@@ -256,6 +257,7 @@ function directoryFromSnapshots(
   employeeId: string,
   loyalisSnapshot: FirebaseFirestore.DocumentSnapshot,
   blueSnapshot: FirebaseFirestore.DocumentSnapshot,
+  period: string,
 ): DirectoryRecord | null {
   if (loyalisSnapshot.exists && blueSnapshot.exists) {
     throw new HttpError(
@@ -265,7 +267,7 @@ function directoryFromSnapshots(
   }
   if (blueSnapshot.exists) {
     const data = blueSnapshot.data() || {};
-    const jobCategory = String(data.employment?.jobCategory || '').normalize('NFKC').trim();
+    const jobCategory = jobCategoryForPayrollPeriod(data, period).normalize('NFKC').trim();
     if (jobCategory.length > 64) {
       throw new HttpError(409, `Kategori Pekarya ${employeeId} melebihi batas 64 karakter.`);
     }
@@ -545,6 +547,7 @@ export async function POST(request: NextRequest) {
             employeeId,
             directorySnapshots[index],
             directorySnapshots[index + allEmployeeIds.length],
+            period,
           ),
         );
       });

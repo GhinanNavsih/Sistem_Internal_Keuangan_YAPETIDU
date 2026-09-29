@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { adminDb } from '@/lib/firebase-admin';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import {
   AttendanceDayCorrection,
   AttendanceNormalizedRow,
@@ -76,7 +77,7 @@ export function employeeNipy(data: Record<string, unknown>): string {
   return resolveEmployeeAttendanceNipy(data);
 }
 
-export async function loadAttendanceEmployeeIdentities(): Promise<{
+export async function loadAttendanceEmployeeIdentities(period?: string): Promise<{
   identities: AttendanceEmployeeIdentity[];
   byNipy: Map<string, AttendanceEmployeeIdentity[]>;
   byName: Map<string, AttendanceEmployeeIdentity[]>;
@@ -98,10 +99,9 @@ export async function loadAttendanceEmployeeIdentities(): Promise<{
         data.employment?.status === 'active' &&
         data.flags?.isActive !== false &&
         data.flags?.isPayrollEligible !== false,
-      jobCategory:
-        typeof data.employment?.jobCategory === 'string'
-          ? data.employment.jobCategory.trim().toUpperCase()
-          : null,
+      jobCategory: (period
+        ? jobCategoryForPayrollPeriod(data, period)
+        : String(data.employment?.jobCategory || '')).trim().toUpperCase() || null,
     });
   }
   for (const snapshot of loyalisSnapshot.docs) {

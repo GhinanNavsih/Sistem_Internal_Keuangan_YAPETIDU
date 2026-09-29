@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import {
   assertRequestId,
   isImmutablePayrollStatus,
@@ -128,7 +129,7 @@ export async function POST(request: NextRequest) {
     const employee = employeeSnapshot.data();
     if (
       !employeeSnapshot.exists ||
-      employee?.employment?.jobCategory !== 'SATPAM' ||
+      jobCategoryForPayrollPeriod(employee || {}, dutyDate.slice(0, 7)) !== 'SATPAM' ||
       employee?.employment?.status !== 'active' ||
       employee?.flags?.isActive === false ||
       employee?.flags?.isPayrollEligible === false
@@ -277,7 +278,7 @@ export async function POST(request: NextRequest) {
         const latestEmployeeData = latestEmployee.data();
         if (
           !latestEmployee.exists ||
-          latestEmployeeData?.employment?.jobCategory !== 'SATPAM' ||
+          jobCategoryForPayrollPeriod(latestEmployeeData || {}, dutyDate.slice(0, 7)) !== 'SATPAM' ||
           latestEmployeeData?.employment?.status !== 'active' ||
           latestEmployeeData?.flags?.isActive === false ||
           latestEmployeeData?.flags?.isPayrollEligible === false
@@ -571,7 +572,7 @@ export async function POST(request: NextRequest) {
         const latestEmployeeData = latestEmployee.data();
         if (
           !latestEmployee.exists ||
-          latestEmployeeData?.employment?.jobCategory !== 'SATPAM' ||
+          jobCategoryForPayrollPeriod(latestEmployeeData || {}, dutyDate.slice(0, 7)) !== 'SATPAM' ||
           latestEmployeeData?.employment?.status !== 'active' ||
           latestEmployeeData?.flags?.isActive === false ||
           latestEmployeeData?.flags?.isPayrollEligible === false
@@ -835,7 +836,7 @@ export async function POST(request: NextRequest) {
       const latestEmployeeData = latestEmployee.data();
       if (
         !latestEmployee.exists ||
-        latestEmployeeData?.employment?.jobCategory !== 'SATPAM' ||
+        jobCategoryForPayrollPeriod(latestEmployeeData || {}, dutyDate.slice(0, 7)) !== 'SATPAM' ||
         latestEmployeeData?.employment?.status !== 'active' ||
         latestEmployeeData?.flags?.isActive === false ||
         latestEmployeeData?.flags?.isPayrollEligible === false

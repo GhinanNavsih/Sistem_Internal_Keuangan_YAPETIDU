@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
     }
     let visibleCategories: string[] | null = null;
     if (category === ALL_BLUE_COLLAR_CATEGORY) {
-      const activeCategories = await listActivePekaryaAttendanceCategories();
+      const activeCategories = await listActivePekaryaAttendanceCategories(period);
       const permittedCategories = new Set(
         actor.permittedCategories.map((item) => item.trim().toUpperCase()),
       );

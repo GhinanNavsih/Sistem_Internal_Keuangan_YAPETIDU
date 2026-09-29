@@ -275,10 +275,7 @@ export async function buildSatpamDutyReconciliation(
       .collection(SATPAM_ABSENCE_REQUESTS_COLLECTION)
       .where('period', '==', period)
       .get(),
-    adminDb
-      .collection('Employees_BlueCollar')
-      .where('employment.jobCategory', '==', 'SATPAM')
-      .get(),
+    adminDb.collection('Employees_BlueCollar').get(),
     adminDb
       .collection('UraianGaji')
       .doc(`${period.replace('-', '_')}_SATPAM`)

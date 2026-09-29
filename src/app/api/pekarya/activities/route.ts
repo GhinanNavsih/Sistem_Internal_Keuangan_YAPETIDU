@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import {
   assertPekaryaActivityProofUrl,
   assertRequestId,
@@ -693,7 +694,7 @@ export async function POST(request: NextRequest) {
         throw new HttpError(404, 'Data Pekarya yang terhubung tidak ditemukan.');
       }
       const employee = employeeSnapshot.data()!;
-      const storedJobCategory = employee.employment?.jobCategory;
+      const storedJobCategory = jobCategoryForPayrollPeriod(employee, payrollPeriod);
       const permittedFallback = actor.permittedCategories.find(isPekaryaJobCategory);
       const jobCategory = isPekaryaJobCategory(storedJobCategory)
         ? storedJobCategory

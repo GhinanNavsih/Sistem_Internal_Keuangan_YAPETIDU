@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import {
   assertRequestId,
   payrollPeriodForDutyDate,
@@ -228,7 +229,7 @@ export async function POST(request: NextRequest) {
         newEmployeeName = String(newEmployeeData?.name || targetEmployeeId);
         const isNewEmployeeActiveSatpam = Boolean(
           newEmployeeData &&
-            newEmployeeData.employment?.jobCategory === 'SATPAM' &&
+            jobCategoryForPayrollPeriod(newEmployeeData, period) === 'SATPAM' &&
             (newEmployeeData.employment?.status === 'active' ||
               newEmployeeData.flags?.isActive === true),
         );

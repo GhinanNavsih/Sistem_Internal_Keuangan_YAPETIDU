@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import {
   activityReportId,
   analyzeSatpamShiftSubmission,
@@ -662,7 +663,7 @@ export async function POST(request: NextRequest) {
           const employee = employeeSnapshots[index]?.data();
           if (
             !employeeSnapshots[index]?.exists ||
-            employee?.employment?.jobCategory !== 'SATPAM' ||
+            jobCategoryForPayrollPeriod(employee || {}, period) !== 'SATPAM' ||
             (employee?.employment?.status !== 'active' &&
               employee?.flags?.isActive !== true)
           ) {
@@ -1009,11 +1010,22 @@ export async function GET(request: NextRequest) {
     if (occurrenceId && !/^[A-Za-z0-9_-]{1,180}$/.test(occurrenceId)) {
       throw new HttpError(400, 'ID shift tidak valid.');
     }
-    const employeeSnapshot = await adminDb
-      .collection('Employees_BlueCollar')
-      .where('employment.jobCategory', '==', 'SATPAM')
-      .get();
+    const occurrenceSnapshot = occurrenceId
+      ? await adminDb.collection('ShiftOccurrences').doc(occurrenceId).get()
+      : null;
+    if (occurrenceSnapshot && !occurrenceSnapshot.exists) {
+      throw new HttpError(404, 'Shift tidak ditemukan.');
+    }
+    const occurrence = occurrenceSnapshot?.data();
+    const occurrencePeriod = String(occurrence?.period || occurrence?.dutyDate || '').slice(0, 7);
+    const employeeSnapshot = occurrence
+      ? await adminDb.collection('Employees_BlueCollar').get()
+      : await adminDb.collection('Employees_BlueCollar')
+          .where('employment.jobCategory', '==', 'SATPAM').get();
     const employees = employeeSnapshot.docs
+      .filter((snapshot) => occurrence
+        ? jobCategoryForPayrollPeriod(snapshot.data(), occurrencePeriod) === 'SATPAM'
+        : true)
       .map((snapshot) => {
         const data = snapshot.data();
         return {
@@ -1026,11 +1038,7 @@ export async function GET(request: NextRequest) {
       .sort((left, right) => left.name.localeCompare(right.name, 'id'));
 
     if (occurrenceId) {
-      const occurrenceSnapshot = await adminDb.collection('ShiftOccurrences').doc(occurrenceId).get();
-      if (!occurrenceSnapshot.exists) {
-        throw new HttpError(404, 'Shift tidak ditemukan.');
-      }
-      const occurrence = occurrenceSnapshot.data()!;
+      if (!occurrence) throw new HttpError(404, 'Shift tidak ditemukan.');
       if (occurrence.status !== 'reviewed' || occurrence.reviewStatus !== 'approved') {
         throw new HttpError(409, 'Petugas tambahan hanya dapat ditambahkan pada shift yang sudah disetujui.');
       }
@@ -1288,7 +1296,7 @@ export async function PUT(request: NextRequest) {
             const employee = snapshot.data();
             return (
               snapshot.exists &&
-              employee?.employment?.jobCategory === 'SATPAM' &&
+              jobCategoryForPayrollPeriod(employee || {}, period) === 'SATPAM' &&
               (employee?.employment?.status === 'active' ||
                 employee?.flags?.isActive === true)
             );
@@ -1363,14 +1371,19 @@ export async function PUT(request: NextRequest) {
         holidayDates,
       );
       const teamData = teamSnapshot.data()!;
-      const teamRoster = new Set<string>([
-        String(teamData.ketuaShiftId || ''),
-        ...(Array.isArray(teamData.memberEmployeeIds)
-          ? teamData.memberEmployeeIds.filter(
-              (value: unknown): value is string => typeof value === 'string',
-            )
-          : []),
-      ]);
+      const historicalRoster = dutyPlanSnapshot.data()?.rosterEmployeeIds;
+      const teamRoster = new Set<string>(
+        Array.isArray(historicalRoster)
+          ? historicalRoster.filter((value: unknown): value is string => typeof value === 'string')
+          : [
+              String(teamData.ketuaShiftId || ''),
+              ...(Array.isArray(teamData.memberEmployeeIds)
+                ? teamData.memberEmployeeIds.filter(
+                    (value: unknown): value is string => typeof value === 'string',
+                  )
+                : []),
+            ],
+      );
       const pos9GuardIds = new Set<string>(
         pos9PlanSnapshots.docs
           .filter((snapshot) => snapshot.data()?.status !== 'stale')

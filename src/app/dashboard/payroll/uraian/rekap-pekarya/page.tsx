@@ -25,6 +25,7 @@ import {
   Lock, Unlock
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import {
   collection, getDocs, doc, setDoc, getDoc, serverTimestamp, query, where, runTransaction
 } from 'firebase/firestore';
@@ -402,13 +403,13 @@ export default function RekapPekaryaPage() {
       (blueCollarQuery.data || [])
         .filter(
           (d: any) =>
-            d.employment?.status === 'active' && d.employment?.jobCategory === category,
+            d.employment?.status === 'active' && jobCategoryForPayrollPeriod(d, period) === category,
         )
         .map((d: any) => ({ employeeId: d.id, ...d }) as BlueCollarEmployee)
         .sort((a: BlueCollarEmployee, b: BlueCollarEmployee) =>
           a.employeeId.localeCompare(b.employeeId),
         ),
-    [blueCollarQuery.data, category],
+    [blueCollarQuery.data, category, period],
   );
 
   // ── Fetch Kegiatan SPJ Events & ActivityReports ──

@@ -44,6 +44,7 @@ import {
 } from '@/lib/payroll/payrollTax';
 import { UserRole } from '@/lib/payroll/roles';
 import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { synchronizeFamilyAllowanceEarnings } from '@/lib/payroll/familyAllowance';
 
 // ─── Types ─────────────────────────────────────────────────────
@@ -249,7 +250,7 @@ export default function PaySlipDialog({
 
     if (slipState && Array.isArray(slipState.earnings)) {
       const savedEarnings =
-        employee.employment?.jobCategory === 'SATPAM'
+        jobCategoryForPayrollPeriod(employee, periodToken) === 'SATPAM'
           ? mergeSatpamLegacyBonusIntoTunjangan(slipState.earnings)
           : slipState.earnings;
       initEarnings = JSON.parse(JSON.stringify(
@@ -556,7 +557,7 @@ export default function PaySlipDialog({
             {/* Employee summary badges */}
             <div className="flex flex-wrap gap-2 mt-3">
               <Badge variant="secondary" className="bg-white/80 text-slate-600 rounded-full border border-slate-200 font-normal shadow-none">
-                {activeTab === 'loyalis' ? (employee.employment_profile?.job_role || 'Staf') : employee.employment?.jobCategory}
+                {activeTab === 'loyalis' ? (employee.employment_profile?.job_role || 'Staf') : jobCategoryForPayrollPeriod(employee, periodToken)}
               </Badge>
               <Badge variant="secondary" className="bg-white/80 text-indigo-600 rounded-full border border-indigo-150 font-semibold shadow-none flex items-center gap-1">
                 No. Antrean {employeeNo}

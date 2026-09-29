@@ -24,6 +24,7 @@ import {
 } from '@/lib/payroll/vakasiTambahan';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import { loadPekaryaSlipPreviews } from '@/lib/server/pekaryaSlipPreview';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import type { UraianEntry } from '@/types';
 import {
   errorResponse,
@@ -95,6 +96,7 @@ function parseCommand(raw: unknown): VakasiPropagationCommand {
 
 async function loadDirectory(
   employeeIds: readonly string[],
+  period: string,
 ): Promise<Map<string, EmployeeDirectoryEntry>> {
   const loyalisRefs = employeeIds.map((employeeId) =>
     adminDb.collection('Employees_Loyalis').doc(employeeId),
@@ -112,7 +114,7 @@ async function loadDirectory(
     }
     if (blue.exists) {
       const data = blue.data() || {};
-      const jobCategory = String(data.employment?.jobCategory || '').trim();
+      const jobCategory = jobCategoryForPayrollPeriod(data, period).trim();
       if (!jobCategory) {
         throw new HttpError(409, `Kategori Pekarya ${employeeId} belum diisi.`);
       }
@@ -462,7 +464,7 @@ async function propagateVakasiEmployees(
     (doc) => doc.data() as VakasiTambahanEventLike,
   );
 
-  const directory = await loadDirectory(command.employeeIds);
+  const directory = await loadDirectory(command.employeeIds, command.period);
   const pekaryaIds = command.employeeIds.filter(
     (employeeId) =>
       directory.get(employeeId)?.employeeCollection === 'Employees_BlueCollar',

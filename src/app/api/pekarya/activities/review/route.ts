@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import {
   assertRequestId,
   hasActivityEnded,
@@ -417,7 +418,10 @@ export async function POST(request: NextRequest) {
           !employeeSnapshots[index]?.exists ||
           (employee?.employment?.status !== 'active' &&
             employee?.flags?.isActive !== true) ||
-          employee?.employment?.jobCategory !== category
+          jobCategoryForPayrollPeriod(
+            employee || {},
+            String(before.payrollPeriod || before.period || '').slice(0, 7),
+          ) !== category
         ) {
           throw new HttpError(409, 'Data pegawai tidak aktif atau kategori laporan tidak cocok.');
         }

@@ -1,4 +1,5 @@
 import { adminDb } from '@/lib/firebase-admin';
+import { jobCategoryForPayrollPeriod, withPayrollJobCategory } from '@/lib/payroll/blueCollarCategory';
 import {
   attendanceWorkedSeconds,
   summarizePekaryaAttendance,
@@ -283,7 +284,7 @@ export async function loadPekaryaSlipPreviews(
   // Active BlueCollar master data is authoritative; newly introduced job
   // categories participate without requiring a code-list deployment first.
   const categoryOf = (employee: PekaryaPreviewEmployee): string =>
-    employee.employment?.jobCategory as string;
+    jobCategoryForPayrollPeriod(employee, period);
 
   const categories = [...new Set(employees.map(categoryOf))];
 
@@ -312,7 +313,7 @@ export async function loadPekaryaSlipPreviews(
     );
   const attendanceIdentityPromise =
     needsUploadedAttendance
-      ? loadAttendanceEmployeeIdentities()
+      ? loadAttendanceEmployeeIdentities(period)
       : Promise.resolve(null);
   const effectiveAttendancePromise = attendanceIdentityPromise.then(
     (identities) =>
@@ -373,7 +374,7 @@ export async function loadPekaryaSlipPreviews(
         !identity ||
         !identity.active ||
         identity.employeeCollection !== BLUE_COLLAR_COLLECTION ||
-        identity.jobCategory === 'SATPAM'
+        categoryOf(employee) === 'SATPAM'
       ) {
         continue;
       }
@@ -446,7 +447,7 @@ export async function loadPekaryaSlipPreviews(
     const category = categoryOf(employee);
     const state = attendanceStates.get(category)!;
     previews[employee.id] = buildPekaryaSlipPreview({
-      employee,
+      employee: withPayrollJobCategory(employee, period),
       period,
       targetDate,
       salaryMatrix: matrix,

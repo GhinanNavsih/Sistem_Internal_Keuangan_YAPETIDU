@@ -21,6 +21,7 @@ import { PaySlipField } from '@/utils/generatePaySlipPdf';
 import { generateLegalitasPimpinanPdf, LegalitasEmployeeData, LegalitasPimpinanData } from '@/utils/generateLegalitasPimpinanPdf';
 import { generateLegalitasPimpinanXlsx } from '@/utils/generateLegalitasPimpinanXlsx';
 import { calculateGapok } from '@/utils/payrollLogic';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { resolveGapokFromSlip } from '@/lib/payroll/slipBuilders';
 import { recalculateSlipTaxes } from '@/lib/payroll/payrollTax';
 import { eligibleFamilyMetrics, familyAllowancePercentage, familyAllowancePeriodDate } from '@/lib/payroll/familyAllowance';
@@ -111,7 +112,8 @@ function buildInitialEarnings(
     return earnings;
   }
 
-  const jobCategory = emp.employment?.jobCategory || '';
+  const period = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+  const jobCategory = jobCategoryForPayrollPeriod(emp, period);
   const effectiveUraian =
     jobCategory === 'SATPAM' && uraian
       ? normalizeSatpamUraianEntry(uraian, false)

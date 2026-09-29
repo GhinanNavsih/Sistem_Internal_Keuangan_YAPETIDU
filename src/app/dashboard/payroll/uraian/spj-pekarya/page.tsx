@@ -19,6 +19,7 @@ import {
   Upload, Trash, UserCircle2, Sparkles, Building2, Code2, Lock
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import {
   collection, getDocs, query, where
 } from 'firebase/firestore';
@@ -89,15 +90,15 @@ export default function SpjPekaryaPage() {
     return (blueCollarQuery.data || [])
       .filter(
         (d: any) =>
-          d.employment?.status === 'active' && d.employment?.jobCategory === category,
+          d.employment?.status === 'active' && jobCategoryForPayrollPeriod(d, periodToken) === category,
       )
       .map((d: any) => ({
         id: d.id,
         name: d.name || '',
-        category: d.employment?.jobCategory || '',
+        category,
       }))
       .sort((a: any, b: any) => a.name.localeCompare(b.name));
-  }, [blueCollarQuery.data, category]);
+  }, [blueCollarQuery.data, category, periodToken]);
 
   // Kept as an effect writing into state because `fetchSpjEvents` below also
   // overwrites `blueCollarEmployees` from its API response — that pre-existing

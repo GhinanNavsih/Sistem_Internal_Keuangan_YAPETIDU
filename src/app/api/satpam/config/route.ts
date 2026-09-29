@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { adminDb } from '@/lib/firebase-admin';
 import {
   assertDateOnly,
@@ -10,6 +11,7 @@ import { pekaryaPayrollPeriodForDate, pekaryaPayrollWindow } from '@/lib/payroll
 import {
   isSatpamDutyPlanRequired,
   satpamAdvancePlanningPeriod,
+  satpamDutyPlanId,
 } from '@/lib/payroll/satpamDutyPlan';
 import { isSatpamFlexibilityEnabled } from '@/lib/server/satpamFlexibility';
 import {
@@ -54,7 +56,14 @@ export async function GET(request: NextRequest) {
 
     const teamSnapshot = teamQuery.docs[0];
     const team = teamSnapshot.data();
-    const memberIds = Array.isArray(team.memberEmployeeIds)
+    const dutyPeriod = payrollPeriodForDutyDate(dutyDate);
+    const historicalPlan = await adminDb.collection(SATPAM_DUTY_PLANS_COLLECTION)
+      .doc(satpamDutyPlanId(dutyPeriod, teamSnapshot.id)).get();
+    const planRoster = historicalPlan.data()?.rosterEmployeeIds;
+    const memberIds = Array.isArray(planRoster) && planRoster.length === 10
+      ? planRoster.filter((id: unknown): id is string =>
+          typeof id === 'string' && id !== actor.linkedEmployeeId)
+      : Array.isArray(team.memberEmployeeIds)
       ? team.memberEmployeeIds.filter((id): id is string => typeof id === 'string')
       : [];
     const rosterIds = Array.from(new Set([actor.linkedEmployeeId, ...memberIds]));
@@ -85,14 +94,13 @@ export async function GET(request: NextRequest) {
           id: snapshot.id,
           name: String(data.name || ''),
           isActive:
-            data.employment?.jobCategory === 'SATPAM' &&
+            jobCategoryForPayrollPeriod(data, dutyPeriod) === 'SATPAM' &&
             (data.employment?.status === 'active' || data.flags?.isActive === true),
         };
       })
       .filter((employee) => employee.name)
       .sort((left, right) => left.name.localeCompare(right.name, 'id'));
 
-    const dutyPeriod = payrollPeriodForDutyDate(dutyDate);
     const pos9PlansSnapshot = await adminDb
       .collection(SATPAM_DUTY_PLANS_COLLECTION)
       .where('period', '==', dutyPeriod)

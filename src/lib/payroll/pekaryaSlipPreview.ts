@@ -5,6 +5,7 @@ import {
   RATE_JUMAT,
 } from '@/utils/rekapConfig';
 import { resolveRekapColumnsForSlip, SlipField } from '@/lib/payroll/slipBuilders';
+import type { BlueCollarCategoryChange } from '@/lib/payroll/blueCollarCategory';
 import {
   GapokResolution,
   resolveGapokFromMatrix,
@@ -64,7 +65,7 @@ export interface PekaryaAttendanceGate {
 export interface PekaryaPreviewEmployee {
   id: string;
   salaryProfile?: { salaryGradeCode?: string; tunjanganBeras?: number };
-  employment?: { startDate?: unknown; dateRecognized?: unknown; jobCategory?: string };
+  employment?: { startDate?: unknown; dateRecognized?: unknown; jobCategory?: string; jobCategoryHistory?: BlueCollarCategoryChange[] };
   bpjs?: { allowanceAmount?: number };
   [key: string]: unknown;
 }

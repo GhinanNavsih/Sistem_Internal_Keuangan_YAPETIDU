@@ -172,6 +172,12 @@ service cloud.firestore {
           resource.data.get('nipyAssignment', null) &&
         request.resource.data.get('conversion', null) ==
           resource.data.get('conversion', null) &&
+        // Category transfers change historical payroll and Satpam rosters.
+        // Only the audited server transaction may change either field.
+        request.resource.data.get('employment', {}).get('jobCategory', null) ==
+          resource.data.get('employment', {}).get('jobCategory', null) &&
+        request.resource.data.get('employment', {}).get('jobCategoryHistory', null) ==
+          resource.data.get('employment', {}).get('jobCategoryHistory', null) &&
         (
           resource.data.get('conversion', null) == null ||
           (

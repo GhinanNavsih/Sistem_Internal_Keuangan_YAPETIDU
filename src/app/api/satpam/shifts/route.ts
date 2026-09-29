@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import {
   activityReportId,
   analyzeSatpamShiftSubmission,
@@ -332,10 +333,10 @@ function parseCommand(raw: unknown, ketuaShiftId: string, requireEditFields: boo
   };
 }
 
-function isActiveSatpam(data: FirebaseFirestore.DocumentData | undefined): boolean {
+function isActiveSatpam(data: FirebaseFirestore.DocumentData | undefined, period: string): boolean {
   return Boolean(
     data &&
-      data.employment?.jobCategory === 'SATPAM' &&
+      jobCategoryForPayrollPeriod(data, period) === 'SATPAM' &&
       (data.employment?.status === 'active' || data.flags?.isActive === true),
   );
 }
@@ -505,6 +506,7 @@ function buildAssignmentRecords(input: {
 
 function buildAnomalies(input: {
   command: ShiftCommand;
+  period: string;
   suggestedShiftName: SatpamShiftName;
   reportedShiftName: SatpamShiftName;
   ketuaShiftId: string;
@@ -515,7 +517,7 @@ function buildAnomalies(input: {
 }): SatpamShiftAnomaly[] {
   const activeSatpamIds = new Set(
     Array.from(input.employeeById.entries())
-      .filter(([, snapshot]) => snapshot.exists && isActiveSatpam(snapshot.data()))
+      .filter(([, snapshot]) => snapshot.exists && isActiveSatpam(snapshot.data(), input.period))
       .map(([employeeId]) => employeeId),
   );
   const normalizedAssignments = input.command.assignments.map((assignment) => ({
@@ -678,7 +680,13 @@ async function mutateShift(
   const members = Array.isArray(team.memberEmployeeIds)
     ? team.memberEmployeeIds.filter((id): id is string => typeof id === 'string')
     : [];
-  const roster = Array.from(new Set([actor.linkedEmployeeId, ...members]));
+  const period = payrollPeriodForDutyDate(command.dutyDate);
+  const historicalPlan = await adminDb.collection(SATPAM_DUTY_PLANS_COLLECTION)
+    .doc(satpamDutyPlanId(period, teamSnapshot.id)).get();
+  const historicalRoster = historicalPlan.data()?.rosterEmployeeIds;
+  const roster = Array.isArray(historicalRoster) && historicalRoster.length === 10
+    ? historicalRoster.filter((id: unknown): id is string => typeof id === 'string')
+    : Array.from(new Set([actor.linkedEmployeeId, ...members]));
   const suggestedShiftName = getSatpamShiftForTeam(teamNumber, command.dutyDate);
   const reportedShiftName = command.shiftName || suggestedShiftName;
   const flexibilityEnabled = isSatpamFlexibilityEnabled(teamSnapshot.id);
@@ -710,7 +718,6 @@ async function mutateShift(
     mode === 'edit'
       ? command.occurrenceId!
       : shiftOccurrenceId(teamSnapshot.id, command.dutyDate, reportedShiftName);
-  const period = payrollPeriodForDutyDate(command.dutyDate);
   const requestHash = stableHash({
     occurrenceId,
     expectedRevision: command.expectedRevision || null,
@@ -796,6 +803,10 @@ async function mutateShift(
       periodSnapshot.data() || null,
     );
     const dutyPlan = dutyPlanSnapshot.exists ? dutyPlanSnapshot.data()! : null;
+    if (JSON.stringify(dutyPlan?.rosterEmployeeIds || []) !==
+        JSON.stringify(historicalPlan.data()?.rosterEmployeeIds || [])) {
+      throw new HttpError(409, 'Rencana dinas berubah. Muat ulang laporan sebelum menyimpan.');
+    }
     if (
       canonicalPlanEnabled &&
       dutyPlan &&
@@ -891,6 +902,7 @@ async function mutateShift(
     });
     const anomalies = buildAnomalies({
       command,
+      period,
       suggestedShiftName,
       reportedShiftName,
       ketuaShiftId: actor.linkedEmployeeId!,

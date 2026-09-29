@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import EmployeeNavigationMenu from '@/components/EmployeeNavigationMenu';
 import { db, secondaryDb } from '@/lib/firebase';
 import {
@@ -675,6 +676,7 @@ export default function EmployeePayslipPage() {
 
   // Page data states
   const [employeeData, setEmployeeData] = useState<any | null>(null);
+  const periodJobCategory = jobCategoryForPayrollPeriod(employeeData || {}, periodToken) || 'PEKARYA';
   // True for a month before this Loyalis employee's switch from Pekarya: that
   // month was paid on the old Pekarya record and is shown in its layout.
   const [pekaryaHistoryMonth, setPekaryaHistoryMonth] = useState(false);
@@ -706,7 +708,7 @@ export default function EmployeePayslipPage() {
   const [calculatedTaxes, setCalculatedTaxes] = useState<PaySlipField[]>([]);
 
   const pekaryaPayrollDocumentation = useMemo<PekaryaDocItem[]>(() => {
-    const userJobCategory = (employeeData?.employment?.jobCategory || 'PEKARYA').toUpperCase();
+    const userJobCategory = periodJobCategory.toUpperCase();
     const isSatpam = userJobCategory === 'SATPAM';
     const isKebersihan = userJobCategory.startsWith('KEBERSIHAN');
     const isTeknisi = userJobCategory === 'TEKNISI';
@@ -875,7 +877,7 @@ export default function EmployeePayslipPage() {
     };
 
     return [gapokDoc, shiftDoc, bonusDoc, spjDoc, bpjsDoc];
-  }, [employeeData?.employment?.jobCategory]);
+  }, [periodJobCategory]);
 
   // Load employee data & payslip details
   useEffect(() => {
@@ -1100,7 +1102,7 @@ export default function EmployeePayslipPage() {
             if (cancelled) return;
             const employeePreview = previewResult.previews?.[empId];
             const employeeCategory = String(
-              employee.employment?.jobCategory || '',
+              jobCategoryForPayrollPeriod(employee, periodToken),
             ).trim().toUpperCase();
             if (
               previewResult.attendanceImportRevisionId &&
@@ -1309,7 +1311,7 @@ export default function EmployeePayslipPage() {
         const shouldOverlayCurrentAttendance =
           Boolean(savedSlip) &&
           periodToken >= '2026-08' &&
-          String(employee.employment?.jobCategory || '').toUpperCase() !== 'SATPAM' &&
+          jobCategoryForPayrollPeriod(employee, periodToken).toUpperCase() !== 'SATPAM' &&
           hasCurrentPekaryaAttendance;
         setCalculatedEarnings(
           savedSlip
@@ -1390,14 +1392,14 @@ export default function EmployeePayslipPage() {
     const source = confirmedSlip?.earnings && confirmedSlip.earnings.length > 0
       ? confirmedSlip.earnings
       : calculatedEarnings;
-    const normalized = employeeData?.employment?.jobCategory === 'SATPAM'
+    const normalized = periodJobCategory === 'SATPAM'
       ? mergeSatpamLegacyBonusIntoTunjangan(source)
       : source;
     return renameBlueCollarAttendanceLabel(
       normalized,
-      employeeData?.employment?.jobCategory,
+      periodJobCategory,
     );
-  }, [confirmedSlip, calculatedEarnings, employeeData?.employment?.jobCategory]);
+  }, [confirmedSlip, calculatedEarnings, periodJobCategory]);
 
   const deductions = useMemo(() => {
     return confirmedSlip?.deductions && confirmedSlip.deductions.length > 0 ? confirmedSlip.deductions : calculatedDeductions;
@@ -1660,7 +1662,7 @@ export default function EmployeePayslipPage() {
       employeeName: employeeData.personal_info?.name || profile?.displayName || 'Karyawan',
       employeeNo: 1, // Placeholder
       period: periodText,
-      jobCategory: isLoyalis ? `STAF ${employeeData.employment_profile?.department_unit || 'STAF'}` : (employeeData.employment?.jobCategory || 'PEKARYA'),
+      jobCategory: isLoyalis ? `STAF ${employeeData.employment_profile?.department_unit || 'STAF'}` : periodJobCategory,
       earnings: earnings,
       deductions: deductions,
       taxes: taxes,
@@ -1916,7 +1918,7 @@ export default function EmployeePayslipPage() {
                     <span className="text-[11px] font-bold bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full inline-block">
                       {showLoyalisLayout
                         ? `STAF ${employeeData.employment_profile?.department_unit || 'LOYALIS'}`
-                        : `VAKASI ${employeeData.employment?.jobCategory || 'PEKARYA'}`}
+                        : `VAKASI ${periodJobCategory}`}
                     </span>
                     {pekaryaHistoryMonth && (
                       <span className="text-[11px] font-semibold text-slate-600 block">
@@ -2263,10 +2265,10 @@ export default function EmployeePayslipPage() {
                                   };
                                   if (item.id === 'gapok_pekarya') {
                                     const gapokVal = getEarningAmount(['GAJI POKOK']) || (employeeData?.salaryProfile?.baseSalaryAmount || 0);
-                                    return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Kategori Pegawai" value={employeeData?.employment?.jobCategory || 'PEKARYA'} /><DocRow label="Gaji Pokok" value={formatIDR(gapokVal)} highlight /></div>);
+                                    return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Kategori Pegawai" value={periodJobCategory} /><DocRow label="Gaji Pokok" value={formatIDR(gapokVal)} highlight /></div>);
                                   }
                                   if (item.id === 'vakasi_jumat_lembur') {
-                                    const userJobCategory = (employeeData?.employment?.jobCategory || 'PEKARYA').toUpperCase();
+                                    const userJobCategory = periodJobCategory.toUpperCase();
                                     const isSatpam = userJobCategory === 'SATPAM';
                                     const isKebersihan = userJobCategory.startsWith('KEBERSIHAN');
                                     const isTeknisi = userJobCategory === 'TEKNISI';
@@ -2293,7 +2295,7 @@ export default function EmployeePayslipPage() {
                                     return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Presensi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Total Upah Presensi" value={formatIDR(harianVal + jumatVal)} highlight />{dailyLogDetails}</div>);
                                   }
                                   if (item.id === 'bonus_presensi_pekarya') {
-                                    const userJobCategory = (employeeData?.employment?.jobCategory || 'PEKARYA').toUpperCase();
+                                    const userJobCategory = periodJobCategory.toUpperCase();
                                     if (userJobCategory === 'SATPAM') {
                                       const tunjanganJabatanVal = getEarningAmount(['TUNJANGAN JABATAN']);
                                       return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Tunjangan Jabatan" value={formatIDR(tunjanganJabatanVal)} highlight /></div>);

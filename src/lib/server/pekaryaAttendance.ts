@@ -131,8 +131,8 @@ function collectDepartmentUnmatched(
     );
 }
 
-export async function listActivePekaryaAttendanceCategories(): Promise<string[]> {
-  const { identities } = await loadAttendanceEmployeeIdentities();
+export async function listActivePekaryaAttendanceCategories(period?: string): Promise<string[]> {
+  const { identities } = await loadAttendanceEmployeeIdentities(period);
   return Array.from(
     new Set(
       identities
@@ -157,7 +157,7 @@ export async function loadDepartmentUnmatchedRows(
   period: string,
   options: PekaryaAttendanceViewOptions = {},
 ): Promise<DepartmentUnmatchedRow[]> {
-  const identities = await loadAttendanceEmployeeIdentities();
+  const identities = await loadAttendanceEmployeeIdentities(period);
   const { rows } = await loadEffectiveAttendanceDays(period, {
     ...options,
     identities,
@@ -170,7 +170,7 @@ export async function buildPekaryaAttendanceView(
   category: string,
   options: PekaryaAttendanceViewOptions = {},
 ) {
-  const identityIndex = await loadAttendanceEmployeeIdentities();
+  const identityIndex = await loadAttendanceEmployeeIdentities(period);
   const { identities, byNipy } = identityIndex;
   const [
     { days, rows, importData, revisionData, correctionRevisions },
@@ -417,7 +417,7 @@ export async function buildSatpamAttendanceMismatches(
   period: string,
   options: PekaryaAttendanceViewOptions = {},
 ) {
-  const identityIndex = await loadAttendanceEmployeeIdentities();
+  const identityIndex = await loadAttendanceEmployeeIdentities(period);
   const { identities, byNipy } = identityIndex;
   const [
     { days, rows, importData },

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { assertRequestId, isImmutablePayrollStatus } from '@/lib/payroll/domain';
@@ -128,7 +129,7 @@ export async function GET(request: NextRequest) {
         throw new HttpError(404, 'Data pegawai Pekarya tidak ditemukan.');
       }
       const employee = employeeSnapshot.data()!;
-      const jobCategory = String(employee.employment?.jobCategory || '')
+      const jobCategory = String(jobCategoryForPayrollPeriod(employee, period) || '')
         .normalize('NFKC')
         .trim();
       if (!jobCategory) {
@@ -167,14 +168,11 @@ export async function GET(request: NextRequest) {
     assertCategoryAccess(actor, category);
 
     const [employeeSnapshot, eventSnapshot] = await Promise.all([
-      adminDb
-        .collection('Employees_BlueCollar')
-        .where('employment.status', '==', 'active')
-        .where('employment.jobCategory', '==', category)
-        .get(),
+      adminDb.collection('Employees_BlueCollar').where('employment.status', '==', 'active').get(),
       adminDb.collection('KegiatanSpj').where('period', '==', period).get(),
     ]);
     const employees = employeeSnapshot.docs
+      .filter((snapshot) => jobCategoryForPayrollPeriod(snapshot.data(), period) === category)
       .map((snapshot) => ({ id: snapshot.id, name: String(snapshot.data().name || '') }))
       .sort((a, b) => a.name.localeCompare(b.name, 'id'));
     const allowedIds = new Set(employees.map((employee) => employee.id));
@@ -267,7 +265,7 @@ export async function POST(request: NextRequest) {
         if (
           !snapshot.exists ||
           employee?.employment?.status !== 'active' ||
-          employee?.employment?.jobCategory !== command.jobCategory
+          jobCategoryForPayrollPeriod(employee || {}, command.period) !== command.jobCategory
         ) {
           throw new HttpError(
             409,

@@ -69,6 +69,7 @@ import PaySlipDialog, { SlipState, buildInitialEarnings, buildInitialDeductions 
 import { eligibleFamilyMetrics, familyAllowancePeriodDate, synchronizeFamilyAllowanceEarnings } from '@/lib/payroll/familyAllowance';
 import { normalizeTaxFields, recalculateSlipTaxes } from '@/lib/payroll/payrollTax';
 import { PekaryaSlipPreview } from '@/lib/payroll/pekaryaSlipPreview';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import * as XLSX from 'xlsx';
 import LegalitasPimpinanDialog from '@/components/LegalitasPimpinanDialog';
 import CetakPayrollDialog from '@/components/CetakPayrollDialog';
@@ -831,7 +832,7 @@ export default function PayrollValidationDashboard() {
       const years = calculateYearsOfService(emp.joinDate, targetDate);
       const gapok = getPekaryaGapok(emp);
 
-      const roleKey = payrollCollar === 'loyalis' ? emp.role : emp.raw.employment?.jobCategory;
+      const roleKey = emp.role;
       const periodKey = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
       const uraianDoc = uraianMap[`${periodKey}_${roleKey}`];
       const uraianEntry = uraianDoc?.entries?.[emp.id];
@@ -1347,7 +1348,7 @@ export default function PayrollValidationDashboard() {
     // If there is already a saved slip state, return its saved earnings and deductions
     const savedSlip = slipStates[emp.id];
     if (savedSlip && Array.isArray(savedSlip.earnings)) {
-      const storedEarnings = emp.raw.employment?.jobCategory === 'SATPAM'
+      const storedEarnings = emp.role === 'SATPAM'
         ? mergeSatpamLegacyBonusIntoTunjangan(savedSlip.earnings)
         : savedSlip.earnings;
       const savedEarnings = payrollCollar === 'loyalis' && savedSlip.status === 'draft'
@@ -1368,7 +1369,7 @@ export default function PayrollValidationDashboard() {
     }
 
     const gapok = getPekaryaGapok(emp);
-    const cat = payrollCollar === 'loyalis' ? emp.role : emp.raw.employment?.jobCategory;
+    const cat = emp.role;
     const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
     const uraianEntry = uraianMap[`${period}_${cat}`]?.entries?.[emp.id];
 
@@ -1440,7 +1441,7 @@ export default function PayrollValidationDashboard() {
       period: payrollPeriod.toUpperCase(),
       jobCategory: isLoyalis
         ? `STAF ${emp.raw.employment_profile?.department_unit || 'STAF'}`
-        : `VAKASI ${emp.raw.employment?.jobCategory || ''}`,
+        : `VAKASI ${emp.role}`,
       earnings: fields.earnings,
       deductions: fields.deductions,
       taxes: fields.taxes || [],
@@ -1677,7 +1678,7 @@ export default function PayrollValidationDashboard() {
       const row: EmployeeRow = {
         id: data.id,
         name: isLoyalis ? (data.personal_info?.name || '') : (data.name || ''),
-        role: isLoyalis ? (data.employment_profile?.department_unit || 'Staf') : (data.employment?.jobCategory || ''),
+        role: isLoyalis ? (data.employment_profile?.department_unit || 'Staf') : jobCategoryForPayrollPeriod(data, currentPekaryaPreviewPeriod),
         gradeLevel: isLoyalis ? (data.academic_and_tier?.level_code || '') : (data.salaryProfile?.salaryGradeCode || ''),
         joinDate: joinDateVal,
         dateRecognized: dateRecognizedVal,
@@ -2529,7 +2530,7 @@ export default function PayrollValidationDashboard() {
         const freshEmployee: any = {
           id: freshRaw.id,
           name: isLoyalisTab ? (freshRaw.personal_info?.name || '') : (freshRaw.name || ''),
-          role: isLoyalisTab ? (freshRaw.employment_profile?.department_unit || 'Staf') : (freshRaw.employment?.jobCategory || ''),
+          role: isLoyalisTab ? (freshRaw.employment_profile?.department_unit || 'Staf') : jobCategoryForPayrollPeriod(freshRaw, currentPekaryaPreviewPeriod),
           gradeLevel: freshGradeLevel,
           joinDate: freshJoinDate,
           dateRecognized: freshDateRecognized,
@@ -2616,7 +2617,7 @@ export default function PayrollValidationDashboard() {
         const credit = Number(freshRaw.kepangkatan?.cummulativeCredit) || 0;
         const freshKepangkatanAllowance = freshKepMatrix[credit] || 0;
 
-        const cat = isLoyalisTab ? freshEmployee.role : freshEmployee.raw.employment?.jobCategory;
+        const cat = freshEmployee.role;
         const freshUraianEntry = freshUraianMap[`${period}_${cat}`]?.entries?.[emp.id] ?? undefined;
 
         const previewForEmployee = isLoyalisTab ? undefined : refreshedPreviews[emp.id];
@@ -2930,7 +2931,7 @@ export default function PayrollValidationDashboard() {
     const freshEmployee: any = {
       id: freshRaw.id,
       name: isLoyalis ? (freshRaw.personal_info?.name || '') : (freshRaw.name || ''),
-      role: isLoyalis ? (freshRaw.employment_profile?.department_unit || 'Staf') : (freshRaw.employment?.jobCategory || ''),
+      role: isLoyalis ? (freshRaw.employment_profile?.department_unit || 'Staf') : jobCategoryForPayrollPeriod(freshRaw, currentPekaryaPreviewPeriod),
       gradeLevel: freshGradeLevel,
       joinDate: freshJoinDate,
       dateRecognized: freshDateRecognized,
@@ -3082,7 +3083,7 @@ export default function PayrollValidationDashboard() {
     const freshKepangkatanAllowance = freshKepMatrix[credit] || 0;
 
     // Fetch UraianEntry
-    const cat = isLoyalis ? freshEmployee.role : freshEmployee.raw.employment?.jobCategory;
+    const cat = freshEmployee.role;
     const uraianDocId = `${period}_${cat}`;
     const uraianDocSnap = await getDoc(doc(db, 'UraianGaji', uraianDocId));
     const freshUraianEntry = uraianDocSnap.exists() ? (uraianDocSnap.data() as UraianGajiDocument)?.entries?.[employeeId] : undefined;
@@ -3985,7 +3986,7 @@ export default function PayrollValidationDashboard() {
         activeTab={payrollCollar}
         uraianEntry={(() => {
           if (!selectedEmployee) return undefined;
-          const cat = payrollCollar === 'loyalis' ? selectedEmployee.role : selectedEmployee.raw.employment?.jobCategory;
+          const cat = selectedEmployee.role;
           const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
           const uraianDoc = uraianMap[`${period}_${cat}`];
           return uraianDoc?.entries?.[selectedEmployee.id] ?? undefined;
@@ -3996,7 +3997,7 @@ export default function PayrollValidationDashboard() {
         tunjanganKepangkatan={selectedEmployee ? kepangkatanAllowanceMap[selectedEmployee.id] ?? 0 : 0}
         customColumns={(() => {
           if (!selectedEmployee) return undefined;
-          const cat = payrollCollar === 'loyalis' ? selectedEmployee.role : selectedEmployee.raw.employment?.jobCategory;
+          const cat = selectedEmployee.role;
           const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
           const uraianDoc = uraianMap[`${period}_${cat}`];
           return uraianDoc?.customColumns ?? undefined;

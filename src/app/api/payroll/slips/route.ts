@@ -36,6 +36,7 @@ import {
   loadActiveSalaryMatrix,
 } from '@/lib/server/pekaryaSlipPreview';
 import { isPayrollEmployeeEligible } from '@/lib/payroll/payrollRoster';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { employeeInPayrollPeriod } from '@/lib/employeeConversion';
 import { synchronizeFamilyAllowanceEarnings } from '@/lib/payroll/familyAllowance';
 import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
@@ -380,11 +381,11 @@ export async function POST(request: NextRequest) {
         validateNewSlipSources
       ) {
         const employee = blueEmployeeSnapshot.data()!;
-        const jobCategory = employee.employment?.jobCategory;
+        const periodToken = command.period.replace('_', '-');
+        const jobCategory = jobCategoryForPayrollPeriod(employee, periodToken);
         if (!isPekaryaJobCategory(jobCategory)) {
           throw new HttpError(409, 'Kategori Pekarya pada master data tidak valid.');
         }
-        const periodToken = command.period.replace('_', '-');
         const periodWindow = pekaryaPayrollWindow(periodToken);
         const canonicalSnapshots = await Promise.all([
           ...periodWindow.sourceMonths.map((sourceMonth) =>
@@ -581,7 +582,10 @@ export async function POST(request: NextRequest) {
           );
           const isSatpam =
             blueEmployeeSnapshot.exists &&
-            blueEmployeeSnapshot.data()?.employment?.jobCategory === 'SATPAM';
+            jobCategoryForPayrollPeriod(
+              blueEmployeeSnapshot.data()!,
+              command.period.replace('_', '-'),
+            ) === 'SATPAM';
           let earnings = isSatpam
             ? mergeSatpamLegacyBonusIntoTunjangan(validatedEarnings)
             : validatedEarnings;

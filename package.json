@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test:kjm": "tsx --test src/lib/payroll/kjm.test.ts",
     "test:employee-conversion:integration": "firebase emulators:exec --only firestore,auth --project demo-conversion --config firebase.kjm-test.json 'NEXT_PUBLIC_FIREBASE_PROJECT_ID=demo-conversion npx tsx scripts/testEmployeeConversionEmulator.ts'",
+    "test:employee-category-transfer:integration": "firebase emulators:exec --only firestore,auth --project demo-category-transfer --config firebase.kjm-test.json 'NEXT_PUBLIC_FIREBASE_PROJECT_ID=demo-category-transfer npx tsx scripts/testEmployeeCategoryTransferEmulator.ts'",
     "test:family-allowance:integration": "firebase emulators:exec --only firestore,auth,storage --project demo-family-allowance --config firebase.satker-finance-test.json 'NEXT_PUBLIC_FIREBASE_PROJECT_ID=demo-family-allowance NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=demo-family-allowance.appspot.com npx tsx scripts/testFamilyAllowanceRequestEmulator.ts'",
     "test:kjm:integration": "firebase emulators:exec --only firestore,auth --project demo-kjm --config firebase.kjm-test.json 'NEXT_PUBLIC_FIREBASE_PROJECT_ID=demo-kjm npx tsx scripts/testKjmEmulator.ts'",
     "test:paid-leave-api": "tsx --test src/lib/payroll/annualPaidLeaveApi.test.ts",
