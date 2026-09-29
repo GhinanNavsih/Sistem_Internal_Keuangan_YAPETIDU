@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -33,6 +33,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
+import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { formatPresenceDate } from '@/lib/payroll/presenceCorrections';
 import { useAuth } from '@/lib/AuthContext';
 import {
@@ -353,7 +354,9 @@ function workedDuration(day: AttendanceDay) {
  * A scan time cell. Editable cells are uncontrolled and keyed on the current
  * value, so the input resets to the latest server value whenever it changes
  * (after a save, or after `load()` brings in someone else's edit) without
- * needing a parallel piece of edit-buffer state.
+ * needing a parallel piece of edit-buffer state. While a save is in flight the
+ * input is read-only rather than disabled: a disabled input drops keyboard
+ * focus, so tabbing from one scan cell to the next would lose its place.
  */
 function ScanCell({
   value,
@@ -376,9 +379,11 @@ function ScanCell({
           type="time"
           step="1"
           defaultValue={value || ''}
-          disabled={disabled}
-          onBlur={(event) => onCommit?.(event.target.value)}
-          className={`h-8 w-28 rounded-lg border px-2 text-xs font-mono disabled:opacity-60 ${
+          readOnly={disabled}
+          onBlur={(event) => {
+            if (!disabled) onCommit?.(event.target.value);
+          }}
+          className={`h-8 w-28 rounded-lg border px-2 text-xs font-mono read-only:opacity-60 ${
             auto
               ? 'border-amber-300 bg-amber-50/10 font-bold text-amber-700 ring-2 ring-amber-100/50'
               : 'border-slate-200 bg-white text-slate-700'
@@ -1461,16 +1466,38 @@ export default function PekaryaAttendancePage() {
     (nextCategory: string) => {
       const params = new URLSearchParams(searchParams.toString());
       params.set('category', nextCategory);
-      router.push(`${pathname}?${params.toString()}`);
+      router.push(`${pathname}?${params.toString()}`, { scroll: false });
     },
     [pathname, router, searchParams],
   );
   const period = `${year}-${String(month).padStart(2, '0')}`;
   const [data, setData] = useState<AttendanceView | SatpamView | null>(null);
+  // `loading` is the blocking first load of a period/category (the results are
+  // swapped for a placeholder). `refreshing` is every reload after an action:
+  // the results stay on screen and update in place, because collapsing them to
+  // a placeholder shrinks the page and the browser throws the scroll position
+  // back to the top.
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const loadSequence = useRef(0);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
+  // An object per message so showing the same text twice in a row still
+  // restarts the toast's timer.
+  const [messageNotice, setMessageNotice] = useState<{ text: string } | null>(null);
+  const setMessage = useCallback(
+    (text: string) => setMessageNotice(text ? { text } : null),
+    [],
+  );
+  const notice = useMemo(
+    () =>
+      error
+        ? { type: 'error' as const, text: error }
+        : messageNotice
+          ? { type: 'success' as const, text: messageNotice.text }
+          : null,
+    [error, messageNotice],
+  );
   const [selectedEvidence, setSelectedEvidence] = useState<{
     url: string;
     title: string;
@@ -1516,7 +1543,11 @@ export default function PekaryaAttendancePage() {
   // Same authority as manual linking — the corrections endpoint accepts both.
   const canEditScans = canLinkAttendance;
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
+    // A newer load supersedes this one: only the latest may write results or
+    // clear the loading flags, so a slow reload finishing late can never put
+    // a previous category's data back on screen.
+    const sequence = ++loadSequence.current;
     if (
       !category ||
       (period < '2026-08' && category !== 'SATPAM')
@@ -1524,9 +1555,16 @@ export default function PekaryaAttendancePage() {
       setData(null);
       setPaidLeaves([]);
       setGantiLiburs([]);
+      setLoading(false);
+      setRefreshing(false);
       return;
     }
-    setLoading(true);
+    if (silent) {
+      setRefreshing(true);
+    } else {
+      setRefreshing(false);
+      setLoading(true);
+    }
     setError('');
     try {
       const paidLeavesPromise = authenticatedJson<{ requests: AnnualPaidLeaveRequest[] }>(
@@ -1538,17 +1576,17 @@ export default function PekaryaAttendancePage() {
       ).catch(() => ({ requests: [] }));
 
       if (category === 'SATPAM') {
-        setSatpamAttendanceNotice('');
-        setSatpamSubmissionNotice('');
-        setSatpamSubmissions(null);
+        // The notices are applied together with the data below rather than
+        // cleared up front: clearing first would make a notice that is still
+        // true vanish and reappear, shifting the page twice.
+        let attendanceNotice = '';
         const attendancePromise = authenticatedJson<SatpamView>(
           `/api/attendance/pekarya?period=${encodeURIComponent(period)}&category=SATPAM`,
         ).catch((cause): SatpamView => {
-          setSatpamAttendanceNotice(
+          attendanceNotice =
             cause instanceof Error
               ? cause.message
-              : 'Import presensi belum tersedia.',
-          );
+              : 'Import presensi belum tersedia.';
           return {
             period,
             category: 'SATPAM',
@@ -1576,23 +1614,25 @@ export default function PekaryaAttendancePage() {
             paidLeavesPromise,
             gantiLibursPromise,
           ]);
+        if (sequence !== loadSequence.current) return;
         setData(attendance);
         setSatpamOperations({ dutyPlans, absences, reconciliation });
+        setSatpamAttendanceNotice(attendanceNotice);
+        setSatpamSubmissionNotice('');
+        setSatpamSubmissions(null);
         setPaidLeaves(paidLeavesRes.requests || []);
         setGantiLiburs(gantiLibursRes.requests || []);
       } else {
-        setSatpamAttendanceNotice('');
-        setSatpamSubmissionNotice('');
+        let submissionNotice = '';
         const satpamSubmissionsPromise: Promise<SatpamAbsenceAdminView | null> =
           category === ALL_BLUE_COLLAR_CATEGORY && canViewSatpamCategory
             ? authenticatedJson<SatpamAbsenceAdminView>(
                 `/api/satpam/absences?period=${encodeURIComponent(period)}`,
               ).catch((cause): SatpamAbsenceAdminView => {
-                setSatpamSubmissionNotice(
+                submissionNotice =
                   cause instanceof Error
                     ? cause.message
-                    : 'Gagal memuat pengajuan Satpam.',
-                );
+                    : 'Gagal memuat pengajuan Satpam.';
                 return { requests: [] };
               })
             : Promise.resolve(null);
@@ -1604,18 +1644,29 @@ export default function PekaryaAttendancePage() {
           paidLeavesPromise,
           gantiLibursPromise,
         ]);
+        if (sequence !== loadSequence.current) return;
         setData(result);
+        setSatpamAttendanceNotice('');
+        setSatpamSubmissionNotice(submissionNotice);
         setSatpamSubmissions(submissions);
         setSatpamOperations(null);
         setPaidLeaves(paidLeavesRes.requests || []);
         setGantiLiburs(gantiLibursRes.requests || []);
       }
     } catch (cause) {
+      if (sequence !== loadSequence.current) return;
       setError(cause instanceof Error ? cause.message : 'Gagal memuat presensi Pekarya.');
     } finally {
-      setLoading(false);
+      if (sequence === loadSequence.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [canEdit, canViewSatpamCategory, category, period, year]);
+
+  // Reload after an action: keeps the results on screen and updates them in
+  // place instead of collapsing the page to the loading placeholder.
+  const refresh = useCallback(() => load({ silent: true }), [load]);
 
   const reviewAbsence = async (
     absence: SatpamAbsenceAdminView['requests'][number],
@@ -1659,7 +1710,7 @@ export default function PekaryaAttendancePage() {
                 : 'Izin disetujui. Hak Rp12.500 dan rekonsiliasi telah diperbarui.'
             : 'Izin ditolak dan rekonsiliasi telah diperbarui.',
       );
-      await load();
+      await refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Gagal memutuskan izin.');
     } finally {
@@ -1687,7 +1738,7 @@ export default function PekaryaAttendancePage() {
       setMessage(
         `Baris presensi dihubungkan. ${linkTarget.dates.length} hari kini dihitung untuk pegawai tersebut.`,
       );
-      await load();
+      await refresh();
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -1730,7 +1781,7 @@ export default function PekaryaAttendancePage() {
             ? 'Laporan scan ditolak.'
             : 'Izin resmi ditolak.',
       );
-      await load();
+      await refresh();
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -1780,7 +1831,7 @@ export default function PekaryaAttendancePage() {
           ? `Cuti tahunan ${item.employeeName || item.employeeId} disetujui.`
           : `Cuti tahunan ${item.employeeName || item.employeeId} ditolak.`,
       );
-      await load();
+      await refresh();
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -1835,7 +1886,7 @@ export default function PekaryaAttendancePage() {
             : `Ganti libur ${item.employeeName || item.employeeId} ditolak.`
         }${res.payrollWarning ? ` ${res.payrollWarning}` : ''}`,
       );
-      await load();
+      await refresh();
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -1963,7 +2014,7 @@ export default function PekaryaAttendancePage() {
     } else {
       setMessage(`Berhasil menyetujui ${successCount} pengajuan sekaligus.`);
     }
-    await load();
+    await refresh();
   };
 
   const displayPaidLeaves = useMemo(() => {
@@ -2024,7 +2075,7 @@ export default function PekaryaAttendancePage() {
       setMessage(
         'Koreksi rencana tersimpan. Laporan yang terdampak dibuka kembali untuk pemeriksaan finansial.',
       );
-      await load();
+      await refresh();
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -2142,7 +2193,7 @@ export default function PekaryaAttendancePage() {
       });
       setCorrection(null);
       setMessage('Koreksi tersimpan sebagai catatan baru dan hasil upah sudah diperbarui.');
-      await load();
+      await refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Gagal menyimpan koreksi.');
     } finally {
@@ -2194,7 +2245,7 @@ export default function PekaryaAttendancePage() {
           expectedRevision: day.correctionRevision,
         }),
       });
-      await load();
+      await refresh();
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : 'Gagal memperbarui waktu scan.',
@@ -2239,7 +2290,7 @@ export default function PekaryaAttendancePage() {
         }),
       });
       setMessage('Presensi berhasil dipublikasikan ke Rekap Uraian.');
-      await load();
+      await refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Gagal mempublikasikan presensi.');
     } finally {
@@ -2258,18 +2309,16 @@ export default function PekaryaAttendancePage() {
 
   return (
     <div className="space-y-5 text-[16px]">
-      {(error || message) && (
-        <div
-          role="status"
-          className={`rounded-xl border p-4 ${
-            error
-              ? 'border-rose-200 bg-rose-50 text-rose-800'
-              : 'border-emerald-200 bg-emerald-50 text-emerald-800'
-          }`}
-        >
-          {error || message}
-        </div>
-      )}
+      {/* Floats above the page (portal, fixed) — an in-flow banner pushes every
+          row down and moves whatever the reviewer is looking at. */}
+      <FloatingSnackbar
+        message={notice}
+        duration={error ? 12000 : undefined}
+        onDismiss={() => {
+          setError('');
+          setMessageNotice(null);
+        }}
+      />
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -2308,10 +2357,10 @@ export default function PekaryaAttendancePage() {
             <Button
               variant="outline"
               className="min-h-12 gap-2"
-              onClick={() => void load()}
-              disabled={loading || !category}
+              onClick={() => void refresh()}
+              disabled={loading || refreshing || !category}
             >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-4 w-4 ${loading || refreshing ? 'animate-spin' : ''}`} />
               Muat Ulang
             </Button>
           </div>
@@ -2557,7 +2606,7 @@ export default function PekaryaAttendancePage() {
               openDeclineDialog={openDeclineDialog}
               onBulkApprove={handleBulkApproveSubmissions}
               setSelectedEvidence={setSelectedEvidence}
-              onReload={load}
+              onReload={refresh}
             />
           )}
 
@@ -2806,7 +2855,7 @@ export default function PekaryaAttendancePage() {
             openDeclineDialog={openDeclineDialog}
             onBulkApprove={handleBulkApproveSubmissions}
             setSelectedEvidence={setSelectedEvidence}
-            onReload={load}
+            onReload={refresh}
           />
 
           <div className="flex justify-between items-center px-1">

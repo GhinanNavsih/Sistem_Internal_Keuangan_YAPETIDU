@@ -61,6 +61,7 @@ import {
 import Link from 'next/link';
 import { generatePresensiLoyalisXlsx } from '@/utils/generatePresensiLoyalisXlsx';
 import { LoyalisPresenceCorrectionsCard } from '@/components/payroll/LoyalisPresenceCorrectionsCard';
+import { useScrollAnchor } from '@/hooks/useScrollAnchor';
 
 /**
  * How long an unsaved working table is kept in localStorage. Past this the
@@ -387,6 +388,28 @@ const buildPresencePayload = ({
   updatedAt: serverTimestamp(),
 });
 
+/**
+ * Gives every table row an identity that survives the list being re-sorted or
+ * filtered. Row state (which card is open, which link picker is showing) used
+ * to be a list position, so linking an employee — which moves the row into the
+ * matched group — left the "open" marker on whichever row slid into that slot,
+ * and the card the reviewer was working in closed or swapped under them.
+ */
+const assignRowKeys = <T extends { excelName?: string | null; employeeId?: string | null }>(
+  rows: T[],
+): Array<T & { key: string; idx: number }> => {
+  const seen = new Map<string, number>();
+  return rows.map((row, idx) => {
+    const base =
+      row.excelName && row.excelName !== '-'
+        ? `excel:${row.excelName}`
+        : `db:${row.employeeId ?? idx}`;
+    const occurrence = seen.get(base) ?? 0;
+    seen.set(base, occurrence + 1);
+    return { ...row, idx, key: occurrence === 0 ? base : `${base}#${occurrence}` };
+  });
+};
+
 export default function PresensiLoyalisRawPage() {
   const { profile } = useAuth();
   const searchParams = useSearchParams();
@@ -415,7 +438,7 @@ export default function PresensiLoyalisRawPage() {
   const [loadingPresence, setLoadingPresence] = useState(false);
   const [loadingActiveImport, setLoadingActiveImport] = useState(false);
   const [hydratingTable, setHydratingTable] = useState(false);
-  const [expandedRowIdx, setExpandedRowIdx] = useState<number | null>(null);
+  const [expandedRowKey, setExpandedRowKey] = useState<string | null>(null);
   const [bulkFillTarget, setBulkFillTarget] = useState<{
     excelName: string;
     employeeName: string;
@@ -455,7 +478,7 @@ export default function PresensiLoyalisRawPage() {
 
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const [activeSearchRowIdx, setActiveSearchRowIdx] = useState<number | null>(null);
+  const [activeSearchRowKey, setActiveSearchRowKey] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [strataFilter, setStrataFilter] = useState<'all' | '1' | '2' | '3' | '4' | '5'>('all');
 
@@ -1301,6 +1324,15 @@ export default function PresensiLoyalisRawPage() {
     });
   }, []);
 
+  // Linking (or unlinking) an employee moves the row between the matched and
+  // unmatched groups. Holding its card in place keeps the reviewer looking at
+  // the row they just changed rather than at whatever slid into its old spot.
+  const holdScroll = useScrollAnchor();
+  const holdRow = useCallback(
+    (trigger: Element) => holdScroll(trigger.closest('[data-row-key]')),
+    [holdScroll],
+  );
+
   const handleLinkEmployee = useCallback((excelName: string, employeeId: string) => {
     const emp = loyalisEmployees.find(e => e.id === employeeId);
     setUploadedData(prev => {
@@ -1477,8 +1509,7 @@ export default function PresensiLoyalisRawPage() {
         }))
         .sort((a, b) => (a.employeeName || '').localeCompare(b.employeeName || ''));
 
-      const combined = [...matchedRows, ...unmatchedExcelRows, ...unmatchedDbRows];
-      return combined.map((row, idx) => ({ ...row, idx }));
+      return assignRowKeys([...matchedRows, ...unmatchedExcelRows, ...unmatchedDbRows]);
     }
     if (existingPresence && existingPresence.entries) {
       const entriesList = Object.values(existingPresence.entries).map((entry: any) => ({
@@ -1505,7 +1536,7 @@ export default function PresensiLoyalisRawPage() {
       const matched = entriesList.filter(e => !e.isNotFoundInExcel).sort((a, b) => (a.employeeName || '').localeCompare(b.employeeName || ''));
       const unmatched = entriesList.filter(e => e.isNotFoundInExcel).sort((a, b) => (a.employeeName || '').localeCompare(b.employeeName || ''));
 
-      return [...matched, ...unmatched].map((row, idx) => ({ ...row, idx }));
+      return assignRowKeys([...matched, ...unmatched]);
     }
     return null;
   }, [uploadedData, loyalisEmployees, existingPresence, calcMode, workingDays, activeWorkingDays, expectedHours, calculatePresenceStratum, corrections]);
@@ -1526,15 +1557,27 @@ export default function PresensiLoyalisRawPage() {
     );
   }, [displayRows, loyalisEmployees]);
 
-  const filteredDisplayRows = useMemo(() => {
+  const strataFilteredRows = useMemo(() => {
     if (!displayRows) return null;
     if (strataFilter === 'all') return displayRows;
     const targetStratum = Number(strataFilter);
     return displayRows.filter((r) => Number(r.stratum) === targetStratum);
   }, [displayRows, strataFilter]);
 
+  // What is on screen: the strata match, plus the open card. Editing scans or
+  // minutes can move an employee to another stratum mid-edit; without this the
+  // card being typed in would vanish from under the cursor and the page below
+  // it would jump up. It drops out once the reviewer collapses it.
+  const filteredDisplayRows = useMemo(() => {
+    if (!displayRows || !strataFilteredRows) return null;
+    if (!expandedRowKey || strataFilter === 'all') return strataFilteredRows;
+    return displayRows.filter(
+      (row) => row.key === expandedRowKey || strataFilteredRows.includes(row),
+    );
+  }, [displayRows, strataFilteredRows, expandedRowKey, strataFilter]);
+
   const handleExportXlsx = useCallback(() => {
-    const rowsToExport = filteredDisplayRows || displayRows;
+    const rowsToExport = strataFilteredRows || displayRows;
     if (!rowsToExport || rowsToExport.length === 0) {
       setMessage({ type: 'error', text: 'Tidak ada data presensi yang dapat diexport.' });
       return;
@@ -1548,7 +1591,7 @@ export default function PresensiLoyalisRawPage() {
       strataFilter,
     });
     setMessage({ type: 'success', text: 'Berhasil mengunduh Data Perhitungan Presensi Tersimpan (.xlsx)' });
-  }, [filteredDisplayRows, displayRows, month, year, activeWorkingDays, expectedHours, strataFilter]);
+  }, [strataFilteredRows, displayRows, month, year, activeWorkingDays, expectedHours, strataFilter]);
 
   const handleExcelUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -2625,15 +2668,16 @@ export default function PresensiLoyalisRawPage() {
                     </div>
                   ) : (
                     filteredDisplayRows?.map((row, idx) => {
-                    const isExpanded = expandedRowIdx === idx;
+                    const isExpanded = expandedRowKey === row.key;
                     return (
                       <Card
-                        key={idx}
+                        key={row.key}
+                        data-row-key={row.key}
                         className={`border-2 rounded-2xl shadow-sm transition-all hover:border-indigo-300 ${isExpanded ? 'ring-4 ring-indigo-50 border-indigo-400 bg-indigo-50/40' : 'border-indigo-200/80 bg-indigo-50/20'
-                          } ${activeSearchRowIdx === row.idx ? 'overflow-visible z-30 relative' : 'overflow-hidden'}`}
+                          } ${activeSearchRowKey === row.key ? 'overflow-visible z-30 relative' : 'overflow-hidden'}`}
                       >
                         <div
-                          onClick={() => setExpandedRowIdx(isExpanded ? null : idx)}
+                          onClick={() => setExpandedRowKey(isExpanded ? null : row.key)}
                           className="p-4 flex flex-wrap lg:flex-nowrap items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/20 transition-colors"
                         >
                           {/* Left: Index & Name */}
@@ -2655,7 +2699,7 @@ export default function PresensiLoyalisRawPage() {
                                 {uploadedData &&
                                 row.excelName !== '-' &&
                                 (!usesSharedImport || !row.isMatched) ? (
-                                  activeSearchRowIdx === row.idx ? (
+                                  activeSearchRowKey === row.key ? (
                                     <div className="relative w-full max-w-[240px] z-20">
                                       <Input
                                         type="text"
@@ -2665,7 +2709,7 @@ export default function PresensiLoyalisRawPage() {
                                         autoFocus
                                         onBlur={() => {
                                           setTimeout(() => {
-                                            setActiveSearchRowIdx(null);
+                                            setActiveSearchRowKey(null);
                                           }, 200);
                                         }}
                                         className="h-7 rounded-lg border-indigo-300 font-semibold text-slate-800 text-[10px] w-full bg-white pr-7"
@@ -2683,9 +2727,10 @@ export default function PresensiLoyalisRawPage() {
                                             <>
                                               <button
                                                 type="button"
-                                                onClick={() => {
+                                                onClick={(e) => {
+                                                  holdRow(e.currentTarget);
                                                   handleLinkEmployee(row.excelName, "");
-                                                  setActiveSearchRowIdx(null);
+                                                  setActiveSearchRowKey(null);
                                                 }}
                                                 className="w-full text-left px-2.5 py-1.5 hover:bg-slate-50 text-[9px] font-bold text-rose-500 block"
                                               >
@@ -2698,9 +2743,10 @@ export default function PresensiLoyalisRawPage() {
                                                   <button
                                                     key={emp.id}
                                                     type="button"
-                                                    onClick={() => {
+                                                    onClick={(e) => {
+                                                      holdRow(e.currentTarget);
                                                       handleLinkEmployee(row.excelName, emp.id);
-                                                      setActiveSearchRowIdx(null);
+                                                      setActiveSearchRowKey(null);
                                                     }}
                                                     className="w-full text-left px-2.5 py-1.5 hover:bg-slate-50 text-[9px] font-semibold text-slate-700 block truncate"
                                                   >
@@ -2717,7 +2763,7 @@ export default function PresensiLoyalisRawPage() {
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        setActiveSearchRowIdx(row.idx);
+                                        setActiveSearchRowKey(row.key);
                                         setSearchQuery(row.employeeName || "");
                                       }}
                                       className={`text-left px-2 py-1 rounded-lg border transition-all text-[9px] font-bold flex items-center gap-1 cursor-pointer ${row.isMatched
@@ -2770,6 +2816,7 @@ export default function PresensiLoyalisRawPage() {
                                           type="button"
                                           onClick={(e) => {
                                             e.stopPropagation();
+                                            holdRow(e.currentTarget);
                                             handleLinkEmployee(row.excelName, reasonInfo.suggestedEmp.id);
                                           }}
                                           className="inline-flex items-center gap-1 text-[9px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-md transition-all cursor-pointer shadow-xs active:scale-95"

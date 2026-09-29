@@ -243,6 +243,11 @@ export function LoyalisPresenceCorrectionsCard({
   const [paidLeaves, setPaidLeaves] = useState<AnnualPaidLeaveRequest[]>([]);
   const [gantiLiburs, setGantiLiburs] = useState<GantiLiburRequest[]>([]);
   const [loadingExtra, setLoadingExtra] = useState(false);
+  // The period whose paid-leave / ganti-libur lists have arrived at least once.
+  // Only that first arrival replaces the list with a spinner; every reload
+  // after an approve/decline updates the list in place, since swapping it for
+  // a spinner collapses the page and the browser resets the scroll position.
+  const [loadedExtraPeriod, setLoadedExtraPeriod] = useState<string | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<
     'pending' | 'approved' | 'rejected' | 'all'
   >('pending');
@@ -379,6 +384,7 @@ export function LoyalisPresenceCorrectionsCard({
       if (sequence !== fetchSequence.current) return;
       setPaidLeaves(paidLeavesRes.requests || []);
       setGantiLiburs(gantiLibursRes.requests || []);
+      setLoadedExtraPeriod(period);
     } finally {
       if (sequence === fetchSequence.current) {
         setLoadingExtra(false);
@@ -919,6 +925,9 @@ export function LoyalisPresenceCorrectionsCard({
   };
 
   const loading = loyalisCorrectionsQuery.isFetching || loadingExtra;
+  const initialLoading =
+    loyalisCorrectionsQuery.isLoading ||
+    (loadingExtra && loadedExtraPeriod !== period);
 
   if (!canAuditLoyalis) return null;
 
@@ -1046,7 +1055,7 @@ export function LoyalisPresenceCorrectionsCard({
 
         {/* Content Table */}
         <CardContent className="p-0">
-          {loading ? (
+          {initialLoading ? (
             <div className="p-20 flex flex-col items-center text-slate-400">
               <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-3" />
               <p className="font-semibold text-xs animate-pulse">Memuat daftar pengajuan Loyalis...</p>

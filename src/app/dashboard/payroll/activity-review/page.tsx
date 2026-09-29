@@ -115,6 +115,7 @@ import {
   DriverJourneyAuditDialog,
   type DriverReviewPayload,
 } from '@/components/DriverJourneyAuditDialog';
+import { useScrollAnchor } from '@/hooks/useScrollAnchor';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -861,11 +862,18 @@ function ActivityReviewPageContent() {
   }, [activeCategories, activities, categoriesLoaded]);
 
   // Permitted categories for satker_head query (cleanly decoupled from activities to prevent circular listener loops)
+  // Keyed by value, not by the profile object: the auth layer hands out a fresh
+  // profile object on every auth event, and a fresh array here restarts the
+  // live listener below even though nothing about the categories changed.
+  const permittedCategoriesKey = !profile
+    ? ''
+    : profile.role === 'super_admin'
+      ? '*'
+      : (profile.permittedCategories ?? []).filter((c) => CLEANING_CATEGORIES.includes(c)).join('|');
   const permittedCategoriesForQuery = useMemo(() => {
-    if (!profile) return [];
-    if (profile.role === 'super_admin') return CLEANING_CATEGORIES;
-    return (profile.permittedCategories ?? []).filter((c) => CLEANING_CATEGORIES.includes(c));
-  }, [profile]);
+    if (permittedCategoriesKey === '*') return CLEANING_CATEGORIES;
+    return permittedCategoriesKey ? permittedCategoriesKey.split('|') : [];
+  }, [permittedCategoriesKey]);
 
   // ── Allowed Categories for UI Display ──
   const allowedCategories = useMemo(() => {
@@ -895,6 +903,13 @@ function ActivityReviewPageContent() {
 
 
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  // A reload after an approve/decline (or the Segarkan button) restarts the
+  // listener below but keeps the current rows on screen until fresh ones
+  // arrive. `loading` is only for the first load of a period, when there is
+  // nothing to show yet: swapping a full table for a spinner collapses the
+  // page, and the browser then drops the reviewer back to the top of it.
+  const [refreshing, setRefreshing] = useState(false);
+  const listenerScopeRef = useRef<string | null>(null);
 
   // ── Fetch Activities (dummy/refresh trigger for backward compatibility) ──
   const fetchActivities = useCallback(() => {
@@ -904,12 +919,20 @@ function ActivityReviewPageContent() {
   // ── Real-time Listener for Activity Reports ──
   useEffect(() => {
     if (!hasAccess) return;
-    setLoading(true);
+    const scope = `${periodToken}|${profile?.role ?? ''}|${permittedCategoriesKey}`;
+    const scopeChanged = listenerScopeRef.current !== scope;
+    listenerScopeRef.current = scope;
+    if (scopeChanged) {
+      setLoading(true);
+    } else {
+      setRefreshing(true);
+    }
     setSelectedIds(new Set());
 
     if (profile?.role !== 'super_admin' && permittedCategoriesForQuery.length === 0) {
       setActivities([]);
       setLoading(false);
+      setRefreshing(false);
       return;
     }
 
@@ -917,9 +940,14 @@ function ActivityReviewPageContent() {
     const snapshots = new Map<string, QuerySnapshot<DocumentData>>();
     const settledPeriods = new Set<string>();
     let cancelled = false;
+    const allPeriodsSettled = () => settledPeriods.size === payrollWindow.sourceMonths.length;
 
     const applySnapshots = () => {
       if (cancelled) return;
+      // With a transition period there are two source months. Publishing after
+      // only the first arrives would drop the other month's rows for a moment
+      // and then bring them back, so wait until every month has answered.
+      if (!allPeriodsSettled()) return;
       const reportsById = new Map<string, ActivityReport>();
       snapshots.forEach((snap) => {
         snap.docs.forEach((document) => {
@@ -998,7 +1026,8 @@ function ActivityReviewPageContent() {
       });
 
       setActivities(list);
-      if (settledPeriods.size === payrollWindow.sourceMonths.length) setLoading(false);
+      setLoading(false);
+      setRefreshing(false);
     };
 
     const unsubscribes = payrollWindow.sourceMonths.map((sourcePeriod) => {
@@ -1020,7 +1049,14 @@ function ActivityReviewPageContent() {
           console.error(`Error listening to ${sourcePeriod} activity reports:`, err);
           settledPeriods.add(sourcePeriod);
           setErrorMsg('Gagal memuat data laporan kegiatan.');
-          if (settledPeriods.size === payrollWindow.sourceMonths.length) setLoading(false);
+          if (allPeriodsSettled()) {
+            if (snapshots.size > 0) {
+              applySnapshots();
+            } else {
+              setLoading(false);
+              setRefreshing(false);
+            }
+          }
         },
       );
     });
@@ -1029,7 +1065,7 @@ function ActivityReviewPageContent() {
       cancelled = true;
       unsubscribes.forEach((unsubscribe) => unsubscribe());
     };
-  }, [hasAccess, periodToken, profile?.role, permittedCategoriesForQuery, refreshTrigger]);
+  }, [hasAccess, periodToken, profile?.role, permittedCategoriesKey, permittedCategoriesForQuery, refreshTrigger]);
 
   // Fetch eagerly (not just when a modal opens) so the "Rencana"/"Aktual"
   // audit cards can resolve a planned employee's name instead of falling
@@ -1188,14 +1224,22 @@ function ActivityReviewPageContent() {
   // When a conflict card sends the auditor here, keep the relevant guard in
   // view and let the matching assignment card provide the same transient
   // warning flash used by the KJM issue links.
+  // Scrolls once per link. This effect re-runs on every data update, and every
+  // approve/decline updates the data, so without the guard each action would
+  // pull the reviewer back to the linked guard's card.
+  const scrolledToFocusRef = useRef<string | null>(null);
   useEffect(() => {
     if (!focusOccurrenceId || !focusEmployeeId || loading) return;
+    const focusKey = `${focusOccurrenceId}:${focusEmployeeId}`;
+    if (scrolledToFocusRef.current === focusKey) return;
 
     const frame = window.requestAnimationFrame(() => {
       const target = document.querySelector<HTMLElement>(
         '[data-focus-assignment="true"]',
       );
-      target?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      if (!target) return;
+      scrolledToFocusRef.current = focusKey;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
     });
 
     return () => window.cancelAnimationFrame(frame);
@@ -2182,8 +2226,16 @@ function ActivityReviewPageContent() {
     }
   };
 
-  const toggleActivityExpanded = (activity: ActivityReport) => {
+  // Only one row is open at a time, so opening a row collapses the one that was
+  // open. When that one sits above the clicked row, the clicked row is pulled
+  // up the page (sometimes out of view). Holding the clicked row's position
+  // keeps it under the pointer while the other one closes.
+  const holdScroll = useScrollAnchor();
+  const holdClickedRow = (trigger?: Element) => holdScroll(trigger?.closest('tr'));
+
+  const toggleActivityExpanded = (activity: ActivityReport, trigger?: Element) => {
     if (activity.jobCategory === 'SOPIR') return;
+    holdClickedRow(trigger);
     const isOpening = !expandedActivityIds.has(activity.id);
     setExpandedActivityIds(prev =>
       prev.has(activity.id) ? new Set() : new Set([activity.id]),
@@ -2197,7 +2249,8 @@ function ActivityReviewPageContent() {
     }
   };
 
-  const toggleShiftExpanded = (occurrenceId: string) => {
+  const toggleShiftExpanded = (occurrenceId: string, trigger?: Element) => {
+    holdClickedRow(trigger);
     const isCurrentlyExpanded =
       expandedShiftIds.has(occurrenceId) || focusOccurrenceId === occurrenceId;
     setFocusDismissed(true);
@@ -2461,10 +2514,10 @@ function ActivityReviewPageContent() {
             <Button
               variant="outline"
               onClick={fetchActivities}
-              disabled={loading}
+              disabled={loading || refreshing}
               className="rounded-xl border-slate-200 bg-white text-slate-600 hover:bg-slate-50 shadow-sm"
             >
-              <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 mr-2 ${loading || refreshing ? 'animate-spin' : ''}`} />
               Segarkan
             </Button>
           </div>
@@ -2745,7 +2798,7 @@ function ActivityReviewPageContent() {
                       return (
                         <React.Fragment key={group.occurrenceId}>
                           <TableRow
-                            onClick={() => toggleShiftExpanded(group.occurrenceId)}
+                            onClick={(e) => toggleShiftExpanded(group.occurrenceId, e.currentTarget)}
                             className={`border-slate-100 cursor-pointer transition-colors ${
                               isExpanded ? 'bg-indigo-50/50' : 'hover:bg-slate-50/60'
                             }`}
@@ -3215,8 +3268,8 @@ function ActivityReviewPageContent() {
                       return (
                         <React.Fragment key={activity.id}>
                           <TableRow
-                            onClick={() => {
-                              if (!isDriver) toggleActivityExpanded(activity);
+                            onClick={(e) => {
+                              if (!isDriver) toggleActivityExpanded(activity, e.currentTarget);
                             }}
                             onMouseEnter={() => {
                               if (!isDriver) prefetchActivityPhotos(activity);
@@ -3411,7 +3464,7 @@ function ActivityReviewPageContent() {
                                   <ChevronRight
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      toggleActivityExpanded(activity);
+                                      toggleActivityExpanded(activity, e.currentTarget);
                                     }}
                                     className={`w-4 h-4 text-slate-400 transition-transform cursor-pointer shrink-0 ${
                                       isExpanded ? 'rotate-90 text-indigo-600 font-bold' : 'hover:text-slate-600'
