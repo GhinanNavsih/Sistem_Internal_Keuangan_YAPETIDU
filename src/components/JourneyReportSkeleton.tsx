@@ -1,93 +1,88 @@
-import { CheckCircle2, Compass, Banknote, ClipboardList, Save, Send } from 'lucide-react';
+import { Compass } from 'lucide-react';
 
 /**
- * The top bar (title + "Riwayat"/"Slip Gaji" nav) never depends on a fetch,
- * so it renders as real text. Everything below it — trip summary, vehicle/
- * fuel-mode card, extra stops, receipts — is driven by the fetched journey
+ * The top bar (title + "Riwayat") never depends on a fetch, so it renders as
+ * real text. Everything below it is driven by the fetched journey
  * (`activeReportingJourney`) and its shape varies a lot (Ndalem vs other
  * vehicles, single vs multi-day, draft vs fresh claim, fuel procurement
- * mode), so rather than guess one of those shapes it's rendered as a
- * generic set of placeholder cards — the "closest common shape" trade-off
- * from the skeleton guide, not a literal trace of every branch.
+ * mode), so rather than guess one of those shapes it's rendered as the
+ * "closest common shape" of the real page: summary rows, then titled sections
+ * of placeholder lines, then the fixed action bar.
  */
 export function JourneyReportHeaderShell() {
   return (
-    <div className="bg-gradient-to-r from-blue-600 to-blue-700 sticky top-0 z-30 shadow-md">
-      <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-white font-extrabold text-base sm:text-lg">
-          <CheckCircle2 className="w-5 h-5 text-white" />
-          <span>Laporan Perjalanan</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="rounded-xl border border-white/25 text-white font-bold text-xs h-8 px-2.5 flex items-center gap-1.5 bg-white/10">
-            <Compass className="w-3.5 h-3.5 text-white" />
-            <span className="hidden sm:inline">Riwayat</span>
-          </div>
-          <div className="rounded-xl border border-white/25 text-white font-bold text-xs h-8 px-2.5 flex items-center gap-1.5 bg-white/10">
-            <Banknote className="w-3.5 h-3.5 text-emerald-300" />
-            <span className="hidden sm:inline">Slip Gaji</span>
-          </div>
+    <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
+      <div className="mx-auto flex h-14 max-w-2xl items-center justify-between px-4">
+        <h1 className="text-base font-semibold text-slate-900">Laporan perjalanan</h1>
+        <div className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-slate-400">
+          <Compass className="size-4" />
+          <span className="hidden sm:inline">Riwayat</span>
         </div>
       </div>
-    </div>
+    </header>
+  );
+}
+
+function SectionSkeleton({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="space-y-4 border-t border-slate-200 py-5">
+      <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
+      {children}
+    </section>
   );
 }
 
 export function JourneyReportPageSkeleton() {
   return (
-    <div className="min-h-screen bg-slate-50 font-sans pb-24 text-slate-800 relative">
+    <div className="min-h-screen bg-white pb-24 font-sans text-sm text-slate-700">
       <JourneyReportHeaderShell />
 
-      <div className="max-w-2xl mx-auto px-4 py-5 space-y-4">
-        {/* Trip Summary Card — icon+caption fixed, journey details aren't known yet */}
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
-          <div className="flex items-start gap-2.5">
-            <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-              <ClipboardList className="h-4 w-4" />
-            </div>
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <span className="block text-[9px] font-black uppercase tracking-wide text-slate-400">Keperluan</span>
-              <div className="h-4 w-2/3 rounded-full bg-slate-200 animate-pulse" />
-            </div>
+      <div className="mx-auto max-w-2xl px-4">
+        {/* Trip summary — activity name, then vehicle / date / route rows */}
+        <section className="space-y-3 py-5">
+          <div className="h-5 w-2/3 animate-pulse rounded bg-slate-200" />
+          <div className="divide-y divide-slate-100">
+            {[0, 1, 2].map((row) => (
+              <div key={row} className="flex items-center justify-between gap-4 py-2.5">
+                <div className="h-3.5 w-20 animate-pulse rounded bg-slate-100" />
+                <div className="h-3.5 w-32 animate-pulse rounded bg-slate-200" />
+              </div>
+            ))}
           </div>
-          <div className="h-3 w-4/5 rounded-full bg-slate-100 animate-pulse" />
-          <div className="flex items-center gap-2 border-t border-slate-100 pt-3">
-            <div className="h-7 flex-1 rounded-full bg-slate-100 animate-pulse" />
-            <div className="h-7 flex-1 rounded-full bg-slate-100 animate-pulse" />
-          </div>
-        </div>
+        </section>
 
-        {/* Form body — highly conditional on the fetched journey, so a
-            generic placeholder stack rather than a guessed exact shape */}
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
-          <div className="h-3.5 w-32 rounded-full bg-slate-200 animate-pulse" />
-          <div className="h-10 w-full rounded-xl bg-slate-100 animate-pulse" />
-          <div className="h-10 w-full rounded-xl bg-slate-100 animate-pulse" />
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
-          <div className="h-3.5 w-40 rounded-full bg-slate-200 animate-pulse" />
+        <SectionSkeleton title="Rute">
+          <div className="ml-1.5 space-y-5 border-l border-dashed border-slate-300 pl-5">
+            {[0, 1, 2].map((stop) => (
+              <div key={stop} className="space-y-1.5">
+                <div className="h-3 w-16 animate-pulse rounded bg-slate-100" />
+                <div className="h-4 w-1/2 animate-pulse rounded bg-slate-200" />
+              </div>
+            ))}
+          </div>
+        </SectionSkeleton>
+
+        <SectionSkeleton title="Waktu">
           <div className="grid grid-cols-2 gap-3">
-            <div className="h-10 rounded-xl bg-slate-100 animate-pulse" />
-            <div className="h-10 rounded-xl bg-slate-100 animate-pulse" />
+            <div className="h-10 animate-pulse rounded-lg bg-slate-100" />
+            <div className="h-10 animate-pulse rounded-lg bg-slate-100" />
           </div>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
-          <div className="h-3.5 w-28 rounded-full bg-slate-200 animate-pulse" />
-          <div className="h-24 w-full rounded-xl bg-slate-100 animate-pulse" />
-        </div>
+        </SectionSkeleton>
 
-        {/* Footer actions — labels are fixed, disabled state depends on the fetch */}
-        <div className="pt-2 flex flex-col sm:flex-row gap-2">
-          <div className="h-10 w-full sm:w-48 rounded-xl border border-rose-100 bg-rose-50/40" />
-          <div className="flex gap-2 flex-1 justify-end">
-            <div className="flex-1 sm:flex-initial rounded-xl border border-slate-200 text-slate-400 font-bold text-xs h-10 px-4 flex items-center justify-center gap-1.5">
-              <Save className="w-4 h-4" />
-              <span>Simpan Draft</span>
-            </div>
-            <div className="flex-1 sm:flex-initial rounded-xl bg-blue-300 text-white font-bold text-xs sm:text-sm h-10 px-5 flex items-center justify-center gap-1.5">
-              <Send className="w-4 h-4" />
-              <span>Ya, Kirim Laporan</span>
-            </div>
+        <SectionSkeleton title="Pengeluaran">
+          <div className="h-10 w-full animate-pulse rounded-lg bg-slate-100" />
+          <div className="h-10 w-full animate-pulse rounded-lg bg-slate-100" />
+        </SectionSkeleton>
+      </div>
+
+      {/* Action bar — labels are fixed, the disabled state depends on the fetch */}
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)]">
+        <div className="mx-auto flex max-w-2xl items-center gap-2 px-4 py-3">
+          <div className="flex h-10 items-center rounded-lg border border-slate-200 px-4 text-sm font-medium text-slate-400">
+            Simpan draft
+          </div>
+          <div className="flex h-10 flex-1 items-center justify-center rounded-lg bg-blue-200 px-4 text-sm font-medium text-white">
+            Kirim laporan
           </div>
         </div>
       </div>

@@ -1726,8 +1726,8 @@ export function DriverJourneyAuditDialog({
                               )}
                               {auditLegWages[idx] && (
                                 <div className="text-[9px] text-slate-500 font-bold">
-                                  Jarak Leg: <span className="text-emerald-700 font-extrabold">{auditLegWages[idx].distanceKm.toFixed(1)} km</span>
-                                  {' '}(Upah Bersih: <span className="text-emerald-600 font-extrabold">
+                                  <span className="text-emerald-700 font-extrabold">{auditLegWages[idx].distanceKm.toFixed(1)} km</span>
+                                  {' '}(<span className="text-emerald-600 font-extrabold">
                                     {fmtRp(Math.ceil(auditLegWages[idx].distanceKm * 300 + auditLegWages[idx].durationHours * 5000))}
                                   </span>)
                                 </div>

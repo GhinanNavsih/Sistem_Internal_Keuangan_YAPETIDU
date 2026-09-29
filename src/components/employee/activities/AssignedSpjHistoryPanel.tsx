@@ -41,9 +41,6 @@ export default function AssignedSpjHistoryPanel({
           <h2 id="assigned-spj-history-title" className="text-xs font-black uppercase tracking-wider text-slate-600">
             Riwayat SPJ Penugasan
           </h2>
-          <p className="mt-0.5 text-[10px] font-medium text-slate-400">
-            Penugasan yang disetujui dan otomatis masuk ke pendapatan SPJ Anda.
-          </p>
         </div>
         <Lock className="h-4 w-4 text-slate-300" aria-label="Hanya-baca" />
       </div>

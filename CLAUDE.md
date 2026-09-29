@@ -63,7 +63,10 @@ src/
 │   ├── employee/activities/       # Split-out activity reporting: {Satpam,Sopir,Pekarya}ActivitiesView
 │   │                              #   + shared EmployeeActivitiesWorkspace, ActivityFormDialog,
 │   │                              #   ActivityHistoryPanel, activityModel (state hook), activityShared
-│   └── ui/                        # shadcn primitives (button, dialog, table, select, etc.)
+│   └── ui/                        # shadcn primitives (button, dialog, table, select, etc.) + calm-interface
+│                                  #   pieces (callout, status-dot, field, detail-list, confirm-dialog,
+│                                  #   receipt-attachments; Button `accent`/`danger`/`danger-ghost`). Rules:
+│                                  #   `UI_UX_PRINCIPLES.md`; the sopir journey report and driver history pages are converted.
 ├── lib/
 │   ├── firebase.ts                # Primary + secondary (`secondaryApp`/`secondaryDb`) client config
 │   ├── firebase-admin.ts          # Admin SDK (adminDb/adminAuth/adminStorage)
