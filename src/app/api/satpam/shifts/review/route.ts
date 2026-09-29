@@ -108,6 +108,15 @@ interface AuditorEditAssignment {
   overtimeReason?: string;
 }
 
+interface AuditorExpectedReport {
+  reportId: string;
+  status: 'pending' | 'approved' | 'declined';
+  employeeId: string;
+  shiftType: string;
+  coveredEmployeeId: string;
+  fee: number;
+}
+
 interface AuditorEditCommand {
   requestId: string;
   occurrenceId: string;
@@ -116,6 +125,7 @@ interface AuditorEditCommand {
   shiftName: SatpamShiftName;
   reason: string;
   assignments: AuditorEditAssignment[];
+  expectedReports?: AuditorExpectedReport[];
 }
 
 function parseCommand(raw: unknown): ShiftReviewCommand {
@@ -300,6 +310,39 @@ function parseAuditorEditCommand(raw: unknown): AuditorEditCommand {
   if (new Set(providedReportIds).size !== providedReportIds.length) {
     throw new HttpError(400, 'ID penugasan edit tidak boleh duplikat.');
   }
+  let expectedReports: AuditorExpectedReport[] | undefined;
+  if (value.expectedReports !== undefined) {
+    if (!Array.isArray(value.expectedReports) || value.expectedReports.length > 20) {
+      throw new HttpError(400, 'Kondisi laporan sebelumnya tidak valid.');
+    }
+    expectedReports = value.expectedReports.map((rawReport) => {
+      if (!rawReport || typeof rawReport !== 'object' || Array.isArray(rawReport)) {
+        throw new HttpError(400, 'Kondisi laporan sebelumnya tidak valid.');
+      }
+      const report = rawReport as Record<string, unknown>;
+      if (
+        typeof report.reportId !== 'string' || !/^[A-Za-z0-9_-]{1,180}$/.test(report.reportId) ||
+        !['pending', 'approved', 'declined'].includes(String(report.status)) ||
+        typeof report.employeeId !== 'string' || !report.employeeId ||
+        typeof report.shiftType !== 'string' ||
+        typeof report.coveredEmployeeId !== 'string' ||
+        typeof report.fee !== 'number' || !Number.isFinite(report.fee)
+      ) {
+        throw new HttpError(400, 'Kondisi laporan sebelumnya tidak valid.');
+      }
+      return {
+        reportId: report.reportId,
+        status: report.status as AuditorExpectedReport['status'],
+        employeeId: report.employeeId,
+        shiftType: report.shiftType,
+        coveredEmployeeId: report.coveredEmployeeId,
+        fee: report.fee,
+      };
+    });
+    if (new Set(expectedReports.map((report) => report.reportId)).size !== expectedReports.length) {
+      throw new HttpError(400, 'Kondisi laporan sebelumnya tidak boleh duplikat.');
+    }
+  }
   return {
     requestId: value.requestId,
     occurrenceId: value.occurrenceId,
@@ -308,6 +351,7 @@ function parseAuditorEditCommand(raw: unknown): AuditorEditCommand {
     shiftName: value.shiftName as SatpamShiftName,
     reason,
     assignments,
+    ...(expectedReports ? { expectedReports } : {}),
   };
 }
 
@@ -1017,6 +1061,29 @@ export async function GET(request: NextRequest) {
       throw new HttpError(404, 'Shift tidak ditemukan.');
     }
     const occurrence = occurrenceSnapshot?.data();
+    const auditorEdit = request.nextUrl.searchParams.get('auditorEdit') === 'true';
+    const reportIds = Array.isArray(occurrence?.reportIds)
+      ? occurrence.reportIds.filter((id: unknown): id is string => typeof id === 'string')
+      : [];
+    const occurrenceSummary = occurrence
+      ? {
+          id: occurrenceId,
+          dutyDate: String(occurrence.dutyDate || ''),
+          shiftName: String(occurrence.shiftName || ''),
+          revision: Number(occurrence.revision || 1),
+          assignmentCount: Number(occurrence.assignmentCount || reportIds.length),
+          reviewStatus: String(occurrence.reviewStatus || ''),
+        }
+      : null;
+    if (auditorEdit && occurrenceSummary) {
+      if (!['pending_review', 'under_review', 'reviewed'].includes(String(occurrence?.status))) {
+        throw new HttpError(409, 'Shift ini tidak dapat dikoreksi auditor.');
+      }
+      return Response.json(
+        { occurrence: occurrenceSummary },
+        { headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
     const occurrencePeriod = String(occurrence?.period || occurrence?.dutyDate || '').slice(0, 7);
     const employeeSnapshot = occurrence
       ? await adminDb.collection('Employees_BlueCollar').get()
@@ -1038,14 +1105,10 @@ export async function GET(request: NextRequest) {
       .sort((left, right) => left.name.localeCompare(right.name, 'id'));
 
     if (occurrenceId) {
-      if (!occurrence) throw new HttpError(404, 'Shift tidak ditemukan.');
+      if (!occurrence || !occurrenceSummary) throw new HttpError(404, 'Shift tidak ditemukan.');
       if (occurrence.status !== 'reviewed' || occurrence.reviewStatus !== 'approved') {
         throw new HttpError(409, 'Petugas tambahan hanya dapat ditambahkan pada shift yang sudah disetujui.');
       }
-
-      const reportIds = Array.isArray(occurrence.reportIds)
-        ? occurrence.reportIds.filter((id: unknown): id is string => typeof id === 'string')
-        : [];
       const reportSnapshots = await Promise.all(
         reportIds.map((reportId) => adminDb.collection('ActivityReports').doc(reportId).get()),
       );
@@ -1093,14 +1156,7 @@ export async function GET(request: NextRequest) {
         {
           employees,
           eligibleExtraEmployees,
-          occurrence: {
-            id: occurrenceId,
-            dutyDate: String(occurrence.dutyDate || ''),
-            shiftName: String(occurrence.shiftName || ''),
-            revision: Number(occurrence.revision || 1),
-            assignmentCount: Number(occurrence.assignmentCount || reportIds.length),
-            reviewStatus: String(occurrence.reviewStatus || ''),
-          },
+          occurrence: occurrenceSummary,
         },
         { headers: { 'Cache-Control': 'no-store' } },
       );
@@ -1244,6 +1300,26 @@ export async function PUT(request: NextRequest) {
         5,
         5 + oldReportRefs.length,
       ) as FirebaseFirestore.DocumentSnapshot[];
+      if (command.expectedReports) {
+        const expectedById = new Map(
+          command.expectedReports.map((report) => [report.reportId, report]),
+        );
+        if (
+          expectedById.size !== oldReportSnapshots.length ||
+          oldReportSnapshots.some((snapshot) => {
+            const expected = expectedById.get(snapshot.id);
+            const current = snapshot.data();
+            return !snapshot.exists || !expected ||
+              expected.status !== current?.status ||
+              expected.employeeId !== current?.employeeId ||
+              expected.shiftType !== current?.shiftType ||
+              expected.coveredEmployeeId !== String(current?.coveredEmployeeId || '') ||
+              expected.fee !== Number(current?.fee || 0);
+          })
+        ) {
+          throw new HttpError(409, 'Penugasan shift sudah berubah. Muat ulang sebelum menyimpan koreksi auditor.');
+        }
+      }
       const employeeSnapshots = secondarySnapshots.slice(
         5 + oldReportRefs.length,
         5 + oldReportRefs.length + employeeRefs.length,
@@ -1329,18 +1405,12 @@ export async function PUT(request: NextRequest) {
           .filter((snapshot) => snapshot.exists)
           .map((snapshot) => [snapshot.id, snapshot.data()!]),
       );
-      // Approved-edit only: a client-provided reportId must name a row that is
-      // actually part of this occurrence's current approved set. Trusting an
-      // unverified id here would let `transaction.set` overwrite an unrelated
-      // report belonging to a different occurrence entirely.
-      if (isApprovedEditBranch) {
-        for (const assignment of command.assignments) {
-          if (assignment.reportId && !oldReportById.has(assignment.reportId)) {
-            throw new HttpError(
-              409,
-              'ID penugasan edit tidak dikenal untuk laporan yang sudah disetujui.',
-            );
-          }
+      // A retained report ID must belong to this occurrence and to the set
+      // currently eligible for editing. Otherwise an edit could overwrite an
+      // unrelated report, including while the occurrence is still pending.
+      for (const assignment of command.assignments) {
+        if (assignment.reportId && !oldReportById.has(assignment.reportId)) {
+          throw new HttpError(409, 'ID penugasan edit tidak dikenal untuk laporan shift ini.');
         }
       }
       const suggestedShiftName = getSatpamShiftForTeam(teamNumber, command.dutyDate);
@@ -1829,6 +1899,12 @@ export async function PUT(request: NextRequest) {
           `auditor_${index}_${command.requestId.slice(-8)}`,
         ),
       );
+      const retainedReportIds = new Set(reportIds);
+      const removedPendingSnapshots = isApprovedEditBranch
+        ? []
+        : oldReportSnapshots.filter(
+            (snapshot) => snapshot.exists && !retainedReportIds.has(snapshot.id),
+          );
       if (isApprovedEditBranch) {
         // Only rows the auditor actually dropped are removed. Untouched
         // declined rows and kept/modified approved rows (overwritten below
@@ -1861,7 +1937,7 @@ export async function PUT(request: NextRequest) {
           }
         });
       } else {
-        oldReportRefs.forEach((reference) => transaction.delete(reference));
+        removedPendingSnapshots.forEach((snapshot) => transaction.delete(snapshot.ref));
       }
       canonicalAssignments.forEach((assignment, index) => {
         const original = assignment.reportId
@@ -2108,6 +2184,20 @@ export async function PUT(request: NextRequest) {
           metadata: {
             revision,
             anomalyCodes: uniqueAnomalies.map((anomaly) => anomaly.code),
+            removedAssignments: [
+              ...removedApprovedSnapshots,
+              ...removedPendingSnapshots,
+            ].map((snapshot) => ({
+              reportId: snapshot.id,
+              postId: snapshot.data()?.postId || null,
+              employeeId: snapshot.data()?.employeeId || null,
+              employeeName: snapshot.data()?.employeeName || null,
+              shiftType: snapshot.data()?.shiftType || null,
+              fee: Number(snapshot.data()?.fee || 0),
+              status: snapshot.data()?.status || null,
+              photoUrl: snapshot.data()?.photoUrl || null,
+              photoAuditMetadata: snapshot.data()?.photoAuditMetadata || null,
+            })),
           },
         }),
       );

@@ -235,6 +235,7 @@ interface ActivityReport {
   overtimeReason?: string | null;
   absenceKind?: string;
   scheduleRelation?: string | null;
+  isEmptyPost?: boolean;
 }
 
 interface SatpamShiftGroup {
@@ -257,6 +258,7 @@ interface SatpamShiftGroup {
   submittedShiftName: string;
   anomalyCodes: string[];
   hasAuditorEdit: boolean;
+  emptyPostIds: string[];
 }
 
 interface SatpamPayClassificationWarning {
@@ -403,6 +405,7 @@ const SATPAM_EDITABLE_PAY_TYPES: string[] = [
   'Lembur Sendiri',
   'Lembur Cover',
 ];
+const NO_PETUGAS_VALUE = '__NO_PETUGAS__';
 
 const SATPAM_ANOMALY_LABELS: Record<string, string> = {
   MISSING_POSTS: 'Pos belum lengkap',
@@ -1093,6 +1096,18 @@ function ActivityReviewPageContent() {
   // the guard the Ketua Shift claims was standing there.
   const satpamShiftGroups = useMemo(() => {
     const groups = new Map<string, SatpamShiftGroup>();
+    const reportedPostsByOccurrence = new Map<string, Set<string>>();
+    activities.forEach((activity) => {
+      if (
+        activity.jobCategory !== 'SATPAM' ||
+        !activity.sourceOccurrenceId ||
+        !activity.postId ||
+        activity.shiftType === 'Off-Duty'
+      ) return;
+      const posts = reportedPostsByOccurrence.get(activity.sourceOccurrenceId) || new Set<string>();
+      posts.add(activity.postId);
+      reportedPostsByOccurrence.set(activity.sourceOccurrenceId, posts);
+    });
     filteredActivities.forEach((activity) => {
       if (activity.jobCategory !== 'SATPAM') return;
       const occurrenceId = activity.sourceOccurrenceId;
@@ -1120,6 +1135,7 @@ function ActivityReviewPageContent() {
           submittedShiftName: activity.submittedShiftName || activity.reportedShiftName || activity.shiftName || '',
           anomalyCodes: [],
           hasAuditorEdit: Boolean(activity.auditorActionAt),
+          emptyPostIds: [],
         };
         groups.set(occurrenceId, group);
       }
@@ -1149,19 +1165,25 @@ function ActivityReviewPageContent() {
     const dateDirection = statusFilter === 'approved' ? -1 : 1;
 
     return Array.from(groups.values())
-      .map((group) => ({
-        ...group,
-        assignments: group.assignments.sort((a, b) =>
-          (a.postId || a.postName || '').localeCompare(b.postId || b.postName || '', undefined, {
-            numeric: true,
-          }),
-        ),
-      }))
+      .map((group) => {
+        const reportedPosts = reportedPostsByOccurrence.get(group.occurrenceId) || new Set<string>();
+        return {
+          ...group,
+          assignments: group.assignments.sort((a, b) =>
+            (a.postId || a.postName || '').localeCompare(b.postId || b.postName || '', undefined, {
+              numeric: true,
+            }),
+          ),
+          emptyPostIds: SATPAM_POSTS
+            .filter((post) => !reportedPosts.has(post.id))
+            .map((post) => post.id),
+        };
+      })
       .sort((a, b) =>
         (a.dutyDate.localeCompare(b.dutyDate) ||
           a.shiftName.localeCompare(b.shiftName)) * dateDirection,
       );
-  }, [filteredActivities, statusFilter]);
+  }, [activities, filteredActivities, statusFilter]);
 
   // When a conflict card sends the auditor here, keep the relevant guard in
   // view and let the matching assignment card provide the same transient
@@ -1763,7 +1785,7 @@ function ActivityReviewPageContent() {
         ? (item.shiftType as string)
         : 'Harian',
     );
-    setPayTypeEmployeeId(item.employeeId);
+    setPayTypeEmployeeId(item.isEmptyPost ? NO_PETUGAS_VALUE : item.employeeId);
     setPayTypeCovered(item.coveredEmployeeId || '');
     // The guard picker and the Lembur Cover picker both need the guard
     // directory, which is otherwise only fetched when the auditor-edit dialog
@@ -1780,8 +1802,40 @@ function ActivityReviewPageContent() {
     }
   };
 
+  const openEmptyPostEditor = (group: SatpamShiftGroup, postId: string) => {
+    const assignments = satpamAssignmentsByOccurrence.get(group.occurrenceId) || [];
+    const anchor = assignments[0];
+    const editableStatus = assignments.some((item) => item.status === 'pending')
+      ? 'pending'
+      : assignments.some((item) => item.status === 'approved')
+        ? 'approved'
+        : null;
+    if (!anchor || !editableStatus) return;
+    const post = SATPAM_POSTS.find((item) => item.id === postId);
+    void openPayTypeEditor({
+      ...anchor,
+      id: '',
+      employeeId: '',
+      employeeName: 'Pos Tidak Dijaga',
+      status: editableStatus,
+      assignmentKind: 'primary',
+      activityDate: group.dutyDate,
+      dutyDate: group.dutyDate,
+      postId,
+      postName: post ? `${post.id}: ${post.name}` : postId,
+      shiftType: 'Harian',
+      fee: 0,
+      photoUrl: null,
+      coveredEmployeeId: null,
+      isEmptyPost: true,
+    });
+  };
+
   const handleSavePayType = async () => {
     if (isActionLoadingRef.current || !payTypeTarget || !user) return;
+    const fillingEmptyPost = payTypeTarget.isEmptyPost === true;
+    const clearingPost = payTypeEmployeeId === NO_PETUGAS_VALUE;
+    if (fillingEmptyPost && clearingPost) return;
     const employeeChanged = payTypeEmployeeId !== payTypeTarget.employeeId;
     const payTypeChangedNow = payTypeValue !== payTypeTarget.shiftType;
     const coveredEmployeeChanged =
@@ -1790,18 +1844,18 @@ function ActivityReviewPageContent() {
       setErrorMsg('Belum ada perubahan petugas atau kategori upah.');
       return;
     }
-    if (payTypeValue === 'Lembur Cover' && !payTypeCovered.trim()) {
+    if (!clearingPost && payTypeValue === 'Lembur Cover' && !payTypeCovered.trim()) {
       setErrorMsg('Pilih petugas yang digantikan untuk Lembur Cover.');
       return;
     }
-    if (payTypeValue === 'Lembur Cover' && payTypeCovered.trim() === payTypeEmployeeId) {
+    if (!clearingPost && payTypeValue === 'Lembur Cover' && payTypeCovered.trim() === payTypeEmployeeId) {
       setErrorMsg('Petugas yang digantikan tidak boleh sama dengan petugas yang ditugaskan.');
       return;
     }
 
     const isPendingTarget = payTypeTarget.status === 'pending';
     const newEmployeeName =
-      satpamEmployeeDirectory.find((employee) => employee.id === payTypeEmployeeId)?.name ||
+      (clearingPost ? 'Pos Tidak Dijaga' : satpamEmployeeDirectory.find((employee) => employee.id === payTypeEmployeeId)?.name) ||
       payTypeEmployeeId;
     const previousCoveredEmployeeId = String(payTypeTarget.coveredEmployeeId || '').trim();
     const previousCoveredEmployeeName =
@@ -1816,43 +1870,127 @@ function ActivityReviewPageContent() {
     // There is no free-text reason field in this modal — the change itself,
     // precisely described, is the audit-log reason. This is what the server's
     // required `reason` field (min 8 chars) receives instead of operator input.
-    const changeSummary = [
-      employeeChanged
-        ? `Petugas ${postLabel} diubah dari ${payTypeTarget.employeeName} menjadi ${newEmployeeName}.`
-        : '',
-      payTypeChangedNow
-        ? `Kategori upah diubah dari ${payTypeTarget.shiftType} menjadi ${payTypeValue}.`
-        : '',
-      coveredEmployeeChanged
-        ? `Petugas yang digantikan diubah dari ${previousCoveredEmployeeName} menjadi ${newCoveredEmployeeName}.`
-        : '',
-    ]
-      .filter(Boolean)
-      .join(' ');
+    const changeSummary = clearingPost
+      ? `${postLabel} ditandai Pos Tidak Dijaga.`
+      : fillingEmptyPost
+        ? `${postLabel} diisi ${newEmployeeName} setelah sebelumnya ditandai Pos Tidak Dijaga. Kategori upah ${payTypeValue}.`
+        : [
+          employeeChanged
+            ? `Petugas ${postLabel} diubah dari ${payTypeTarget.employeeName} menjadi ${newEmployeeName}.`
+            : '',
+          payTypeChangedNow
+            ? `Kategori upah diubah dari ${payTypeTarget.shiftType} menjadi ${payTypeValue}.`
+            : '',
+          coveredEmployeeChanged
+            ? `Petugas yang digantikan diubah dari ${previousCoveredEmployeeName} menjadi ${newCoveredEmployeeName}.`
+            : '',
+        ]
+          .filter(Boolean)
+          .join(' ');
 
     isActionLoadingRef.current = true;
     setSavingPayType(true);
     try {
-      await authenticatedJson(
-        isPendingTarget
-          ? '/api/satpam/shifts/admin-pending-edit'
-          : '/api/satpam/shifts/admin-pay-type',
-        {
-          method: 'POST',
+      if (clearingPost || fillingEmptyPost) {
+        const occurrenceId = payTypeTarget.sourceOccurrenceId;
+        const postId = payTypeTarget.postId;
+        const allAssignments = occurrenceId
+          ? satpamAssignmentsByOccurrence.get(occurrenceId) || []
+          : [];
+        const editableStatus = isPendingTarget ? 'pending' : 'approved';
+        const editableAssignments = allAssignments.filter((item) => item.status === editableStatus);
+        const clearedAssignments = editableAssignments.filter((item) => item.postId === postId);
+        const nextAssignments = fillingEmptyPost
+          ? [...editableAssignments, payTypeTarget]
+          : editableAssignments.filter((item) => item.postId !== postId);
+        if (
+          !occurrenceId || !postId ||
+          (fillingEmptyPost
+            ? allAssignments.some((item) => item.postId === postId) ||
+              allAssignments.some((item) => item.status !== 'declined' && item.employeeId === payTypeEmployeeId) ||
+              !satpamEmployeeDirectory.some((employee) => employee.id === payTypeEmployeeId && employee.isActive)
+            : !clearedAssignments.some((item) => item.id === payTypeTarget.id)) ||
+          allAssignments.some((item) => item.status !== editableStatus && item.status !== 'declined') ||
+          nextAssignments.length < 1 ||
+          nextAssignments.some((item) =>
+            !item.postId ||
+            !(item.isEmptyPost ? payTypeEmployeeId : item.employeeId) ||
+            !(item.isEmptyPost ? payTypeValue : item.shiftType),
+          )
+        ) {
+          throw new Error('Penugasan shift tidak lengkap, petugas belum dipilih, atau pos terakhir tidak dapat dikosongkan. Muat ulang halaman.');
+        }
+
+        const { occurrence } = await authenticatedJson<{
+          occurrence: {
+            dutyDate: string;
+            shiftName: string;
+            revision: number;
+            assignmentCount: number;
+          };
+        }>(`/api/satpam/shifts/review?occurrenceId=${encodeURIComponent(occurrenceId)}&auditorEdit=true`, {
+          method: 'GET',
+        });
+        if (
+          occurrence.assignmentCount !== allAssignments.length ||
+          occurrence.dutyDate !== (payTypeTarget.dutyDate || payTypeTarget.activityDate) ||
+          !Number.isInteger(occurrence.revision) || occurrence.revision < 1
+        ) {
+          throw new Error('Laporan shift sudah berubah. Muat ulang halaman sebelum menyimpan koreksi pos.');
+        }
+
+        await authenticatedJson('/api/satpam/shifts/review', {
+          method: 'PUT',
           body: JSON.stringify({
-            requestId: createFinancialRequestId(
-              isPendingTarget ? 'satpam_pending_edit' : 'satpam_pay_type_fix',
-            ),
-            reportId: payTypeTarget.id,
-            payType: payTypeValue,
-            employeeId: payTypeEmployeeId,
-            ...(payTypeValue === 'Lembur Cover'
-              ? { coveredEmployeeId: payTypeCovered.trim() }
-              : {}),
+            requestId: createFinancialRequestId('satpam_empty_post'),
+            occurrenceId,
+            expectedRevision: occurrence.revision,
+            dutyDate: occurrence.dutyDate,
+            shiftName: occurrence.shiftName,
             reason: changeSummary,
+            expectedReports: allAssignments.map((item) => ({
+              reportId: item.id,
+              status: item.status,
+              employeeId: item.employeeId,
+              shiftType: item.shiftType || '',
+              coveredEmployeeId: item.coveredEmployeeId || '',
+              fee: Number(item.fee || 0),
+            })),
+            assignments: nextAssignments.map((item) => ({
+              ...(item.isEmptyPost ? {} : { reportId: item.id }),
+              assignmentKind: item.assignmentKind || 'primary',
+              postId: item.postId,
+              employeeId: item.isEmptyPost ? payTypeEmployeeId : item.employeeId,
+              shiftType: item.isEmptyPost ? payTypeValue : item.shiftType,
+              ...((item.isEmptyPost ? payTypeCovered : item.coveredEmployeeId)
+                ? { coveredEmployeeId: item.isEmptyPost ? payTypeCovered.trim() : item.coveredEmployeeId }
+                : {}),
+              ...(item.overtimeReason ? { overtimeReason: item.overtimeReason } : {}),
+            })),
           }),
-        },
-      );
+        });
+      } else {
+        await authenticatedJson(
+          isPendingTarget
+            ? '/api/satpam/shifts/admin-pending-edit'
+            : '/api/satpam/shifts/admin-pay-type',
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              requestId: createFinancialRequestId(
+                isPendingTarget ? 'satpam_pending_edit' : 'satpam_pay_type_fix',
+              ),
+              reportId: payTypeTarget.id,
+              payType: payTypeValue,
+              employeeId: payTypeEmployeeId,
+              ...(payTypeValue === 'Lembur Cover'
+                ? { coveredEmployeeId: payTypeCovered.trim() }
+                : {}),
+              reason: changeSummary,
+            }),
+          },
+        );
+      }
       const dutyDate = payTypeTarget.dutyDate || payTypeTarget.activityDate;
       const period =
         payTypeTarget.payrollPeriod || (dutyDate ? pekaryaPayrollPeriodForDate(dutyDate) : '');
@@ -2692,7 +2830,7 @@ function ActivityReviewPageContent() {
                                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-1 border-b border-slate-200/80">
                                     <div className="flex items-center gap-2 text-[11px] font-black text-slate-700 uppercase tracking-wider">
                                       <ShieldCheck className="w-4 h-4 text-indigo-600" />
-                                      <span>Audit Bukti Foto Per Pos ({group.assignments.length} Pos)</span>
+                                      <span>Audit Bukti Foto Per Pos ({SATPAM_POSTS.length} Pos{!searchQuery.trim() && group.emptyPostIds.length > 0 ? ` · ${group.emptyPostIds.length} Pos Tidak Dijaga` : ''})</span>
                                     </div>
 
                                     {/* Bulk Action Buttons */}
@@ -2764,6 +2902,7 @@ function ActivityReviewPageContent() {
                                       return (
                                         <div
                                           key={item.id}
+                                          style={{ order: SATPAM_POSTS.findIndex((post) => post.id === item.postId) }}
                                           data-focus-assignment={
                                             isFocusedAssignment ? 'true' : undefined
                                           }
@@ -2957,9 +3096,40 @@ function ActivityReviewPageContent() {
                                         </div>
                                       );
                                     })}
+                                    {!searchQuery.trim() && group.emptyPostIds.map((postId) => (
+                                      <div
+                                        key={`empty-${postId}`}
+                                        style={{ order: SATPAM_POSTS.findIndex((post) => post.id === postId) }}
+                                        className="flex min-h-[260px] flex-col rounded-2xl border border-dashed border-amber-300 bg-amber-50 p-3"
+                                      >
+                                        <div className="flex items-start justify-between gap-2">
+                                          <span className="text-[10px] font-black uppercase tracking-wider text-amber-700">{postId}</span>
+                                          {(profile?.role === 'super_admin' || profile?.role === 'satker_head') &&
+                                            (satpamAssignmentsByOccurrence.get(group.occurrenceId) || []).some(
+                                              (item) => item.status === 'pending' || item.status === 'approved',
+                                            ) && (
+                                            <button
+                                              type="button"
+                                              title={`Isi ${postId} dengan petugas`}
+                                              aria-label={`Isi ${postId} dengan petugas`}
+                                              disabled={savingPayType}
+                                              onClick={() => openEmptyPostEditor(group, postId)}
+                                              className="flex h-5 w-5 items-center justify-center rounded-md text-indigo-600 transition-colors hover:bg-indigo-50"
+                                            >
+                                              <Edit2 className="h-3 w-3" />
+                                            </button>
+                                          )}
+                                        </div>
+                                        <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center text-amber-900">
+                                          <Users className="h-6 w-6" />
+                                          <span className="text-sm font-extrabold">Pos Tidak Dijaga</span>
+                                        </div>
+                                      </div>
+                                    ))}
                                     {canAddPetugas && (
                                       <button
                                         type="button"
+                                        style={{ order: SATPAM_POSTS.length }}
                                         onClick={() => void openAddSatpamDialog(group)}
                                         disabled={savingAddSatpam}
                                         className="group min-h-[260px] rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/40 p-4 text-indigo-700 transition-all hover:border-indigo-400 hover:bg-indigo-50 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-60 flex flex-col items-center justify-center gap-2 cursor-pointer"
@@ -3807,27 +3977,39 @@ function ActivityReviewPageContent() {
               <div className="flex justify-between">
                 <span className="text-slate-400 font-semibold">Kategori Saat Ini</span>
                 <span className="font-bold text-slate-700">
-                  {payTypeTarget?.shiftType} · {fmtRp(payTypeTarget?.fee || 0)}
+                  {payTypeTarget?.isEmptyPost ? 'Tidak ada upah · Rp0' : `${payTypeTarget?.shiftType} · ${fmtRp(payTypeTarget?.fee || 0)}`}
                 </span>
               </div>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-slate-500 uppercase">Petugas</Label>
-              <Select value={payTypeEmployeeId || 'none'} onValueChange={(v) => v && v !== 'none' && setPayTypeEmployeeId(v)}>
+              <Select value={payTypeEmployeeId || 'none'} onValueChange={(v) => { if (v && v !== 'none') setPayTypeEmployeeId(v); }}>
                 <SelectTrigger className="h-11 w-full rounded-xl border-slate-200 bg-white text-sm font-bold">
                   <SelectValue>
-                    {satpamEmployeeDirectory.find((e) => e.id === payTypeEmployeeId)?.name || payTypeEmployeeId || '-- Pilih Petugas --'}
+                    {payTypeEmployeeId === NO_PETUGAS_VALUE
+                      ? 'Pos Tidak Dijaga'
+                      : satpamEmployeeDirectory.find((e) => e.id === payTypeEmployeeId)?.name || payTypeEmployeeId || '-- Pilih Petugas --'}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent className="rounded-xl bg-white max-h-[280px] overflow-y-auto">
-                  {satpamEmployeeDirectory.map((employee) => (
+                  <SelectItem value={NO_PETUGAS_VALUE} className="min-h-10 text-sm font-bold text-amber-800">
+                    Pos Tidak Dijaga
+                  </SelectItem>
+                  {satpamEmployeeDirectory
+                    .filter((employee) =>
+                      !payTypeTarget?.isEmptyPost ||
+                      (employee.isActive && !(satpamAssignmentsByOccurrence.get(payTypeTarget.sourceOccurrenceId || '') || [])
+                        .some((item) => item.status !== 'declined' && item.employeeId === employee.id)),
+                    )
+                    .map((employee) => (
                     <SelectItem key={employee.id} value={employee.id} className="min-h-10 text-sm">
                       {employee.name}{employee.isActive ? '' : ' · tidak aktif'}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {payTypeTarget && payTypeEmployeeId && payTypeEmployeeId !== payTypeTarget.employeeId && (
+              {payTypeTarget && !payTypeTarget.isEmptyPost && payTypeEmployeeId &&
+                payTypeEmployeeId !== payTypeTarget.employeeId && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] font-semibold text-amber-900 space-y-1">
                   <p>Diubah dari: {payTypeTarget.employeeName}</p>
                   {payTypeTarget.photoUrl && (
@@ -3839,7 +4021,7 @@ function ActivityReviewPageContent() {
                 </div>
               )}
             </div>
-            <div className="space-y-1.5">
+            {payTypeEmployeeId !== NO_PETUGAS_VALUE && <div className="space-y-1.5">
               <Label className="text-xs font-bold text-slate-500 uppercase">Kategori Upah</Label>
               <Select value={payTypeValue} onValueChange={(v) => v && setPayTypeValue(v)}>
                 <SelectTrigger className="h-11 w-full rounded-xl border-slate-200 bg-white text-sm font-bold">
@@ -3855,8 +4037,8 @@ function ActivityReviewPageContent() {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            {payTypeValue === 'Lembur Cover' && (
+            </div>}
+            {payTypeEmployeeId !== NO_PETUGAS_VALUE && payTypeValue === 'Lembur Cover' && (
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-slate-500 uppercase">Petugas yang Digantikan</Label>
                 <Select value={payTypeCovered || 'none'} onValueChange={(v) => setPayTypeCovered(v === 'none' ? '' : (v || ''))}>
@@ -3889,16 +4071,18 @@ function ActivityReviewPageContent() {
               onClick={handleSavePayType}
               disabled={
                 savingPayType ||
+                (payTypeTarget?.isEmptyPost === true &&
+                  (!payTypeEmployeeId || payTypeEmployeeId === NO_PETUGAS_VALUE)) ||
                 (payTypeValue === payTypeTarget?.shiftType &&
                   payTypeEmployeeId === payTypeTarget?.employeeId &&
                   payTypeCovered.trim() === String(payTypeTarget?.coveredEmployeeId || '').trim()) ||
-                (payTypeValue === 'Lembur Cover' &&
+                (payTypeEmployeeId !== NO_PETUGAS_VALUE && payTypeValue === 'Lembur Cover' &&
                   (!payTypeCovered.trim() || payTypeCovered.trim() === payTypeEmployeeId))
               }
               className="rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-md shadow-indigo-100"
             >
               {savingPayType ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
-              Simpan Koreksi
+              {payTypeEmployeeId === NO_PETUGAS_VALUE ? 'Simpan Pos Tidak Dijaga' : 'Simpan Koreksi'}
             </Button>
           </DialogFooter>
         </DialogContent>
