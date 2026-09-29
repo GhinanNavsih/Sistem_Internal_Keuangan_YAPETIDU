@@ -29,6 +29,14 @@
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
+  /* Unipdu navy scale from SIMPEL_UI_THEME.md (accent-50 … accent-800) */
+  --color-accent-50: #f2f6fb;
+  --color-accent-100: #e3ecf6;
+  --color-accent-200: #c5d6eb;
+  --color-accent-500: #2b5796;
+  --color-accent-600: #1b4079;
+  --color-accent-700: #123262;
+  --color-accent-800: #002d62;
   --color-muted-foreground: var(--muted-foreground);
   --color-muted: var(--muted);
   --color-secondary-foreground: var(--secondary-foreground);

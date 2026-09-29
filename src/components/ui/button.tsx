@@ -18,6 +18,12 @@ const buttonVariants = cva(
         destructive:
           "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
         link: "text-primary underline-offset-4 hover:underline",
+        // The calm-interface hierarchy (UI_UX_PRINCIPLES.md §6): one filled
+        // accent action per screen, a filled red only for a final "yes,
+        // delete", and red text for destructive actions that are not that step.
+        accent: "bg-blue-600 text-white hover:bg-blue-700 focus-visible:ring-blue-500/40",
+        danger: "bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500/40",
+        "danger-ghost": "text-red-600 hover:bg-red-50 focus-visible:ring-red-500/30",
       },
       size: {
         default:

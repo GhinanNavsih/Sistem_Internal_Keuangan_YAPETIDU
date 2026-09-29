@@ -354,7 +354,7 @@ function InspectionForm({
         <section className="space-y-3">
           <SectionHeader
             title="Fasilitas bawaan ruangan (Permanen)"
-            description="Ketuk untuk menandai Baik atau Rusak. Semua wajib diperiksa."
+            description=""
             action={fixtures.length > 0 ? <MarkAllButton onClick={markAllPermanentGood}>Semua baik</MarkAllButton> : null}
           />
 
@@ -496,7 +496,7 @@ function InspectionForm({
         <section className="space-y-3 border-t border-slate-100 pt-4">
           <SectionHeader
             title="Barang pinjaman tambahan (Bergerak)"
-            description="Logistik yang dipinjam untuk acara ini. Verifikasi jumlah dan kondisi fisiknya."
+            description=""
             action={borrowed.length > 0 ? <MarkAllButton onClick={markAllMobileComplete}>Semua lengkap</MarkAllButton> : null}
           />
 
@@ -648,10 +648,6 @@ function InspectionForm({
             />
           </Field>
         </section>
-
-        <p className="text-xs text-slate-500">
-          Unit rusak masuk log perbaikan. Ruangan yang butuh perawatan dinonaktifkan sementara.
-        </p>
 
         {error && (
           <div role="alert" className="flex gap-2.5 rounded-md bg-red-50 px-3 py-2.5 text-[13px] text-red-800">
