@@ -53,6 +53,20 @@ async function main() {
   const base = { unitId: 'puskomnet', academicYear: '2026-2027' };
   await succeeds(await invoke(bak, { action: 'SAVE_UNIT', id: 'puskomnet', name: 'PUSKOMNET', headName: 'Kepala Unit', adminName: 'Bendahara', editorUids: [head.uid, secretary.uid] }));
   assert.equal((await read(outsider, { ...base, month: '9' })).status, 403);
+  // A Kepala SatKer Loyalis on no book gets their own the first time they open the page, exactly once.
+  const ownView = await succeeds(await read(outsider, { academicYear: '2026-2027', month: '9' }));
+  assert.equal(ownView.units.length, 1);
+  const ownUnit = ownView.units[0];
+  assert.match(ownUnit.id, /^loyalis-/);
+  assert.deepEqual(ownUnit.editorUids, [outsider.uid]);
+  assert.equal((await succeeds(await read(outsider, { academicYear: '2026-2027', month: '9' }))).units.length, 1);
+  assert.equal((await adminDb.collection('SatkerFinancialConfigAudit').where('target', '==', ownUnit.id).get()).size, 1);
+  // A head Super Admin already assigned, and a finance secretary, are not given an extra book.
+  assert.deepEqual((await succeeds(await read(head, { academicYear: '2026-2027', month: '9' }))).units.map((unit: { id: string }) => unit.id), ['puskomnet']);
+  assert.equal((await succeeds(await read(secretary, { academicYear: '2026-2027', month: '9' }))).units.length, 1);
+  // Removing a head from their own book sticks: it is not created again.
+  await succeeds(await invoke(bak, { action: 'SAVE_UNIT', id: ownUnit.id, name: ownUnit.name, headName: ownUnit.headName, adminName: '', editorUids: [], expectedRevision: ownUnit.revision }));
+  assert.equal((await succeeds(await read(outsider, { academicYear: '2026-2027', month: '9' }))).units.length, 0);
   assert.equal((await invoke(outsider, { ...base, action: 'POST_ENTRY', entryId: 'outsider-01', monthIndex: 9, date: '2026-09-01', kind: 'INFLOW', accountCode: '41000', paymentAccountCode: '10000', amount: 100, description: 'Tidak boleh' })).status, 403);
   assert.equal((await invoke(head, { ...base, action: 'SAVE_OPENING', openingBalances: {}, expectedRevision: 0 })).status, 403);
   assert.equal((await invoke(bak, { ...base, action: 'SAVE_OPENING', openingBalances: { '10000': { debit: 1000, credit: 0 } }, expectedRevision: 0 })).status, 400);
@@ -100,7 +114,7 @@ async function main() {
   await succeeds(await invoke(secretary, { ...secondUnit, action: 'POST_ENTRY', entryId: 'fakultas-sep-001', monthIndex: 9, date: '2026-09-01', kind: 'INFLOW', accountCode: '41000', paymentAccountCode: '10000', amount: 50, description: 'Pendapatan fakultas' }));
   assert.equal((await read(head, { ...secondUnit, month: '9' })).status, 403);
   const consolidated = await succeeds(await read(bak, { unitId: 'ALL', academicYear: '2026-2027', month: '9' }));
-  assert.equal(consolidated.unitSummaries.length, 2);
+  assert.equal(consolidated.unitSummaries.length, 3); // includes the head's auto-created (empty) book
   assert.equal(consolidated.statements.incomeStatement.income, 50);
   assert.equal(consolidated.statements.incomeStatement.expense, 100);
   assert.equal(consolidated.statements.cashFlow.physicalCash, 1150);

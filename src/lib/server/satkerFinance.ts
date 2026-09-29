@@ -1,4 +1,4 @@
-import { adminDb } from '@/lib/firebase-admin';
+import admin, { adminDb } from '@/lib/firebase-admin';
 import { AuthenticatedProfile, HttpError } from '@/lib/server/auth';
 import { DEFAULT_ACCOUNTS, FinancialAccount, OpeningBalances } from '@/lib/satker-finance/core';
 
@@ -42,6 +42,41 @@ export async function listUnits(actor: AuthenticatedProfile): Promise<FinancialU
   return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as FinancialUnit))
     .filter((unit) => canReadAll(actor) || canEditUnit(actor, unit))
     .sort((a, b) => a.name.localeCompare(b.name, 'id'));
+}
+
+/** Deterministic, so a head's own book is found again (and never duplicated) without a lookup by name. */
+export function ownUnitId(uid: string) {
+  return `loyalis-${uid.toLowerCase().replace(/[^a-z0-9]/g, '')}`.slice(0, 50);
+}
+
+/**
+ * Gives a Kepala SatKer Loyalis their own book the first time they open the page,
+ * so Super Admin does not have to create it and list them as pengelola. Only
+ * runs for a head who is on no book yet; the book is theirs alone, named after
+ * their account (Super Admin can rename it or add pengelola afterwards).
+ *
+ * Runs at most once per head: if the document already exists it is left alone,
+ * so a head Super Admin deliberately removed from their own book is not put back.
+ * Returns true only when it created the book.
+ */
+export async function ensureOwnUnit(actor: AuthenticatedProfile): Promise<boolean> {
+  if (actor.role !== 'satker_head_loyalis') return false;
+  const id = ownUnitId(actor.uid);
+  const ref = adminDb.collection(UNIT_COLLECTION).doc(id);
+  const displayName = actor.displayName.trim().slice(0, 150);
+  return adminDb.runTransaction(async (tx) => {
+    if ((await tx.get(ref)).exists) return false;
+    const after = {
+      name: displayName || 'SatKer Loyalis', headName: displayName, adminName: '', editorUids: [actor.uid],
+      revision: 1, autoProvisioned: true, updatedAt: admin.firestore.FieldValue.serverTimestamp(), updatedBy: actor.uid,
+    };
+    tx.create(ref, after);
+    tx.create(adminDb.collection('SatkerFinancialConfigAudit').doc(), {
+      action: 'UNIT_CREATED', target: id, before: null, after, auto: true,
+      actorUid: actor.uid, actorRole: actor.role, at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return true;
+  });
 }
 
 export async function getUnit(actor: AuthenticatedProfile, id: string): Promise<FinancialUnit> {

@@ -4,7 +4,7 @@ import type { DocumentReference, Transaction } from 'firebase-admin/firestore';
 import admin, { adminDb, adminStorage } from '@/lib/firebase-admin';
 import { errorResponse, HttpError, requireAuthenticatedProfile, requireRole, type AuthenticatedProfile } from '@/lib/server/auth';
 import {
-  ACCOUNT_COLLECTION, CATALOG_META_REF, assertUnitEdit, canReadAll, getUnit, listUnits, loadAccounts,
+  ACCOUNT_COLLECTION, CATALOG_META_REF, assertUnitEdit, canReadAll, ensureOwnUnit, getUnit, listUnits, loadAccounts,
   openingFrom, publicYear, UNIT_COLLECTION, yearRef,
 } from '@/lib/server/satkerFinance';
 import {
@@ -89,7 +89,9 @@ export async function GET(request: NextRequest) {
     if (!canReadAll(actor) && actor.role !== 'satker_head_loyalis' && actor.role !== 'satker_finance_admin') {
       throw new HttpError(403, 'Akses pelaporan SatKer tidak tersedia.');
     }
-    const units = await listUnits(actor);
+    let units = await listUnits(actor);
+    // A Kepala SatKer Loyalis on no book yet gets their own, without Super Admin listing them.
+    if (!units.length && await ensureOwnUnit(actor)) units = await listUnits(actor);
     const accounts = await loadAccounts();
     const academicYear = request.nextUrl.searchParams.get('academicYear') || academicYearFor(new Date());
     fiscalMonths(academicYear);
