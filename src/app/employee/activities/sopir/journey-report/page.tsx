@@ -2036,7 +2036,7 @@ function JourneyReportContent() {
   };
 
   const timeStartField = (
-    <Field label="Jam berangkat" htmlFor="journeyTimeStart">
+    <Field label="Jam Berangkat" htmlFor="journeyTimeStart">
       <Input
         id="journeyTimeStart"
         type="text"
@@ -2053,7 +2053,7 @@ function JourneyReportContent() {
     </Field>
   );
   const timeEndField = (
-    <Field label="Jam tiba / selesai" htmlFor="journeyTimeEnd">
+    <Field label="Jam Tiba / Selesai" htmlFor="journeyTimeEnd">
       <Input
         id="journeyTimeEnd"
         type="text"
@@ -2169,11 +2169,11 @@ function JourneyReportContent() {
       {/* ── Top bar ───────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
         <div className="mx-auto flex h-14 max-w-2xl items-center justify-between px-4">
-          <h1 className="text-base font-semibold text-slate-900">Laporan perjalanan</h1>
+          <h1 className="text-base font-semibold text-slate-900">Laporan Perjalanan</h1>
           <Link
             href="/employee/driver-history"
-            aria-label="Riwayat perjalanan"
-            title="Riwayat perjalanan"
+            aria-label="Riwayat Perjalanan"
+            title="Riwayat Perjalanan"
             className={buttonVariants({ variant: 'ghost' })}
           >
             <Compass />
@@ -2463,7 +2463,7 @@ function JourneyReportContent() {
                 className="size-4 cursor-pointer rounded border-slate-300 accent-blue-600"
               />
               <Label htmlFor="toggleMultiDay" className="cursor-pointer text-slate-900">
-                Perjalanan lintas hari / menginap
+                Perjalanan Lintas Hari / Menginap
               </Label>
             </div>
 
@@ -2475,7 +2475,7 @@ function JourneyReportContent() {
             ) : (
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
-                  <Field label="Tanggal berangkat" htmlFor="dateStartInput">
+                  <Field label="Tanggal Berangkat" htmlFor="dateStartInput">
                     <Input
                       id="dateStartInput"
                       type="date"
@@ -2488,7 +2488,7 @@ function JourneyReportContent() {
                   {timeStartField}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <Field label="Tanggal tiba / selesai" htmlFor="dateEndInput">
+                  <Field label="Tanggal Tiba / Selesai" htmlFor="dateEndInput">
                     <Input
                       id="dateEndInput"
                       type="date"
@@ -2555,7 +2555,7 @@ function JourneyReportContent() {
             <h2 className={sectionTitleClass}>Pengeluaran</h2>
 
             <Field
-              label="Uang diberikan selama perjalanan"
+              label="Uang Diberikan Selama Perjalanan"
               htmlFor="mealMoneyProvided"
               hint={mealPaidInWage
                 ? 'Tidak mengurangi SPJ.'
@@ -2576,7 +2576,7 @@ function JourneyReportContent() {
                 </Callout>
               ) : (
                 <div className="space-y-2">
-                  <Field label="BBM terbeli" htmlFor="journeyFuel" hint={`Jatah ${fmtRp(Math.ceil(displayedFuelAllowance))}`}>
+                  <Field label="BBM Terbeli" htmlFor="journeyFuel" hint={`Jatah ${fmtRp(Math.ceil(displayedFuelAllowance))}`}>
                     <RupiahInput id="journeyFuel" value={formFuelFee} onValue={setFormFuelFee} />
                   </Field>
                   <input
@@ -2610,7 +2610,7 @@ function JourneyReportContent() {
             )}
 
             <div className="space-y-2">
-              <Field label="Tol & parkir terbayar" htmlFor="journeyToll" hint={`Jatah ${fmtRp(Math.ceil(preAuthorizedToll))}`}>
+              <Field label="Tol & Parkir Terbayar" htmlFor="journeyToll" hint={`Jatah ${fmtRp(Math.ceil(preAuthorizedToll))}`}>
                 <RupiahInput id="journeyToll" value={formTollParkingFee} onValue={setFormTollParkingFee} />
               </Field>
               <input
@@ -2645,7 +2645,7 @@ function JourneyReportContent() {
           {/* ── Wage breakdown ───────────────────────────────────────── */}
           <section className={sectionClass}>
             <h2 className={sectionTitleClass}>
-              {isSelfCreatedJourney ? 'Rincian biaya & upah bersih' : 'Penyesuaian & biaya akhir'}
+              {isSelfCreatedJourney ? 'Rincian Biaya & Upah Bersih' : 'Penyesuaian & Biaya Akhir'}
             </h2>
 
             {!isSelfCreatedJourney && renderPlanVsActual()}
@@ -2688,7 +2688,9 @@ function JourneyReportContent() {
                   <span className="text-red-600">-{fmtRp(Math.ceil(settlement.remainingUnspentCash))}</span>
                 </DetailRow>
               )}
-              <DetailRow label="Upah bersih sopir" emphasis>{fmtRp(Math.ceil(finalUpahBersih))}</DetailRow>
+              <DetailRow label="Upah Bersih Sopir" emphasis>
+                <span className="text-emerald-700">{fmtRp(Math.ceil(finalUpahBersih))}</span>
+              </DetailRow>
             </DetailList>
           </section>
 
@@ -2754,7 +2756,7 @@ function JourneyReportContent() {
               <DialogTitle className="text-base font-semibold text-slate-900">Pilih lokasi</DialogTitle>
             </DialogHeader>
 
-            <Field label="Cari tempat atau alamat" htmlFor="mapSearch" error={mapSearchError || placeSearchError || undefined}
+            <Field label="Cari Tempat Atau Alamat" htmlFor="mapSearch" error={mapSearchError || placeSearchError || undefined}
               hint={mapSearchText.trim().length > 0 && mapSearchText.trim().length < PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH
                 ? `Ketik minimal ${PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH} karakter untuk menampilkan saran.`
                 : undefined}

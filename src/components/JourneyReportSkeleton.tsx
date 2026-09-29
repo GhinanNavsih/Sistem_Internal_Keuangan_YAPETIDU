@@ -13,7 +13,7 @@ export function JourneyReportHeaderShell() {
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
       <div className="mx-auto flex h-14 max-w-2xl items-center justify-between px-4">
-        <h1 className="text-base font-semibold text-slate-900">Laporan perjalanan</h1>
+        <h1 className="text-base font-semibold text-slate-900">Laporan Perjalanan</h1>
         <div className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-slate-400">
           <Compass className="size-4" />
           <span className="hidden sm:inline">Riwayat</span>
