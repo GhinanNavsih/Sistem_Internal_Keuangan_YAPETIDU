@@ -59,8 +59,8 @@ The core idea: **every element on screen has to earn its place.** The people usi
 
 ## 5. Forms
 
-- **Labels above fields, always.** Never rely on placeholder text as the label; placeholders are for examples ("e.g. Seminar on entrepreneurship").
-- **Group long forms into short titled sections** ("Requester", "Event and place", "Time", "Extras"). A form with 20 unlabeled fields is a wall; four sections of five fields is a conversation.
+- **Labels above fields, always.** Input field labels use Title Case. Never rely on placeholder text as the label; placeholders are for examples ("e.g. Seminar on entrepreneurship").
+- **Group long forms into short titled sections** ("Requester", "Event And Place", "Time", "Extras"). A form with 20 unlabeled fields is a wall; four sections of five fields is a conversation.
 - **Two columns only for short, related fields** (date + time, quantity + unit). Long text fields span the full width. Everything collapses to one column on phones.
 - **Hints only for things people can't guess:** constraints ("PDF or image, max 5 MB"), formats, or consequences ("Sent to the requester"). Never hints that restate the label.
 - **Mark required fields** consistently (a small asterisk), and don't mark optional ones "(optional)" everywhere.
@@ -116,7 +116,8 @@ The core idea: **every element on screen has to earn its place.** The people usi
 
 ## 9. Copy and microcopy
 
-- **Sentence case everywhere** (titles, buttons, labels, tabs). No ALL CAPS, no Title Case For Everything.
+- **Title Case for headings, titles and input field labels.** Capitalize the first letter of every word in page titles, section headings, dialog titles, summary headings and labels for text, date, number, select, search and checkbox fields ("Riwayat Perjalanan", "Uang Diberikan Selama Perjalanan"). Keep acronyms such as SPJ uppercase.
+- **Sentence case for controls and supporting text.** Buttons, tabs, table headers, hints and body copy use sentence case. Avoid ALL CAPS.
 - **Short over complete.** "Pending" beats "Waiting for approval from the general affairs bureau". Put the long version in the detail view if it matters.
 - **One term per concept** across the whole product. If it's "Booking" in one place, it's never "Reservation" or "Request" elsewhere.
 - **No internal identifiers** in the UI: database IDs, record codes, technical status keys. Identify records by name, place and date. Exception: codes people physically match against (barcode labels, printed tickets), shown only where they're used.
@@ -182,7 +183,7 @@ The core idea: **every element on screen has to earn its place.** The people usi
 | "OK / Available / In stock" badges on every row | Show only problems. |
 | Two or three statuses per row | One status + optional muted stage line. |
 | Emoji in labels, buttons, headings | Icons from one set, or just text. |
-| 8–11px text, ALL CAPS labels, extra-bold everywhere | 12px minimum, sentence case, 3 weights. |
+| 8–11px text, ALL CAPS labels, extra-bold everywhere | 12px minimum, Title Case headings and input labels, sentence case buttons and body copy, 3 weights. |
 | Database IDs and record codes in lists and titles | Names, places, dates. |
 | Duplicate controls (profile in sidebar *and* top bar) | One place for each thing. |
 | Stats cards that repeat tab counts | Remove them, or show genuinely new numbers. |
@@ -216,10 +217,11 @@ The core idea: **every element on screen has to earn its place.** The people usi
 - [ ] Lists have ≤5 columns; secondary info is in the detail view.
 - [ ] One status per record; healthy states aren't badged; problems are flagged.
 - [ ] No internal IDs visible (except codes people match physically).
-- [ ] No emoji, no text below 12px, no uppercase labels, no bold/extra-bold.
+- [ ] No emoji, no text below 12px, no ALL CAPS labels, no bold/extra-bold.
+- [ ] Headings, titles and input field labels capitalize the first letter of every word; acronyms stay uppercase.
 - [ ] Every overlay uses the shared modal/drawer/confirm components; no native `confirm()`.
 - [ ] Destructive actions confirmed with a stated consequence.
 - [ ] Empty, loading and error states designed.
-- [ ] Labels are sentence case, short, verb-first for actions, consistent terms.
+- [ ] Buttons, tabs, table headers and body copy are sentence case; action labels are short and verb-first.
 - [ ] Works at 390px wide with no horizontal page scroll.
 - [ ] Only the actions the current role can take are visible.
