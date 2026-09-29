@@ -6,9 +6,17 @@ import {
   CheckCircle2,
   Clock3,
   Loader2,
+  Save,
   Send,
   Undo2,
 } from 'lucide-react';
+import { GantiLiburAttachmentLinks } from '@/components/GantiLiburAttachmentLinks';
+import {
+  SuratResmiUploader,
+  suratResmiItemsFromAttachments,
+  suratResmiPaths,
+  type SuratResmiItem,
+} from '@/components/employee/SuratResmiUploader';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -29,7 +37,6 @@ import type {
   AnnualPaidLeaveRequest,
 } from '@/lib/payroll/annualPaidLeave';
 import {
-  ANNUAL_PAID_LEAVE_TIERS,
   annualPaidLeaveEntitlementDays,
   isDateOnly,
 } from '@/lib/payroll/annualPaidLeave';
@@ -96,6 +103,9 @@ export function PaidLeavePanel() {
   const [year, setYear] = useState(currentYear);
   const [leaveDate, setLeaveDate] = useState(today);
   const [reason, setReason] = useState('');
+  const [files, setFiles] = useState<SuratResmiItem[]>([]);
+  // The request the reason and files were last filled in from ('' for none).
+  const [filledFrom, setFilledFrom] = useState('');
   const [data, setData] = useState<PaidLeaveResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
@@ -124,11 +134,26 @@ export function PaidLeavePanel() {
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  const activeDateRequest = data?.requests.find(
-    (request) =>
-      request.leaveDate === leaveDate &&
-      (request.status === 'pending' || request.status === 'approved'),
-  );
+  // A date the employee has already submitted shows what they submitted. A
+  // date with no request keeps whatever is being typed, unless the form was
+  // showing another date's request, which is then cleared.
+  const dateRequest = data?.requests.find((request) => request.leaveDate === leaveDate);
+  const dateRequestKey = dateRequest ? `${dateRequest.id}:${dateRequest.revision}` : '';
+  if (data && dateRequestKey !== filledFrom) {
+    setFilledFrom(dateRequestKey);
+    if (dateRequest) {
+      setReason(dateRequest.reason || '');
+      setFiles(suratResmiItemsFromAttachments(dateRequest.attachments));
+    } else if (filledFrom) {
+      setReason('');
+      setFiles([]);
+    }
+  }
+
+  // A pending request can still be edited (reason and letters; the date stays);
+  // an approved one is final.
+  const pendingRequest = dateRequest?.status === 'pending' ? dateRequest : undefined;
+  const approvedRequest = dateRequest?.status === 'approved' ? dateRequest : undefined;
   const selectedDateEntitlement = data && isDateOnly(leaveDate)
     ? annualPaidLeaveEntitlementDays(data.employee.serviceDate, leaveDate)
     : 0;
@@ -137,34 +162,52 @@ export function PaidLeavePanel() {
     data &&
       data.balance.reservedDays + data.balance.usedDays < selectedDateEntitlement,
   );
+  // The surat resmi is optional, but a file still uploading or failed holds the
+  // submission back.
+  const proofReady = files.every((item) => item.status === 'done');
+  const pendingRequestChanged = Boolean(
+    pendingRequest &&
+      (reason.trim() !== (pendingRequest.reason || '').trim() ||
+        suratResmiPaths(files).join('|') !==
+          (pendingRequest.attachments || []).map((item) => item.path).join('|')),
+  );
+  // The pending request already holds its day, so only new requests are held
+  // to the entitlement and balance.
   const canSubmit = Boolean(
     data &&
-      eligibleForSelectedDate &&
-      underSelectedDateLimit &&
-      !activeDateRequest &&
-      reason.trim().length <= 500,
+      reason.trim().length <= 500 &&
+      proofReady &&
+      (pendingRequest
+        ? pendingRequestChanged
+        : !approvedRequest && eligibleForSelectedDate && underSelectedDateLimit),
   );
 
   const submit = async () => {
     if (!canSubmit) return;
     const previous = data?.requests.find((request) => request.leaveDate === leaveDate);
     setWorking(true);
-    setWorkingLabel('Mengirim pengajuan cuti…');
+    setWorkingLabel(pendingRequest ? 'Menyimpan perubahan…' : 'Mengirim pengajuan cuti…');
     setError('');
     setMessage('');
     try {
       await authenticatedJson('/api/employee/paid-leave', {
         method: 'POST',
         body: JSON.stringify({
-          action: 'submit',
-          requestId: createFinancialRequestId('annual-paid-leave'),
+          action: pendingRequest ? 'update' : 'submit',
+          requestId: createFinancialRequestId(
+            pendingRequest ? 'annual-paid-leave-update' : 'annual-paid-leave',
+          ),
           leaveDate,
           reason,
+          attachmentPaths: suratResmiPaths(files),
           expectedRevision: previous?.revision || 0,
         }),
       });
-      setReason('');
-      setMessage('Pengajuan cuti dikirim. Satu hari sekarang dicadangkan sampai diputuskan.');
+      setMessage(
+        pendingRequest
+          ? 'Perubahan pengajuan cuti disimpan.'
+          : 'Pengajuan cuti dikirim. Satu hari sekarang dicadangkan sampai diputuskan.',
+      );
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Pengajuan cuti gagal dikirim.');
@@ -210,11 +253,6 @@ export function PaidLeavePanel() {
             <CalendarCheck2 className="h-6 w-6 text-emerald-700" />
             Ambil Cuti
           </CardTitle>
-          <p className="text-base text-slate-600">
-            Jatah cuti tahunan: {ANNUAL_PAID_LEAVE_TIERS.map((tier) =>
-              `lebih dari ${tier.moreThanYears} tahun: ${tier.entitlementDays} hari`,
-            ).join(' · ')}.
-          </p>
         </CardHeader>
         <CardContent className="space-y-5 p-4 sm:p-5">
           {(message || error) && (
@@ -290,26 +328,6 @@ export function PaidLeavePanel() {
                   }}
                   className="min-h-14 rounded-xl text-base font-mono"
                 />
-                {eligibleForSelectedDate && (
-                  <p className="text-sm font-semibold text-slate-600">
-                    Jatah berdasarkan masa kerja pada tanggal ini: {selectedDateEntitlement} hari per tahun.
-                  </p>
-                )}
-                {!eligibleForSelectedDate && (
-                  <p className="text-sm font-semibold text-amber-700">
-                    Tanggal ini belum memenuhi masa kerja lebih dari 5 tahun. Hak cuti pertama mulai {data.employee.qualifyingDate}.
-                  </p>
-                )}
-                {eligibleForSelectedDate && !underSelectedDateLimit && !activeDateRequest && (
-                  <p className="text-sm font-semibold text-amber-700">
-                    Jatah {selectedDateEntitlement} hari untuk tingkat masa kerja pada tanggal ini sudah terpakai atau dicadangkan.
-                  </p>
-                )}
-                {activeDateRequest && (
-                  <p className="text-sm font-semibold text-amber-700">
-                    Tanggal ini sudah {statusLabel(activeDateRequest.status).toLowerCase()}.
-                  </p>
-                )}
               </div>
 
               <div className="space-y-2">
@@ -318,9 +336,22 @@ export function PaidLeavePanel() {
                   id="paid-leave-reason"
                   value={reason}
                   maxLength={500}
+                  readOnly={Boolean(approvedRequest)}
                   onChange={(event) => setReason(event.target.value)}
-                  className="min-h-28 w-full rounded-xl border border-slate-300 p-3 text-base"
+                  className="min-h-28 w-full rounded-xl border border-slate-300 p-3 text-base read-only:bg-slate-50"
                   placeholder="Contoh: Keperluan keluarga"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Surat resmi (opsional)</Label>
+                <SuratResmiUploader
+                  endpoint="/api/uploads/paid-leave"
+                  files={files}
+                  onFilesChange={setFiles}
+                  onError={setError}
+                  disabled={working}
+                  locked={Boolean(approvedRequest)}
                 />
               </div>
 
@@ -330,8 +361,14 @@ export function PaidLeavePanel() {
                 disabled={working || !canSubmit}
                 onClick={() => void submit()}
               >
-                {working ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
-                Kirim Pengajuan Cuti
+                {working ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : pendingRequest ? (
+                  <Save className="h-5 w-5" />
+                ) : (
+                  <Send className="h-5 w-5" />
+                )}
+                {pendingRequest ? 'Simpan Perubahan' : 'Kirim Pengajuan Cuti'}
               </Button>
 
               {data.requests.length > 0 && (
@@ -343,6 +380,7 @@ export function PaidLeavePanel() {
                         <div className="min-w-0">
                           <p className="font-bold text-slate-900">{formatDate(request.leaveDate)}</p>
                           <p className="mt-1 text-sm text-slate-600">{request.reason || 'Tanpa alasan tertulis'}</p>
+                          <GantiLiburAttachmentLinks attachments={request.attachments} className="mt-2" />
                           <span className={`mt-2 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${statusClass(request.status)}`}>
                             {request.status === 'approved' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Clock3 className="h-3.5 w-3.5" />}
                             {statusLabel(request.status)}

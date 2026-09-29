@@ -42,7 +42,13 @@ const EXTENSION_CONTENT_TYPES: Record<string, string> = {
   heif: 'image/heif',
 };
 
-const STORAGE_PREFIX = 'ganti_libur/';
+/** Storage folder of the surat resmi of a ganti libur request. */
+export const GANTI_LIBUR_ATTACHMENT_FOLDER = 'ganti_libur';
+/**
+ * Storage folder of the surat resmi of an annual leave (Ambil Cuti) request.
+ * It shares this module's file rules and attachment shape.
+ */
+export const PAID_LEAVE_ATTACHMENT_FOLDER = 'paid_leave';
 
 function fileExtension(fileName: string): string {
   const match = /\.([A-Za-z0-9]+)$/.exec(fileName.trim());
@@ -102,6 +108,7 @@ export function gantiLiburAttachmentStoragePath(
   contentType: string,
   now: number,
   unique: string,
+  folder: string = GANTI_LIBUR_ATTACHMENT_FOLDER,
 ): string {
   const extension = fileExtension(fileName);
   const safeExtension =
@@ -115,13 +122,17 @@ export function gantiLiburAttachmentStoragePath(
   const safeUnique = unique.replace(/[^A-Za-z0-9]/g, '').slice(0, 12) || '0';
   // A name with no letters or digits would leave only underscores.
   const safeBase = /[A-Za-z0-9]/.test(base) ? base : 'surat';
-  return `${STORAGE_PREFIX}${employeeId}/${now}_${safeUnique}_${safeBase}.${safeExtension}`;
+  return `${folder}/${employeeId}/${now}_${safeUnique}_${safeBase}.${safeExtension}`;
 }
 
 /** True only for a file directly inside this employee's own folder. */
-export function isGantiLiburAttachmentPath(employeeId: string, path: unknown): path is string {
+export function isGantiLiburAttachmentPath(
+  employeeId: string,
+  path: unknown,
+  folder: string = GANTI_LIBUR_ATTACHMENT_FOLDER,
+): path is string {
   if (typeof path !== 'string') return false;
-  const prefix = `${STORAGE_PREFIX}${employeeId}/`;
+  const prefix = `${folder}/${employeeId}/`;
   if (!path.startsWith(prefix)) return false;
   const filename = path.slice(prefix.length);
   return /^[A-Za-z0-9_.-]{1,200}$/.test(filename) && !filename.includes('..');
@@ -135,6 +146,7 @@ export type GantiLiburAttachmentPathsResult =
 export function parseGantiLiburAttachmentPaths(
   value: unknown,
   employeeId: string,
+  folder: string = GANTI_LIBUR_ATTACHMENT_FOLDER,
 ): GantiLiburAttachmentPathsResult {
   if (value === undefined || value === null) return { ok: true, paths: [] };
   if (!Array.isArray(value)) {
@@ -148,7 +160,7 @@ export function parseGantiLiburAttachmentPaths(
   }
   const paths: string[] = [];
   for (const path of value) {
-    if (!isGantiLiburAttachmentPath(employeeId, path)) {
+    if (!isGantiLiburAttachmentPath(employeeId, path, folder)) {
       return { ok: false, message: 'Berkas surat resmi tidak valid.' };
     }
     if (!paths.includes(path)) paths.push(path);

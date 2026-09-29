@@ -7,6 +7,7 @@ import {
   gantiLiburAttachmentStoragePath,
   gantiLiburAttachmentTypeIssue,
   isGantiLiburAttachmentPath,
+  PAID_LEAVE_ATTACHMENT_FOLDER,
   parseGantiLiburAttachmentPaths,
 } from './gantiLiburAttachments';
 
@@ -92,6 +93,29 @@ test('submitted attachment paths are checked, deduplicated and capped', () => {
   const tooMany = Array.from({ length: 6 }, (_, index) => `ganti_libur/emp-1/${index}.png`);
   assert.equal(parseGantiLiburAttachmentPaths(tooMany, 'emp-1').ok, false);
   assert.equal(parseGantiLiburAttachmentPaths(tooMany.slice(0, 5), 'emp-1').ok, true);
+});
+
+test('paid leave attachments live in their own folder and never accept ganti libur files', () => {
+  const path = gantiLiburAttachmentStoragePath(
+    'emp-1',
+    'Surat Cuti.png',
+    'image/png',
+    1,
+    'u',
+    PAID_LEAVE_ATTACHMENT_FOLDER,
+  );
+  assert.equal(path, 'paid_leave/emp-1/1_u_Surat_Cuti.png');
+  assert.ok(isGantiLiburAttachmentPath('emp-1', path, PAID_LEAVE_ATTACHMENT_FOLDER));
+  assert.equal(isGantiLiburAttachmentPath('emp-1', path), false);
+  assert.equal(
+    isGantiLiburAttachmentPath('emp-1', 'ganti_libur/emp-1/a.png', PAID_LEAVE_ATTACHMENT_FOLDER),
+    false,
+  );
+  assert.equal(
+    parseGantiLiburAttachmentPaths([path], 'emp-1', PAID_LEAVE_ATTACHMENT_FOLDER).ok,
+    true,
+  );
+  assert.equal(parseGantiLiburAttachmentPaths([path], 'emp-1').ok, false);
 });
 
 test('stored attachments are read back without malformed entries', () => {

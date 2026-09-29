@@ -33,7 +33,11 @@ import {
   requireSelfAnnualPaidLeaveEmployee,
 } from '@/lib/server/annualPaidLeave';
 import { assertPeriodAcceptsInput, jakartaToday } from '@/lib/server/payrollPeriod';
-import { employeeGantiLiburQuery } from '@/lib/server/gantiLibur';
+import { employeeGantiLiburQuery, loadGantiLiburAttachments } from '@/lib/server/gantiLibur';
+import {
+  PAID_LEAVE_ATTACHMENT_FOLDER,
+  parseGantiLiburAttachmentPaths,
+} from '@/lib/payroll/gantiLiburAttachments';
 import { isActiveGantiLiburStatus } from '@/lib/payroll/gantiLibur';
 
 export const dynamic = 'force-dynamic';
@@ -140,7 +144,7 @@ export async function POST(request: NextRequest) {
         error instanceof Error ? error.message : 'requestId tidak valid.',
       );
     }
-    if (action !== 'submit' && action !== 'withdraw') {
+    if (action !== 'submit' && action !== 'update' && action !== 'withdraw') {
       throw new HttpError(400, 'Aksi pengajuan cuti tidak valid.');
     }
     const leaveDate = String(body.leaveDate || '');
@@ -154,6 +158,15 @@ export async function POST(request: NextRequest) {
     }
     const expectedRevision = parseExpectedRevision(body.expectedRevision);
     const reason = parseReason(body.reason);
+    const attachmentPaths = parseGantiLiburAttachmentPaths(
+      body.attachmentPaths,
+      employee.id,
+      PAID_LEAVE_ATTACHMENT_FOLDER,
+    );
+    if (!attachmentPaths.ok) throw new HttpError(400, attachmentPaths.message);
+    const attachments = action === 'submit' || action === 'update'
+      ? await loadGantiLiburAttachments(attachmentPaths.paths)
+      : [];
     const year = annualPaidLeaveYear(leaveDate);
     const leaveDateEntitlementDays = annualPaidLeaveEntitlementDays(
       employee.serviceDate,
@@ -187,6 +200,7 @@ export async function POST(request: NextRequest) {
       leaveDate,
       expectedRevision,
       reason,
+      attachmentPaths: attachmentPaths.paths,
       commandId,
     });
 
@@ -303,6 +317,7 @@ export async function POST(request: NextRequest) {
           year,
           period,
           reason,
+          attachments,
           serviceDate: employee.serviceDate,
           qualifyingDate: employee.qualifyingDate,
           status: 'pending',
@@ -384,8 +399,71 @@ export async function POST(request: NextRequest) {
         throw new HttpError(403, 'Pengajuan cuti bukan milik akun ini.');
       }
       if (current.status !== 'pending') {
-        throw new HttpError(409, 'Hanya pengajuan menunggu yang dapat ditarik.');
+        throw new HttpError(
+          409,
+          action === 'update'
+            ? 'Hanya pengajuan menunggu yang dapat diubah.'
+            : 'Hanya pengajuan menunggu yang dapat ditarik.',
+        );
       }
+
+      if (action === 'update') {
+        // The date and the reserved day stay as they are, so the balance is
+        // untouched. The revision moves on, so a reviewer who opened the old
+        // version is asked to reload before deciding.
+        const revision = currentRevision + 1;
+        const after = {
+          ...current,
+          reason,
+          attachments,
+          revision,
+          editedAt: now,
+          editedBy: actor.uid,
+          updatedAt: now,
+        };
+        transaction.set(leaveRef, after);
+        transaction.create(
+          adminDb
+            .collection(ANNUAL_PAID_LEAVE_REVISIONS_COLLECTION)
+            .doc(`${requestDocumentId}__r${revision}`),
+          {
+            annualPaidLeaveRequestId: requestDocumentId,
+            revision,
+            action,
+            before: current,
+            after,
+            actorUid: actor.uid,
+            requestId: commandId,
+            reason,
+            createdAt: now,
+          },
+        );
+        transaction.create(
+          newFinancialAuditRef(),
+          buildFinancialAuditRecord(actor, {
+            action: 'ANNUAL_PAID_LEAVE_UPDATED',
+            entityType: 'AnnualPaidLeaveRequest',
+            entityId: requestDocumentId,
+            requestId: commandId,
+            reason,
+            before: current,
+            after,
+            metadata: { employeeId: employee.id, leaveDate, year, period },
+          }),
+        );
+        transaction.create(idempotencyRef, {
+          actorUid: actor.uid,
+          requestId: commandId,
+          requestHash,
+          entityType: 'AnnualPaidLeaveRequest',
+          entityId: requestDocumentId,
+          status: 'pending',
+          revision,
+          createdAt: now,
+        });
+        return { id: requestDocumentId, status: 'pending', revision, idempotent: false };
+      }
+
       const revision = currentRevision + 1;
       const after = {
         ...current,

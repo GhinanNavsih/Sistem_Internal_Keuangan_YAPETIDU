@@ -10,6 +10,7 @@ import {
   type AnnualPaidLeaveEmployeeKind,
   type AnnualPaidLeaveRequest,
 } from '@/lib/payroll/annualPaidLeave';
+import { coerceGantiLiburAttachments } from '@/lib/payroll/gantiLiburAttachments';
 import { pekaryaPayrollPeriodForDate } from '@/lib/payroll/pekaryaSpj';
 import { isFridayDate } from '@/lib/payroll/attendance';
 import {
@@ -216,6 +217,7 @@ export async function loadEmployeeAnnualPaidLeaveRequests(
       return {
         id: document.id,
         ...data,
+        attachments: coerceGantiLiburAttachments(data.attachments),
         qualifyingDate: annualPaidLeaveQualifyingDate(String(data.serviceDate || '')),
       } as AnnualPaidLeaveRequest;
     })

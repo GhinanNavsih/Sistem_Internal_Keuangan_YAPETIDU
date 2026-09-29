@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarDays, Check, Loader2, RefreshCw, X } from 'lucide-react';
+import { GantiLiburAttachmentLinks } from '@/components/GantiLiburAttachmentLinks';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -16,6 +17,7 @@ import type {
   AnnualPaidLeavePayType,
   AnnualPaidLeaveStatus,
 } from '@/lib/payroll/annualPaidLeave';
+import type { GantiLiburAttachment } from '@/lib/payroll/gantiLiburAttachments';
 
 interface ReviewRequest {
   id: string;
@@ -27,6 +29,7 @@ interface ReviewRequest {
   year: number;
   period: string;
   reason: string;
+  attachments?: GantiLiburAttachment[];
   serviceDate: string;
   qualifyingDate: string;
   status: AnnualPaidLeaveStatus;
@@ -310,6 +313,16 @@ export default function AnnualPaidLeaveReviewPanel() {
                       <div className="mt-2 text-sm text-slate-700">
                         Alasan: {item.reason || 'Tidak ada alasan tambahan.'}
                       </div>
+                      {item.attachments && item.attachments.length > 0 ? (
+                        <div className="mt-2">
+                          <div className="text-xs font-semibold text-slate-500">
+                            Surat resmi ({item.attachments.length})
+                          </div>
+                          <GantiLiburAttachmentLinks attachments={item.attachments} className="mt-1" />
+                        </div>
+                      ) : (
+                        <div className="mt-2 text-xs text-slate-400">Tanpa surat resmi</div>
+                      )}
                       <div className="mt-1 text-xs text-slate-500">
                         Mulai kerja {formatDate(item.serviceDate)} · hak pertama mulai {formatDate(item.qualifyingDate)}
                       </div>

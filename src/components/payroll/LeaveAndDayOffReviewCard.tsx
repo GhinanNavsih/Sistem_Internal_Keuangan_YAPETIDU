@@ -17,6 +17,7 @@ import type {
   AnnualPaidLeavePayType,
   AnnualPaidLeaveStatus,
 } from '@/lib/payroll/annualPaidLeave';
+import type { GantiLiburAttachment } from '@/lib/payroll/gantiLiburAttachments';
 import {
   gantiLiburDeclineSuggestion,
   canReviewGantiLibur,
@@ -36,6 +37,7 @@ interface CutiReviewRequest {
   year: number;
   period: string;
   reason: string;
+  attachments?: GantiLiburAttachment[];
   serviceDate: string;
   qualifyingDate: string;
   status: AnnualPaidLeaveStatus;
@@ -698,6 +700,16 @@ export default function LeaveAndDayOffReviewCard() {
                           <div className="mt-2 text-sm text-slate-700">
                             Alasan: {item.reason || 'Tidak ada alasan tambahan.'}
                           </div>
+                          {item.attachments && item.attachments.length > 0 ? (
+                            <div className="mt-2">
+                              <div className="text-xs font-semibold text-slate-500">
+                                Surat resmi ({item.attachments.length})
+                              </div>
+                              <GantiLiburAttachmentLinks attachments={item.attachments} className="mt-1" />
+                            </div>
+                          ) : (
+                            <div className="mt-2 text-xs text-slate-400">Tanpa surat resmi</div>
+                          )}
                           <div className="mt-1 text-xs text-slate-500">
                             Mulai kerja {formatCutiDate(item.serviceDate)} · hak pertama mulai {formatCutiDate(item.qualifyingDate)}
                           </div>

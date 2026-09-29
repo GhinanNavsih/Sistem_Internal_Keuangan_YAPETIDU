@@ -1,3 +1,5 @@
+import type { GantiLiburAttachment } from './gantiLiburAttachments';
+
 export const ANNUAL_PAID_LEAVE_MAX_DAYS = 9 as const;
 export const ANNUAL_PAID_LEAVE_TIERS = [
   { moreThanYears: 5, entitlementDays: 3 },
@@ -26,6 +28,8 @@ export interface AnnualPaidLeaveRequest {
   year: number;
   period: string;
   reason: string;
+  /** Surat resmi that came with the request; older requests carry none. */
+  attachments?: GantiLiburAttachment[];
   serviceDate: string;
   qualifyingDate: string;
   status: AnnualPaidLeaveStatus;
