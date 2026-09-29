@@ -2,7 +2,9 @@ export type PresenceCorrectionType =
   | 'tap_in'
   | 'tap_out'
   | 'both'
-  | 'izin_resmi';
+  | 'izin_resmi'
+  | 'cuti_tahunan'
+  | 'ganti_libur';
 
 export type PresenceCorrectionStatus = 'pending' | 'approved' | 'rejected';
 
@@ -36,7 +38,14 @@ export interface LoyalisRawLog {
 const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export function isPresenceCorrectionType(value: unknown): value is PresenceCorrectionType {
-  return value === 'tap_in' || value === 'tap_out' || value === 'both' || value === 'izin_resmi';
+  return (
+    value === 'tap_in' ||
+    value === 'tap_out' ||
+    value === 'both' ||
+    value === 'izin_resmi' ||
+    value === 'cuti_tahunan' ||
+    value === 'ganti_libur'
+  );
 }
 
 export function asPresenceCorrectionRequest(
@@ -158,6 +167,10 @@ export function correctionTypeLabel(type: PresenceCorrectionType): string {
   switch (type) {
     case 'izin_resmi':
       return 'Izin Resmi (Hari Penuh)';
+    case 'cuti_tahunan':
+      return 'Cuti Tahunan';
+    case 'ganti_libur':
+      return 'Ganti Libur';
     case 'both':
       return 'Masuk & Pulang';
     case 'tap_in':
@@ -168,7 +181,13 @@ export function correctionTypeLabel(type: PresenceCorrectionType): string {
 }
 
 export function correctionTimeLabel(request: PresenceCorrectionRequest): string {
-  if (request.type === 'izin_resmi') return '07:30 — 14:00 (Hari Penuh)';
+  if (
+    request.type === 'izin_resmi' ||
+    request.type === 'cuti_tahunan' ||
+    request.type === 'ganti_libur'
+  ) {
+    return '07:30 — 14:00 (Hari Penuh)';
+  }
   if (request.type === 'tap_out') return request.checkOutTime || '--:--';
   if (request.type === 'tap_in') return request.checkInTime || '--:--';
   return `${request.checkInTime || '--:--'} — ${request.checkOutTime || '--:--'}`;

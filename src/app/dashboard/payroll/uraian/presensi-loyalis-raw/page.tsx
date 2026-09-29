@@ -60,6 +60,7 @@ import {
 
 import Link from 'next/link';
 import { generatePresensiLoyalisXlsx } from '@/utils/generatePresensiLoyalisXlsx';
+import { LoyalisPresenceCorrectionsCard } from '@/components/payroll/LoyalisPresenceCorrectionsCard';
 
 /**
  * How long an unsaved working table is kept in localStorage. Past this the
@@ -2337,7 +2338,13 @@ export default function PresensiLoyalisRawPage() {
         </Card>
       ) : (
         profile?.role !== 'satker_head_loyalis' && (
-          <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
+          <div className="space-y-6">
+            <LoyalisPresenceCorrectionsCard
+              period={canonicalPeriod}
+              onResolved={fetchExistingPresence}
+            />
+
+            <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
             <div className="flex justify-between items-center border-b border-slate-50 pb-4">
               <div>
                 <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
@@ -3251,7 +3258,8 @@ export default function PresensiLoyalisRawPage() {
               </div>
             )}
           </Card>
-        )
+        </div>
+      )
       )}
 
       <Dialog

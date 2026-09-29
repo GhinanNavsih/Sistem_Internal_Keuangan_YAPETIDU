@@ -42,7 +42,6 @@ export default function UraianNavToggles() {
     if (pathname.includes('/proposal-kegiatan')) return 'proposal_kegiatan';
     if (pathname.includes('/pelaporan-kegiatan')) return 'pelaporan_kegiatan';
     if (pathname.includes('/presensi-loyalis-raw')) return 'presensi_loyalis_raw';
-    if (pathname.includes('/presence-corrections')) return 'presence_corrections';
     if (pathname.includes('/spj-pekarya')) return 'kegiatan_spj';
     if (pathname.includes('/activity-review')) return 'activity_review';
     if (pathname.includes('/driver-journeys')) return 'driver_journeys';
@@ -62,7 +61,6 @@ export default function UraianNavToggles() {
       tab === 'proposal_kegiatan' ||
       tab === 'pelaporan_kegiatan' ||
       tab === 'presensi_loyalis_raw' ||
-      tab === 'presence_corrections' ||
       tab === 'driver-journeys' ||
       tab === 'activity-review'
     ) {
@@ -157,16 +155,6 @@ export default function UraianNavToggles() {
             >
               <Clock className="w-4 h-4" />
               Presensi Loyalis
-            </button>
-          )}
-
-          {(profile.role === 'super_admin' || profile.role === 'loyalis_admin') && (
-            <button
-              onClick={() => router.push(`/dashboard/payroll/uraian/presence-corrections${getCleanParamsString('presence_corrections')}`)}
-              className={btnCls(activeTab === 'presence_corrections')}
-            >
-              <ClipboardCheck className="w-4 h-4" />
-              Review Koreksi Presensi
             </button>
           )}
         </div>

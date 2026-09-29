@@ -52,6 +52,7 @@ import {
   parseDateOnly,
   timestampToMillis,
   type PresenceCorrectionRequest,
+  type PresenceCorrectionType,
 } from '@/lib/payroll/presenceCorrections';
 import { PresensiCorrectionHistorySkeleton } from '@/components/PresensiCorrectionSkeleton';
 
@@ -86,7 +87,7 @@ export function LoyalisPresenceCorrectionPanel({
     const d = String(today.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
   });
-  const [type, setType] = useState<'tap_in' | 'tap_out' | 'both' | 'izin_resmi'>('izin_resmi');
+  const [type, setType] = useState<PresenceCorrectionType>('izin_resmi');
   const effectiveType = workflowMode === 'sick_leave'
     ? 'izin_resmi'
     : workflowMode === 'presence_correction' && type === 'izin_resmi'
