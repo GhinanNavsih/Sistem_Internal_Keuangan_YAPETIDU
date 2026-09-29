@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import { canReserveVenues } from '@/lib/payroll/roles';
 import { VENUE_RESERVATION_PATH } from '@/lib/venueReservation';
 import { VENUE_INSPECTION_PATH } from '@/lib/venueInspection';
@@ -30,7 +31,8 @@ const SIDEBAR_COLLAPSED_KEY = 'yapetidu_sidebar_collapsed';
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { logout, profile, activeProfile } = useAuth();
+  const { profile, activeProfile } = useAuth();
+  const requestLogout = useConfirmLogout();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
@@ -301,7 +303,7 @@ export default function Sidebar() {
                   </span>
                 </div>
                 <button
-                  onClick={logout}
+                  onClick={requestLogout}
                   className="flex items-center justify-center w-10 h-10 rounded-xl border border-slate-200 text-rose-500 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-all cursor-pointer"
                   title="Keluar"
                 >
@@ -326,7 +328,7 @@ export default function Sidebar() {
                 </div>
                 <Button
                   variant="outline"
-                  onClick={logout}
+                  onClick={requestLogout}
                   className="w-full rounded-xl shadow-sm bg-white border-slate-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-100 transition-all cursor-pointer flex items-center justify-center gap-2 h-10 font-bold"
                 >
                   <LogOut className="w-4 h-4" />
@@ -428,7 +430,7 @@ export default function Sidebar() {
                 variant="outline"
                 onClick={() => {
                   setIsMobileOpen(false);
-                  logout();
+                  requestLogout();
                 }}
                 className="w-full rounded-xl shadow-sm bg-white border-slate-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-100 transition-all cursor-pointer flex items-center justify-center gap-2 h-9 text-xs font-bold"
               >

@@ -4,6 +4,7 @@ import React from 'react';
 import Image from 'next/image';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import { ClipboardCheck, ScanLine, LogOut, Compass, BarChart3, Banknote, CalendarCheck, FileText, UsersRound, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
@@ -13,7 +14,8 @@ import { isVenueReservationPath, VENUE_RESERVATION_PATH } from '@/lib/venueReser
 export default function SatkerPekaryaNavBar() {
   // Follows the previewed profile, so a Super Admin in "Preview UI" sees the
   // same tabs as the SatKer head being previewed.
-  const { profile: realProfile, activeProfile, logout } = useAuth();
+  const { profile: realProfile, activeProfile} = useAuth();
+  const requestLogout = useConfirmLogout();
   const profile = activeProfile || realProfile;
   const pathname = usePathname();
   const router = useRouter();
@@ -207,7 +209,7 @@ export default function SatkerPekaryaNavBar() {
           <Button
             variant="outline"
             size="sm"
-            onClick={logout}
+            onClick={requestLogout}
             className="rounded-xl text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 hover:border-rose-300 transition-all cursor-pointer flex items-center gap-1.5 shadow-sm font-semibold"
           >
             <LogOut className="w-3.5 h-3.5" />

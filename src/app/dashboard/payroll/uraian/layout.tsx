@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, Suspense, useCallback } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import GlobalHeader from '@/components/GlobalHeader';
 import { Button } from '@/components/ui/button';
 import {
@@ -28,7 +29,8 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { profile, logout } = useAuth();
+  const { profile} = useAuth();
+  const requestLogout = useConfirmLogout();
 
   // Read params or set defaults
   const month = parseInt(searchParams.get('month') || String(new Date().getMonth() + 1), 10);
@@ -484,7 +486,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
             {profile?.role === 'loyalis_admin' && (
               <Button
                 variant="outline"
-                onClick={logout}
+                onClick={requestLogout}
                 className="rounded-xl text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 hover:border-rose-300 transition-all cursor-pointer flex items-center gap-2 shadow-sm"
               >
                 <LogOut className="w-4 h-4" />

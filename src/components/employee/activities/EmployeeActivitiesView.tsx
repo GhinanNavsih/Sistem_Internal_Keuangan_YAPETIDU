@@ -29,7 +29,7 @@ interface EmployeeActivitiesViewProps {
 }
 
 export default function EmployeeActivitiesView({ model }: EmployeeActivitiesViewProps) {
-  const { workflow, logout, profile, message, setMessage } = model;
+  const { workflow, requestLogout, profile, message, setMessage } = model;
 
   if (!profile) {
       return <ActivitiesWorkflowSkeleton workflow={workflow} />;
@@ -51,7 +51,7 @@ export default function EmployeeActivitiesView({ model }: EmployeeActivitiesView
                 Akun Anda belum dihubungkan dengan data pegawai di sistem. Silakan hubungi administrator BAK untuk konfigurasi akun.
               </p>
               <Button
-                onClick={() => logout()}
+                onClick={requestLogout}
                 variant="outline"
                 className="rounded-xl mt-4"
               >
@@ -85,7 +85,7 @@ export default function EmployeeActivitiesView({ model }: EmployeeActivitiesView
                   <EmployeeNavigationMenu />
       
                   <Button
-                    onClick={() => logout()}
+                    onClick={requestLogout}
                     variant="ghost"
                     size="icon"
                     className="text-slate-400 hover:text-rose-500 rounded-xl h-9 w-9 border border-slate-150/40 bg-white shadow-sm flex items-center justify-center cursor-pointer"

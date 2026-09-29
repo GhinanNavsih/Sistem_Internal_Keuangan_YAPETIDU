@@ -45,6 +45,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useAuth } from '@/lib/AuthContext';
+import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
 import {
   FACILITY_REPORT_STATUS_LABELS,
@@ -386,7 +387,8 @@ function FacilityReportMobileCard({
 }
 
 function FacilityReportReviewContent() {
-  const { profile: rawProfile, activeProfile, logout } = useAuth();
+  const { profile: rawProfile, activeProfile} = useAuth();
+  const requestLogout = useConfirmLogout();
   const profile = activeProfile || rawProfile;
 
   const [reports, setReports] = useState<FacilityReportRow[]>([]);
@@ -611,7 +613,7 @@ function FacilityReportReviewContent() {
                 <EmployeeNavigationMenu />
                 <Button
                   type="button"
-                  onClick={() => void logout()}
+                  onClick={requestLogout}
                   variant="ghost"
                   size="icon"
                   className="h-9 w-9 rounded-xl border border-slate-150/40 bg-white text-slate-400 shadow-sm hover:text-rose-500"

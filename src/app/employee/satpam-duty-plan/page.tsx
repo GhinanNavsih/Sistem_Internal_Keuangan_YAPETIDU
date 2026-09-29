@@ -7,6 +7,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
+import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import { authenticatedJson } from '@/lib/payroll/client';
 import { Button } from '@/components/ui/button';
 import EmployeeNavigationMenu from '@/components/EmployeeNavigationMenu';
@@ -28,7 +29,8 @@ function jakartaToday(): string {
 }
 
 export default function SatpamDutyPlanPage() {
-  const { profile, logout } = useAuth();
+  const { profile} = useAuth();
+  const requestLogout = useConfirmLogout();
   const isKetuaShiftSatpam = (profile?.role as string) === 'ketua_shift_satpam';
 
   const [team, setTeam] = useState<Team | null>(null);
@@ -103,7 +105,7 @@ export default function SatpamDutyPlanPage() {
             </Button>
             <EmployeeNavigationMenu />
             <Button
-              onClick={() => logout()}
+              onClick={requestLogout}
               variant="ghost"
               size="icon"
               className="text-slate-400 hover:text-rose-500 rounded-xl h-9 w-9 border border-slate-150/40 bg-white shadow-sm flex items-center justify-center cursor-pointer"

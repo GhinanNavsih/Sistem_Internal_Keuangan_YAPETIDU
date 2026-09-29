@@ -9,6 +9,7 @@ import UraianNavToggles from '@/components/UraianNavToggles';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import {
   Table,
   TableBody,
@@ -645,7 +646,8 @@ function ConversionNote({ emp, tab }: { emp: unknown; tab: string }) {
 
 export default function EmployeesPage() {
   const router = useRouter();
-  const { user, profile, loading: authLoading, logout } = useAuth();
+  const { user, profile, loading: authLoading} = useAuth();
+  const requestLogout = useConfirmLogout();
   const { employeesLoyalis, employeesBlueCollar, gradeCodesBlue, gradeCodesWhite, loading: contextLoading, refreshData, kepangkatanAllowanceMap } = useDashboardData();
   const isLoyalisAdmin = profile?.role === 'loyalis_admin';
   const loyalisAdminLoyalisQuery = useEmployeesLoyalis(isLoyalisAdmin);
@@ -2218,7 +2220,7 @@ export default function EmployeesPage() {
             {isLoyalisAdmin && (
               <Button
                 variant="outline"
-                onClick={logout}
+                onClick={requestLogout}
                 className="rounded-xl text-rose-600 border-slate-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-100 transition-all cursor-pointer flex items-center gap-2"
               >
                 <LogOut className="w-4 h-4" />

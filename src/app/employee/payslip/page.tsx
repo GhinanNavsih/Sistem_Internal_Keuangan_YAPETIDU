@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
+import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import EmployeeNavigationMenu from '@/components/EmployeeNavigationMenu';
 import { db, secondaryDb } from '@/lib/firebase';
@@ -362,10 +363,10 @@ export default function EmployeePayslipPage() {
   const {
     profile: rawProfile,
     activeProfile,
-    logout,
     isImpersonatingUi,
     uiPreviewRevision,
   } = useAuth();
+  const requestLogout = useConfirmLogout();
   const profile = activeProfile || rawProfile;
 
   // Period dropdown state (defaults to last month or June 2026 minimum)
@@ -1718,7 +1719,7 @@ export default function EmployeePayslipPage() {
             Akun Loyalis Anda belum dihubungkan dengan data pegawai di sistem. Silakan hubungi administrator BAK untuk menghubungkan akun Anda.
           </p>
           <Button
-            onClick={() => logout()}
+            onClick={requestLogout}
             variant="outline"
             className="rounded-xl mt-4"
           >
@@ -1769,7 +1770,7 @@ export default function EmployeePayslipPage() {
             <EmployeeNavigationMenu />
 
             <Button
-              onClick={() => logout()}
+              onClick={requestLogout}
               variant="ghost"
               size="icon"
               className="text-black hover:text-rose-500 rounded-xl h-8 w-8 sm:h-9 sm:w-9 border border-slate-150/40 bg-white shadow-sm flex items-center justify-center cursor-pointer shrink-0"

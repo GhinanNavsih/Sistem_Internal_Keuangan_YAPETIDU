@@ -36,6 +36,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FloatingSnackbar, type SnackbarMessage } from '@/components/ui/floating-snackbar';
 import { useAuth } from '@/lib/AuthContext';
+import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
 import { authenticatedJson } from '@/lib/payroll/client';
 import {
@@ -264,7 +265,8 @@ function LoanTerms() {
 }
 
 export default function EmployeeSimpanPinjamPage() {
-  const { profile: rawProfile, activeProfile, logout } = useAuth();
+  const { profile: rawProfile, activeProfile} = useAuth();
+  const requestLogout = useConfirmLogout();
   const profile = activeProfile || rawProfile;
 
   const [loans, setLoans] = useState<LoanRow[]>([]);
@@ -520,7 +522,7 @@ export default function EmployeeSimpanPinjamPage() {
             <EmployeeNavigationMenu />
             <Button
               type="button"
-              onClick={() => void logout()}
+              onClick={requestLogout}
               variant="ghost"
               size="icon"
               className="h-9 w-9 rounded-xl border border-slate-150/40 bg-white text-slate-400 shadow-sm hover:text-rose-500"

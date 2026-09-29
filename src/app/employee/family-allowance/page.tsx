@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { OptionSelect } from '@/components/ui/option-select';
 import FamilyProofUploadCard from '@/components/employee/FamilyProofUploadCard';
 import { useAuth } from '@/lib/AuthContext';
+import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import { auth } from '@/lib/firebase';
 import { graduationDate, nextDependentLevel, todayInJakarta, type DependentLevel } from '@/lib/payroll/familyAllowance';
 import { createFinancialRequestId, authenticatedJson } from '@/lib/payroll/client';
@@ -56,7 +57,8 @@ async function submitWithProof(form: FormData) {
 }
 
 export default function FamilyAllowanceRequestPage() {
-  const { profile: rawProfile, activeProfile, loading: authLoading, logout } = useAuth();
+  const { profile: rawProfile, activeProfile, loading: authLoading} = useAuth();
+  const requestLogout = useConfirmLogout();
   const profile = activeProfile || rawProfile;
   const role = profile?.role;
   const linkedEmployeeId = profile?.linkedEmployeeId;
@@ -202,7 +204,7 @@ export default function FamilyAllowanceRequestPage() {
         <div className="flex size-9 items-center justify-center rounded-xl bg-indigo-600 text-white"><GraduationCap className="size-5" /></div>
         <div className="min-w-0 flex-1"><h1 className="truncate text-sm font-bold">Pengajuan T. Keluarga</h1><p className="truncate text-xs text-slate-500">{profile.displayName || profile.email}</p></div>
         <EmployeeNavigationMenu />
-        <Button type="button" variant="ghost" size="icon" onClick={() => void logout()} aria-label="Keluar"><LogOut className="size-4" /></Button>
+        <Button type="button" variant="ghost" size="icon" onClick={requestLogout} aria-label="Keluar"><LogOut className="size-4" /></Button>
       </div>
     </header>
     <main className="mx-auto max-w-3xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">

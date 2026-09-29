@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { FloatingSnackbar, type SnackbarMessage } from '@/components/ui/floating-snackbar';
 import { useAuth } from '@/lib/AuthContext';
+import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
 import { isBlueCollarFacilityDashboardUser } from '@/lib/facilityReports';
 import { authenticatedJson } from '@/lib/payroll/client';
@@ -51,7 +52,8 @@ function repairConfirmation(log: RepairLogView): string {
 }
 
 export default function VenueInspectionPage() {
-  const { profile: realProfile, activeProfile, logout } = useAuth();
+  const { profile: realProfile, activeProfile} = useAuth();
+  const requestLogout = useConfirmLogout();
   const profile = activeProfile || realProfile;
   const isFieldStaff = isBlueCollarFacilityDashboardUser(profile);
 
@@ -160,7 +162,7 @@ export default function VenueInspectionPage() {
               <EmployeeNavigationMenu />
               <Button
                 type="button"
-                onClick={() => void logout()}
+                onClick={requestLogout}
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 rounded-md text-slate-500 hover:bg-slate-100 hover:text-red-600"

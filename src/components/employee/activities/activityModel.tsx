@@ -10,6 +10,7 @@ import React, {
 import {
   useAuth,
 } from '@/lib/AuthContext';
+import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import {
   useSearchParams,
   useRouter,
@@ -124,7 +125,8 @@ export interface ActivitiesContentProps {
 }
 
 export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps) {
-  const { profile: rawProfile, activeProfile, logout, user } = useAuth();
+  const { profile: rawProfile, activeProfile, user } = useAuth();
+  const requestLogout = useConfirmLogout();
   const profile = activeProfile || rawProfile;
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -3031,7 +3033,7 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
 
   return {
     workflow,
-    logout,
+    requestLogout,
     profile,
     router,
     activityProofInputRef,

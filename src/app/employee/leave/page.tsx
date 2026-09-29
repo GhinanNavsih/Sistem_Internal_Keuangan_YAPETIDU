@@ -12,6 +12,7 @@ import { SatpamAbsencePanel } from '@/components/satpam/SatpamDutyAndAbsencePane
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useAuth } from '@/lib/AuthContext';
+import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import { authenticatedJson } from '@/lib/payroll/client';
 import { isPekaryaOfficialLeaveCategory } from '@/lib/payroll/pekaryaOfficialLeave';
 import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
@@ -35,8 +36,8 @@ export default function EmployeeLeavePage() {
     profile: rawProfile,
     activeProfile,
     loading: authLoading,
-    logout,
   } = useAuth();
+  const requestLogout = useConfirmLogout();
   const profile = activeProfile || rawProfile;
   const [openPeriods, setOpenPeriods] = useState<OpenPeriod[]>([]);
   const [loadingPeriods, setLoadingPeriods] = useState(true);
@@ -161,7 +162,7 @@ export default function EmployeeLeavePage() {
             type="button"
             variant="ghost"
             size="icon"
-            onClick={() => void logout()}
+            onClick={requestLogout}
             className="h-9 w-9 shrink-0 rounded-xl border border-slate-150/40 bg-white text-slate-400 shadow-sm hover:text-rose-500"
             title="Keluar"
             aria-label="Keluar"

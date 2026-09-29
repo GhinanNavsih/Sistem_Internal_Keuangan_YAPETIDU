@@ -4,6 +4,7 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/AuthContext";
 import QueryProvider from "@/lib/queries/QueryProvider";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
+import { LogoutConfirmProvider } from "@/components/LogoutConfirmProvider";
 import Script from "next/script";
 
 const inter = Inter({
@@ -48,8 +49,10 @@ export default function RootLayout({
       <body className="font-sans min-h-screen bg-slate-50">
         <QueryProvider>
           <AuthProvider>
-            <ImpersonationBanner />
-            {children}
+            <LogoutConfirmProvider>
+              <ImpersonationBanner />
+              {children}
+            </LogoutConfirmProvider>
           </AuthProvider>
         </QueryProvider>
         <Script id="register-sw" strategy="afterInteractive">
