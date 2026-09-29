@@ -30,6 +30,11 @@ export interface AnnualPaidLeaveRequest {
   reason: string;
   /** Surat resmi that came with the request; older requests carry none. */
   attachments?: GantiLiburAttachment[];
+  /**
+   * Set when the system created the request from an unexcused absence (see
+   * `loyalisAutoLeave.ts`) rather than the employee submitting it.
+   */
+  source?: 'auto_absence';
   serviceDate: string;
   qualifyingDate: string;
   status: AnnualPaidLeaveStatus;

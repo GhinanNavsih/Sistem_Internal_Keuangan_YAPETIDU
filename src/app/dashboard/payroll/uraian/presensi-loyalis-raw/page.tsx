@@ -52,6 +52,11 @@ import {
   type LoyalisDayCreditKind,
 } from '@/lib/payroll/loyalisPaidLeave';
 import {
+  AUTO_ABSENCE_LEAVE_SOURCE,
+  describeAutoLeaveSummary,
+  type AutoLeaveSummary,
+} from '@/lib/payroll/loyalisAutoLeave';
+import {
   authenticatedFormData,
   authenticatedJson,
   createFinancialRequestId,
@@ -585,6 +590,7 @@ export default function PresensiLoyalisRawPage() {
           employeeKind: string;
           leaveDate: string;
           period: string;
+          source?: string;
         }>;
       }>(`/api/payroll/paid-leave/review?year=${year}&status=approved&period=${canonicalPeriod}`),
       authenticatedJson<{
@@ -601,7 +607,14 @@ export default function PresensiLoyalisRawPage() {
       setApprovedPaidLeaves([
         ...(annualLeave.status === 'fulfilled'
           ? annualLeave.value.requests
-              .filter((item) => item.employeeKind === 'loyalis')
+              // Automatic cuti is decided from the saved raw presence on every
+              // save (server side), so the table must not show it as CUTI: a
+              // day the admin fixes has to be able to fall out of it again.
+              .filter(
+                (item) =>
+                  item.employeeKind === 'loyalis' &&
+                  item.source !== AUTO_ABSENCE_LEAVE_SOURCE,
+              )
               .map((item) => ({
                 employeeId: item.employeeId,
                 leaveDate: item.leaveDate,
@@ -2108,22 +2121,6 @@ export default function PresensiLoyalisRawPage() {
       // The save clears `sourceImportStale`, which the shared status banner reads.
       void invalidateAttendanceImportStatus(periodToken);
 
-      let propagationNote = '';
-      try {
-        propagationNote = await propagateUraianToSlips({
-          scope: 'loyalis',
-          period: periodToken,
-        });
-      } catch (propagationError) {
-        // The attendance document is already safely saved. A propagation
-        // outage must not turn that successful save into a false failure.
-        console.error('Gagal menyinkronkan presensi Loyalis ke slip draf:', propagationError);
-        propagationNote = ' Namun slip gaji belum diperbarui — buka Payroll › Refresh Massal.';
-      }
-
-      // The propagation above updates only eligible draft slips. Verified,
-      // locked, and paid slips remain immutable and receive drift notices.
-
       // Update correction requests
       try {
         const updateCorrectionPromises = Object.entries(pendingResolutionUpdates).map(async ([reqId, update]) => {
@@ -2143,9 +2140,44 @@ export default function PresensiLoyalisRawPage() {
         console.error("Gagal memperbarui status pengajuan koreksi presensi:", err);
       }
 
+      // Cuti otomatis: every unexcused absence of the saved presence spends a
+      // day of the employee's balance while it lasts. It runs after the
+      // corrections above (a rejected one leaves its day absent, an approved
+      // one excuses it) and before slips are refreshed, so pay includes it.
+      // Never on autosave, which does not propagate either.
+      let autoLeaveNote = '';
+      try {
+        autoLeaveNote = describeAutoLeaveSummary(
+          await authenticatedJson<AutoLeaveSummary>('/api/attendance/loyalis/auto-leave', {
+            method: 'POST',
+            body: JSON.stringify({ period: periodToken }),
+          }),
+        );
+      } catch (autoLeaveError) {
+        console.error('Gagal memproses cuti otomatis presensi Loyalis:', autoLeaveError);
+        autoLeaveNote =
+          ' Namun cuti otomatis untuk hari tidak hadir belum diproses — klik Simpan Data Presensi lagi.';
+      }
+
+      let propagationNote = '';
+      try {
+        propagationNote = await propagateUraianToSlips({
+          scope: 'loyalis',
+          period: periodToken,
+        });
+      } catch (propagationError) {
+        // The attendance document is already safely saved. A propagation
+        // outage must not turn that successful save into a false failure.
+        console.error('Gagal menyinkronkan presensi Loyalis ke slip draf:', propagationError);
+        propagationNote = ' Namun slip gaji belum diperbarui — buka Payroll › Refresh Massal.';
+      }
+
+      // The propagation above updates only eligible draft slips. Verified,
+      // locked, and paid slips remain immutable and receive drift notices.
+
       setMessage({
         type: 'success',
-        text: `Data bonus presensi berhasil disimpan.${propagationNote} Tabel tetap dapat diubah — klik Simpan Data Presensi lagi untuk memperbarui data tersimpan.`,
+        text: `Data bonus presensi berhasil disimpan.${autoLeaveNote}${propagationNote} Tabel tetap dapat diubah — klik Simpan Data Presensi lagi untuk memperbarui data tersimpan.`,
       });
       // The working table stays open after a save so the admin can keep
       // correcting rows without re-entering edit mode; every subsequent save

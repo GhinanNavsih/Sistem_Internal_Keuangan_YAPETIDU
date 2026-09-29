@@ -378,7 +378,14 @@ export function PaidLeavePanel() {
                     <article key={request.id} className="rounded-xl border border-slate-200 p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="font-bold text-slate-900">{formatDate(request.leaveDate)}</p>
+                          <p className="font-bold text-slate-900">
+                            {formatDate(request.leaveDate)}
+                            {request.source === 'auto_absence' && (
+                              <span className="ml-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 align-middle text-xs font-semibold text-slate-600">
+                                Cuti otomatis
+                              </span>
+                            )}
+                          </p>
                           <p className="mt-1 text-sm text-slate-600">{request.reason || 'Tanpa alasan tertulis'}</p>
                           <GantiLiburAttachmentLinks attachments={request.attachments} className="mt-2" />
                           <span className={`mt-2 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${statusClass(request.status)}`}>

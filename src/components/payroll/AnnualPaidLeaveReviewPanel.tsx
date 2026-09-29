@@ -30,6 +30,7 @@ interface ReviewRequest {
   period: string;
   reason: string;
   attachments?: GantiLiburAttachment[];
+  source?: 'auto_absence';
   serviceDate: string;
   qualifyingDate: string;
   status: AnnualPaidLeaveStatus;
@@ -306,7 +307,14 @@ export default function AnnualPaidLeaveReviewPanel() {
                 <div key={item.id} className="rounded-2xl border border-slate-200 p-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0">
-                      <div className="font-bold text-slate-800">{item.employeeName || item.employeeId}</div>
+                      <div className="font-bold text-slate-800">
+                        {item.employeeName || item.employeeId}
+                        {item.source === 'auto_absence' && (
+                          <span className="ml-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 align-middle text-xs font-semibold text-slate-600">
+                            Cuti otomatis
+                          </span>
+                        )}
+                      </div>
                       <div className="mt-1 text-sm text-slate-500">
                         {item.employeeKind === 'loyalis' ? 'Loyalis' : item.category} · {formatDate(item.leaveDate)} · Periode {item.period}
                       </div>
