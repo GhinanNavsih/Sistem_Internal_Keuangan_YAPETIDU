@@ -5,7 +5,7 @@ export function LeaveHeaderShell({ displayName }: { displayName?: string | null 
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 shadow-sm backdrop-blur">
       <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3 sm:px-6">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-200/60">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-sm bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-200/60">
           <ShieldCheck className="h-6 w-6" />
         </div>
         <div className="min-w-0 flex-1">
@@ -13,11 +13,11 @@ export function LeaveHeaderShell({ displayName }: { displayName?: string | null 
           {displayName ? (
             <p className="truncate text-sm text-slate-500">{displayName}</p>
           ) : (
-            <div className="h-2.5 w-24 mt-1.5 rounded-full bg-slate-200 animate-pulse" />
+            <div className="h-2.5 w-24 mt-1.5 rounded-sm bg-slate-200 animate-pulse" />
           )}
         </div>
         <EmployeeNavigationMenu />
-        <div className="h-9 w-9 shrink-0 rounded-xl border border-slate-200 bg-white shadow-sm flex items-center justify-center">
+        <div className="h-9 w-9 shrink-0 rounded-sm border border-slate-200 bg-white shadow-sm flex items-center justify-center">
           <LogOut className="h-4.5 w-4.5 text-slate-300" />
         </div>
       </div>
@@ -39,14 +39,14 @@ export function LeaveHeaderShell({ displayName }: { displayName?: string | null 
 export function LeaveCardSkeleton({ variant }: { variant: 'satpam' | 'pekarya' | 'unknown' }) {
   if (variant === 'unknown') {
     return (
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 bg-slate-50/70 p-5 space-y-2">
-          <div className="h-5 w-56 rounded-full bg-slate-200 animate-pulse" />
-          <div className="h-3.5 w-full max-w-md rounded-full bg-slate-100 animate-pulse" />
+          <div className="h-5 w-56 rounded-sm bg-slate-200 animate-pulse" />
+          <div className="h-3.5 w-full max-w-md rounded-sm bg-slate-100 animate-pulse" />
         </div>
         <div className="p-5 space-y-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-12 w-full rounded-xl bg-slate-100 animate-pulse" />
+            <div key={i} className="h-12 w-full rounded-sm bg-slate-100 animate-pulse" />
           ))}
         </div>
       </div>
@@ -56,7 +56,7 @@ export function LeaveCardSkeleton({ variant }: { variant: 'satpam' | 'pekarya' |
   const isSatpam = variant === 'satpam';
   return (
     <div
-      className={`overflow-hidden rounded-2xl border bg-white shadow-sm ${
+      className={`overflow-hidden rounded-md border bg-white shadow-sm ${
         isSatpam ? 'border-amber-200' : 'border-indigo-200'
       }`}
     >
@@ -77,11 +77,11 @@ export function LeaveCardSkeleton({ variant }: { variant: 'satpam' | 'pekarya' |
       </div>
       <div className="p-5 space-y-3">
         {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="h-12 w-full rounded-xl bg-slate-100 animate-pulse" />
+          <div key={i} className="h-12 w-full rounded-sm bg-slate-100 animate-pulse" />
         ))}
         <div className="pt-2">
-          <div className="h-4 w-32 rounded-full bg-slate-200 animate-pulse mb-2" />
-          <div className="h-16 w-full rounded-xl bg-slate-100 animate-pulse" />
+          <div className="h-4 w-32 rounded-sm bg-slate-200 animate-pulse mb-2" />
+          <div className="h-16 w-full rounded-sm bg-slate-100 animate-pulse" />
         </div>
       </div>
     </div>

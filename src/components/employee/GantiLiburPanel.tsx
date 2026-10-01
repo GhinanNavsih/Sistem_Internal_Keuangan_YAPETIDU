@@ -155,7 +155,7 @@ function DateTextInput({
       value={value}
       aria-invalid={invalid || undefined}
       onChange={(event) => onValueChange(maskDateInput(event.target.value))}
-      className="min-h-14 rounded-xl text-base font-mono"
+      className="min-h-14 rounded-sm text-base font-mono"
     />
   );
 }
@@ -381,8 +381,8 @@ export function GantiLiburPanel() {
 
   return (
     <>
-      <Card className="overflow-hidden rounded-2xl border-sky-200 bg-white shadow-sm">
-        <CardHeader className="border-b border-sky-100 bg-sky-50/70 p-5">
+      <Card className="overflow-hidden rounded-md border-sky-200 bg-white shadow-sm">
+        <CardHeader className="rounded-t-md border-b border-sky-100 bg-sky-50/70 p-5">
           <CardTitle className="flex items-center gap-2 text-xl">
             <CalendarClock className="h-6 w-6 text-sky-700" />
             Ganti Libur
@@ -402,7 +402,7 @@ export function GantiLiburPanel() {
           {(message || error) && (
             <div
               role="status"
-              className={`rounded-xl border p-4 ${
+              className={`rounded-md border p-4 ${
                 error
                   ? 'border-rose-200 bg-rose-50 text-rose-800'
                   : 'border-emerald-200 bg-emerald-50 text-emerald-800'
@@ -477,7 +477,7 @@ export function GantiLiburPanel() {
               </div>
 
               {issue && !workedDateHint && !dayOffHint && (
-                <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
+                <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
                   {gantiLiburSubmitIssueMessage(issue)}
                 </p>
               )}
@@ -500,7 +500,7 @@ export function GantiLiburPanel() {
                 <Button
                   type="button"
                   variant="outline"
-                  className="min-h-14 w-full gap-2 rounded-xl border-dashed border-slate-300 text-base font-bold text-slate-700"
+                  className="min-h-14 w-full gap-2 rounded-sm border-dashed border-slate-300 text-base font-bold text-slate-700"
                   disabled={working || files.length >= GANTI_LIBUR_MAX_ATTACHMENTS}
                   onClick={() => fileInputRef.current?.click()}
                 >
@@ -517,9 +517,9 @@ export function GantiLiburPanel() {
                       return (
                         <li
                           key={item.key}
-                          className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3"
+                          className="flex items-center gap-3 rounded-md border border-slate-200 bg-slate-50 p-3"
                         >
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm border border-slate-200 bg-white">
                             <Icon className="h-5 w-5 text-sky-600" />
                           </div>
                           <div className="min-w-0 flex-1">
@@ -545,7 +545,7 @@ export function GantiLiburPanel() {
                               type="button"
                               variant="ghost"
                               size="icon"
-                              className="h-9 w-9 shrink-0 rounded-full text-slate-500"
+                              className="h-9 w-9 shrink-0 rounded-sm text-slate-500"
                               aria-label={`Hapus ${item.name}`}
                               disabled={working}
                               onClick={() => removeFile(item.key)}
@@ -578,7 +578,7 @@ export function GantiLiburPanel() {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-8 gap-1 text-slate-500"
+                      className="rounded-sm h-8 gap-1 text-slate-500"
                       onClick={() => {
                         setReason('');
                         setShowReason(false);
@@ -594,7 +594,7 @@ export function GantiLiburPanel() {
                     value={reason}
                     maxLength={500}
                     onChange={(event) => setReason(event.target.value)}
-                    className="min-h-24 w-full rounded-xl border border-slate-300 p-3 text-base"
+                    className="min-h-24 w-full rounded-sm border border-slate-300 p-3 text-base"
                     placeholder="Contoh: Masuk untuk persiapan wisuda"
                   />
                   <p className="text-right text-xs text-slate-400">{reason.length}/500</p>
@@ -603,7 +603,7 @@ export function GantiLiburPanel() {
                 <Button
                   type="button"
                   variant="outline"
-                  className="min-h-12 w-full justify-start gap-2 rounded-xl text-base font-semibold text-slate-600"
+                  className="min-h-12 w-full justify-start gap-2 rounded-sm text-base font-semibold text-slate-600"
                   onClick={() => setShowReason(true)}
                 >
                   <MessageSquarePlus className="h-5 w-5" />
@@ -611,7 +611,7 @@ export function GantiLiburPanel() {
                 </Button>
               )}
 
-              <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 text-sm text-indigo-900">
+              <div className="rounded-md border border-indigo-100 bg-indigo-50 p-4 text-sm text-indigo-900">
                 <p className="flex items-center gap-2 font-bold">
                   <CalendarDays className="h-4 w-4" />
                   Diverifikasi setelah data presensi diunggah
@@ -620,7 +620,7 @@ export function GantiLiburPanel() {
 
               <Button
                 type="button"
-                className="min-h-12 w-full gap-2 bg-sky-600 hover:bg-sky-700"
+                className="rounded-sm min-h-12 w-full gap-2 bg-sky-600 hover:bg-sky-700"
                 disabled={working || !canSubmit}
                 onClick={() => void submit()}
               >
@@ -632,7 +632,7 @@ export function GantiLiburPanel() {
                 <section className="space-y-3 border-t border-slate-200 pt-5">
                   <h3 className="font-bold text-slate-900">Riwayat Ganti Libur</h3>
                   {requests.map((request) => (
-                    <article key={request.id} className="rounded-xl border border-slate-200 p-4">
+                    <article key={request.id} className="rounded-md border border-slate-200 p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="font-bold text-slate-900">
@@ -648,7 +648,7 @@ export function GantiLiburPanel() {
                             attachments={request.attachments}
                             className="mt-2"
                           />
-                          <span className={`mt-2 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${statusClass(request.status)}`}>
+                          <span className={`mt-2 inline-flex items-center gap-1.5 rounded-sm border px-2.5 py-1 text-xs font-bold ${statusClass(request.status)}`}>
                             {request.status === 'approved' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Clock3 className="h-3.5 w-3.5" />}
                             {statusLabel(request.status)}
                           </span>
@@ -660,7 +660,7 @@ export function GantiLiburPanel() {
                           <Button
                             type="button"
                             variant="outline"
-                            className="min-h-11 shrink-0 gap-2"
+                            className="rounded-sm min-h-11 shrink-0 gap-2"
                             disabled={working}
                             onClick={() => void withdraw(request)}
                           >
@@ -680,7 +680,7 @@ export function GantiLiburPanel() {
 
       {working && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
-          <div role="status" aria-live="assertive" className="w-full max-w-sm rounded-3xl bg-white p-6 text-center shadow-2xl">
+          <div role="status" aria-live="assertive" className="w-full max-w-sm rounded-md bg-white p-6 text-center shadow-2xl">
             <Loader2 className="mx-auto h-10 w-10 animate-spin text-sky-600" />
             <p className="mt-4 font-bold text-slate-900">{workingLabel}</p>
             <p className="mt-1 text-sm text-slate-500">Mohon jangan tutup halaman ini.</p>

@@ -461,7 +461,7 @@ export function PekaryaOfficialLeavePanel(props: {
       {(message || error) && (
         <div
           role="status"
-          className={`rounded-xl border p-4 ${
+          className={`rounded-md border p-4 ${
             error
               ? 'border-rose-200 bg-rose-50 text-rose-800'
               : 'border-emerald-200 bg-emerald-50 text-emerald-800'
@@ -471,7 +471,7 @@ export function PekaryaOfficialLeavePanel(props: {
         </div>
       )}
       {hasRestoredDraft && (
-        <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50/90 px-3.5 py-2.5 text-xs text-amber-900">
+        <div className="flex items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50/90 px-3.5 py-2.5 text-xs text-amber-900">
           <div className="flex items-center gap-2">
             <span className="flex h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
             <span className="font-semibold">Draft pengajuan sebelumnya dipulihkan otomatis.</span>
@@ -486,7 +486,7 @@ export function PekaryaOfficialLeavePanel(props: {
         </div>
       )}
       {availablePeriods.length === 0 ? (
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-slate-700">
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-slate-700">
           Belum ada periode payroll terbuka untuk pengajuan presensi.
         </div>
       ) : (
@@ -505,7 +505,7 @@ export function PekaryaOfficialLeavePanel(props: {
                 setSelectedExifImage(null);
                 setError('');
               }}
-              className="min-h-14 rounded-xl text-base"
+              className="min-h-14 rounded-sm text-base"
             />
             {!dateIsOpen && effectiveDate && (
               <p className="text-sm font-semibold text-rose-700">
@@ -548,7 +548,7 @@ export function PekaryaOfficialLeavePanel(props: {
             >
               <SelectTrigger
                 id="official-leave-report-type"
-                className="min-h-14 w-full rounded-xl border-slate-300 bg-white px-4 text-base font-bold text-slate-800 shadow-none hover:bg-slate-50"
+                className="min-h-14 w-full rounded-sm border-slate-300 bg-white px-4 text-base font-bold text-slate-800 shadow-none hover:bg-slate-50"
               >
               <SelectValue>{REPORT_TYPE_LABELS[reportType]}</SelectValue>
               </SelectTrigger>
@@ -556,17 +556,17 @@ export function PekaryaOfficialLeavePanel(props: {
                 side="top"
                 align="start"
                 alignItemWithTrigger={false}
-                className="max-h-60 rounded-xl border-slate-200 bg-white p-1 shadow-xl"
+                className="max-h-60 rounded-md border-slate-200 bg-white p-1 shadow-xl"
               >
                 <SelectItem
                   value="scan"
-                  className="min-h-12 rounded-lg px-3 py-3 text-base font-semibold"
+                  className="min-h-12 rounded-sm px-3 py-3 text-base font-semibold"
                 >
                   Scan Masuk &amp; Scan Keluar
                 </SelectItem>
                 <SelectItem
                   value="izin_resmi"
-                  className="min-h-12 rounded-lg px-3 py-3 text-base font-semibold"
+                  className="min-h-12 rounded-sm px-3 py-3 text-base font-semibold"
                 >
                   Izin Resmi / Sakit (Hari Penuh)
                 </SelectItem>
@@ -583,7 +583,7 @@ export function PekaryaOfficialLeavePanel(props: {
                     type="time"
                     value={scanIn}
                     onChange={(event) => setScanIn(event.target.value)}
-                    className="min-h-14 rounded-xl text-base font-mono"
+                    className="min-h-14 rounded-sm text-base font-mono"
                   />
                 </div>
                 <div className="space-y-2">
@@ -593,13 +593,13 @@ export function PekaryaOfficialLeavePanel(props: {
                     type="time"
                     value={scanOut}
                     onChange={(event) => setScanOut(event.target.value)}
-                    className="min-h-14 rounded-xl text-base font-mono"
+                    className="min-h-14 rounded-sm text-base font-mono"
                   />
                 </div>
               </div>
             </>
           ) : (
-            <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 text-sm text-indigo-900">
+            <div className="rounded-md border border-indigo-100 bg-indigo-50 p-4 text-sm text-indigo-900">
               <p className="flex items-center gap-2 font-bold">
                 <CalendarDays className="h-4 w-4" />
                 {workflowMode === 'sick_leave'
@@ -621,7 +621,7 @@ export function PekaryaOfficialLeavePanel(props: {
             <Label htmlFor="official-leave-reason">Alasan lengkap</Label>
             <textarea
               id="official-leave-reason"
-              className="min-h-28 w-full rounded-xl border border-slate-300 p-3 text-base"
+              className="min-h-28 w-full rounded-sm border border-slate-300 p-3 text-base"
               value={reason}
               onChange={(event) => setReason(event.target.value)}
               placeholder={
@@ -648,7 +648,7 @@ export function PekaryaOfficialLeavePanel(props: {
               }}
             />
             {evidence ? (
-              <div className="flex items-center justify-between gap-2 rounded-xl border border-blue-200 bg-blue-50/80 p-2 text-sm">
+              <div className="flex items-center justify-between gap-2 rounded-md border border-blue-200 bg-blue-50/80 p-2 text-sm">
                 <div className="flex min-w-0 items-center gap-1.5 font-bold text-blue-800">
                   <CheckCircle2 className="h-4 w-4 shrink-0 text-blue-600" />
                   <span className="truncate">Foto bukti terunggah</span>
@@ -663,7 +663,7 @@ export function PekaryaOfficialLeavePanel(props: {
                         auditMetadata: evidence.auditMetadata,
                       })
                     }
-                    className="flex min-h-12 items-center gap-1 rounded-lg bg-blue-600 px-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700"
+                    className="flex min-h-12 items-center gap-1 rounded-sm bg-blue-600 px-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700"
                   >
                     <Eye className="h-4 w-4" />
                     Lihat Foto
@@ -671,7 +671,7 @@ export function PekaryaOfficialLeavePanel(props: {
                   <button
                     type="button"
                     onClick={() => setEvidence(null)}
-                    className="flex h-12 w-12 items-center justify-center rounded-lg text-rose-600 transition-colors hover:bg-rose-100"
+                    className="flex h-12 w-12 items-center justify-center rounded-sm text-rose-600 transition-colors hover:bg-rose-100"
                     title="Hapus Foto Ini"
                     aria-label="Hapus foto bukti"
                   >
@@ -685,7 +685,7 @@ export function PekaryaOfficialLeavePanel(props: {
                 variant="outline"
                 disabled={evidenceUploading || !dateIsOpen}
                 onClick={() => evidenceInputRef.current?.click()}
-                className="min-h-12 w-full gap-2 rounded-xl border-dashed border-slate-300 bg-slate-50/60 text-base font-bold text-slate-700 hover:bg-slate-100"
+                className="min-h-12 w-full gap-2 rounded-sm border-dashed border-slate-300 bg-slate-50/60 text-base font-bold text-slate-700 hover:bg-slate-100"
               >
                 {evidenceUploading ? (
                   <Loader2 className="h-5 w-5 animate-spin" />
@@ -698,7 +698,7 @@ export function PekaryaOfficialLeavePanel(props: {
           </div>
           <Button
             type="button"
-            className="min-h-12 w-full gap-2 bg-indigo-600 hover:bg-indigo-700"
+            className="rounded-sm min-h-12 w-full gap-2 bg-indigo-600 hover:bg-indigo-700"
             disabled={
               working ||
               evidenceUploading ||
@@ -734,7 +734,7 @@ export function PekaryaOfficialLeavePanel(props: {
             const requestScanIn = request.scanIn?.slice(0, 5);
             const requestScanOut = request.scanOut?.slice(0, 5);
             return (
-              <article key={request.id} className="rounded-xl border border-slate-200 p-4">
+              <article key={request.id} className="rounded-md border border-slate-200 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-bold">
@@ -763,7 +763,7 @@ export function PekaryaOfficialLeavePanel(props: {
                         : ''}
                     </p>
                     {request.decisionReason && (
-                      <p className="mt-2 rounded-lg bg-slate-50 p-2 text-sm text-slate-600">
+                      <p className="mt-2 rounded-md bg-slate-50 p-2 text-sm text-slate-600">
                         Keputusan: {request.decisionReason}
                       </p>
                     )}
@@ -777,7 +777,7 @@ export function PekaryaOfficialLeavePanel(props: {
                             auditMetadata: request.evidenceAuditMetadata,
                           })
                         }
-                        className="mt-2 flex min-h-10 items-center gap-1.5 rounded-lg bg-blue-600 px-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700"
+                        className="mt-2 flex min-h-10 items-center gap-1.5 rounded-sm bg-blue-600 px-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700"
                       >
                         <Eye className="h-4 w-4" />
                         Lihat Foto Bukti
@@ -788,7 +788,7 @@ export function PekaryaOfficialLeavePanel(props: {
                     <Button
                       type="button"
                       variant="outline"
-                      className="min-h-12"
+                      className="rounded-sm min-h-12"
                       disabled={working}
                       onClick={() => void withdraw(request)}
                     >
@@ -824,8 +824,8 @@ export function PekaryaOfficialLeavePanel(props: {
 
   return (
     <>
-      <Card className="overflow-hidden rounded-2xl border-indigo-200 bg-white shadow-sm">
-        <CardHeader className="border-b border-indigo-100 bg-indigo-50/70 p-5">
+      <Card className="overflow-hidden rounded-md border-indigo-200 bg-white shadow-sm">
+        <CardHeader className="rounded-t-md border-b border-indigo-100 bg-indigo-50/70 p-5">
           <CardTitle className="flex items-center gap-2 text-xl">
             <ShieldCheck className="h-6 w-6 text-indigo-700" />
             {workflowMode === 'presence_correction'

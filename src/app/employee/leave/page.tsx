@@ -106,9 +106,9 @@ export default function EmployeeLeavePage() {
   if (!profile || !profile.linkedEmployeeId || !isSupportedEmployee) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 p-6">
-        <Card className="w-full max-w-md rounded-3xl border-none bg-white shadow-xl">
+        <Card className="w-full max-w-md rounded-md border-none bg-white shadow-xl">
           <CardContent className="space-y-4 p-8 text-center">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-rose-50">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-sm bg-rose-50">
               <AlertCircle className="h-8 w-8 text-rose-500" />
             </div>
             <h1 className="text-xl font-bold text-slate-900">
@@ -118,7 +118,7 @@ export default function EmployeeLeavePage() {
               Akun ini belum terhubung ke pegawai yang dapat mengajukan presensi
               atau izin.
             </p>
-            <Button
+            <Button className="rounded-sm"
               variant="outline"
               render={<Link href={getEmployeeActivitiesPath(profile || {})} />}
             >
@@ -140,14 +140,14 @@ export default function EmployeeLeavePage() {
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 shrink-0 rounded-xl text-slate-400 hover:bg-slate-50 hover:text-slate-700"
+                className="h-9 w-9 shrink-0 rounded-sm text-slate-400 hover:bg-slate-50 hover:text-slate-700"
                 title="Kembali ke Laporan Kegiatan"
                 aria-label="Kembali ke Laporan Kegiatan"
               >
                 <ChevronLeft className="h-5 w-5" />
               </Button>
             </Link>
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-200/60">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-200/60">
               <ShieldCheck className="h-4.5 w-4.5" />
             </div>
             <div className="min-w-0">
@@ -163,7 +163,7 @@ export default function EmployeeLeavePage() {
             variant="ghost"
             size="icon"
             onClick={requestLogout}
-            className="h-9 w-9 shrink-0 rounded-xl border border-slate-150/40 bg-white text-slate-400 shadow-sm hover:text-rose-500"
+            className="h-9 w-9 shrink-0 rounded-sm border border-slate-150/40 bg-white text-slate-400 shadow-sm hover:text-rose-500"
             title="Keluar"
             aria-label="Keluar"
           >
@@ -173,7 +173,7 @@ export default function EmployeeLeavePage() {
       </header>
 
       <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
-        <div className="mb-4 space-y-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-4 space-y-2 rounded-md border border-slate-200 bg-white p-4 shadow-sm">
           <label htmlFor="leave-workflow" className="text-sm font-bold text-slate-700">
             Jenis pengajuan
           </label>
@@ -192,11 +192,11 @@ export default function EmployeeLeavePage() {
           >
             <SelectTrigger
               id="leave-workflow"
-              className="h-14 w-full rounded-xl px-4 text-base font-bold"
+              className="h-14 w-full rounded-sm px-4 text-base font-bold"
             >
               <SelectValue>{selectedWorkflowLabel}</SelectValue>
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="rounded-md">
               <SelectItem
                 value="presence_correction"
                 className="min-h-12 px-3 py-3 text-base font-semibold"
@@ -238,10 +238,10 @@ export default function EmployeeLeavePage() {
         ) : loadingPeriods ? (
           <LeaveCardSkeleton variant={isSatpam ? 'satpam' : 'pekarya'} />
         ) : periodError ? (
-          <Card className="rounded-3xl border-rose-200 bg-rose-50 shadow-sm">
+          <Card className="rounded-md border-rose-200 bg-rose-50 shadow-sm">
             <CardContent className="space-y-4 p-5 text-rose-800">
               <p>{periodError}</p>
-              <Button variant="outline" onClick={() => void loadOpenPeriods()}>
+              <Button className="rounded-sm" variant="outline" onClick={() => void loadOpenPeriods()}>
                 Coba Lagi
               </Button>
             </CardContent>

@@ -202,7 +202,7 @@ function DailyPresenceLogDetails({
       </button>
 
       {expanded && (
-        <div className="mt-2.5 overflow-x-auto border border-slate-200/80 rounded-xl bg-white text-xs animate-in fade-in duration-200 shadow-sm">
+        <div className="mt-2.5 overflow-x-auto border border-slate-200/80 rounded-md bg-white text-xs animate-in fade-in duration-200 shadow-sm">
           {logs.length > 0 ? (
             <table className="w-full table-fixed border-collapse text-[10px] sm:text-[11px]">
               <thead className="bg-slate-50 border-b border-slate-200 font-bold text-black">
@@ -1699,7 +1699,7 @@ export default function EmployeePayslipPage() {
       <div className="min-h-screen bg-white font-sans selection:bg-indigo-100 relative text-black pb-16">
         <PayslipHeaderShell />
         <div className="max-w-4xl mx-auto px-6 sm:px-8 md:px-12 mt-8 space-y-6 relative z-10">
-          <div className="py-3.5 px-5 h-[60px] bg-slate-50/80 rounded-2xl border border-slate-100 animate-pulse" />
+          <div className="py-3.5 px-5 h-[60px] bg-slate-50/80 rounded-md border border-slate-100 animate-pulse" />
           <PayslipBodySkeleton />
         </div>
       </div>
@@ -1710,8 +1710,8 @@ export default function EmployeePayslipPage() {
   if (!profile.linkedEmployeeId) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 relative overflow-hidden">
-        <div className="max-w-md w-full rounded-2xl border border-slate-200 bg-white p-8 text-center space-y-4 relative z-10 animate-in zoom-in-95 duration-200">
-          <div className="w-16 h-16 mx-auto rounded-2xl bg-rose-50 flex items-center justify-center">
+        <div className="max-w-md w-full rounded-md border border-slate-200 bg-white p-8 text-center space-y-4 relative z-10 animate-in zoom-in-95 duration-200">
+          <div className="w-16 h-16 mx-auto rounded-sm bg-rose-50 flex items-center justify-center">
             <AlertCircle className="w-8 h-8 text-rose-500" />
           </div>
           <h2 className="text-xl font-bold text-black">Akun Belum Dihubungkan</h2>
@@ -1721,7 +1721,7 @@ export default function EmployeePayslipPage() {
           <Button
             onClick={requestLogout}
             variant="outline"
-            className="rounded-xl mt-4"
+            className="rounded-sm mt-4"
           >
             <LogOut className="w-4 h-4 mr-2" />
             Keluar
@@ -1750,7 +1750,7 @@ export default function EmployeePayslipPage() {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 shrink-0 rounded-xl text-slate-400 hover:bg-slate-50 hover:text-slate-700"
+                  className="h-9 w-9 shrink-0 rounded-sm text-slate-400 hover:bg-slate-50 hover:text-slate-700"
                   title="Kembali ke Laporan Kegiatan"
                   aria-label="Kembali ke Laporan Kegiatan"
                 >
@@ -1758,7 +1758,7 @@ export default function EmployeePayslipPage() {
                 </Button>
               </Link>
             )}
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-400 flex items-center justify-center shadow-lg shadow-indigo-200 shrink-0">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-sm bg-gradient-to-tr from-indigo-500 to-purple-400 flex items-center justify-center shadow-lg shadow-indigo-200 shrink-0">
               <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </div>
             <div className="min-w-0 shrink">
@@ -1773,7 +1773,7 @@ export default function EmployeePayslipPage() {
               onClick={requestLogout}
               variant="ghost"
               size="icon"
-              className="text-black hover:text-rose-500 rounded-xl h-8 w-8 sm:h-9 sm:w-9 border border-slate-150/40 bg-white shadow-sm flex items-center justify-center cursor-pointer shrink-0"
+              className="text-black hover:text-rose-500 rounded-sm h-8 w-8 sm:h-9 sm:w-9 border border-slate-150/40 bg-white shadow-sm flex items-center justify-center cursor-pointer shrink-0"
               title="Keluar"
             >
               <LogOut className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
@@ -1785,19 +1785,19 @@ export default function EmployeePayslipPage() {
       <div className="max-w-4xl mx-auto px-6 sm:px-8 md:px-12 mt-8 space-y-6 relative z-10">
 
         {/* ── Period Selector Control ────────────────────────────────────── */}
-        <div className="py-3.5 px-5 bg-slate-50/80 rounded-2xl border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="py-3.5 px-5 bg-slate-50/80 rounded-md border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3 w-full md:w-auto">
             <CalendarDays className="w-5 h-5 text-indigo-500 shrink-0" />
             <span className="text-sm font-semibold text-black">Periode:</span>
           </div>
           <div className="grid grid-cols-2 gap-3 w-full md:flex md:w-auto md:items-center">
             <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v))}>
-              <SelectTrigger className="text-sm font-bold text-black bg-white rounded-xl border border-slate-200 h-10 px-4 w-full md:w-40 focus:ring-indigo-500/20">
+              <SelectTrigger className="text-sm font-bold text-black bg-white rounded-sm border border-slate-200 h-10 px-4 w-full md:w-40 focus:ring-indigo-500/20">
                 <SelectValue>
                   {availableMonths.find((m) => m.value === month)?.label || MONTHS_ID[month - 1]}
                 </SelectValue>
               </SelectTrigger>
-              <SelectContent className="rounded-xl border-slate-100 shadow-lg bg-white z-40">
+              <SelectContent className="rounded-md border-slate-100 shadow-lg bg-white z-40">
                 {availableMonths.map((m) => (
                   <SelectItem key={m.value} value={String(m.value)}>
                     {m.label}
@@ -1806,10 +1806,10 @@ export default function EmployeePayslipPage() {
               </SelectContent>
             </Select>
             <Select value={String(year)} onValueChange={(v) => v && setYear(parseInt(v))}>
-              <SelectTrigger className="text-sm font-bold text-black bg-white rounded-xl border border-slate-200 h-10 px-4 w-full md:w-28 focus:ring-indigo-500/20">
+              <SelectTrigger className="text-sm font-bold text-black bg-white rounded-sm border border-slate-200 h-10 px-4 w-full md:w-28 focus:ring-indigo-500/20">
                 <SelectValue>{year}</SelectValue>
               </SelectTrigger>
-              <SelectContent className="rounded-xl border-slate-100 shadow-lg bg-white z-40">
+              <SelectContent className="rounded-md border-slate-100 shadow-lg bg-white z-40">
                 {availableYears.map(y => (
                   <SelectItem key={y} value={String(y)}>
                     {y}
@@ -1824,12 +1824,12 @@ export default function EmployeePayslipPage() {
         {loading ? (
           <PayslipBodySkeleton />
         ) : !employeeData ? (
-          <div className="py-16 text-center text-black bg-slate-50/50 rounded-2xl border border-slate-100">
+          <div className="py-16 text-center text-black bg-slate-50/50 rounded-md border border-slate-100">
             <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
             <p className="text-sm font-semibold">Data karyawan gagal dimuat.</p>
           </div>
         ) : pekaryaPreviewError ? (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 px-6 py-16 text-center">
+          <div className="flex flex-col items-center justify-center rounded-md border border-rose-200 bg-rose-50 px-6 py-16 text-center">
             <AlertCircle className="mb-4 h-12 w-12 text-rose-500" />
             <p className="text-base font-bold text-slate-800">
               Rincian Pekarya Tidak Tersedia
@@ -1840,7 +1840,7 @@ export default function EmployeePayslipPage() {
             </p>
             <Button
               type="button"
-              className="mt-5 rounded-xl bg-rose-600 text-white hover:bg-rose-700"
+              className="mt-5 rounded-sm bg-rose-600 text-white hover:bg-rose-700"
               onClick={() =>
                 setPekaryaPreviewReloadToken((token) => token + 1)
               }
@@ -1861,12 +1861,12 @@ export default function EmployeePayslipPage() {
                 {/* Floating Status Badge */}
                 <div className="md:absolute top-6 right-6 mb-4 md:mb-0">
                   {isConfirmed ? (
-                    <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl px-3 py-1 shadow-none flex items-center gap-1.5 hover:bg-emerald-50">
+                    <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-sm px-3 py-1 shadow-none flex items-center gap-1.5 hover:bg-emerald-50">
                       <CheckCircle2 className="w-3.5 h-3.5" />
                       TERKUNCI / FINAL
                     </Badge>
                   ) : (
-                    <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold rounded-xl px-3 py-1 shadow-none flex items-center gap-1.5 hover:bg-amber-50 animate-pulse">
+                    <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold rounded-sm px-3 py-1 shadow-none flex items-center gap-1.5 hover:bg-amber-50 animate-pulse">
                       <AlertCircle className="w-3.5 h-3.5" />
                       DRAFT (Belum Dikunci)
                     </Badge>
@@ -1916,7 +1916,7 @@ export default function EmployeePayslipPage() {
                   <div className="space-y-1.5 md:text-right">
                     <span className="text-[10px] font-bold text-black uppercase tracking-widest block">PERIODE SLIP</span>
                     <span className="text-sm font-bold text-indigo-600 block">{periodText.toUpperCase()}</span>
-                    <span className="text-[11px] font-bold bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full inline-block">
+                    <span className="text-[11px] font-bold bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-sm inline-block">
                       {showLoyalisLayout
                         ? `STAF ${employeeData.employment_profile?.department_unit || 'LOYALIS'}`
                         : `VAKASI ${periodJobCategory}`}
@@ -2011,7 +2011,7 @@ export default function EmployeePayslipPage() {
               </div>
 
               {/* Summary Totals Footer */}
-              <div className={`grid grid-cols-1 ${totalTax > 0 ? 'md:grid-cols-3' : 'md:grid-cols-2'} bg-slate-50/50 border-b border-slate-200 rounded-xl my-4`}>
+              <div className={`grid grid-cols-1 ${totalTax > 0 ? 'md:grid-cols-3' : 'md:grid-cols-2'} bg-slate-50/50 border-b border-slate-200 rounded-md my-4`}>
                 <div className="px-6 py-4 flex justify-between items-center text-xs font-bold border-b md:border-b-0 divide-x-0 border-slate-200">
                   <span className="text-emerald-700 uppercase">JUMLAH PENERIMAAN</span>
                   <span className="text-emerald-700 tabular-nums">{formatIDR(totalEarnings)}</span>
@@ -2029,14 +2029,14 @@ export default function EmployeePayslipPage() {
               </div>
 
               {/* NET SALARY CARD BOX */}
-              <div className="py-6 px-4 sm:px-6 bg-gradient-to-r from-indigo-50/40 via-indigo-50/70 to-purple-50/40 border border-indigo-100/80 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 my-6">
+              <div className="py-6 px-4 sm:px-6 bg-gradient-to-r from-indigo-50/40 via-indigo-50/70 to-purple-50/40 border border-indigo-100/80 rounded-md flex flex-col md:flex-row items-center justify-between gap-4 my-6">
                 <div>
                   <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest block">PENERIMAAN BERSIH</span>
                   <span className="text-3xl font-extrabold text-indigo-800 tracking-tight block mt-0.5 tabular-nums">
                     {formatIDR(netSalary)}
                   </span>
                 </div>
-                <div className="bg-white/90 border border-indigo-100/50 rounded-2xl p-4 max-w-md w-full md:w-auto">
+                <div className="bg-white/90 border border-indigo-100/50 rounded-md p-4 max-w-md w-full md:w-auto">
                   <span className="text-[9px] font-bold text-black uppercase tracking-widest block mb-1">Terbilang</span>
                   <p className="text-xs font-bold text-black leading-normal italic">
                     "{terbilang(netSalary)} Rupiah"
@@ -2051,7 +2051,7 @@ export default function EmployeePayslipPage() {
                   className="py-4 flex items-center justify-between cursor-pointer transition-colors"
                 >
                   <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+                    <div className="w-9 h-9 rounded-sm bg-indigo-50 flex items-center justify-center shrink-0">
                       <BookOpen className="w-4.5 h-4.5 text-indigo-500" />
                     </div>
                     <div>
@@ -2103,7 +2103,7 @@ export default function EmployeePayslipPage() {
                             {/* Optional Table */}
                             {item.table && (
                               <div className="mt-3 ml-0 w-full overflow-x-auto">
-                                <table className="min-w-full divide-y divide-slate-200 border border-slate-200/70 rounded-xl overflow-hidden text-xs">
+                                <table className="min-w-full divide-y divide-slate-200 border border-slate-200/70 rounded-md overflow-hidden text-xs">
                                   <thead className="bg-slate-50">
                                     <tr>
                                       {item.table.headers.map((h: string, hIdx: number) => (
@@ -2352,7 +2352,7 @@ export default function EmployeePayslipPage() {
                                   </li>
                                 ))}
                               </ul>
-                              <div className="mt-3 ml-4 rounded-2xl border border-amber-100 bg-amber-50/50 p-4 space-y-2">
+                              <div className="mt-3 ml-4 rounded-md border border-amber-100 bg-amber-50/50 p-4 space-y-2">
                                 <div className="flex justify-between items-center text-xs">
                                   <span className="text-black font-medium">Dasar Pengenaan (Gaji Bersih Sebelum Pajak)</span>
                                   <span className="text-black font-semibold tabular-nums">{formatIDR(taxBase)}</span>
@@ -2449,7 +2449,7 @@ export default function EmployeePayslipPage() {
                                           {/* Header & Program Title */}
                                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                             <div className="flex items-center gap-2.5">
-                                              <div className="w-7 h-7 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0">
+                                              <div className="w-7 h-7 rounded-sm bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0">
                                                 <CreditCard className="w-3.5 h-3.5 text-indigo-600" />
                                               </div>
                                               <div>
@@ -2468,7 +2468,7 @@ export default function EmployeePayslipPage() {
                                                 )}
                                               </div>
                                             </div>
-                                            <span className="inline-flex items-center self-start sm:self-auto text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100/80">
+                                            <span className="inline-flex items-center self-start sm:self-auto text-[11px] font-bold px-2.5 py-0.5 rounded-sm bg-indigo-50 text-indigo-700 border border-indigo-100/80">
                                               Angsuran Ke-{loan.currentInstallmentNum} dari {loan.tenor} Bulan
                                             </span>
                                           </div>
@@ -2499,9 +2499,9 @@ export default function EmployeePayslipPage() {
                                               <span className="font-medium text-black">Progress Pelunasan</span>
                                               <span className="font-bold text-indigo-600">{percentPaid}% Lunas</span>
                                             </div>
-                                            <div className="h-2 w-full bg-slate-200/60 rounded-full overflow-hidden p-0.5">
+                                            <div className="h-2 w-full bg-slate-200/60 rounded-sm overflow-hidden p-0.5">
                                               <div
-                                                className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full transition-all duration-500"
+                                                className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-sm transition-all duration-500"
                                                 style={{ width: `${percentPaid}%` }}
                                               />
                                             </div>
@@ -2522,7 +2522,7 @@ export default function EmployeePayslipPage() {
                                                 return (
                                                   <div
                                                     key={monthNum}
-                                                    className={`flex flex-col items-center justify-center min-w-[42px] py-1.5 px-1 rounded-xl border text-center transition-all ${isCurrent
+                                                    className={`flex flex-col items-center justify-center min-w-[42px] py-1.5 px-1 rounded-sm border text-center transition-all ${isCurrent
                                                       ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm scale-105 font-bold'
                                                       : isPaid
                                                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80 font-semibold'
@@ -2551,7 +2551,7 @@ export default function EmployeePayslipPage() {
                                                   {/* Ancestry Segment Label */}
                                                   {hasAncestors && (
                                                     <div className={`flex items-center gap-2 ${segIdx > 0 ? 'mt-3 pt-2.5 border-t border-dashed border-slate-200' : ''}`}>
-                                                      <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${segIdx === trailSegments.length - 1
+                                                      <div className={`text-[10px] font-bold px-2 py-0.5 rounded-sm ${segIdx === trailSegments.length - 1
                                                         ? 'bg-indigo-100 text-indigo-700'
                                                         : 'bg-slate-200/70 text-black'
                                                         }`}>
@@ -2613,7 +2613,7 @@ export default function EmployeePayslipPage() {
               <div className="flex flex-col sm:flex-row items-center gap-3.5 justify-center w-full max-w-xl mx-auto">
                 <Button
                   onClick={handleDownloadPdf}
-                  className="w-full sm:w-auto h-12 rounded-2xl px-8 text-sm font-bold bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/20 hover:shadow-xl hover:shadow-indigo-500/30 transition-all hover:scale-[1.02] transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full sm:w-auto h-12 rounded-sm px-8 text-sm font-bold bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/20 hover:shadow-xl hover:shadow-indigo-500/30 transition-all hover:scale-[1.02] transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Download className="w-5 h-5" />
                   Unduh Slip Gaji (PDF)
@@ -2623,7 +2623,7 @@ export default function EmployeePayslipPage() {
                   href={whatsappUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="w-full sm:w-auto h-12 rounded-2xl px-8 text-sm font-bold bg-gradient-to-r from-[#25D366] to-[#075E54] hover:opacity-95 text-white shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:shadow-emerald-500/30 transition-all hover:scale-[1.02] transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer text-center overflow-hidden"
+                  className="w-full sm:w-auto h-12 rounded-sm px-8 text-sm font-bold bg-gradient-to-r from-[#25D366] to-[#075E54] hover:opacity-95 text-white shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:shadow-emerald-500/30 transition-all hover:scale-[1.02] transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer text-center overflow-hidden"
                 >
                   <svg
                     className="w-5 h-5 text-white fill-current shrink-0"
@@ -2640,7 +2640,7 @@ export default function EmployeePayslipPage() {
                 <div className="flex flex-col sm:flex-row items-center gap-3.5 justify-center w-full">
                   <Button
                     disabled
-                    className="w-full sm:w-auto h-12 rounded-2xl px-8 text-sm font-bold bg-slate-100 text-slate-400 border border-slate-200/60 shadow-none cursor-not-allowed flex items-center justify-center gap-2"
+                    className="w-full sm:w-auto h-12 rounded-sm px-8 text-sm font-bold bg-slate-100 text-slate-400 border border-slate-200/60 shadow-none cursor-not-allowed flex items-center justify-center gap-2"
                   >
                     <Lock className="w-5 h-5 text-slate-400" />
                     Unduh Slip Gaji (PDF)
@@ -2650,7 +2650,7 @@ export default function EmployeePayslipPage() {
                     href={whatsappUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-full sm:w-auto h-12 rounded-2xl px-8 text-sm font-bold bg-gradient-to-r from-[#25D366] to-[#075E54] hover:opacity-95 text-white shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:shadow-emerald-500/30 transition-all hover:scale-[1.02] transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer text-center overflow-hidden"
+                    className="w-full sm:w-auto h-12 rounded-sm px-8 text-sm font-bold bg-gradient-to-r from-[#25D366] to-[#075E54] hover:opacity-95 text-white shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:shadow-emerald-500/30 transition-all hover:scale-[1.02] transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer text-center overflow-hidden"
                   >
                     <svg
                       className="w-5 h-5 text-white fill-current shrink-0"
@@ -2662,7 +2662,7 @@ export default function EmployeePayslipPage() {
                     Hubungi Admin BAK
                   </a>
                 </div>
-                <p className="text-[11px] font-semibold text-amber-600 bg-amber-50/60 border border-amber-100/50 px-3 py-1 rounded-full animate-pulse text-center">
+                <p className="text-[11px] font-semibold text-amber-600 bg-amber-50/60 border border-amber-100/50 px-3 py-1 rounded-sm animate-pulse text-center">
                   Slip gaji masih berupa DRAFT. Hubungi BAK untuk melakukan penguncian final sebelum mengunduh.
                 </p>
               </div>

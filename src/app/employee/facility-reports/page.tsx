@@ -276,7 +276,7 @@ export default function FacilityReportsPage() {
           <Link href={homeHref}>
             <Button
               variant="outline"
-              className="rounded-xl h-9 px-3 border-slate-200 bg-white shadow-sm cursor-pointer flex items-center gap-1.5 text-slate-600 font-bold text-xs"
+              className="rounded-sm h-9 px-3 border-slate-200 bg-white shadow-sm cursor-pointer flex items-center gap-1.5 text-slate-600 font-bold text-xs"
             >
               <ChevronLeft className="w-4 h-4" />
               Kembali
@@ -285,7 +285,7 @@ export default function FacilityReportsPage() {
           {!showForm && (
             <Button
               onClick={() => setShowForm(true)}
-              className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-9 px-3.5 shadow-sm cursor-pointer flex items-center gap-1.5"
+              className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-9 px-3.5 shadow-sm cursor-pointer flex items-center gap-1.5"
             >
               <Plus className="w-4 h-4" />
               Laporkan Kondisi
@@ -294,7 +294,7 @@ export default function FacilityReportsPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 shadow-inner shrink-0">
+          <div className="w-11 h-11 rounded-sm bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 shadow-inner shrink-0">
             <Wrench className="w-5 h-5" />
           </div>
           <div>
@@ -302,13 +302,13 @@ export default function FacilityReportsPage() {
               Lapor Kondisi Fasilitas
             </h1>
             <p className="text-slate-500 text-xs sm:text-sm">
-              Laporkan fasilitas kampus yang rusak, kotor, tidak terawat, atau membutuhkan perbaikan agar segera ditangani Kepala Biro Umum.
+              Crew Reparasi: Biro Umum, Teknisi, Kebersihan, dan PusKom.
             </p>
           </div>
         </div>
 
         {showForm && (
-          <Card className="rounded-2xl border-slate-200/80 shadow-sm bg-white p-5 space-y-4">
+          <Card className="rounded-md border-slate-200/80 shadow-sm bg-white p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-bold text-slate-800">Laporan Baru</h2>
               <button
@@ -331,10 +331,10 @@ export default function FacilityReportsPage() {
                   if (isFacilityArea(value)) setArea(value);
                 }}
               >
-                <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white text-sm font-semibold">
+                <SelectTrigger className="w-full rounded-sm border-slate-200 bg-white text-sm font-semibold">
                   <SelectValue>{area}</SelectValue>
                 </SelectTrigger>
-                <SelectContent className="bg-white rounded-xl border border-slate-100 shadow-xl">
+                <SelectContent className="bg-white rounded-md border border-slate-100 shadow-xl">
                   {FACILITY_AREAS.map((option) => (
                     <SelectItem key={option} value={option}>
                       {option}
@@ -348,7 +348,7 @@ export default function FacilityReportsPage() {
                     value={customPlace}
                     onChange={(e) => setCustomPlace(e.target.value.slice(0, MAX_FACILITY_PLACE_LENGTH))}
                     placeholder="Contoh: Parkiran IC"
-                    className="rounded-xl border-slate-200 text-sm"
+                    className="rounded-sm border-slate-200 text-sm"
                     autoFocus
                   />
                   <p className="text-[10px] font-semibold text-slate-400">
@@ -369,7 +369,7 @@ export default function FacilityReportsPage() {
                 }
                 rows={4}
                 placeholder="Keran rusak, lampu perlu diganti, dll."
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 resize-y"
+                className="w-full rounded-sm border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 resize-y"
               />
               <p className="text-[10px] font-semibold text-slate-400">
                 {description.length}/{MAX_FACILITY_DESCRIPTION_LENGTH}
@@ -391,7 +391,7 @@ export default function FacilityReportsPage() {
                   {photos.map((photo, index) => (
                     <div
                       key={photo.url}
-                      className="relative aspect-square overflow-hidden rounded-xl border border-slate-200 bg-slate-100"
+                      className="relative aspect-square overflow-hidden rounded-sm border border-slate-200 bg-slate-100"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
@@ -405,7 +405,7 @@ export default function FacilityReportsPage() {
                       <button
                         type="button"
                         onClick={() => removePhoto(photo.url)}
-                        className="absolute top-1.5 right-1.5 rounded-lg bg-white/95 p-1 text-rose-600 shadow-sm hover:bg-white cursor-pointer"
+                        className="absolute top-1.5 right-1.5 rounded-sm bg-white/95 p-1 text-rose-600 shadow-sm hover:bg-white cursor-pointer"
                         title="Hapus foto"
                       >
                         <Trash2 className="w-3 h-3" />
@@ -416,7 +416,7 @@ export default function FacilityReportsPage() {
               )}
 
               {photos.length < MAX_FACILITY_PHOTOS && (
-                <div className="relative flex min-h-[92px] w-full flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/60 py-6 text-slate-500 transition-colors hover:border-indigo-300 hover:bg-indigo-50/40">
+                <div className="relative flex min-h-[92px] w-full flex-col items-center justify-center gap-1.5 rounded-sm border-2 border-dashed border-slate-200 bg-slate-50/60 py-6 text-slate-500 transition-colors hover:border-indigo-300 hover:bg-indigo-50/40">
                   {/* Match Ajukan Presensi's source chooser on Android; only images are accepted by the handler below. */}
                   <input
                     type="file"
@@ -454,7 +454,7 @@ export default function FacilityReportsPage() {
             <Button
               onClick={handleSubmit}
               disabled={submitting || uploadingPhoto}
-              className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm h-10 shadow-sm cursor-pointer flex items-center justify-center gap-2"
+              className="w-full rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm h-10 shadow-sm cursor-pointer flex items-center justify-center gap-2"
             >
               {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               {submitting ? 'Mengirim…' : 'Kirim Laporan'}
@@ -470,7 +470,7 @@ export default function FacilityReportsPage() {
           {loading ? (
             <FacilityReportRowsSkeleton />
           ) : reports.length === 0 ? (
-            <Card className="rounded-2xl border-dashed border-slate-200 bg-white/70 p-8 text-center">
+            <Card className="rounded-md border-dashed border-slate-200 bg-white/70 p-8 text-center">
               <Wrench className="w-8 h-8 text-slate-300 mx-auto mb-2" />
               <p className="text-sm font-bold text-slate-500">Belum ada laporan</p>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -481,7 +481,7 @@ export default function FacilityReportsPage() {
             reports.map((report) => (
               <Card
                 key={report.id}
-                className="rounded-2xl border-slate-200/80 shadow-sm bg-white p-4 space-y-2.5"
+                className="rounded-md border-slate-200/80 shadow-sm bg-white p-4 space-y-2.5"
               >
                 <div className="flex items-start justify-between gap-3">
                   <button
@@ -502,7 +502,7 @@ export default function FacilityReportsPage() {
                       </p>
                     </div>
                     <span
-                      className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold ${facilityReportStatusTone(report.status)}`}
+                      className={`shrink-0 rounded-sm px-2 py-0.5 text-[10px] font-bold ${facilityReportStatusTone(report.status)}`}
                     >
                       {FACILITY_REPORT_STATUS_LABELS[report.status]}
                     </span>
@@ -519,7 +519,7 @@ export default function FacilityReportsPage() {
                         type="button"
                         onClick={() => void handleWithdraw(report)}
                         disabled={withdrawingId === report.id}
-                        className="flex h-6 w-6 items-center justify-center rounded-md text-rose-500 hover:bg-rose-50 cursor-pointer disabled:opacity-40"
+                        className="flex h-6 w-6 items-center justify-center rounded-sm text-rose-500 hover:bg-rose-50 cursor-pointer disabled:opacity-40"
                         title="Tarik kembali laporan"
                       >
                         {withdrawingId === report.id ? (
@@ -550,14 +550,14 @@ export default function FacilityReportsPage() {
                             loading="eager"
                             decoding="async"
                             fetchPriority={index === 0 ? 'high' : 'auto'}
-                            className="aspect-square w-full object-cover rounded-xl border border-slate-200 cursor-zoom-in"
+                            className="aspect-square w-full object-cover rounded-sm border border-slate-200 cursor-zoom-in"
                           />
                         ))}
                       </div>
                     )}
 
                     {report.reviewNote && (
-                      <div className="rounded-xl bg-slate-50 border border-slate-100 p-2.5">
+                      <div className="rounded-md bg-slate-50 border border-slate-100 p-2.5">
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
                           Catatan Kepala Biro Umum
                           {report.reviewedByName ? ` · ${report.reviewedByName}` : ''}

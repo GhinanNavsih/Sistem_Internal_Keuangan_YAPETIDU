@@ -41,14 +41,14 @@ export default function FamilyProofUploadCard({ file, onFileChange, id }: Props)
     <div className="space-y-2">
       {file && (
         <div
-          className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+          className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${
             problem ? 'border-red-200' : 'border-slate-200'
           }`}
         >
           <Paperclip className="size-4 shrink-0 text-slate-400" />
           <span className="min-w-0 flex-1 truncate text-slate-700">{file.name}</span>
           <span className="shrink-0 text-xs tabular-nums text-slate-500">{formatFileSize(file.size)}</span>
-          <Button
+          <Button className="rounded-sm"
             type="button"
             variant="danger-ghost"
             size="icon-sm"
@@ -71,7 +71,7 @@ export default function FamilyProofUploadCard({ file, onFileChange, id }: Props)
         variant="outline"
         size="lg"
         onClick={() => inputRef.current?.click()}
-        className="w-full border-dashed"
+        className="rounded-sm w-full border-dashed"
       >
         <Upload />
         {file ? 'Ganti berkas' : 'Pilih foto atau PDF'}

@@ -111,10 +111,10 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
           <div className="space-y-4">
             {/* Active Piket Banner & Self-Creation Button */}
             {isPiketActiveToday ? (
-              <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-700 text-white rounded-2xl p-4 sm:p-5 shadow-sm space-y-3 relative overflow-hidden">
+              <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-700 text-white rounded-md p-4 sm:p-5 shadow-sm space-y-3 relative overflow-hidden">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative z-10">
                   <div>
-                    <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 px-2.5 py-0.5 rounded-full text-emerald-100 flex items-center gap-1.5 w-fit">
+                    <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 px-2.5 py-0.5 rounded-sm text-emerald-100 flex items-center gap-1.5 w-fit">
                       <span className="w-2 h-2 rounded-full bg-emerald-300 animate-ping" />
                       Jadwal Piket Aktif Hari Ini {activePiketStationName ? `• Stasiun: ${activePiketStationName}` : ''}
                     </span>
@@ -125,7 +125,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                       Karena jadwal piket Anda aktif hari ini, Anda dapat mengotorisasi SPJ (Surat Perintah Jalan) sendiri. Kendaraan default adalah <strong>Ndalem</strong>, tetapi Anda dapat memilih kendaraan lain bila diperlukan.
                     </p>
                     <div className="flex flex-wrap items-center gap-2 mt-2">
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 border border-white/20 px-2.5 py-1 text-[11px] font-extrabold text-white">
+                      <span className="inline-flex items-center gap-1.5 rounded-sm bg-white/15 border border-white/20 px-2.5 py-1 text-[11px] font-extrabold text-white">
                         <Sparkles className="w-3.5 h-3.5 text-amber-200" />
                         SPJ Piket Terbuat Hari Ini: {submittedSelfPiketSpjCount} SPJ
                       </span>
@@ -136,7 +136,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                       )}
                     </div>
                     {myClaimedJourneys.length > 0 && (
-                      <p className="text-[11px] font-bold text-amber-200 mt-1 flex items-center gap-1.5 bg-amber-950/40 p-2.5 rounded-xl border border-amber-400/30">
+                      <p className="text-[11px] font-bold text-amber-200 mt-1 flex items-center gap-1.5 bg-amber-950/40 p-2.5 rounded-md border border-amber-400/30">
                         <AlertCircle className="w-4 h-4 text-amber-300 shrink-0" />
                         Anda memiliki perjalanan aktif yang sedang berjalan. Selesaikan laporan perjalanan tersebut terlebih dahulu untuk dapat membuat SPJ Piket baru.
                       </p>
@@ -146,7 +146,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                   <Button
                     disabled={myClaimedJourneys.length > 0}
                     onClick={openSelfPiketSpjModal}
-                    className="shrink-0 rounded-xl bg-white text-emerald-900 hover:bg-emerald-50 font-extrabold text-xs h-10 px-4 gap-2 cursor-pointer shadow-md border-none disabled:opacity-50"
+                    className="shrink-0 rounded-sm bg-white text-emerald-900 hover:bg-emerald-50 font-extrabold text-xs h-10 px-4 gap-2 cursor-pointer shadow-md border-none disabled:opacity-50"
                   >
                     <Plus className="w-4 h-4 text-emerald-700" />
                     Buat SPJ Piket
@@ -154,7 +154,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                 </div>
               </div>
             ) : (
-              <div className="bg-slate-100 border border-slate-200 text-slate-700 rounded-2xl p-4 sm:p-5 shadow-sm space-y-3">
+              <div className="bg-slate-100 border border-slate-200 text-slate-700 rounded-md p-4 sm:p-5 shadow-sm space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-start gap-2">
                     <CalendarDays className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
@@ -164,7 +164,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                         Anda dapat mengotorisasi SPJ (Surat Perintah Jalan) sendiri kapan saja, termasuk di luar jadwal Piket.
                       </p>
                       {myClaimedJourneys.length > 0 && (
-                        <p className="text-[11px] font-bold text-amber-700 mt-1.5 flex items-center gap-1.5 bg-amber-50 p-2 rounded-xl border border-amber-200">
+                        <p className="text-[11px] font-bold text-amber-700 mt-1.5 flex items-center gap-1.5 bg-amber-50 p-2 rounded-md border border-amber-200">
                           <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
                           Anda memiliki perjalanan aktif yang sedang berjalan. Selesaikan laporan perjalanan tersebut terlebih dahulu untuk dapat membuat SPJ baru.
                         </p>
@@ -175,7 +175,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                   <Button
                     disabled={myClaimedJourneys.length > 0}
                     onClick={openSelfPiketSpjModal}
-                    className="shrink-0 rounded-xl bg-slate-800 text-white hover:bg-slate-700 font-extrabold text-xs h-10 px-4 gap-2 cursor-pointer shadow-sm border-none disabled:opacity-50"
+                    className="shrink-0 rounded-sm bg-slate-800 text-white hover:bg-slate-700 font-extrabold text-xs h-10 px-4 gap-2 cursor-pointer shadow-sm border-none disabled:opacity-50"
                   >
                     <Plus className="w-4 h-4" />
                     Buat SPJ Mandiri
@@ -192,23 +192,23 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                     <Target className="w-4 h-4 text-purple-600" />
                     Tugas Penugasan Khusus Anda ({myAssignedJourneys.length})
                   </h3>
-                  <span className="text-[10px] font-extrabold text-purple-700 bg-purple-100/80 border border-purple-200 px-2 py-0.5 rounded-full">
+                  <span className="text-[10px] font-extrabold text-purple-700 bg-purple-100/80 border border-purple-200 px-2 py-0.5 rounded-sm">
                     Jadwal Mendatang
                   </span>
                 </div>
 
                 <div className="flex overflow-x-auto snap-x snap-mandatory scrollbar-none gap-3 pb-2 pt-1 -mx-1 px-1">
                   {myAssignedJourneys.map((j) => (
-                    <Card key={j.id} className="min-w-[280px] sm:min-w-[320px] max-w-[340px] snap-start shrink-0 bg-gradient-to-br from-purple-900 via-indigo-900 to-slate-900 text-white rounded-2xl shadow-md border-none overflow-hidden relative flex flex-col justify-between">
+                    <Card key={j.id} className="min-w-[280px] sm:min-w-[320px] max-w-[340px] snap-start shrink-0 bg-gradient-to-br from-purple-900 via-indigo-900 to-slate-900 text-white rounded-md shadow-md border-none overflow-hidden relative flex flex-col justify-between">
                       <div className="absolute top-0 right-0 w-28 h-28 rounded-full bg-purple-500/10 -translate-y-4 translate-x-4 blur-md pointer-events-none" />
                       <CardContent className="p-4 space-y-3 relative z-10 flex-1 flex flex-col justify-between">
                         <div>
                           <div className="flex items-center justify-between gap-2">
-                            <span className="text-[10px] font-bold tracking-wider text-purple-200 uppercase bg-purple-500/40 border border-purple-400/30 px-2 py-0.5 rounded-md">
+                            <span className="text-[10px] font-bold tracking-wider text-purple-200 uppercase bg-purple-500/40 border border-purple-400/30 px-2 py-0.5 rounded-sm">
                               Ditugaskan Khusus
                             </span>
                             {j.activityDate && (
-                              <span className="text-[10px] font-bold text-purple-200 bg-white/10 px-2 py-0.5 rounded-md">
+                              <span className="text-[10px] font-bold text-purple-200 bg-white/10 px-2 py-0.5 rounded-sm">
                                 {new Date(j.activityDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
                               </span>
                             )}
@@ -218,7 +218,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                           </h4>
                         </div>
 
-                        <div className="p-2.5 rounded-xl bg-white/10 text-white text-xs font-medium space-y-1 mt-2">
+                        <div className="p-2.5 rounded-md bg-white/10 text-white text-xs font-medium space-y-1 mt-2">
                           <div className="flex items-center gap-1.5 text-purple-100">
                             <MapPin className="w-4 h-4 text-purple-300 shrink-0" />
                             <span className="font-semibold text-white/95">Tujuan:</span>
@@ -250,7 +250,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                         <Button
                           disabled={myClaimedJourneys.length > 0 || isClaiming}
                           onClick={() => handleStartAssignedJourney(j.id)}
-                          className="w-full mt-2 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white font-extrabold text-xs h-9 gap-1.5 cursor-pointer shadow-sm border-none disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="w-full mt-2 rounded-sm bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white font-extrabold text-xs h-9 gap-1.5 cursor-pointer shadow-sm border-none disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           {isClaiming ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                           Mulai Perjalanan Tugas
@@ -283,14 +283,14 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                   const hasRouteEstimate = Number(j.distanceKm || 0) > 0;
 
                   return (
-                    <div key={j.id} className="bg-white rounded-2xl border-2 border-indigo-200 shadow-xs overflow-hidden p-4 sm:p-5 space-y-3.5">
+                    <div key={j.id} className="bg-white rounded-md border-2 border-indigo-200 shadow-xs overflow-hidden p-4 sm:p-5 space-y-3.5">
                       <div>
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] font-black tracking-wider text-emerald-700 uppercase bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
+                          <span className="text-[10px] font-black tracking-wider text-emerald-700 uppercase bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-sm flex items-center gap-1.5">
                             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                             Dalam Perjalanan
                           </span>
-                          <span className="text-xs font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-lg">
+                          <span className="text-xs font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-sm">
                             {j.vehicleName} ({fmtRp(getEffectiveVehicleRate(j.vehicleName, j.vehicleRate))}/km)
                           </span>
                         </div>
@@ -300,7 +300,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                       </div>
 
                       {hasRouteEstimate && (
-                        <div className="flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 border border-slate-200/80 p-2.5 rounded-xl">
+                        <div className="flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 border border-slate-200/80 p-2.5 rounded-md">
                           <MapPin className="w-4 h-4 text-indigo-600 shrink-0" />
                           <span className="font-bold text-slate-500">Tujuan utama:</span>
                           <span className="truncate flex-1 font-extrabold text-slate-800" title={journeyMainDestinationLabel(j)}>{journeyMainDestinationLabel(j)}</span>
@@ -310,17 +310,17 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                       {/* 2-Column Cards Grid: Left = Biaya Operasional, Right = Estimasi Upah Sopir */}
                       {hasRouteEstimate ? (
                         <div className="grid grid-cols-2 gap-2.5 pt-1">
-                          <div className="bg-indigo-50/70 border border-indigo-100 p-3.5 rounded-xl space-y-0.5">
+                          <div className="bg-indigo-50/70 border border-indigo-100 p-3.5 rounded-md space-y-0.5">
                             <span className="block text-[9px] font-black text-indigo-600 uppercase tracking-wider">Biaya Operasional</span>
                             <span className="text-xs sm:text-sm font-black text-indigo-900 block">{fmtRp(cashOperationalCostFromJourney(j))}</span>
                           </div>
-                          <div className="bg-emerald-50/70 border border-emerald-100 p-3.5 rounded-xl space-y-0.5">
+                          <div className="bg-emerald-50/70 border border-emerald-100 p-3.5 rounded-md space-y-0.5">
                             <span className="block text-[9px] font-black text-emerald-600 uppercase tracking-wider">Estimasi Upah Sopir</span>
                             <span className="text-xs sm:text-sm font-black text-emerald-900 block">{fmtRp(baseWage)} - {fmtRp(maxWage)}</span>
                           </div>
                         </div>
                       ) : (
-                        <div className="bg-slate-50 border border-slate-200/80 p-3 rounded-xl text-[10px] font-semibold text-slate-500 leading-relaxed">
+                        <div className="bg-slate-50 border border-slate-200/80 p-3 rounded-md text-[10px] font-semibold text-slate-500 leading-relaxed">
                           Estimasi biaya dan upah tersedia setelah Anda melaporkan rute perjalanan.
                         </div>
                       )}
@@ -333,7 +333,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                             }
                             router.push(`${SOPIR_JOURNEY_REPORT_PATH}?id=${j.id}`);
                           }}
-                          className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs sm:text-sm h-10.5 gap-2 cursor-pointer shadow-md shadow-indigo-100 transition-all border-none"
+                          className="w-full rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs sm:text-sm h-10.5 gap-2 cursor-pointer shadow-md shadow-indigo-100 transition-all border-none"
                         >
                           <CheckCircle2 className="w-4.5 h-4.5" />
                           Laporan Perjalanan
@@ -341,7 +341,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                         <Button
                           variant="ghost"
                           onClick={() => handleCancelJourney(j.id)}
-                          className="w-full rounded-xl bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 font-bold text-xs h-9 gap-1.5 cursor-pointer transition-all"
+                          className="w-full rounded-sm bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 font-bold text-xs h-9 gap-1.5 cursor-pointer transition-all"
                         >
                           <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
                           Batalkan Klaim Perjalanan
@@ -362,41 +362,41 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
               {loadingJourneys ? (
                 <div className="space-y-2.5">
                   {Array.from({ length: 2 }).map((_, i) => (
-                    <div key={i} className="h-24 w-full rounded-2xl bg-white border border-slate-100 animate-pulse" />
+                    <div key={i} className="h-24 w-full rounded-md bg-white border border-slate-100 animate-pulse" />
                   ))}
                 </div>
               ) : unassignedJourneys.length === 0 ? (
-                <div className="p-6 text-center text-slate-400 bg-white/50 border border-dashed border-slate-200 rounded-2xl">
+                <div className="p-6 text-center text-slate-400 bg-white/50 border border-dashed border-slate-200 rounded-md">
                   <span className="text-xs font-medium">Belum ada perjalanan dinas terbuka di pool umum.</span>
                 </div>
               ) : (
                 <div>
                   {myClaimedJourneys.length > 0 && (
-                    <div className="p-3.5 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl font-bold flex items-center gap-2 mb-3">
+                    <div className="p-3.5 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-md font-bold flex items-center gap-2 mb-3">
                       <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                       <span>Anda memiliki perjalanan aktif. Selesaikan atau laporkan terlebih dahulu sebelum mengambil perjalanan baru.</span>
                     </div>
                   )}
                   {unassignedJourneys.map((j) => (
                     <div key={j.id} className="pt-6 pb-8 border-b-2 border-slate-300/80 space-y-3.5 first:pt-2">
-                      <div className="rounded-2xl overflow-hidden shadow-xs border border-slate-200/60">
+                      <div className="rounded-md overflow-hidden shadow-xs border border-slate-200/60">
                         <DestinationImageBanner destination={j.endPoint} />
                       </div>
                       <div className="space-y-3">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1.5">
                             <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                            <span className="text-[10px] font-extrabold text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-md">
+                            <span className="text-[10px] font-extrabold text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-sm">
                               Pool Umum
                             </span>
                           </div>
                           <div className="flex items-center gap-1.5">
                             {j.activityDate && (
-                              <span className="text-[10px] font-extrabold text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-md">
+                              <span className="text-[10px] font-extrabold text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-sm">
                                 {new Date(j.activityDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
                               </span>
                             )}
-                            <span className="text-[10px] font-bold text-slate-400 bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded-md">
+                            <span className="text-[10px] font-bold text-slate-400 bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded-sm">
                               {j.vehicleName} ({fmtRp(getEffectiveVehicleRate(j.vehicleName, j.vehicleRate))}/km)
                             </span>
                           </div>
@@ -438,7 +438,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                           <Button
                             disabled={myClaimedJourneys.length > 0}
                             onClick={() => handleClaimJourney(j.id)}
-                            className="rounded-lg bg-indigo-50 hover:bg-indigo-600 border border-indigo-100 hover:border-indigo-600 text-indigo-700 hover:text-white font-extrabold !text-[9px] sm:!text-[12px] !leading-tight !h-auto py-1 px-2 sm:py-1.5 sm:px-3 transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-100 disabled:cursor-not-allowed whitespace-normal text-center"
+                            className="rounded-sm bg-indigo-50 hover:bg-indigo-600 border border-indigo-100 hover:border-indigo-600 text-indigo-700 hover:text-white font-extrabold !text-[9px] sm:!text-[12px] !leading-tight !h-auto py-1 px-2 sm:py-1.5 sm:px-3 transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-100 disabled:cursor-not-allowed whitespace-normal text-center"
                           >
                             Ambil<br />Perjalanan
                           </Button>
@@ -459,7 +459,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
           else closeSelfPiketSpjModal();
         }}
       >
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl p-6 sm:p-7">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto rounded-md p-6 sm:p-7">
           <DialogHeader className="border-b border-slate-100 pb-4">
             <DialogTitle className="text-base sm:text-lg font-black text-slate-800 flex items-center gap-2">
               <Compass className="w-5 h-5 text-emerald-600 animate-spin-slow" />
@@ -469,7 +469,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
 
           <form onSubmit={handleCreateSelfPiketSpj} className="space-y-4 pt-2">
             {myClaimedJourneys.length > 0 && (
-              <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl text-xs font-semibold flex items-center gap-2.5 animate-in fade-in duration-200">
+              <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-md text-xs font-semibold flex items-center gap-2.5 animate-in fade-in duration-200">
                 <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                 <span>Anda masih memiliki tugas perjalanan aktif yang belum selesai dilaporkan. Selesaikan laporan perjalanan aktif terlebih dahulu sebelum membuat SPJ baru.</span>
               </div>
@@ -486,7 +486,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                   value={selfPiketActivityName}
                   onChange={(e) => setSelfPiketActivityName(e.target.value)}
                   required
-                  className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs sm:text-sm h-10 px-3 font-semibold"
+                  className="rounded-sm border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs sm:text-sm h-10 px-3 font-semibold"
                 />
               </div>
 
@@ -498,7 +498,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                   type="date"
                   value={getTodayDateString('Asia/Jakarta')}
                   disabled
-                  className="rounded-xl border-slate-200 bg-slate-50 font-bold text-xs h-10 px-3 cursor-not-allowed"
+                  className="rounded-sm border-slate-200 bg-slate-50 font-bold text-xs h-10 px-3 cursor-not-allowed"
                 />
               </div>
             </div>
@@ -509,21 +509,21 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                 Foto Bukti Keberangkatan
               </Label>
               {selfPiketProofPhoto ? (
-                <div className="p-3 bg-emerald-50/40 border border-emerald-100 rounded-xl flex items-center justify-between gap-3 animate-in fade-in duration-200">
+                <div className="p-3 bg-emerald-50/40 border border-emerald-100 rounded-md flex items-center justify-between gap-3 animate-in fade-in duration-200">
                   <div className="flex items-center gap-2.5 overflow-hidden flex-1">
                     {selfPiketProofPreview && (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={selfPiketProofPreview}
                         alt="Pratinjau foto bukti keberangkatan"
-                        className="h-11 w-11 shrink-0 rounded-lg border border-emerald-200 object-cover"
+                        className="h-11 w-11 shrink-0 rounded-sm border border-emerald-200 object-cover"
                       />
                     )}
                     <span className="truncate text-xs font-semibold text-emerald-950">
                       Foto bukti tersimpan
                     </span>
                   </div>
-                  <label className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-lg shrink-0 cursor-pointer flex items-center">
+                  <label className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-sm shrink-0 cursor-pointer flex items-center">
                     Ganti
                     <input
                       type="file"
@@ -538,7 +538,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                   </label>
                 </div>
               ) : (
-                <label className="w-full rounded-xl border border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50/30 hover:bg-emerald-50/50 text-emerald-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all">
+                <label className="w-full rounded-sm border border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50/30 hover:bg-emerald-50/50 text-emerald-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all">
                   {selfPiketProofUploading ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -564,7 +564,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                 </label>
               )}
               {selfPiketProofError && (
-                <p className="rounded-lg bg-amber-50 px-3 py-2 text-[10px] font-semibold text-amber-700">
+                <p className="rounded-md bg-amber-50 px-3 py-2 text-[10px] font-semibold text-amber-700">
                   {selfPiketProofError}
                 </p>
               )}
@@ -589,14 +589,14 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                     }
                   }}
                 >
-                  <SelectTrigger id="selfPiketVehicle" className="w-full text-xs font-extrabold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
+                  <SelectTrigger id="selfPiketVehicle" className="w-full text-xs font-extrabold text-slate-700 bg-white rounded-sm border border-slate-200 h-10 px-3">
                     <SelectValue>
                       {selfPiketVehicleName === DEFAULT_DRIVER_VEHICLE_NAME
                         ? 'Ndalem — Default, tanpa BBM'
                         : `${selfPiketVehicleName} — Rp${DRIVER_VEHICLE_RATES[selfPiketVehicleName].toLocaleString('id-ID')}/km`}
                     </SelectValue>
                   </SelectTrigger>
-                  <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white text-xs">
+                  <SelectContent className="rounded-md border-slate-100 shadow-xl bg-white text-xs">
                     {DRIVER_VEHICLE_NAMES.map((vehicleName) => (
                       <SelectItem key={vehicleName} value={vehicleName}>
                         {vehicleName === DEFAULT_DRIVER_VEHICLE_NAME
@@ -610,7 +610,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
 
               {/* Mode Pengadaan BBM (Hanya jika non-Ndalem) */}
               {selfPiketVehicleName !== DEFAULT_DRIVER_VEHICLE_NAME && (
-                <div className="rounded-xl border border-blue-200/80 bg-blue-50/60 p-3 space-y-2 animate-in fade-in duration-200">
+                <div className="rounded-md border border-blue-200/80 bg-blue-50/60 p-3 space-y-2 animate-in fade-in duration-200">
                   <div className="flex items-center justify-between gap-3">
                     <Label htmlFor="selfPiketFuelMode" className="text-xs font-bold text-blue-900 uppercase tracking-wider">
                       Mode Pengadaan BBM
@@ -630,12 +630,12 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                       }
                     }}
                   >
-                    <SelectTrigger id="selfPiketFuelMode" className="w-full text-xs font-bold text-slate-700 bg-white rounded-xl border border-blue-200 h-10 px-3">
+                    <SelectTrigger id="selfPiketFuelMode" className="w-full text-xs font-bold text-slate-700 bg-white rounded-sm border border-blue-200 h-10 px-3">
                       <SelectValue>
                         {fuelProcurementModeLabel(selfPiketFuelProcurementMode)}
                       </SelectValue>
                     </SelectTrigger>
-                    <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white text-xs">
+                    <SelectContent className="rounded-md border-slate-100 shadow-xl bg-white text-xs">
                       <SelectItem value="hold_accumulate">Tahan & akumulasi</SelectItem>
                       <SelectItem value="procure_release">Cairkan saldo</SelectItem>
                       <SelectItem value="standard_direct">Standard langsung</SelectItem>
@@ -652,7 +652,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
               )}
             </div>
 
-            <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl text-[10px] leading-relaxed font-semibold text-slate-600 flex items-start gap-2">
+            <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-md text-[10px] leading-relaxed font-semibold text-slate-600 flex items-start gap-2">
               <Compass className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
               <span>
                 Rute, jarak, dan estimasi upah dihitung dari timeline yang Anda isi pada laporan
@@ -660,12 +660,12 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
               </span>
             </div>
 
-            <DialogFooter className="pt-3 border-t border-slate-100 gap-2">
+            <DialogFooter className="rounded-b-md pt-3 border-t border-slate-100 gap-2">
               <Button
                 type="button"
                 variant="ghost"
                 onClick={closeSelfPiketSpjModal}
-                className="rounded-xl font-bold text-slate-500 text-xs px-4 cursor-pointer hover:bg-slate-100"
+                className="rounded-sm font-bold text-slate-500 text-xs px-4 cursor-pointer hover:bg-slate-100"
               >
                 Batal
               </Button>
@@ -678,7 +678,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                   !selfPiketActivityName.trim() ||
                   myClaimedJourneys.length > 0
                 }
-                className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-xs px-6 h-10 gap-2 shadow-md shadow-emerald-200 cursor-pointer disabled:opacity-50"
+                className="rounded-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-xs px-6 h-10 gap-2 shadow-md shadow-emerald-200 cursor-pointer disabled:opacity-50"
               >
                 {creatingPiketSpj ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                 Otorisasi & Mulai Perjalanan
@@ -689,7 +689,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
       </Dialog>
 {isClaiming && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex flex-col items-center justify-center gap-4 text-white animate-in fade-in duration-300">
-          <div className="bg-slate-950/80 border border-slate-800 rounded-3xl p-8 flex flex-col items-center gap-4 max-w-sm mx-4 text-center shadow-2xl">
+          <div className="bg-slate-950/80 border border-slate-800 rounded-md p-8 flex flex-col items-center gap-4 max-w-sm mx-4 text-center shadow-2xl">
             <Loader2 className="w-10 h-10 animate-spin text-indigo-500" />
             <div className="space-y-1.5">
               <h4 className="font-extrabold text-sm text-slate-100">Memproses...</h4>
@@ -700,7 +700,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
       )}
 {isCancelling && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex flex-col items-center justify-center gap-4 text-white animate-in fade-in duration-300">
-          <div className="bg-slate-950/80 border border-slate-800 rounded-3xl p-8 flex flex-col items-center gap-4 max-w-sm mx-4 text-center shadow-2xl">
+          <div className="bg-slate-950/80 border border-slate-800 rounded-md p-8 flex flex-col items-center gap-4 max-w-sm mx-4 text-center shadow-2xl">
             <Loader2 className="w-10 h-10 animate-spin text-rose-500" />
             <div className="space-y-1.5">
               <h4 className="font-extrabold text-sm text-slate-100">Memproses...</h4>

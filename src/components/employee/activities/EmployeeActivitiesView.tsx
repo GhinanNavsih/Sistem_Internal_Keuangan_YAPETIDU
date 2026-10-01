@@ -41,9 +41,9 @@ export default function EmployeeActivitiesView({ model }: EmployeeActivitiesView
           {/* Subtle decorative blobs */}
           <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
           <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
-          <Card className="max-w-md w-full rounded-3xl border-none shadow-xl bg-white relative z-10">
+          <Card className="max-w-md w-full rounded-md border-none shadow-xl bg-white relative z-10">
             <CardContent className="p-8 text-center space-y-4">
-              <div className="w-16 h-16 mx-auto rounded-2xl bg-rose-50 flex items-center justify-center">
+              <div className="w-16 h-16 mx-auto rounded-sm bg-rose-50 flex items-center justify-center">
                 <AlertCircle className="w-8 h-8 text-rose-500" />
               </div>
               <h2 className="text-xl font-bold text-slate-900">Akun Belum Terhubung</h2>
@@ -53,7 +53,7 @@ export default function EmployeeActivitiesView({ model }: EmployeeActivitiesView
               <Button
                 onClick={requestLogout}
                 variant="outline"
-                className="rounded-xl mt-4"
+                className="rounded-sm mt-4"
               >
                 <LogOut className="w-4 h-4 mr-2" />
                 Keluar
@@ -73,7 +73,7 @@ export default function EmployeeActivitiesView({ model }: EmployeeActivitiesView
       <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-slate-100 shadow-sm relative z-20">
               <div className="max-w-2xl mx-auto px-4 py-3.5 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center shadow-lg shadow-teal-200/50">
+                  <div className="w-9 h-9 rounded-sm bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center shadow-lg shadow-teal-200/50">
                     <ClipboardList className="w-4.5 h-4.5 text-white" />
                   </div>
                   <div>
@@ -88,7 +88,7 @@ export default function EmployeeActivitiesView({ model }: EmployeeActivitiesView
                     onClick={requestLogout}
                     variant="ghost"
                     size="icon"
-                    className="text-slate-400 hover:text-rose-500 rounded-xl h-9 w-9 border border-slate-150/40 bg-white shadow-sm flex items-center justify-center cursor-pointer"
+                    className="text-slate-400 hover:text-rose-500 rounded-sm h-9 w-9 border border-slate-150/40 bg-white shadow-sm flex items-center justify-center cursor-pointer"
                     title="Keluar"
                   >
                     <LogOut className="w-4.5 h-4.5" />

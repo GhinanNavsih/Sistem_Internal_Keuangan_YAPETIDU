@@ -30,7 +30,7 @@ export default function EmployeeActivityFab({ model }: EmployeeActivityFabProps)
               setShowForm(true);
             }
           }}
-          className="fixed bottom-6 right-6 z-40 min-w-14 h-14 px-4 rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-xl shadow-teal-300/40 hover:shadow-2xl hover:shadow-teal-300/50 hover:scale-105 active:scale-95 transition-all duration-200 flex items-center justify-center gap-2"
+          className="fixed bottom-6 right-6 z-40 min-w-14 h-14 px-4 rounded-sm bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-xl shadow-teal-300/40 hover:shadow-2xl hover:shadow-teal-300/50 hover:scale-105 active:scale-95 transition-all duration-200 flex items-center justify-center gap-2"
         >
           <Plus className="w-6 h-6" />
           <span className="font-bold">

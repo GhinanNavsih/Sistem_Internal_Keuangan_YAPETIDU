@@ -328,8 +328,8 @@ export function PaidLeavePanel() {
 
   return (
     <>
-      <Card className="overflow-hidden rounded-2xl border-emerald-200 bg-white shadow-sm">
-        <CardHeader className="border-b border-emerald-100 bg-emerald-50/70 p-5">
+      <Card className="overflow-hidden rounded-md border-emerald-200 bg-white shadow-sm">
+        <CardHeader className="rounded-t-md border-b border-emerald-100 bg-emerald-50/70 p-5">
           <CardTitle className="flex items-center gap-2 text-xl">
             <CalendarCheck2 className="h-6 w-6 text-emerald-700" />
             Ambil Cuti
@@ -339,7 +339,7 @@ export function PaidLeavePanel() {
           {(message || error) && (
             <div
               role="status"
-              className={`rounded-xl border p-4 ${
+              className={`rounded-md border p-4 ${
                 error
                   ? 'border-rose-200 bg-rose-50 text-rose-800'
                   : 'border-emerald-200 bg-emerald-50 text-emerald-800'
@@ -362,10 +362,10 @@ export function PaidLeavePanel() {
                 );
               }}
             >
-              <SelectTrigger id="paid-leave-year" className="h-14 w-full rounded-xl px-4 text-base font-bold">
+              <SelectTrigger id="paid-leave-year" className="h-14 w-full rounded-sm px-4 text-base font-bold">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="rounded-md">
                 {yearOptions.map((option) => (
                   <SelectItem key={option} value={String(option)} className="min-h-11 px-3 py-2.5">
                     {option}
@@ -389,7 +389,7 @@ export function PaidLeavePanel() {
                   ['Terpakai', data.balance.usedDays, 'text-indigo-700'],
                   ['Sisa', data.balance.availableDays, 'text-emerald-700'],
                 ].map(([label, value, color]) => (
-                  <div key={String(label)} className="rounded-2xl border border-slate-200 bg-white p-3 text-center shadow-sm">
+                  <div key={String(label)} className="rounded-md border border-slate-200 bg-white p-3 text-center shadow-sm">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
                     <p className={`mt-1 text-2xl font-black ${color}`}>{value}</p>
                   </div>
@@ -408,7 +408,7 @@ export function PaidLeavePanel() {
                     setLeaveDate(event.target.value);
                     setError('');
                   }}
-                  className="min-h-14 rounded-xl text-base font-mono"
+                  className="min-h-14 rounded-sm text-base font-mono"
                 />
               </div>
 
@@ -447,7 +447,7 @@ export function PaidLeavePanel() {
                   maxLength={500}
                   readOnly={Boolean(approvedRequest)}
                   onChange={(event) => setReason(event.target.value)}
-                  className="min-h-28 w-full rounded-xl border border-slate-300 p-3 text-base read-only:bg-slate-50"
+                  className="min-h-28 w-full rounded-sm border border-slate-300 p-3 text-base read-only:bg-slate-50"
                   placeholder="Contoh: Keperluan keluarga"
                 />
               </div>
@@ -466,7 +466,7 @@ export function PaidLeavePanel() {
 
               <Button
                 type="button"
-                className="min-h-12 w-full gap-2 bg-emerald-600 hover:bg-emerald-700"
+                className="rounded-sm min-h-12 w-full gap-2 bg-emerald-600 hover:bg-emerald-700"
                 disabled={working || !canSubmit}
                 onClick={() => void submit()}
               >
@@ -484,20 +484,20 @@ export function PaidLeavePanel() {
                 <section className="space-y-3 border-t border-slate-200 pt-5">
                   <h3 className="font-bold text-slate-900">Riwayat Cuti {year}</h3>
                   {data.requests.map((request) => (
-                    <article key={request.id} className="rounded-xl border border-slate-200 p-4">
+                    <article key={request.id} className="rounded-md border border-slate-200 p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="font-bold text-slate-900">
                             {formatDate(request.leaveDate)}
                             {request.source === 'auto_absence' && (
-                              <span className="ml-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 align-middle text-xs font-semibold text-slate-600">
+                              <span className="ml-2 rounded-sm border border-slate-200 bg-slate-50 px-2 py-0.5 align-middle text-xs font-semibold text-slate-600">
                                 Cuti otomatis
                               </span>
                             )}
                           </p>
                           <p className="mt-1 text-sm text-slate-600">{request.reason || 'Tanpa alasan tertulis'}</p>
                           <GantiLiburAttachmentLinks attachments={request.attachments} className="mt-2" />
-                          <span className={`mt-2 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${statusClass(request.status)}`}>
+                          <span className={`mt-2 inline-flex items-center gap-1.5 rounded-sm border px-2.5 py-1 text-xs font-bold ${statusClass(request.status)}`}>
                             {request.status === 'approved' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Clock3 className="h-3.5 w-3.5" />}
                             {statusLabel(request.status)}
                           </span>
@@ -509,7 +509,7 @@ export function PaidLeavePanel() {
                           <Button
                             type="button"
                             variant="outline"
-                            className="min-h-11 shrink-0 gap-2"
+                            className="rounded-sm min-h-11 shrink-0 gap-2"
                             disabled={working}
                             onClick={() => void withdraw(request)}
                           >
@@ -529,7 +529,7 @@ export function PaidLeavePanel() {
 
       {working && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
-          <div role="status" aria-live="assertive" className="w-full max-w-sm rounded-3xl bg-white p-6 text-center shadow-2xl">
+          <div role="status" aria-live="assertive" className="w-full max-w-sm rounded-md bg-white p-6 text-center shadow-2xl">
             <Loader2 className="mx-auto h-10 w-10 animate-spin text-emerald-600" />
             <p className="mt-4 font-bold text-slate-900">{workingLabel}</p>
             <p className="mt-1 text-sm text-slate-500">Mohon jangan tutup halaman ini.</p>

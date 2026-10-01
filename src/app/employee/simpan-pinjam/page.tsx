@@ -138,7 +138,7 @@ const TONE_CLASSES: Record<KoperasiStatusTone, string> = {
 function StatusBadge({ status }: { status: string }) {
   return (
     <Badge
-      className={`border text-[10px] font-bold rounded-lg px-2 py-0.5 ${TONE_CLASSES[koperasiLoanStatusTone(status)]}`}
+      className={`border text-[10px] font-bold rounded-sm px-2 py-0.5 ${TONE_CLASSES[koperasiLoanStatusTone(status)]}`}
     >
       {status}
     </Badge>
@@ -160,7 +160,7 @@ function ApprovalTracker({ status }: { status: string }) {
           <React.Fragment key={step}>
             <div className="flex flex-col items-center gap-1 flex-1 min-w-0">
               <div
-                className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${
+                className={`w-5 h-5 rounded-sm flex items-center justify-center shrink-0 transition-colors ${
                   reached ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-400'
                 }`}
               >
@@ -182,7 +182,7 @@ function ApprovalTracker({ status }: { status: string }) {
             </div>
             {index < KOPERASI_APPROVAL_STEPS.length - 1 && (
               <div
-                className={`h-0.5 flex-1 rounded-full -mt-4 ${
+                className={`h-0.5 flex-1 rounded-sm -mt-4 ${
                   index < currentIndex ? 'bg-indigo-600' : 'bg-slate-200'
                 }`}
               />
@@ -236,7 +236,7 @@ function LoanTerms() {
         <h3 className="text-xs font-bold text-slate-800 mb-2 flex items-center gap-1.5">
           <ReceiptText className="w-3.5 h-3.5 text-indigo-500" /> Biaya Administrasi
         </h3>
-        <div className="overflow-hidden rounded-xl border border-slate-200">
+        <div className="overflow-hidden rounded-md border border-slate-200">
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-slate-50 text-slate-500">
@@ -499,14 +499,14 @@ export default function EmployeeSimpanPinjamPage() {
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 shrink-0 rounded-xl text-slate-400 hover:bg-slate-50 hover:text-slate-700"
+                className="h-9 w-9 shrink-0 rounded-sm text-slate-400 hover:bg-slate-50 hover:text-slate-700"
                 title="Kembali"
                 aria-label="Kembali"
               >
                 <ChevronLeft className="h-5 w-5" />
               </Button>
             </Link>
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-200/60">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-200/60">
               <Banknote className="h-4.5 w-4.5" />
             </div>
             <div className="min-w-0">
@@ -525,7 +525,7 @@ export default function EmployeeSimpanPinjamPage() {
               onClick={requestLogout}
               variant="ghost"
               size="icon"
-              className="h-9 w-9 rounded-xl border border-slate-150/40 bg-white text-slate-400 shadow-sm hover:text-rose-500"
+              className="h-9 w-9 rounded-sm border border-slate-150/40 bg-white text-slate-400 shadow-sm hover:text-rose-500"
               title="Keluar"
               aria-label="Keluar"
             >
@@ -539,7 +539,7 @@ export default function EmployeeSimpanPinjamPage() {
         {canApply && (
           <Button
             onClick={openApplyDialog}
-            className="h-10 w-full shrink-0 rounded-xl bg-indigo-600 px-3.5 text-xs font-bold text-white shadow-sm hover:bg-indigo-700 sm:w-auto"
+            className="h-10 w-full shrink-0 rounded-sm bg-indigo-600 px-3.5 text-xs font-bold text-white shadow-sm hover:bg-indigo-700 sm:w-auto"
           >
             <Plus className="h-4 w-4" />
             Ajukan Pinjaman
@@ -559,7 +559,7 @@ export default function EmployeeSimpanPinjamPage() {
     return shell(
       <>
         {header}
-        <Card className="rounded-2xl border-slate-200/80 shadow-sm bg-white p-6 text-center space-y-3">
+        <Card className="rounded-md border-slate-200/80 shadow-sm bg-white p-6 text-center space-y-3">
           <AlertCircle className="w-10 h-10 text-rose-500 mx-auto" />
           <h2 className="text-base font-bold text-slate-800">Akses Ditolak</h2>
           <p className="text-sm text-slate-500">
@@ -576,7 +576,7 @@ export default function EmployeeSimpanPinjamPage() {
     return shell(
       <>
         {header}
-        <Card className="rounded-2xl border-amber-200 shadow-sm bg-amber-50/60 p-6 space-y-3">
+        <Card className="rounded-md border-amber-200 shadow-sm bg-amber-50/60 p-6 space-y-3">
           <div className="flex items-start gap-3">
             <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
             <div className="space-y-1">
@@ -589,7 +589,7 @@ export default function EmployeeSimpanPinjamPage() {
               setLoading(true);
               loadLoans();
             }}
-            className="rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs h-9 px-4 cursor-pointer"
+            className="rounded-sm bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs h-9 px-4 cursor-pointer"
           >
             Coba Lagi
           </Button>
@@ -602,8 +602,8 @@ export default function EmployeeSimpanPinjamPage() {
     return shell(
       <>
         {header}
-        <Card className="rounded-2xl border-slate-200/80 shadow-sm bg-white p-6 space-y-3">
-          <div className="w-11 h-11 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600">
+        <Card className="rounded-md border-slate-200/80 shadow-sm bg-white p-6 space-y-3">
+          <div className="w-11 h-11 rounded-sm bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600">
             <Info className="w-5 h-5" />
           </div>
           <h2 className="text-base font-bold text-slate-800">Keanggotaan Belum Aktif</h2>
@@ -628,7 +628,7 @@ export default function EmployeeSimpanPinjamPage() {
 
       {/* Summary strip */}
       <div className="grid grid-cols-3 gap-3">
-        <Card className="rounded-2xl border-slate-200/80 shadow-sm bg-white p-3.5">
+        <Card className="rounded-md border-slate-200/80 shadow-sm bg-white p-3.5">
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
             Sisa Hutang
           </p>
@@ -636,7 +636,7 @@ export default function EmployeeSimpanPinjamPage() {
             {rupiah(totals.outstanding)}
           </p>
         </Card>
-        <Card className="rounded-2xl border-slate-200/80 shadow-sm bg-white p-3.5">
+        <Card className="rounded-md border-slate-200/80 shadow-sm bg-white p-3.5">
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
             Cicilan / Bulan
           </p>
@@ -644,7 +644,7 @@ export default function EmployeeSimpanPinjamPage() {
             {rupiah(totals.monthly)}
           </p>
         </Card>
-        <Card className="rounded-2xl border-slate-200/80 shadow-sm bg-white p-3.5">
+        <Card className="rounded-md border-slate-200/80 shadow-sm bg-white p-3.5">
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
             Pinjaman Aktif
           </p>
@@ -655,7 +655,7 @@ export default function EmployeeSimpanPinjamPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-slate-100/70 p-1 rounded-xl">
+      <div className="flex gap-1 bg-slate-100/70 p-1 rounded-md">
         {([
           ['berjalan', `Berjalan (${activeLoans.length})`],
           ['riwayat', `Riwayat (${pastLoans.length})`],
@@ -665,7 +665,7 @@ export default function EmployeeSimpanPinjamPage() {
             key={key}
             type="button"
             onClick={() => setTab(key)}
-            className={`flex-1 px-3 py-2 text-[11px] sm:text-xs font-bold rounded-lg transition-all cursor-pointer ${
+            className={`flex-1 px-3 py-2 text-[11px] sm:text-xs font-bold rounded-sm transition-all cursor-pointer ${
               tab === key ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -675,13 +675,13 @@ export default function EmployeeSimpanPinjamPage() {
       </div>
 
       {tab === 'ketentuan' && (
-        <Card className="rounded-2xl border-slate-200/80 shadow-sm bg-white p-5">
+        <Card className="rounded-md border-slate-200/80 shadow-sm bg-white p-5">
           <LoanTerms />
         </Card>
       )}
 
       {tab === 'berjalan' && activeLoans.length === 0 && (
-        <Card className="rounded-2xl border-slate-200/80 shadow-sm bg-white p-8 text-center space-y-3">
+        <Card className="rounded-md border-slate-200/80 shadow-sm bg-white p-8 text-center space-y-3">
           <Wallet className="w-10 h-10 text-slate-300 mx-auto" />
           <p className="text-sm font-semibold text-slate-600">
             Tidak ada pinjaman yang sedang berjalan
@@ -692,7 +692,7 @@ export default function EmployeeSimpanPinjamPage() {
           <Button
             onClick={openApplyDialog}
             disabled={!canApply}
-            className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-9 px-4 cursor-pointer"
+            className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-9 px-4 cursor-pointer"
           >
             <Plus className="w-4 h-4 mr-1.5" />
             Ajukan Pinjaman Baru
@@ -701,7 +701,7 @@ export default function EmployeeSimpanPinjamPage() {
       )}
 
       {tab === 'riwayat' && pastLoans.length === 0 && (
-        <Card className="rounded-2xl border-slate-200/80 shadow-sm bg-white p-8 text-center">
+        <Card className="rounded-md border-slate-200/80 shadow-sm bg-white p-8 text-center">
           <History className="w-10 h-10 text-slate-300 mx-auto mb-3" />
           <p className="text-sm font-semibold text-slate-600">Belum ada riwayat pinjaman</p>
         </Card>
@@ -722,7 +722,7 @@ export default function EmployeeSimpanPinjamPage() {
           return (
             <Card
               key={loan.id}
-              className="rounded-2xl border-slate-200/80 shadow-sm bg-white p-5 space-y-4"
+              className="rounded-md border-slate-200/80 shadow-sm bg-white p-5 space-y-4"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -731,7 +731,7 @@ export default function EmployeeSimpanPinjamPage() {
                       Pinjaman #{loan.id.substring(0, 8)}
                     </h3>
                     {loan.restructuredFromLoanId && (
-                      <Badge className="bg-purple-50 text-purple-700 border border-purple-200 text-[9px] font-bold rounded px-1.5 py-0">
+                      <Badge className="bg-purple-50 text-purple-700 border border-purple-200 text-[9px] font-bold rounded-sm px-1.5 py-0">
                         Hasil Restrukturisasi
                       </Badge>
                     )}
@@ -746,13 +746,13 @@ export default function EmployeeSimpanPinjamPage() {
 
               {/* Approval progress for applications still in the pipeline */}
               {!isRunning && koperasiApprovalStepIndex(status) >= 0 && (
-                <div className="bg-slate-50/70 rounded-xl p-3.5 border border-slate-100">
+                <div className="bg-slate-50/70 rounded-md p-3.5 border border-slate-100">
                   <ApprovalTracker status={status} />
                 </div>
               )}
 
               {pendingRestructure && (
-                <div className="rounded-xl bg-purple-50 border border-purple-200 px-3.5 py-2.5 text-[11px] font-semibold text-purple-800 flex items-center justify-between gap-2 flex-wrap">
+                <div className="rounded-md bg-purple-50 border border-purple-200 px-3.5 py-2.5 text-[11px] font-semibold text-purple-800 flex items-center justify-between gap-2 flex-wrap">
                   <span className="flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5" />
                     Restrukturisasi sedang diproses
@@ -770,7 +770,7 @@ export default function EmployeeSimpanPinjamPage() {
               )}
 
               {status === 'Direvisi BAK' && (
-                <div className="rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-3 space-y-1.5">
+                <div className="rounded-md bg-amber-50 border border-amber-200 px-3.5 py-3 space-y-1.5">
                   <p className="text-[11px] font-bold text-amber-900">
                     BAK mengajukan revisi atas pengajuan Anda
                   </p>
@@ -788,7 +788,7 @@ export default function EmployeeSimpanPinjamPage() {
               )}
 
               {loan.alasanPenolakan && (
-                <div className="rounded-xl bg-rose-50 border border-rose-200 px-3.5 py-2.5">
+                <div className="rounded-md bg-rose-50 border border-rose-200 px-3.5 py-2.5">
                   <p className="text-[10px] font-bold text-rose-900 uppercase tracking-wider mb-0.5">
                     Alasan Penolakan
                   </p>
@@ -805,9 +805,9 @@ export default function EmployeeSimpanPinjamPage() {
                       {paid}/{tenor} cicilan
                     </span>
                   </div>
-                  <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                  <div className="h-2 rounded-sm bg-slate-100 overflow-hidden">
                     <div
-                      className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-emerald-400 transition-all"
+                      className="h-full rounded-sm bg-gradient-to-r from-indigo-500 to-emerald-400 transition-all"
                       style={{ width: `${progress}%` }}
                     />
                   </div>
@@ -817,7 +817,7 @@ export default function EmployeeSimpanPinjamPage() {
                 </div>
               )}
 
-              <div className="bg-slate-50/70 rounded-xl p-3.5 border border-slate-100 space-y-2">
+              <div className="bg-slate-50/70 rounded-md p-3.5 border border-slate-100 space-y-2">
                 {loan.restructuredFromLoanId ? (
                   <>
                     <DetailRow
@@ -858,7 +858,7 @@ export default function EmployeeSimpanPinjamPage() {
                         )
                       }
                       disabled={busy}
-                      className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-8 px-3.5 cursor-pointer"
+                      className="rounded-sm bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-8 px-3.5 cursor-pointer"
                     >
                       {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Terima Revisi'}
                     </Button>
@@ -873,7 +873,7 @@ export default function EmployeeSimpanPinjamPage() {
                       }
                       disabled={busy}
                       variant="outline"
-                      className="rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 font-bold text-xs h-8 px-3.5 cursor-pointer"
+                      className="rounded-sm border-rose-200 text-rose-600 hover:bg-rose-50 font-bold text-xs h-8 px-3.5 cursor-pointer"
                     >
                       Tolak Revisi
                     </Button>
@@ -892,7 +892,7 @@ export default function EmployeeSimpanPinjamPage() {
                     }
                     disabled={busy}
                     variant="outline"
-                    className="rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50 font-bold text-xs h-8 px-3.5 cursor-pointer"
+                    className="rounded-sm border-slate-200 text-slate-600 hover:bg-slate-50 font-bold text-xs h-8 px-3.5 cursor-pointer"
                   >
                     {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Batalkan'}
                   </Button>
@@ -901,7 +901,7 @@ export default function EmployeeSimpanPinjamPage() {
                 {canRestructureKoperasiLoan(loan) && (
                   <Button
                     onClick={() => openRestructureDialog(loan)}
-                    className="rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs h-8 px-3.5 cursor-pointer flex items-center gap-1.5"
+                    className="rounded-sm bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs h-8 px-3.5 cursor-pointer flex items-center gap-1.5"
                   >
                     <Sparkles className="w-3.5 h-3.5" />
                     Restrukturisasi
@@ -911,7 +911,7 @@ export default function EmployeeSimpanPinjamPage() {
                 <Button
                   onClick={() => setDetailLoan(loan)}
                   variant="outline"
-                  className="rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50 font-bold text-xs h-8 px-3.5 cursor-pointer"
+                  className="rounded-sm border-slate-200 text-slate-600 hover:bg-slate-50 font-bold text-xs h-8 px-3.5 cursor-pointer"
                 >
                   Lihat Detail
                 </Button>
@@ -930,7 +930,7 @@ export default function EmployeeSimpanPinjamPage() {
 
       {/* ─── Apply dialog ─────────────────────────────────────────────── */}
       <Dialog open={showApply} onOpenChange={(open) => !open && setShowApply(false)}>
-        <DialogContent className="sm:max-w-lg w-[95vw] p-6 rounded-2xl border-none shadow-2xl bg-white max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg w-[95vw] p-6 rounded-md border-none shadow-2xl bg-white max-h-[90vh] overflow-y-auto">
           <DialogHeader className="mb-4">
             <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
               <Banknote className="w-4.5 h-4.5 text-indigo-600" />
@@ -955,7 +955,7 @@ export default function EmployeeSimpanPinjamPage() {
                   onChange={(e) => setApplyAmount(formatAmountInput(e.target.value))}
                   inputMode="numeric"
                   placeholder="1.000.000 - 10.000.000"
-                  className="pl-9 rounded-xl border-slate-200 text-sm font-semibold"
+                  className="pl-9 rounded-sm border-slate-200 text-sm font-semibold"
                   required
                 />
               </div>
@@ -967,10 +967,10 @@ export default function EmployeeSimpanPinjamPage() {
                 value={applyTenor}
                 onValueChange={(value) => setApplyTenor(value ?? String(KOPERASI_MIN_TENOR))}
               >
-                <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white text-sm font-semibold">
+                <SelectTrigger className="w-full rounded-sm border-slate-200 bg-white text-sm font-semibold">
                   <SelectValue>{applyTenor} bulan</SelectValue>
                 </SelectTrigger>
-                <SelectContent className="bg-white rounded-xl border border-slate-100 shadow-xl">
+                <SelectContent className="bg-white rounded-md border border-slate-100 shadow-xl">
                   {TENOR_OPTIONS.map((option) => (
                     <SelectItem key={option} value={String(option)}>
                       {option} bulan
@@ -981,7 +981,7 @@ export default function EmployeeSimpanPinjamPage() {
             </div>
 
             {applyAmountValue > 0 && (
-              <div className="bg-indigo-50/60 border border-indigo-100 rounded-xl p-3.5 space-y-2">
+              <div className="bg-indigo-50/60 border border-indigo-100 rounded-md p-3.5 space-y-2">
                 <DetailRow
                   label="Cicilan per bulan"
                   value={rupiah(applyInstallment)}
@@ -1006,7 +1006,7 @@ export default function EmployeeSimpanPinjamPage() {
                 value={applyPurpose}
                 onChange={(e) => setApplyPurpose(e.target.value.slice(0, KOPERASI_MAX_PURPOSE_LENGTH))}
                 placeholder="Contoh: Biaya pendidikan anak"
-                className="rounded-xl border-slate-200 text-sm"
+                className="rounded-sm border-slate-200 text-sm"
                 required
               />
             </div>
@@ -1020,7 +1020,7 @@ export default function EmployeeSimpanPinjamPage() {
                 onChange={(e) => setApplyNote(e.target.value.slice(0, KOPERASI_MAX_NOTE_LENGTH))}
                 rows={3}
                 placeholder="Tambahkan keterangan bila diperlukan"
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 resize-none"
+                className="w-full rounded-sm border border-slate-200 px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 resize-none"
               />
               <p className="text-[10px] font-semibold text-slate-400">
                 {applyNote.length}/{KOPERASI_MAX_NOTE_LENGTH} karakter
@@ -1031,10 +1031,10 @@ export default function EmployeeSimpanPinjamPage() {
               <div className="space-y-1.5">
                 <Label className="text-[11px] font-bold text-slate-500 uppercase">Bank</Label>
                 <Select value={applyBank} onValueChange={(value) => setApplyBank(value ?? '')}>
-                  <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white text-sm font-semibold">
+                  <SelectTrigger className="w-full rounded-sm border-slate-200 bg-white text-sm font-semibold">
                     <SelectValue placeholder="Pilih bank">{applyBank || 'Pilih bank'}</SelectValue>
                   </SelectTrigger>
-                  <SelectContent className="bg-white rounded-xl border border-slate-100 shadow-xl">
+                  <SelectContent className="bg-white rounded-md border border-slate-100 shadow-xl">
                     {KOPERASI_BANKS.map((bank) => (
                       <SelectItem key={bank} value={bank}>
                         {bank}
@@ -1052,7 +1052,7 @@ export default function EmployeeSimpanPinjamPage() {
                   onChange={(e) => setApplyAccount(e.target.value.replace(/\D/g, '').slice(0, 25))}
                   inputMode="numeric"
                   placeholder="Angka saja"
-                  className="rounded-xl border-slate-200 text-sm font-semibold"
+                  className="rounded-sm border-slate-200 text-sm font-semibold"
                   required
                 />
               </div>
@@ -1064,14 +1064,14 @@ export default function EmployeeSimpanPinjamPage() {
                 variant="outline"
                 onClick={() => setShowApply(false)}
                 disabled={submitting}
-                className="rounded-xl border-slate-200 text-slate-600 font-bold text-xs h-9 px-4 cursor-pointer"
+                className="rounded-sm border-slate-200 text-slate-600 font-bold text-xs h-9 px-4 cursor-pointer"
               >
                 Batal
               </Button>
               <Button
                 type="submit"
                 disabled={submitting}
-                className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-9 px-4 cursor-pointer"
+                className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-9 px-4 cursor-pointer"
               >
                 {submitting ? (
                   <>
@@ -1091,7 +1091,7 @@ export default function EmployeeSimpanPinjamPage() {
         open={restructureLoan !== null}
         onOpenChange={(open) => !open && setRestructureLoan(null)}
       >
-        <DialogContent className="sm:max-w-lg w-[95vw] p-6 rounded-2xl border-none shadow-2xl bg-white max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg w-[95vw] p-6 rounded-md border-none shadow-2xl bg-white max-h-[90vh] overflow-y-auto">
           <DialogHeader className="mb-4">
             <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
               <Sparkles className="w-4.5 h-4.5 text-purple-600" />
@@ -1105,7 +1105,7 @@ export default function EmployeeSimpanPinjamPage() {
 
           {restructureLoan && restructureQuote && (
             <form onSubmit={handleRestructure} className="space-y-4">
-              <div className="bg-slate-50/70 rounded-xl p-3.5 border border-slate-100 space-y-2">
+              <div className="bg-slate-50/70 rounded-md p-3.5 border border-slate-100 space-y-2">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   Pinjaman Saat Ini
                 </p>
@@ -1133,7 +1133,7 @@ export default function EmployeeSimpanPinjamPage() {
                     onChange={(e) => setRestructureAmount(formatAmountInput(e.target.value))}
                     inputMode="numeric"
                     placeholder={`Maks ${rupiah(restructureQuote.maxAdditionalAmount)}`}
-                    className="pl-9 rounded-xl border-slate-200 text-sm font-semibold"
+                    className="pl-9 rounded-sm border-slate-200 text-sm font-semibold"
                     required
                   />
                 </div>
@@ -1149,7 +1149,7 @@ export default function EmployeeSimpanPinjamPage() {
                       key={option}
                       type="button"
                       onClick={() => setRestructureTenor(option)}
-                      className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer ${
+                      className={`px-2.5 py-1.5 rounded-sm text-[11px] font-bold border transition-colors cursor-pointer ${
                         restructureTenor === option
                           ? 'bg-purple-600 text-white border-purple-600'
                           : 'bg-white text-slate-600 border-slate-200 hover:border-purple-300'
@@ -1168,12 +1168,12 @@ export default function EmployeeSimpanPinjamPage() {
                     value={restructureBank}
                     onValueChange={(value) => setRestructureBank(value ?? '')}
                   >
-                    <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white text-sm font-semibold">
+                    <SelectTrigger className="w-full rounded-sm border-slate-200 bg-white text-sm font-semibold">
                       <SelectValue placeholder="Pilih bank">
                         {restructureBank || 'Pilih bank'}
                       </SelectValue>
                     </SelectTrigger>
-                    <SelectContent className="bg-white rounded-xl border border-slate-100 shadow-xl">
+                    <SelectContent className="bg-white rounded-md border border-slate-100 shadow-xl">
                       {KOPERASI_BANKS.map((bank) => (
                         <SelectItem key={bank} value={bank}>
                           {bank}
@@ -1193,7 +1193,7 @@ export default function EmployeeSimpanPinjamPage() {
                     }
                     inputMode="numeric"
                     placeholder="Angka saja"
-                    className="rounded-xl border-slate-200 text-sm font-semibold"
+                    className="rounded-sm border-slate-200 text-sm font-semibold"
                     required
                   />
                 </div>
@@ -1201,7 +1201,7 @@ export default function EmployeeSimpanPinjamPage() {
 
               {restructureQuote.additionalAmount > 0 && restructureQuote.additionalTenor > 0 && (
                 <div
-                  className={`rounded-xl p-3.5 border space-y-2 ${
+                  className={`rounded-md p-3.5 border space-y-2 ${
                     restructureQuote.error
                       ? 'bg-rose-50/60 border-rose-200'
                       : 'bg-purple-50/60 border-purple-200'
@@ -1244,7 +1244,7 @@ export default function EmployeeSimpanPinjamPage() {
                   variant="outline"
                   onClick={() => setRestructureLoan(null)}
                   disabled={submitting}
-                  className="rounded-xl border-slate-200 text-slate-600 font-bold text-xs h-9 px-4 cursor-pointer"
+                  className="rounded-sm border-slate-200 text-slate-600 font-bold text-xs h-9 px-4 cursor-pointer"
                 >
                   Batal
                 </Button>
@@ -1256,7 +1256,7 @@ export default function EmployeeSimpanPinjamPage() {
                     !restructureBank ||
                     !restructureAccount
                   }
-                  className="rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs h-9 px-4 cursor-pointer"
+                  className="rounded-sm bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs h-9 px-4 cursor-pointer"
                 >
                   {submitting ? (
                     <>
@@ -1274,7 +1274,7 @@ export default function EmployeeSimpanPinjamPage() {
 
       {/* ─── Detail / history dialog ──────────────────────────────────── */}
       <Dialog open={detailLoan !== null} onOpenChange={(open) => !open && setDetailLoan(null)}>
-        <DialogContent className="sm:max-w-lg w-[95vw] p-6 rounded-2xl border-none shadow-2xl bg-white max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg w-[95vw] p-6 rounded-md border-none shadow-2xl bg-white max-h-[90vh] overflow-y-auto">
           {detailLoan && (
             <>
               <DialogHeader className="mb-4">
@@ -1295,7 +1295,7 @@ export default function EmployeeSimpanPinjamPage() {
                     <button
                       type="button"
                       onClick={() => setDetailLoan(findLoan(detailLoan.restructuredFromLoanId)!)}
-                      className="text-[11px] font-bold text-purple-700 bg-purple-50 border border-purple-200 rounded-lg px-2.5 py-1 cursor-pointer hover:bg-purple-100"
+                      className="text-[11px] font-bold text-purple-700 bg-purple-50 border border-purple-200 rounded-sm px-2.5 py-1 cursor-pointer hover:bg-purple-100"
                     >
                       ← Pinjaman sebelumnya #{detailLoan.restructuredFromLoanId!.substring(0, 8)}
                     </button>
@@ -1304,7 +1304,7 @@ export default function EmployeeSimpanPinjamPage() {
                     <button
                       type="button"
                       onClick={() => setDetailLoan(findLoan(detailLoan.restructuredToLoanId)!)}
-                      className="text-[11px] font-bold text-purple-700 bg-purple-50 border border-purple-200 rounded-lg px-2.5 py-1 cursor-pointer hover:bg-purple-100"
+                      className="text-[11px] font-bold text-purple-700 bg-purple-50 border border-purple-200 rounded-sm px-2.5 py-1 cursor-pointer hover:bg-purple-100"
                     >
                       Pinjaman baru #{detailLoan.restructuredToLoanId!.substring(0, 8)} →
                     </button>
@@ -1312,7 +1312,7 @@ export default function EmployeeSimpanPinjamPage() {
                 </div>
               )}
 
-              <div className="bg-slate-50/70 rounded-xl p-3.5 border border-slate-100 space-y-2 mb-4">
+              <div className="bg-slate-50/70 rounded-md p-3.5 border border-slate-100 space-y-2 mb-4">
                 <DetailRow label="Tujuan" value={detailLoan.tujuanPinjaman || '—'} />
                 <DetailRow label="Total pinjaman" value={rupiah(detailLoan.jumlahPinjaman)} />
                 <DetailRow label="Tenor" value={`${detailLoan.tenor || 0} bulan`} />
@@ -1370,7 +1370,7 @@ export default function EmployeeSimpanPinjamPage() {
                   }
 
                   return (
-                    <div className="bg-slate-50/70 rounded-xl p-3.5 border border-slate-100 max-h-[280px] overflow-y-auto space-y-1.5">
+                    <div className="bg-slate-50/70 rounded-md p-3.5 border border-slate-100 max-h-[280px] overflow-y-auto space-y-1.5">
                       {segments.map((segment, segIndex) => (
                         <div key={segment.loanId}>
                           {hasAncestors && (
@@ -1380,7 +1380,7 @@ export default function EmployeeSimpanPinjamPage() {
                               }`}
                             >
                               <span
-                                className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                                className={`text-[9px] font-bold px-2 py-0.5 rounded-sm ${
                                   segIndex === segments.length - 1
                                     ? 'bg-indigo-100 text-indigo-700'
                                     : 'bg-slate-200/70 text-slate-500'
@@ -1437,7 +1437,7 @@ export default function EmployeeSimpanPinjamPage() {
                 <Button
                   variant="outline"
                   onClick={() => setDetailLoan(null)}
-                  className="rounded-xl border-slate-200 text-slate-600 font-bold text-xs h-9 px-4 cursor-pointer"
+                  className="rounded-sm border-slate-200 text-slate-600 font-bold text-xs h-9 px-4 cursor-pointer"
                 >
                   <X className="w-3.5 h-3.5 mr-1.5" /> Tutup
                 </Button>

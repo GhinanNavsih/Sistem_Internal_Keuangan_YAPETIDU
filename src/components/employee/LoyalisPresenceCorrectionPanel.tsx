@@ -660,7 +660,7 @@ export function LoyalisPresenceCorrectionPanel({
         {/* Back header */}
         {!embedded && <div className="flex items-center justify-between">
           <Link href="/employee/payslip">
-            <Button variant="ghost" className="rounded-xl flex items-center gap-1.5 text-slate-500 hover:text-slate-800 font-semibold cursor-pointer">
+            <Button variant="ghost" className="rounded-sm flex items-center gap-1.5 text-slate-500 hover:text-slate-800 font-semibold cursor-pointer">
               <ChevronLeft className="w-4 h-4" />
               Kembali ke Slip Gaji
             </Button>
@@ -686,7 +686,7 @@ export function LoyalisPresenceCorrectionPanel({
 
           {/* Form Card */}
           <div className={embedded ? '' : 'lg:col-span-5'}>
-            <Card className="bg-white rounded-3xl border-none shadow-[0_4px_25px_rgba(0,0,0,0.02)] p-6 space-y-6">
+            <Card className="bg-white rounded-md border-none shadow-[0_4px_25px_rgba(0,0,0,0.02)] p-6 space-y-6">
               <div>
                 <CardTitle className="text-base font-extrabold text-slate-850 tracking-wide uppercase flex items-center gap-2">
                   <Calendar className="w-5 h-5 text-indigo-500" />
@@ -712,7 +712,7 @@ export function LoyalisPresenceCorrectionPanel({
                     min={minDate}
                     max={maxDate}
                     onChange={(e) => setDate(e.target.value)}
-                    className="rounded-xl border-slate-200 bg-white shadow-none h-11 text-sm font-semibold focus:ring-2 focus:ring-indigo-500/20"
+                    className="rounded-sm border-slate-200 bg-white shadow-none h-11 text-sm font-semibold focus:ring-2 focus:ring-indigo-500/20"
                   />
                 </div>
 
@@ -738,7 +738,7 @@ export function LoyalisPresenceCorrectionPanel({
                       if (isPresenceCorrectionType(value)) setType(value);
                     }}
                   >
-                    <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white h-11 text-sm font-semibold focus:ring-2 focus:ring-indigo-500/20">
+                    <SelectTrigger className="w-full rounded-sm border-slate-200 bg-white h-11 text-sm font-semibold focus:ring-2 focus:ring-indigo-500/20">
                       <SelectValue>
                         {effectiveType === 'both' && 'Keduanya (Masuk & Pulang)'}
                         {effectiveType === 'tap_in' && 'Hanya Scan Masuk'}
@@ -746,7 +746,7 @@ export function LoyalisPresenceCorrectionPanel({
                         {effectiveType === 'izin_resmi' && 'Izin Resmi (Hari Penuh)'}
                       </SelectValue>
                     </SelectTrigger>
-                    <SelectContent className="bg-white rounded-xl border border-slate-100 shadow-xl">
+                    <SelectContent className="bg-white rounded-md border border-slate-100 shadow-xl">
                       <SelectItem value="both">Keduanya (Masuk & Pulang)</SelectItem>
                       <SelectItem value="tap_in">Hanya Scan Masuk</SelectItem>
                       <SelectItem value="tap_out">Hanya Scan Pulang</SelectItem>
@@ -757,7 +757,7 @@ export function LoyalisPresenceCorrectionPanel({
 
                 <div className="grid grid-cols-2 gap-4">
                   {effectiveType === 'izin_resmi' ? (
-                    <div className="col-span-2 flex items-center gap-2 p-3.5 rounded-2xl text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <div className="col-span-2 flex items-center gap-2 p-3.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                       <Clock className="w-4 h-4 text-emerald-600 shrink-0" />
                       <span>{workflowMode === 'sick_leave' ? 'Izin Sakit' : 'Izin Resmi'} akan otomatis dihitung sebagai hari penuh: <strong className="font-mono">07:30 — 14:00</strong></span>
                     </div>
@@ -771,7 +771,7 @@ export function LoyalisPresenceCorrectionPanel({
                         onFocus={() => setCheckInFocused(true)}
                         onBlur={() => setCheckInFocused(false)}
                         placeholder="07:30"
-                        className="rounded-xl border-slate-200 bg-white shadow-none h-11 text-sm font-semibold font-mono text-center focus:ring-2 focus:ring-indigo-500/20"
+                        className="rounded-sm border-slate-200 bg-white shadow-none h-11 text-sm font-semibold font-mono text-center focus:ring-2 focus:ring-indigo-500/20"
                       />
                     </div>
                   )}
@@ -785,12 +785,12 @@ export function LoyalisPresenceCorrectionPanel({
                         onFocus={() => setCheckOutFocused(true)}
                         onBlur={() => setCheckOutFocused(false)}
                         placeholder="14:00"
-                        className="rounded-xl border-slate-200 bg-white shadow-none h-11 text-sm font-semibold font-mono text-center focus:ring-2 focus:ring-indigo-500/20"
+                        className="rounded-sm border-slate-200 bg-white shadow-none h-11 text-sm font-semibold font-mono text-center focus:ring-2 focus:ring-indigo-500/20"
                       />
                     </div>
                   )}
                   {isTimeRangeInvalid && (
-                    <div className="col-span-2 flex items-center gap-2 p-3.5 rounded-2xl text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200 animate-in fade-in duration-200">
+                    <div className="col-span-2 flex items-center gap-2 p-3.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200 animate-in fade-in duration-200">
                       <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                       <span>Peringatan: Jam Pulang harus lebih lambat dari Jam Masuk.</span>
                     </div>
@@ -810,7 +810,7 @@ export function LoyalisPresenceCorrectionPanel({
                         ? 'Contoh: Sakit dan keterangan pendukung'
                         : 'Contoh: Terburu-buru karena rapat yayasan pukul 08:00 WIB...'
                     }
-                    className="w-full p-3 rounded-xl border border-slate-200 bg-white shadow-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 placeholder:text-slate-350"
+                    className="w-full p-3 rounded-sm border border-slate-200 bg-white shadow-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 placeholder:text-slate-350"
                   />
                 </div>
 
@@ -819,7 +819,7 @@ export function LoyalisPresenceCorrectionPanel({
                     {workflowMode === 'sick_leave' ? 'Bukti Pendukung' : 'Bukti Kehadiran'}
                   </label>
                   {!file && !existingProofUrl ? (
-                    <div className="relative border-2 border-dashed border-slate-200 rounded-2xl p-4 flex flex-col items-center justify-center hover:bg-slate-50/50 transition-colors">
+                    <div className="relative border-2 border-dashed border-slate-200 rounded-sm p-4 flex flex-col items-center justify-center hover:bg-slate-50/50 transition-colors">
                       <input
                         type="file"
                         accept=".jpeg,.jpg,.png,.pdf,image/jpeg,image/png,application/pdf"
@@ -833,19 +833,19 @@ export function LoyalisPresenceCorrectionPanel({
                       <span className="text-[10px] text-slate-400 mt-1">Maks. 5MB (PDF, JPG, PNG)</span>
                     </div>
                   ) : (
-                    <div className="relative border border-slate-150 rounded-2xl p-3 bg-slate-50 flex items-center gap-3 animate-in zoom-in-95 duration-150">
+                    <div className="relative border border-slate-150 rounded-md p-3 bg-slate-50 flex items-center gap-3 animate-in zoom-in-95 duration-150">
                       {filePreview ? (
-                        <div className="relative w-12 h-12 rounded-lg overflow-hidden border border-slate-200 shrink-0 bg-white">
+                        <div className="relative w-12 h-12 rounded-sm overflow-hidden border border-slate-200 shrink-0 bg-white">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={filePreview} alt="Preview" className="w-full h-full object-cover" />
                         </div>
                       ) : existingProofUrl && !isExistingProofPdf ? (
-                        <div className="relative w-12 h-12 rounded-lg overflow-hidden border border-slate-200 shrink-0 bg-white">
+                        <div className="relative w-12 h-12 rounded-sm overflow-hidden border border-slate-200 shrink-0 bg-white">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={existingProofUrl} alt="Preview" className="w-full h-full object-cover" />
                         </div>
                       ) : (
-                        <div className="w-12 h-12 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0">
+                        <div className="w-12 h-12 rounded-sm bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0">
                           <FileText className="w-6 h-6 text-indigo-550" />
                         </div>
                       )}
@@ -865,14 +865,14 @@ export function LoyalisPresenceCorrectionPanel({
                           setFilePreview(null);
                           setExistingProofUrl(null);
                         }}
-                        className="h-8 w-8 p-0 rounded-full hover:bg-slate-200/60 text-slate-450 hover:text-slate-750 shrink-0 flex items-center justify-center cursor-pointer"
+                        className="h-8 w-8 p-0 rounded-sm hover:bg-slate-200/60 text-slate-450 hover:text-slate-750 shrink-0 flex items-center justify-center cursor-pointer"
                       >
                         <X className="w-4 h-4" />
                       </Button>
                     </div>
                   )}
                   {uploadProgress !== null && (
-                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2">
+                    <div className="w-full bg-slate-100 h-1.5 rounded-sm overflow-hidden mt-2">
                       <div className="bg-indigo-500 h-full transition-all duration-150" style={{ width: `${uploadProgress}%` }} />
                     </div>
                   )}
@@ -884,7 +884,7 @@ export function LoyalisPresenceCorrectionPanel({
                       type="button"
                       variant="outline"
                       onClick={handleCancelEdit}
-                      className="flex-1 border-slate-200 text-slate-600 font-bold h-11 rounded-2xl active:scale-[0.98] transition-all cursor-pointer"
+                      className="flex-1 border-slate-200 text-slate-600 font-bold h-11 rounded-sm active:scale-[0.98] transition-all cursor-pointer"
                     >
                       Batal
                     </Button>
@@ -892,7 +892,7 @@ export function LoyalisPresenceCorrectionPanel({
                   <Button
                     type="submit"
                     disabled={submitLoading}
-                    className={`bg-indigo-600 hover:bg-indigo-700 text-white font-bold h-11 rounded-2xl flex items-center justify-center gap-1.5 cursor-pointer shadow-md active:scale-[0.98] transition-all ${editingRequestId ? 'flex-1' : 'w-full'}`}
+                    className={`bg-indigo-600 hover:bg-indigo-700 text-white font-bold h-11 rounded-sm flex items-center justify-center gap-1.5 cursor-pointer shadow-md active:scale-[0.98] transition-all ${editingRequestId ? 'flex-1' : 'w-full'}`}
                   >
                     {submitLoading ? (
                       <>
@@ -910,7 +910,7 @@ export function LoyalisPresenceCorrectionPanel({
 
           {/* History Card */}
           <div className={embedded ? 'space-y-6' : 'lg:col-span-7 space-y-6'}>
-            <Card className="bg-white rounded-3xl border-none shadow-[0_4px_25px_rgba(0,0,0,0.02)] p-6">
+            <Card className="bg-white rounded-md border-none shadow-[0_4px_25px_rgba(0,0,0,0.02)] p-6">
               <div className="mb-4">
                 <CardTitle className="text-base font-extrabold text-slate-850 tracking-wide uppercase flex items-center gap-2">
                   <Clock className="w-5 h-5 text-indigo-500" />
@@ -926,7 +926,7 @@ export function LoyalisPresenceCorrectionPanel({
               {loading ? (
                 <PresensiCorrectionHistorySkeleton />
               ) : visibleRequests.length === 0 ? (
-                <div className="py-16 text-center border border-dashed border-slate-100 rounded-2xl text-slate-400">
+                <div className="py-16 text-center border border-dashed border-slate-100 rounded-md text-slate-400">
                   <HelpCircle className="w-10 h-10 mx-auto mb-2 text-slate-300" />
                   <p className="text-xs font-bold">
                     {workflowMode === 'sick_leave' ? 'Belum ada pengajuan izin sakit.' : 'Belum ada pengajuan koreksi presensi.'}
@@ -937,7 +937,7 @@ export function LoyalisPresenceCorrectionPanel({
                   {visibleRequests.map((req) => (
                     <div
                       key={req.id}
-                      className={`relative rounded-2xl border p-4 transition-colors ${editingRequestId === req.id
+                      className={`relative rounded-md border p-4 transition-colors ${editingRequestId === req.id
                         ? 'border-indigo-200 bg-indigo-50/30 ring-1 ring-indigo-100'
                         : 'border-slate-100 bg-slate-50/30 hover:bg-slate-50/60'
                         }`}
@@ -949,19 +949,19 @@ export function LoyalisPresenceCorrectionPanel({
                             {formatPresenceDate(req.date, { day: 'numeric', month: 'short', year: 'numeric' })}
                           </span>
                           {req.type === 'izin_resmi' ? (
-                            <span className="text-[10px] bg-emerald-100/60 text-emerald-700 px-1.5 py-0.5 rounded font-bold">
+                            <span className="text-[10px] bg-emerald-100/60 text-emerald-700 px-1.5 py-0.5 rounded-sm font-bold">
                               {workflowMode === 'sick_leave' ? 'Izin Sakit' : 'Izin Resmi'}
                             </span>
                           ) : req.type === 'both' ? (
-                            <span className="text-[10px] bg-slate-200/60 text-slate-600 px-1.5 py-0.5 rounded font-bold">Masuk & Pulang</span>
+                            <span className="text-[10px] bg-slate-200/60 text-slate-600 px-1.5 py-0.5 rounded-sm font-bold">Masuk & Pulang</span>
                           ) : req.type === 'tap_in' ? (
-                            <span className="text-[10px] bg-indigo-100/60 text-indigo-700 px-1.5 py-0.5 rounded font-bold">Masuk Saja</span>
+                            <span className="text-[10px] bg-indigo-100/60 text-indigo-700 px-1.5 py-0.5 rounded-sm font-bold">Masuk Saja</span>
                           ) : (
-                            <span className="text-[10px] bg-amber-100/60 text-amber-700 px-1.5 py-0.5 rounded font-bold">Pulang Saja</span>
+                            <span className="text-[10px] bg-amber-100/60 text-amber-700 px-1.5 py-0.5 rounded-sm font-bold">Pulang Saja</span>
                           )}
                         </div>
                         <div className="flex items-center gap-1.5">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${req.status === 'approved'
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] font-bold ${req.status === 'approved'
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
                             : req.cancelledByEmployee
                               ? 'bg-slate-100 text-slate-600 border border-slate-200'
@@ -984,7 +984,7 @@ export function LoyalisPresenceCorrectionPanel({
                               type="button"
                               variant="ghost"
                               onClick={() => setActiveMenuId(activeMenuId === req.id ? null : req.id)}
-                              className="h-7 w-7 p-0 rounded-full hover:bg-slate-200/50 text-slate-400 hover:text-slate-700 flex items-center justify-center cursor-pointer"
+                              className="h-7 w-7 p-0 rounded-sm hover:bg-slate-200/50 text-slate-400 hover:text-slate-700 flex items-center justify-center cursor-pointer"
                             >
                               <MoreVertical className="w-4 h-4" />
                             </Button>
@@ -995,7 +995,7 @@ export function LoyalisPresenceCorrectionPanel({
                                   className="fixed inset-0 z-40"
                                   onClick={() => setActiveMenuId(null)}
                                 />
-                                <div className="absolute right-0 mt-1 w-28 bg-white rounded-xl border border-slate-100 shadow-xl py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
+                                <div className="absolute right-0 mt-1 w-28 bg-white rounded-md border border-slate-100 shadow-xl py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
                                   {(req.status === 'pending' || req.status === 'rejected') && (
                                     <button
                                       type="button"
@@ -1052,7 +1052,7 @@ export function LoyalisPresenceCorrectionPanel({
 
                       {/* Rejection reason */}
                       {req.rejectionReason && !req.cancelledByEmployee && (
-                        <div className="text-[10px] text-rose-600 bg-rose-50 border border-rose-100/50 p-2.5 rounded-xl mt-2.5 font-medium">
+                        <div className="text-[10px] text-rose-600 bg-rose-50 border border-rose-100/50 p-2.5 rounded-md mt-2.5 font-medium">
                           <strong>Catatan Penolakan:</strong> {req.rejectionReason}
                         </div>
                       )}

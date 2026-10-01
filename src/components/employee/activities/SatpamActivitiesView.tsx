@@ -194,10 +194,10 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
   return (
     <>
 {isKetuaShiftSatpam && (
-          <Card ref={satpamShiftCardRef} className="bg-white rounded-2xl shadow-sm border-none overflow-hidden py-0 scroll-mt-4">
-            <CardHeader className="bg-gradient-to-r from-purple-600 to-indigo-600 p-5 text-white">
+          <Card ref={satpamShiftCardRef} className="bg-white rounded-md shadow-sm border-none overflow-hidden py-0 scroll-mt-4">
+            <CardHeader className="rounded-t-md bg-gradient-to-r from-purple-600 to-indigo-600 p-5 text-white">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center backdrop-blur-md">
+                <div className="w-10 h-10 rounded-sm bg-white/10 flex items-center justify-center backdrop-blur-md">
                   <ClipboardList className="w-5 h-5 text-white" />
                 </div>
                 <div>
@@ -214,7 +214,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
               ) : (
                 <form onSubmit={handleSubmitSatpamShift} className="space-y-4">
                   {/* Date selection & Shift Display */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100 pb-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-md border border-slate-100 pb-3">
                     <div className="space-y-2">
                       <Label htmlFor="satpamDate" className="text-sm font-bold text-slate-600">
                         Pilih Tanggal Dinas
@@ -233,7 +233,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                           satpamSubmitting ||
                           isSatpamPhotoUploadInProgress
                         }
-                        className="h-12 rounded-xl border-slate-200 focus:border-purple-400 focus:ring-purple-400/20 text-base font-bold text-slate-700 bg-white"
+                        className="h-12 rounded-sm border-slate-200 focus:border-purple-400 focus:ring-purple-400/20 text-base font-bold text-slate-700 bg-white"
                         required
                       />
                     </div>
@@ -249,19 +249,19 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                           !satpamFlexibilityEnabled
                         }
                       >
-                        <SelectTrigger className="h-12 w-full rounded-xl border border-slate-200 bg-white text-base font-bold text-slate-700 px-3 flex items-center justify-between shadow-xs">
+                        <SelectTrigger className="h-12 w-full rounded-sm border border-slate-200 bg-white text-base font-bold text-slate-700 px-3 flex items-center justify-between shadow-xs">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent className="w-[var(--radix-select-trigger-width)] min-w-[280px] rounded-xl border border-slate-100 shadow-xl bg-white p-1.5 z-50">
-                          <SelectItem value="Pagi" className="rounded-lg font-semibold py-2.5 px-3 cursor-pointer">
+                        <SelectContent className="w-[var(--radix-select-trigger-width)] min-w-[280px] rounded-md border border-slate-100 shadow-xl bg-white p-1.5 z-50">
+                          <SelectItem value="Pagi" className="rounded-sm font-semibold py-2.5 px-3 cursor-pointer">
                             <span className="font-bold text-slate-800">Shift Pagi</span>
                             <span className="ml-2 text-xs font-medium text-slate-500">({shiftHours('Pagi')} WIB)</span>
                           </SelectItem>
-                          <SelectItem value="Sore" className="rounded-lg font-semibold py-2.5 px-3 cursor-pointer">
+                          <SelectItem value="Sore" className="rounded-sm font-semibold py-2.5 px-3 cursor-pointer">
                             <span className="font-bold text-slate-800">Shift Sore</span>
                             <span className="ml-2 text-xs font-medium text-slate-500">({shiftHours('Sore')} WIB)</span>
                           </SelectItem>
-                          <SelectItem value="Malam" className="rounded-lg font-semibold py-2.5 px-3 cursor-pointer">
+                          <SelectItem value="Malam" className="rounded-sm font-semibold py-2.5 px-3 cursor-pointer">
                             <span className="font-bold text-slate-800">Shift Malam</span>
                             <span className="ml-2 text-xs font-medium text-slate-500">({shiftHours('Malam')} WIB)</span>
                           </SelectItem>
@@ -304,7 +304,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                   {/* 9 Posts Duty Grid */}
                   <div className="space-y-3">
                     {satpamDutyPlan?.warning && (
-                      <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-base text-amber-950">
+                      <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-base text-amber-950">
                         <div className="flex items-start gap-2">
                           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
                           <span>{satpamDutyPlan.warning}</span>
@@ -320,7 +320,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                       ditandai untuk pemeriksaan auditor.
                     </p>
                     {pos9GuardIds.size < 3 && (
-                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
+                      <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
                         Tiga petugas Pos 9 belum lengkap dari rencana regu periode ini. Pos 9 tetap dapat dilaporkan, tetapi perlu diperiksa Kepala SatKer.
                       </div>
                     )}
@@ -396,7 +396,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                             ? `Lembur Cover (${rp(satpamRates['Lembur Cover'])})`
                             : 'Pilih petugas dahulu';
                         return (
-                          <div key={post.id} className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center bg-white p-3 rounded-xl border border-slate-200 hover:shadow-sm transition-shadow">
+                          <div key={post.id} className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center bg-white p-3 rounded-md border border-slate-200 hover:shadow-sm transition-shadow">
                             {/* Pos Name Label */}
                             <div className="md:col-span-3">
                               <span className="text-base font-black text-slate-600 block leading-tight">{post.id}</span>
@@ -420,12 +420,12 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                 onValueChange={(v: string | null) => handleSelectGuard(post.id, v === 'none' || v === null ? '' : v)}
                                 disabled={isSatpamReportLocked || loadingSubmittedSatpam}
                               >
-                                <SelectTrigger className="w-full text-base font-extrabold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-3 h-12 flex items-center justify-between">
+                                <SelectTrigger className="w-full text-base font-extrabold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-sm px-3 h-12 flex items-center justify-between">
                                   <span className={val.employeeId ? "truncate" : "truncate text-slate-400 font-normal"}>
                                     {allSatpamEmployees.find(emp => emp.id === val.employeeId)?.name || '-- Pilih Petugas --'}
                                   </span>
                                 </SelectTrigger>
-                                <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white max-h-[300px] overflow-y-auto">
+                                <SelectContent className="rounded-md border border-slate-100 shadow-xl bg-white max-h-[300px] overflow-y-auto">
                                   <SelectItem value="none" className="text-base py-3 pl-3 text-slate-500 italic">
                                     -- Kosongkan Pos --
                                   </SelectItem>
@@ -486,7 +486,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                 retain the Lembur Sendiri option. */}
                             <div className="md:col-span-4">
                               {satpamDutyPlan?.enabled && satpamDutyPlan.day && !isExternalGuard && !isPos9 && !isKetuaGuard ? (
-                                <div className="flex min-h-12 w-full items-center rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-base font-extrabold text-indigo-800">
+                                <div className="flex min-h-12 w-full items-center rounded-sm border border-indigo-200 bg-indigo-50 px-3 text-base font-extrabold text-indigo-800">
                                   {plannedPayLabel}
                                 </div>
                               ) : (
@@ -497,10 +497,10 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                 }}
                                 disabled={isSatpamReportLocked || loadingSubmittedSatpam}
                               >
-                                <SelectTrigger className="w-full h-12 text-base font-extrabold text-slate-700 bg-white border border-slate-200 rounded-lg">
+                                <SelectTrigger className="w-full h-12 text-base font-extrabold text-slate-700 bg-white border border-slate-200 rounded-sm">
                                   <SelectValue placeholder="Pilih Jenis Shift" />
                                 </SelectTrigger>
-                                <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white">
+                                <SelectContent className="rounded-md border border-slate-100 shadow-xl bg-white">
                                   {isKetuaGuard ? (
                                     <>
                                       <SelectItem value="Harian" className="text-base font-bold">
@@ -572,13 +572,13 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                     handleCoverDetail(post.id, 'coveredEmployeeId', value === 'none' || value === null ? '' : value)}
                                   disabled={isSatpamReportLocked || loadingSubmittedSatpam}
                                 >
-                                  <SelectTrigger className="w-full h-12 rounded-lg bg-amber-50 border-amber-200 text-base font-bold">
+                                  <SelectTrigger className="w-full h-12 rounded-sm bg-amber-50 border-amber-200 text-base font-bold">
                                     <span>
                                       {groupEmployees.find(emp => emp.id === val.coveredEmployeeId)?.name ||
                                         '-- Pilih anggota yang digantikan --'}
                                     </span>
                                   </SelectTrigger>
-                                  <SelectContent className="w-[var(--radix-select-trigger-width)] min-w-[240px] rounded-xl border border-slate-100 shadow-xl bg-white p-1 z-50">
+                                  <SelectContent className="w-[var(--radix-select-trigger-width)] min-w-[240px] rounded-md border border-slate-100 shadow-xl bg-white p-1 z-50">
                                     <SelectItem value="none">-- Pilih anggota --</SelectItem>
                                     {coverCandidates.map(emp => (
                                         <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
@@ -602,7 +602,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                 className="hidden"
                               />
                               {val.photoUrl ? (
-                                <div className="flex items-center justify-between gap-2 p-2 bg-blue-50/80 border border-blue-200 rounded-xl text-base">
+                                <div className="flex items-center justify-between gap-2 p-2 bg-blue-50/80 border border-blue-200 rounded-md text-base">
                                   <div className="flex items-center gap-1.5 truncate font-bold text-blue-800">
                                     <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                                     <span className="truncate">Foto bukti {post.id} terunggah</span>
@@ -611,7 +611,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                     <button
                                       type="button"
                                       onClick={() => setSatpamPreviewPhoto({ url: val.photoUrl!, title: `${post.id} — ${post.name}` })}
-                                      className="min-h-12 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-base flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                                      className="min-h-12 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-sm font-bold text-base flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
                                     >
                                       <Eye className="w-3 h-3" /> Lihat Foto
                                     </button>
@@ -619,7 +619,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                       <button
                                         type="button"
                                         onClick={() => handleRemovePostPhoto(post.id)}
-                                        className="h-12 w-12 flex items-center justify-center hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
+                                        className="h-12 w-12 flex items-center justify-center hover:bg-rose-100 text-rose-600 rounded-sm transition-colors cursor-pointer"
                                         title="Hapus Foto Ini"
                                       >
                                         <Trash2 className="w-3.5 h-3.5" />
@@ -636,7 +636,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                   variant="outline"
                                   disabled={postPhotoUploading[post.id] || loadingSubmittedSatpam}
                                   onClick={() => openPostPhotoInput(post.id)}
-                                  className="w-full h-12 rounded-lg border-dashed border-slate-300 bg-slate-50/60 hover:bg-slate-100 text-base font-bold text-slate-700 gap-2"
+                                  className="w-full h-12 rounded-sm border-dashed border-slate-300 bg-slate-50/60 hover:bg-slate-100 text-base font-bold text-slate-700 gap-2"
                                 >
                                   {postPhotoUploading[post.id] ? (
                                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -652,7 +652,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                       })}
 
                       {!lemburSendiriAllowed ? (
-                        <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-4 text-sm font-semibold text-slate-600">
+                        <p className="rounded-md border border-dashed border-slate-300 bg-slate-50/60 p-4 text-sm font-semibold text-slate-600">
                           Mulai 1 Oktober 2026 tidak ada lagi Lembur Sendiri (petugas tambahan).
                           Bila ada anggota yang absen, isi posnya dengan Lembur Cover.
                         </p>
@@ -660,7 +660,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                         !isSatpamReportLocked && (
                           <div
                             onClick={() => setIsExtraPostVisible(true)}
-                            className="flex items-center justify-center bg-slate-50/50 hover:bg-slate-50 p-4 rounded-xl border border-dashed border-slate-300 hover:border-slate-400 hover:shadow-sm transition-all cursor-pointer h-[66px] animate-in fade-in duration-200"
+                            className="flex items-center justify-center bg-slate-50/50 hover:bg-slate-50 p-4 rounded-sm border border-dashed border-slate-300 hover:border-slate-400 hover:shadow-sm transition-all cursor-pointer h-[66px] animate-in fade-in duration-200"
                           >
                             <span className="text-base font-extrabold text-indigo-600 hover:text-indigo-700 flex items-center gap-2">
                               <Plus className="w-4.5 h-4.5" /> Tambah Petugas
@@ -668,7 +668,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                           </div>
                         )
                       ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center bg-white p-3 rounded-xl border border-slate-200 hover:shadow-sm transition-shadow animate-in fade-in slide-in-from-top-2 duration-300">
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center bg-white p-3 rounded-md border border-slate-200 hover:shadow-sm transition-shadow animate-in fade-in slide-in-from-top-2 duration-300">
                           {/* Pilih Pos Dropdown */}
                           <div className="md:col-span-3">
                             <Select
@@ -676,12 +676,12 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                               onValueChange={(v: string | null) => setExtraPostName(v === 'none' || v === null ? '' : v)}
                               disabled={isSatpamReportLocked || loadingSubmittedSatpam}
                             >
-                              <SelectTrigger className="w-full text-base font-extrabold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-3 h-12 flex items-center justify-between">
+                              <SelectTrigger className="w-full text-base font-extrabold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-sm px-3 h-12 flex items-center justify-between">
                                 <span className={extraPostName ? "truncate" : "truncate text-slate-400 font-normal"}>
                                   {POSTS_CONFIG.find(p => p.id === extraPostName || p.name === extraPostName)?.name || '-- Pilih Pos --'}
                                 </span>
                               </SelectTrigger>
-                              <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white">
+                              <SelectContent className="rounded-md border border-slate-100 shadow-xl bg-white">
                                 <SelectItem value="none" className="text-base py-3 pl-3 text-slate-500 italic">
                                   -- Pilih Pos --
                                 </SelectItem>
@@ -707,12 +707,12 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                               }}
                               disabled={isSatpamReportLocked || loadingSubmittedSatpam}
                             >
-                              <SelectTrigger className="w-full text-base font-extrabold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-3 h-12 flex items-center justify-between">
+                              <SelectTrigger className="w-full text-base font-extrabold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-sm px-3 h-12 flex items-center justify-between">
                                 <span className={extraEmployeeId ? "truncate" : "truncate text-slate-400 font-normal"}>
                                   {allSatpamEmployees.find(emp => emp.id === extraEmployeeId)?.name || '-- Pilih Petugas --'}
                                 </span>
                               </SelectTrigger>
-                              <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white max-h-[300px] overflow-y-auto">
+                              <SelectContent className="rounded-md border border-slate-100 shadow-xl bg-white max-h-[300px] overflow-y-auto">
                                 <SelectItem value="none" className="text-base py-3 pl-3 text-slate-500 italic">
                                   -- Kosongkan Pos --
                                 </SelectItem>
@@ -745,7 +745,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
 
                           {/* Fixed overtime type */}
                           <div className="md:col-span-3">
-                            <div className="w-full text-base font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 h-12 flex items-center">
+                            <div className="w-full text-base font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-sm px-3 h-12 flex items-center">
                               Lembur Sendiri ({rp(satpamRates['Lembur Sendiri'])})
                             </div>
                           </div>
@@ -766,7 +766,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                   setExtraPhotoUrl('');
                                   setExtraPhotoAuditMetadata(undefined);
                                 }}
-                                className="h-12 w-12 p-0 text-slate-400 hover:text-red-500 transition-colors"
+                                className="h-12 w-12 rounded-sm p-0 text-slate-400 hover:text-red-500 transition-colors"
                               >
                                 <X className="w-5 h-5" />
                               </Button>
@@ -786,7 +786,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                               className="hidden"
                             />
                             {extraPhotoUrl ? (
-                              <div className="flex items-center justify-between gap-2 p-2 bg-indigo-50 border border-indigo-200 rounded-xl text-base">
+                              <div className="flex items-center justify-between gap-2 p-2 bg-indigo-50 border border-indigo-200 rounded-md text-base">
                                 <div className="flex items-center gap-1.5 truncate font-bold text-indigo-800">
                                   <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                                   <span className="truncate">Foto bukti Lembur Sendiri terunggah</span>
@@ -795,7 +795,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                   <button
                                     type="button"
                                     onClick={() => setSatpamPreviewPhoto({ url: extraPhotoUrl, title: 'Lembur Sendiri' })}
-                                    className="min-h-12 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-base flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                                    className="min-h-12 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-sm font-bold text-base flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
                                   >
                                     <Eye className="w-3 h-3" /> Lihat Foto
                                   </button>
@@ -803,7 +803,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                     <button
                                       type="button"
                                       onClick={() => handleRemovePostPhoto('extra')}
-                                      className="h-12 w-12 flex items-center justify-center hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
+                                      className="h-12 w-12 flex items-center justify-center hover:bg-rose-100 text-rose-600 rounded-sm transition-colors cursor-pointer"
                                       title="Hapus Foto Ini"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
@@ -821,7 +821,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                   variant="outline"
                                   disabled={postPhotoUploading['extra'] || loadingSubmittedSatpam}
                                   onClick={() => openPostPhotoInput('extra')}
-                                  className="w-full h-12 rounded-lg border-dashed border-indigo-200 bg-indigo-50/40 hover:bg-indigo-50 text-base font-bold text-indigo-700 gap-2"
+                                  className="w-full h-12 rounded-sm border-dashed border-indigo-200 bg-indigo-50/40 hover:bg-indigo-50 text-base font-bold text-indigo-700 gap-2"
                                 >
                                   {postPhotoUploading['extra'] ? (
                                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -839,10 +839,10 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                   </div>
 
                   {/* Plain-language summary */}
-                  <div className="p-4 rounded-xl bg-purple-50/50 border border-purple-100 text-base font-medium space-y-2">
+                  <div className="p-4 rounded-md bg-purple-50/50 border border-purple-100 text-base font-medium space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-purple-800">Ringkasan sebelum dikirim</span>
-                      <Badge variant="outline" className="bg-white border-purple-200 text-purple-800">
+                      <Badge variant="outline" className="rounded-sm bg-white border-purple-200 text-purple-800">
                         {assignedEmployeeIds.length} penugasan
                       </Badge>
                     </div>
@@ -856,7 +856,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                   </div>
 
                   {(satpamFormWarnings.length > 0 || satpamAnomalies.length > 0) && (
-                    <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-base text-amber-950">
+                    <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-base text-amber-950">
                       <div className="flex items-start gap-2 font-bold">
                         <AlertCircle className="mt-0.5 w-5 h-5 shrink-0" />
                         <span>Laporan tetap boleh dikirim. Auditor akan memeriksa catatan berikut:</span>
@@ -871,7 +871,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                   )}
 
                   {isSatpamReportSubmitted && (
-                    <div className={`rounded-xl border p-4 text-base ${
+                    <div className={`rounded-md border p-4 text-base ${
                       isSatpamReportLocked
                         ? 'border-blue-300 bg-blue-50 text-blue-950'
                         : 'border-emerald-300 bg-emerald-50 text-emerald-950'
@@ -899,7 +899,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                   {!isSatpamReportLocked &&
                     satpamDraftHydrated &&
                     (!isSatpamReportSubmitted || satpamHasPendingDraft) && (
-                      <div className={`rounded-xl border p-3 text-base ${
+                      <div className={`rounded-md border p-3 text-base ${
                         satpamDraftSyncStatus === 'saved'
                           ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
                           : satpamDraftSyncStatus === 'offline' ||
@@ -935,7 +935,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                     <Button
                       type="submit"
                       disabled={satpamSubmitting || isSatpamReportLocked || loadingSubmittedSatpam}
-                      className={`w-full rounded-xl font-extrabold text-base min-h-12 flex items-center justify-center gap-2 border-none shadow-md ${isSatpamReportLocked
+                      className={`w-full rounded-sm font-extrabold text-base min-h-12 flex items-center justify-center gap-2 border-none shadow-md ${isSatpamReportLocked
                         ? 'bg-slate-500 hover:bg-slate-500 text-white cursor-not-allowed'
                         : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-purple-100 cursor-pointer'
                         }`}
@@ -984,7 +984,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
 <ActivityHistoryPanel model={model} />
 <EmployeeActivityFab model={model} />
 <Dialog open={showSatpamSpjChoice} onOpenChange={setShowSatpamSpjChoice}>
-        <DialogContent className="sm:max-w-md max-w-[calc(100%-2rem)] rounded-3xl border-none bg-white p-0 shadow-2xl overflow-hidden">
+        <DialogContent className="sm:max-w-md max-w-[calc(100%-2rem)] rounded-md border-none bg-white p-0 shadow-2xl overflow-hidden">
           <div className="bg-gradient-to-r from-teal-500 to-cyan-600 p-5">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-xl font-bold text-white">
@@ -1003,9 +1003,9 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                 resetForm();
                 setShowForm(true);
               }}
-              className="flex min-h-24 w-full items-center gap-4 rounded-2xl border-2 border-teal-200 bg-teal-50 p-4 text-left transition-colors hover:bg-teal-100 active:bg-teal-100"
+              className="flex min-h-24 w-full items-center gap-4 rounded-md border-2 border-teal-200 bg-teal-50 p-4 text-left transition-colors hover:bg-teal-100 active:bg-teal-100"
             >
-              <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-teal-600 text-white">
+              <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-sm bg-teal-600 text-white">
                 <ClipboardList className="h-7 w-7" />
               </span>
               <span>
@@ -1022,9 +1022,9 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                 setFoundItemCategory('satpam_found_item');
                 setShowFoundItemForm(true);
               }}
-              className="flex min-h-24 w-full items-center gap-4 rounded-2xl border-2 border-amber-200 bg-amber-50 p-4 text-left transition-colors hover:bg-amber-100 active:bg-amber-100"
+              className="flex min-h-24 w-full items-center gap-4 rounded-md border-2 border-amber-200 bg-amber-50 p-4 text-left transition-colors hover:bg-amber-100 active:bg-amber-100"
             >
-              <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-amber-500 text-white">
+              <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-sm bg-amber-500 text-white">
                 <PackageSearch className="h-7 w-7" />
               </span>
               <span>
@@ -1038,7 +1038,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
               type="button"
               variant="ghost"
               onClick={() => setShowSatpamSpjChoice(false)}
-              className="min-h-12 w-full rounded-xl text-base font-bold text-slate-600"
+              className="min-h-12 w-full rounded-sm text-base font-bold text-slate-600"
             >
               Batal
             </Button>
@@ -1054,7 +1054,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
           setShowFoundItemForm(open);
         }}
       >
-        <DialogContent className="max-h-[calc(100dvh-2rem)] sm:max-w-lg max-w-[calc(100%-2rem)] rounded-3xl border-none bg-white p-0 shadow-2xl overflow-y-auto">
+        <DialogContent className="max-h-[calc(100dvh-2rem)] sm:max-w-lg max-w-[calc(100%-2rem)] rounded-md border-none bg-white p-0 shadow-2xl overflow-y-auto">
           <div className="sticky top-0 z-10 bg-gradient-to-r from-amber-500 to-orange-500 p-5">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-xl font-bold text-white">
@@ -1079,14 +1079,14 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                 }
                 disabled={Boolean(editingActivity)}
               >
-                <SelectTrigger id="foundItemCategory" className="h-14 w-full rounded-xl border border-slate-300 bg-white px-4 text-base font-bold text-slate-700">
+                <SelectTrigger id="foundItemCategory" className="h-14 w-full rounded-sm border border-slate-300 bg-white px-4 text-base font-bold text-slate-700">
                   <SelectValue>
                     {foundItemCategory === 'satpam_reprimand'
                       ? 'Teguran Pengendara (Rp15.000)'
                       : 'Penemuan Barang (Rp5.000)'}
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                <SelectContent className="rounded-md border-slate-100 shadow-xl bg-white">
                   <SelectItem value="satpam_found_item" className="text-base py-3">
                     Penemuan Barang (Rp5.000)
                   </SelectItem>
@@ -1100,7 +1100,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
               )}
             </div>
 
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-base text-amber-950">
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-base text-amber-950">
               Rekomendasi awal kompensasi{' '}
               <strong>{foundItemCategory === 'satpam_reprimand' ? 'Rp15.000' : 'Rp5.000'}</strong>.
               Nominal akhir ditentukan saat audit.
@@ -1123,7 +1123,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                 autoComplete="off"
                 autoFocus
                 required
-                className="h-14 rounded-xl border-slate-300 px-4 text-base"
+                className="h-14 rounded-sm border-slate-300 px-4 text-base"
               />
               <p className="text-sm text-slate-500">
                 {foundItemCategory === 'satpam_reprimand'
@@ -1158,7 +1158,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                   setFoundItemDate(nextDate);
                 }}
                 required
-                className="h-14 rounded-xl border-slate-300 px-4 text-base"
+                className="h-14 rounded-sm border-slate-300 px-4 text-base"
               />
             </div>
 
@@ -1167,7 +1167,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                 <Label className="text-base font-bold text-slate-700">
                   {foundItemCategory === 'satpam_reprimand' ? 'Foto Bukti' : 'Foto Barang'}
                 </Label>
-                <Badge className="border-none bg-slate-100 text-sm font-bold text-slate-700">
+                <Badge className="rounded-sm border-none bg-slate-100 text-sm font-bold text-slate-700">
                   {foundItemPhotos.length}/5 foto
                 </Badge>
               </div>
@@ -1189,7 +1189,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                   {foundItemPhotos.map((photo, index) => (
                     <div
                       key={`${photo.url}#${index}`}
-                      className="relative aspect-square overflow-hidden rounded-2xl border border-slate-200 bg-slate-100"
+                      className="relative aspect-square overflow-hidden rounded-sm border border-slate-200 bg-slate-100"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
@@ -1197,7 +1197,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                         alt={`Foto bukti ${index + 1}`}
                         className="h-full w-full object-cover"
                       />
-                      <span className="absolute left-2 top-2 rounded-full bg-black/65 px-2 py-1 text-xs font-bold text-white">
+                      <span className="absolute left-2 top-2 rounded-sm bg-black/65 px-2 py-1 text-xs font-bold text-white">
                         Foto {index + 1}
                       </span>
                       <button
@@ -1210,7 +1210,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                             photos.filter((_, candidateIndex) => candidateIndex !== index),
                           )
                         }
-                        className="absolute bottom-2 right-2 flex h-12 w-12 items-center justify-center rounded-xl bg-white/95 text-rose-600 shadow-lg"
+                        className="absolute bottom-2 right-2 flex h-12 w-12 items-center justify-center rounded-sm bg-white/95 text-rose-600 shadow-lg"
                         aria-label={`Hapus foto ${index + 1}`}
                       >
                         <Trash2 className="h-5 w-5" />
@@ -1226,7 +1226,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                   variant="outline"
                   disabled={uploadingFoundItemPhotos}
                   onClick={() => foundItemPhotoInputRef.current?.click()}
-                  className="min-h-14 w-full gap-2 rounded-xl border-dashed border-amber-300 bg-amber-50 text-base font-bold text-amber-900"
+                  className="min-h-14 w-full gap-2 rounded-sm border-dashed border-amber-300 bg-amber-50 text-base font-bold text-amber-900"
                 >
                   {uploadingFoundItemPhotos ? (
                     <Loader2 className="h-5 w-5 animate-spin" />
@@ -1248,7 +1248,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                 variant="ghost"
                 disabled={submitting || uploadingFoundItemPhotos}
                 onClick={resetFoundItemForm}
-                className="min-h-12 flex-1 rounded-xl text-base font-bold text-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="min-h-12 flex-1 rounded-sm text-base font-bold text-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Batal
               </Button>
@@ -1259,7 +1259,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                   uploadingFoundItemPhotos ||
                   foundItemPhotos.length < 1
                 }
-                className="min-h-12 flex-1 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-base font-bold text-white"
+                className="min-h-12 flex-1 rounded-sm bg-gradient-to-r from-amber-500 to-orange-500 text-base font-bold text-white"
               >
                 {submitting ? (
                   <Loader2 className="mr-2 h-5 w-5 animate-spin" />
@@ -1274,7 +1274,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
       </Dialog>
 <ActivityFormDialog model={model} />
 <Dialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
-        <DialogContent className="sm:max-w-md max-w-[calc(100%-2rem)] max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 rounded-3xl border-none shadow-2xl bg-white p-0 overflow-hidden">
+        <DialogContent className="sm:max-w-md max-w-[calc(100%-2rem)] max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 rounded-md border-none shadow-2xl bg-white p-0 overflow-hidden">
           <div className="bg-gradient-to-r from-amber-500 to-orange-600 p-5 pb-4">
             <DialogHeader>
               <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
@@ -1287,7 +1287,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
           </div>
 
           <div className="min-h-0 overflow-y-auto overscroll-contain p-5 space-y-4 text-base text-slate-600">
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-2">
+            <div className="bg-amber-50 border border-amber-200 rounded-md p-4 space-y-2">
               <div className="flex items-start gap-2.5">
                 <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                 <div>
@@ -1310,7 +1310,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
 
               <div className="flex justify-between items-center py-2 border-b border-slate-100">
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Jam Dinas Dinas</span>
-                <span className="font-extrabold text-indigo-600 text-xs bg-indigo-50 px-2.5 py-1 rounded-md">
+                <span className="font-extrabold text-indigo-600 text-xs bg-indigo-50 px-2.5 py-1 rounded-sm">
                   {(() => {
                     if (!satpamReportDate) return '';
                     const startDate = new Date(satpamReportDate);
@@ -1335,19 +1335,19 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
             </p>
           </div>
 
-          <DialogFooter className="p-5 pt-0 border-t-0 flex flex-row items-center gap-3">
+          <DialogFooter className="rounded-b-md p-5 pt-0 border-t-0 flex flex-row items-center gap-3">
             <Button
               type="button"
               variant="outline"
               onClick={() => setShowConfirmModal(false)}
-              className="flex-1 rounded-xl border-slate-200 text-slate-600 font-bold hover:bg-slate-50 transition-colors h-11"
+              className="flex-1 rounded-sm border-slate-200 text-slate-600 font-bold hover:bg-slate-50 transition-colors h-11"
             >
               Batalkan
             </Button>
             <Button
               type="button"
               onClick={executeSubmitSatpamShift}
-              className="flex-1 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 text-white font-extrabold hover:from-amber-600 hover:to-orange-700 shadow-md shadow-orange-100 transition-colors h-11 border-none"
+              className="flex-1 rounded-sm bg-gradient-to-r from-amber-500 to-orange-600 text-white font-extrabold hover:from-amber-600 hover:to-orange-700 shadow-md shadow-orange-100 transition-colors h-11 border-none"
             >
               Ya, Kirim Laporan
             </Button>

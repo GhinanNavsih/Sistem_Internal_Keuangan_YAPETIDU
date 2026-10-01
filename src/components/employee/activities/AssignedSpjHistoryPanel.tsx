@@ -46,14 +46,14 @@ export default function AssignedSpjHistoryPanel({
       </div>
 
       {loadingAssignedSpjEvents ? (
-        <Card className="rounded-2xl border-none bg-white shadow-sm">
+        <Card className="rounded-md border-none bg-white shadow-sm">
           <CardContent className="flex items-center justify-center gap-2 py-8 text-xs font-semibold text-slate-400">
             <Loader2 className="h-4 w-4 animate-spin text-teal-500" />
             Memuat riwayat SPJ...
           </CardContent>
         </Card>
       ) : assignedSpjEvents.length === 0 ? (
-        <Card className="rounded-2xl border border-dashed border-slate-200 bg-white/60 shadow-none">
+        <Card className="rounded-md border border-dashed border-slate-200 bg-white/60 shadow-none">
           <CardContent className="py-7 text-center text-xs font-medium text-slate-400">
             Belum ada SPJ penugasan yang disetujui pada periode ini.
           </CardContent>
@@ -64,13 +64,13 @@ export default function AssignedSpjHistoryPanel({
             const fromVakasi =
               event.sourceKind === VAKASI_PEKARYA_PROJECTION_SOURCE_KIND;
             return (
-              <Card key={event.id} className="overflow-hidden rounded-2xl border-none bg-white shadow-sm">
+              <Card key={event.id} className="overflow-hidden rounded-md border-none bg-white shadow-sm">
                 <CardContent className="space-y-3 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="truncate text-sm font-black text-slate-800">{event.eventName}</h3>
-                        <span className={`rounded-md px-2 py-0.5 text-[9px] font-black ${
+                        <span className={`rounded-sm px-2 py-0.5 text-[9px] font-black ${
                           fromVakasi
                             ? 'bg-violet-100 text-violet-700'
                             : 'bg-teal-100 text-teal-700'
@@ -86,7 +86,7 @@ export default function AssignedSpjHistoryPanel({
                     <BadgeCheck className="h-5 w-5 shrink-0 text-emerald-500" />
                   </div>
 
-                  <div className="flex items-end justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5">
+                  <div className="flex items-end justify-between gap-3 rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2.5">
                     <div>
                       <p className="text-[9px] font-black uppercase tracking-wider text-emerald-600">SPJ Disetujui</p>
                       <p className="mt-0.5 text-[10px] font-medium text-emerald-700/70">{approvedAtLabel(event.approvedAt)}</p>

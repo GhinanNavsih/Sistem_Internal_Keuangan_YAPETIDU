@@ -19,7 +19,7 @@ export function SimpanPinjamPageSkeleton() {
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shadow-inner shrink-0">
+          <div className="w-11 h-11 rounded-sm bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shadow-inner shrink-0">
             <Banknote className="w-5 h-5" />
           </div>
           <div>
@@ -31,18 +31,18 @@ export function SimpanPinjamPageSkeleton() {
 
         <div className="grid grid-cols-3 gap-3">
           {['Sisa Hutang', 'Cicilan / Bulan', 'Pinjaman Aktif'].map((label) => (
-            <div key={label} className="rounded-2xl border border-slate-200/80 shadow-sm bg-white p-3.5">
+            <div key={label} className="rounded-md border border-slate-200/80 shadow-sm bg-white p-3.5">
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
-              <div className="h-4 w-16 rounded-full bg-slate-200 animate-pulse mt-2" />
+              <div className="h-4 w-16 rounded-sm bg-slate-200 animate-pulse mt-2" />
             </div>
           ))}
         </div>
 
-        <div className="flex gap-1 bg-slate-100/70 p-1 rounded-xl">
+        <div className="flex gap-1 bg-slate-100/70 p-1 rounded-md">
           {['Berjalan', 'Riwayat', 'Ketentuan'].map((label) => (
             <div
               key={label}
-              className="flex-1 px-3 py-2 text-[11px] sm:text-xs font-bold rounded-lg text-slate-400 text-center"
+              className="flex-1 px-3 py-2 text-[11px] sm:text-xs font-bold rounded-sm text-slate-400 text-center"
             >
               {label}
             </div>
@@ -53,7 +53,7 @@ export function SimpanPinjamPageSkeleton() {
           {Array.from({ length: 2 }).map((_, i) => (
             <div
               key={i}
-              className="h-40 w-full rounded-2xl border border-slate-200/80 bg-white shadow-sm animate-pulse"
+              className="h-40 w-full rounded-md border border-slate-200/80 bg-white shadow-sm animate-pulse"
             />
           ))}
         </div>

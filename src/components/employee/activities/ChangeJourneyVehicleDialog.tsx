@@ -147,10 +147,10 @@ export function ChangeJourneyVehicleDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!saving) onOpenChange(next); }}>
-      <DialogContent className="max-w-md rounded-3xl p-6 bg-white border border-slate-100 shadow-2xl">
+      <DialogContent className="max-w-md rounded-md p-6 bg-white border border-slate-100 shadow-2xl">
         <DialogHeader className="space-y-2">
           <DialogTitle className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 rounded-sm bg-blue-100 flex items-center justify-center shrink-0">
               <Car className="w-4 h-4 text-blue-600" />
             </div>
             <span>Ganti Kendaraan</span>
@@ -166,10 +166,10 @@ export function ChangeJourneyVehicleDialog({
               Jenis Kendaraan
             </Label>
             <Select value={vehicle} onValueChange={handleVehicleChange}>
-              <SelectTrigger id="changeJourneyVehicle" className="w-full text-xs font-extrabold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
+              <SelectTrigger id="changeJourneyVehicle" className="w-full text-xs font-extrabold text-slate-700 bg-white rounded-sm border border-slate-200 h-10 px-3">
                 <SelectValue>{vehicleOptionLabel(vehicle)}</SelectValue>
               </SelectTrigger>
-              <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white text-xs">
+              <SelectContent className="rounded-md border-slate-100 shadow-xl bg-white text-xs">
                 {DRIVER_VEHICLE_NAMES.map((vehicleName) => (
                   <SelectItem key={vehicleName} value={vehicleName}>
                     {vehicleOptionLabel(vehicleName)}
@@ -181,11 +181,11 @@ export function ChangeJourneyVehicleDialog({
           </div>
 
           {toNdalem ? (
-            <p className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-[11px] font-semibold leading-relaxed text-slate-600">
+            <p className="rounded-md border border-slate-200 bg-slate-50 p-3 text-[11px] font-semibold leading-relaxed text-slate-600">
               Ndalem tidak memakai saldo BBM kendaraan, sehingga mode BBM menjadi Standard langsung.
             </p>
           ) : (
-            <div className="rounded-xl border border-blue-200/80 bg-blue-50/60 p-3 space-y-2">
+            <div className="rounded-md border border-blue-200/80 bg-blue-50/60 p-3 space-y-2">
               <div className="flex items-center justify-between gap-3">
                 <Label htmlFor="changeJourneyFuelMode" className="text-xs font-bold text-blue-900 uppercase tracking-wider">
                   Mode Pengadaan BBM
@@ -204,10 +204,10 @@ export function ChangeJourneyVehicleDialog({
                     if (isFuelProcurementMode(value)) setFuelMode(value);
                   }}
                 >
-                  <SelectTrigger id="changeJourneyFuelMode" className="w-full text-xs font-bold text-slate-700 bg-white rounded-xl border border-blue-200 h-10 px-3">
+                  <SelectTrigger id="changeJourneyFuelMode" className="w-full text-xs font-bold text-slate-700 bg-white rounded-sm border border-blue-200 h-10 px-3">
                     <SelectValue>{fuelProcurementModeLabel(fuelMode)}</SelectValue>
                   </SelectTrigger>
-                  <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white text-xs">
+                  <SelectContent className="rounded-md border-slate-100 shadow-xl bg-white text-xs">
                     <SelectItem value="hold_accumulate">Tahan & akumulasi</SelectItem>
                     <SelectItem value="procure_release">Cairkan saldo</SelectItem>
                     <SelectItem value="standard_direct">Standard langsung</SelectItem>
@@ -231,17 +231,17 @@ export function ChangeJourneyVehicleDialog({
           )}
 
           {error && (
-            <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-[11px] font-bold text-rose-800">{error}</p>
+            <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-[11px] font-bold text-rose-800">{error}</p>
           )}
         </div>
 
-        <DialogFooter className="pt-3 border-t border-slate-100 gap-2">
+        <DialogFooter className="rounded-b-md pt-3 border-t border-slate-100 gap-2">
           <Button
             type="button"
             variant="ghost"
             onClick={() => onOpenChange(false)}
             disabled={saving}
-            className="rounded-xl font-bold text-slate-500 text-xs px-4 cursor-pointer hover:bg-slate-100"
+            className="rounded-sm font-bold text-slate-500 text-xs px-4 cursor-pointer hover:bg-slate-100"
           >
             Batal
           </Button>
@@ -249,7 +249,7 @@ export function ChangeJourneyVehicleDialog({
             type="button"
             onClick={handleSave}
             disabled={unchanged || saving}
-            className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-6 h-10 gap-2 cursor-pointer disabled:opacity-50"
+            className="rounded-sm bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-6 h-10 gap-2 cursor-pointer disabled:opacity-50"
           >
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
             Simpan Kendaraan

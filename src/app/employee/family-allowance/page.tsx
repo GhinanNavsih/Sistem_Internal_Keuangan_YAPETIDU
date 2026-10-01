@@ -206,10 +206,10 @@ export default function FamilyAllowanceRequestPage() {
   if (authLoading) return <div className="min-h-screen bg-slate-50" />;
   if (profile?.role !== 'loyalis' || !profile.linkedEmployeeId) {
     return <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
-      <Card className="w-full max-w-md"><CardContent className="space-y-4 p-8 text-center">
+      <Card className="rounded-md w-full max-w-md"><CardContent className="space-y-4 p-8 text-center">
         <h1 className="text-xl font-bold">Pengajuan T. Keluarga Tidak Tersedia</h1>
         <p className="text-sm text-slate-500">Halaman ini hanya tersedia untuk akun Loyalis yang terhubung ke data pegawai.</p>
-        <Button variant="outline" render={<Link href="/employee/payslip" />}>Kembali ke Slip Gaji</Button>
+        <Button className="rounded-sm" variant="outline" render={<Link href="/employee/payslip" />}>Kembali ke Slip Gaji</Button>
       </CardContent></Card>
     </div>;
   }
@@ -218,18 +218,18 @@ export default function FamilyAllowanceRequestPage() {
     <FloatingSnackbar message={notice} onDismiss={() => setNotice(null)} />
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur">
       <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3 sm:px-6">
-        <Link href="/employee/payslip" aria-label="Kembali ke Slip Gaji" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><ChevronLeft className="size-5" /></Link>
-        <div className="flex size-9 items-center justify-center rounded-xl bg-indigo-600 text-white"><GraduationCap className="size-5" /></div>
+        <Link href="/employee/payslip" aria-label="Kembali ke Slip Gaji" className="rounded-sm p-2 text-slate-500 hover:bg-slate-100"><ChevronLeft className="size-5" /></Link>
+        <div className="flex size-9 items-center justify-center rounded-sm bg-indigo-600 text-white"><GraduationCap className="size-5" /></div>
         <div className="min-w-0 flex-1"><h1 className="truncate text-sm font-bold">Pengajuan T. Keluarga</h1><p className="truncate text-xs text-slate-500">{profile.displayName || profile.email}</p></div>
         <EmployeeNavigationMenu />
-        <Button type="button" variant="ghost" size="icon" onClick={requestLogout} aria-label="Keluar"><LogOut className="size-4" /></Button>
+        <Button className="rounded-sm" type="button" variant="ghost" size="icon" onClick={requestLogout} aria-label="Keluar"><LogOut className="size-4" /></Button>
       </div>
     </header>
     <main className="mx-auto max-w-3xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
       <div><h2 className="text-2xl font-bold">Anak yang Sedang Sekolah</h2>
         <p className="mt-1 text-sm text-slate-600">Ajukan satu anak per formulir. Biro SDM akan memeriksa bukti sebelum anak tersebut masuk perhitungan T. Keluarga.</p></div>
-      {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
-      <Card className="rounded-2xl border-slate-200 bg-white shadow-sm"><CardContent className="p-5 sm:p-6">
+      {error && <p role="alert" className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
+      <Card className="rounded-md border-slate-200 bg-white shadow-sm"><CardContent className="p-5 sm:p-6">
         {loading ? <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="size-4 animate-spin" /> Memuat data anak...</div> :
         <form onSubmit={submit} className="space-y-5">
           <div className="space-y-2"><label htmlFor="family-child" className="text-sm font-semibold">Anak yang diajukan</label>
@@ -258,7 +258,7 @@ export default function FamilyAllowanceRequestPage() {
                 value={enrolledAt} aria-invalid={enrolledMessage ? true : undefined}
                 aria-describedby={enrolledMessage ? 'family-enrolled-message' : undefined}
                 onChange={event => { setEnrolledAt(event.target.value); submissionIdRef.current = null; }}
-                className="h-11 rounded-xl border-slate-200" />
+                className="h-11 rounded-sm border-slate-200" />
               {enrolledMessage && <p id="family-enrolled-message" role="alert" className="text-xs text-rose-700">{enrolledMessage}</p>}
             </div>
           </div>
@@ -266,22 +266,22 @@ export default function FamilyAllowanceRequestPage() {
           {projectedGraduation && <p className="flex items-center gap-2 text-xs text-slate-600"><CalendarDays className="size-4" /> {isBirthDate ? 'Tunjangan SD berhenti pada usia 13 tahun' : 'Perkiraan akhir jenjang'}: {formatDate(projectedGraduation)}</p>}
           <div className="space-y-3"><span className="block text-sm font-semibold">{isBirthDate ? 'Bukti tanggal lahir (Akta Kelahiran atau KK)' : 'Bukti pertama masuk sekolah'}</span>
             <FamilyProofUploadCard file={proof} onFileChange={file => { submissionIdRef.current = null; setProof(file); }} /></div>
-          <Button type="submit" disabled={busy || !data} className="h-11 w-full rounded-xl bg-indigo-600 text-white hover:bg-indigo-700">
+          <Button type="submit" disabled={busy || !data} className="h-11 w-full rounded-sm bg-indigo-600 text-white hover:bg-indigo-700">
             {busy ? <><Loader2 className="mr-2 size-4 animate-spin" /> Mengirim...</> : 'Kirim Pengajuan'}
           </Button>
         </form>}
       </CardContent></Card>
       <section className="space-y-3"><h3 className="text-lg font-bold">Riwayat Pengajuan</h3>
-        {!loading && (data?.requests.length || 0) === 0 && <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-500">Belum ada pengajuan.</p>}
-        {data?.requests.map(item => <Card key={item.id} className="rounded-xl border-slate-200 bg-white"><CardContent className="space-y-2 p-4">
+        {!loading && (data?.requests.length || 0) === 0 && <p className="rounded-md border border-slate-200 bg-white p-5 text-sm text-slate-500">Belum ada pengajuan.</p>}
+        {data?.requests.map(item => <Card key={item.id} className="rounded-md border-slate-200 bg-white"><CardContent className="space-y-2 p-4">
           <div className="flex flex-wrap items-start justify-between gap-2"><p className="font-semibold">{requestTitle(item)}</p>
-            <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${item.status === 'approved' ? 'bg-emerald-100 text-emerald-800' : item.status === 'rejected' ? 'bg-rose-100 text-rose-800' : item.status === 'withdrawn' ? 'bg-slate-100 text-slate-600' : 'bg-amber-100 text-amber-800'}`}>
+            <span className={`rounded-sm px-2.5 py-1 text-xs font-semibold ${item.status === 'approved' ? 'bg-emerald-100 text-emerald-800' : item.status === 'rejected' ? 'bg-rose-100 text-rose-800' : item.status === 'withdrawn' ? 'bg-slate-100 text-slate-600' : 'bg-amber-100 text-amber-800'}`}>
               {item.status === 'approved' ? 'Disetujui' : item.status === 'rejected' ? 'Ditolak' : item.status === 'withdrawn' ? 'Ditarik' : 'Menunggu admin'}
             </span></div>
           <p className="text-xs text-slate-500">{item.requestedChildId === 'new' ? 'Anak baru' : `Anak ${data?.children.find(child => child.id === item.requestedChildId)?.number || 'tercatat'}`} · dikirim {item.submittedAt ? new Date(item.submittedAt).toLocaleDateString('id-ID') : '—'}</p>
           {item.reviewReason && <p className="text-sm text-slate-700">Catatan admin: {item.reviewReason}</p>}
           <div className="flex flex-wrap items-center gap-3"><a href={item.proofUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-indigo-700 underline">Lihat bukti</a>
-            {item.status === 'pending' && <Button type="button" variant="outline" size="sm" disabled={!!withdrawingId} onClick={() => setWithdrawTarget(item)}>
+            {item.status === 'pending' && <Button className="rounded-sm" type="button" variant="outline" size="sm" disabled={!!withdrawingId} onClick={() => setWithdrawTarget(item)}>
               {withdrawingId === item.id ? 'Menarik...' : 'Tarik pengajuan'}
             </Button>}</div>
         </CardContent></Card>)}

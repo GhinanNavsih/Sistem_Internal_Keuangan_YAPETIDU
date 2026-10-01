@@ -203,19 +203,19 @@ function LargeSelect(props: {
     >
       <SelectTrigger
         id={props.id}
-        className="h-14 w-full min-w-0 rounded-xl border-slate-300 bg-white px-4 text-left text-base font-bold text-slate-800"
+        className="h-14 w-full min-w-0 rounded-sm border-slate-300 bg-white px-4 text-left text-base font-bold text-slate-800"
       >
         <SelectValue>{selectedOption?.label || props.value}</SelectValue>
       </SelectTrigger>
       <SelectContent
         align="start"
-        className="max-h-[min(60vh,24rem)] rounded-xl p-1"
+        className="max-h-[min(60vh,24rem)] rounded-md p-1"
       >
         {props.options.map((option) => (
           <SelectItem
             key={option.value}
             value={option.value}
-            className="min-h-12 rounded-lg px-4 pr-11 text-base font-semibold"
+            className="min-h-12 rounded-sm px-4 pr-11 text-base font-semibold"
           >
             {option.label}
           </SelectItem>
@@ -732,7 +732,7 @@ export function SatpamDutyPlanPanel(props: {
           <Button
             type="button"
             variant="outline"
-            className="min-h-12 gap-2"
+            className="rounded-sm min-h-12 gap-2"
             onClick={() => void load()}
             disabled={loading}
           >
@@ -742,7 +742,7 @@ export function SatpamDutyPlanPanel(props: {
         </div>
 
         {period === '2026-07' && (
-          <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-blue-900">
+          <div className="rounded-md border border-blue-200 bg-blue-50 p-4 text-blue-900">
             <p className="font-bold">Mode Uji Coba Juli 2026</p>
             <p className="mt-1 text-sm">
               Alur rencana dinas Satpam diaktifkan lebih awal untuk latihan
@@ -753,7 +753,7 @@ export function SatpamDutyPlanPanel(props: {
         )}
 
         {selectedOpenPeriod?.planningOnly && (
-          <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-indigo-900">
+          <div className="rounded-md border border-indigo-200 bg-indigo-50 p-4 text-indigo-900">
             <p className="font-bold">Perencanaan Bulan Berikutnya</p>
             <p className="mt-1 text-sm">
               Rencana boleh disiapkan dan diterbitkan sekarang. Laporan harian,
@@ -766,7 +766,7 @@ export function SatpamDutyPlanPanel(props: {
         {(message || error) && (
           <div
             role="status"
-            className={`rounded-xl border p-4 text-base ${
+            className={`rounded-md border p-4 text-base ${
               error
                 ? 'border-rose-200 bg-rose-50 text-rose-800'
                 : 'border-emerald-200 bg-emerald-50 text-emerald-800'
@@ -782,14 +782,14 @@ export function SatpamDutyPlanPanel(props: {
             Memuat rencana dinas…
           </div>
         ) : view && !view.enabled ? (
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-slate-700">
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-slate-700">
             Periode ini masih memakai alur lama. Rencana dinas mulai wajib pada
             periode berikutnya yang dibuka setelah fitur diaktifkan.
           </div>
         ) : hasPublishedPlan && plan ? (
           <>
             <div
-              className={`rounded-xl border p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ${
+              className={`rounded-md border p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ${
                 plan.status === 'published'
                   ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
                   : 'border-amber-200 bg-amber-50 text-amber-900'
@@ -809,7 +809,7 @@ export function SatpamDutyPlanPanel(props: {
               <Button
                 type="button"
                 variant="outline"
-                className="h-10 px-3.5 gap-2 rounded-xl border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-100 font-bold text-xs shadow-xs shrink-0 cursor-pointer"
+                className="h-10 px-3.5 gap-2 rounded-sm border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-100 font-bold text-xs shadow-xs shrink-0 cursor-pointer"
                 onClick={() => {
                   generateSatpamDutyPlanPdf({
                     period,
@@ -831,7 +831,7 @@ export function SatpamDutyPlanPanel(props: {
                 return (
                   <article
                     key={day.dutyDate}
-                    className="rounded-xl border border-slate-200 p-4"
+                    className="rounded-md border border-slate-200 p-4"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
@@ -862,7 +862,7 @@ export function SatpamDutyPlanPanel(props: {
                       <Button
                         type="button"
                         variant="outline"
-                        className="min-h-12 shrink-0 gap-2"
+                        className="rounded-sm min-h-12 shrink-0 gap-2"
                         disabled={started}
                         onClick={() =>
                           setEditingDay(JSON.parse(JSON.stringify(day)))
@@ -880,7 +880,7 @@ export function SatpamDutyPlanPanel(props: {
         ) : (
           <>
             {plan?.status === 'stale' && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-amber-900">
                 <p className="font-bold">Susunan regu berubah</p>
                 <p className="mt-1 text-sm">
                   Periksa ulang rotasi delapan hari lalu terbitkan revisi baru
@@ -888,7 +888,7 @@ export function SatpamDutyPlanPanel(props: {
                 </p>
               </div>
             )}
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
               <p className="font-bold text-slate-900">
                 Langkah 1 · Periksa 10 anggota regu
               </p>
@@ -896,7 +896,7 @@ export function SatpamDutyPlanPanel(props: {
                 {rosterEmployees.map((employee, index) => (
                   <span
                     key={employee.id}
-                    className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
+                    className="rounded-sm border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
                   >
                     {index + 1}. {employee.name}
                   </span>
@@ -911,7 +911,7 @@ export function SatpamDutyPlanPanel(props: {
               <p className="font-bold text-slate-900">
                 Langkah 2 · Pilih Pos 9 Satpam Regu
               </p>
-              <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
+              <div className="rounded-md border border-violet-200 bg-violet-50 p-4">
                 <Label htmlFor="satpam-fixed-pos-9">
                   Pos 9 Hurun-inn — Pos 9 Satpam Regu
                 </Label>
@@ -932,7 +932,7 @@ export function SatpamDutyPlanPanel(props: {
                   Petugas ini menjadi Pos 9 Satpam Regu Anda pada setiap tanggal periode.
                 </p>
               </div>
-              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+              <div className="rounded-md border border-blue-200 bg-blue-50 p-4">
                 <p className="font-bold text-blue-950">
                   Pos 2 Stasiun — Ketua Shift / Keliling
                 </p>
@@ -958,7 +958,7 @@ export function SatpamDutyPlanPanel(props: {
                   </p>
                 </div>
                 {rotationStartMode === 'continued' && view?.continuation && (
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
                     <p className="font-bold">Dilanjutkan dari periode sebelumnya</p>
                     <p className="mt-1 text-sm">
                       Susunan tanggal pertama sudah maju satu langkah dari revisi{' '}
@@ -967,7 +967,7 @@ export function SatpamDutyPlanPanel(props: {
                     </p>
                   </div>
                 )}
-                <div className="rounded-xl border border-indigo-200 p-4">
+                <div className="rounded-md border border-indigo-200 p-4">
                   <p className="mb-4 text-lg font-bold">
                     {selectedOpenPeriod?.startDate || view?.window.startsOn}
                   </p>
@@ -977,7 +977,7 @@ export function SatpamDutyPlanPanel(props: {
                         key={assignment.slot}
                         className={
                           assignment.slot === 'Off-Duty'
-                            ? 'space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3'
+                            ? 'space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3'
                             : 'space-y-2'
                         }
                       >
@@ -1006,14 +1006,14 @@ export function SatpamDutyPlanPanel(props: {
             )}
 
             {firstDayHasDuplicate && (
-                <div className="mt-4 flex gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-800">
+                <div className="mt-4 flex gap-2 rounded-md border border-rose-200 bg-rose-50 p-3 text-rose-800">
                   <AlertTriangle className="h-5 w-5 shrink-0" />
                   Satu petugas dipilih lebih dari sekali. Setiap orang harus
                   mengisi tepat satu pos atau Libur.
                 </div>
             )}
             {previewDays.length > 0 && (
-              <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
+              <div className="space-y-3 rounded-md border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
                 <div>
                   <p className="font-bold">
                     Pratinjau {previewDays.length} tanggal siap diterbitkan.
@@ -1034,7 +1034,7 @@ export function SatpamDutyPlanPanel(props: {
                   {previewDays.map((day) => (
                     <div
                       key={day.dutyDate}
-                      className="rounded-xl border border-emerald-200 bg-white p-3 text-slate-800"
+                      className="rounded-md border border-emerald-200 bg-white p-3 text-slate-800"
                     >
                       <p className="font-bold">
                         {day.dutyDate} · {day.shiftName}
@@ -1069,7 +1069,7 @@ export function SatpamDutyPlanPanel(props: {
               <Button
                 type="button"
                 variant="outline"
-                className="min-h-12 gap-2"
+                className="rounded-sm min-h-12 gap-2"
                 disabled={working || !firstDayReady}
                 onClick={() => void preview()}
               >
@@ -1083,7 +1083,7 @@ export function SatpamDutyPlanPanel(props: {
               <Button
                 type="button"
                 variant="outline"
-                className="min-h-12 gap-2 text-indigo-700 border-indigo-200 bg-indigo-50/50 hover:bg-indigo-100 font-bold"
+                className="rounded-sm min-h-12 gap-2 text-indigo-700 border-indigo-200 bg-indigo-50/50 hover:bg-indigo-100 font-bold"
                 disabled={working || previewDays.length === 0}
                 onClick={() => {
                   generateSatpamDutyPlanPdf({
@@ -1101,7 +1101,7 @@ export function SatpamDutyPlanPanel(props: {
               </Button>
               <Button
                 type="button"
-                className="min-h-12 gap-2 bg-indigo-600 hover:bg-indigo-700 font-bold"
+                className="rounded-sm min-h-12 gap-2 bg-indigo-600 hover:bg-indigo-700 font-bold"
                 disabled={working || !previewHash}
                 onClick={() => void publish()}
               >
@@ -1118,7 +1118,7 @@ export function SatpamDutyPlanPanel(props: {
   // card-wrapped renders can share it verbatim.
   const dayEditor = editingDay && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 p-3">
-          <div className="mx-auto my-4 max-w-xl rounded-2xl bg-white p-5 shadow-xl">
+          <div className="mx-auto my-4 max-w-xl rounded-md bg-white p-5 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <p className="text-xl font-bold">Ubah Jadwal Mendatang</p>
@@ -1129,7 +1129,7 @@ export function SatpamDutyPlanPanel(props: {
               <Button
                 type="button"
                 variant="ghost"
-                className="h-12 w-12"
+                className="rounded-sm h-12 w-12"
                 onClick={() => setEditingDay(null)}
               >
                 <X className="h-5 w-5" />
@@ -1140,7 +1140,7 @@ export function SatpamDutyPlanPanel(props: {
                 <div key={assignment.postId} className="space-y-2">
                   <Label>{formatSatpamPostLabel(assignment.postId)}</Label>
                   {assignment.postId === 'Pos 2' || assignment.postId === 'Pos 9' ? (
-                    <div className="min-h-14 rounded-xl border border-slate-200 bg-slate-100 px-4 py-4 text-base font-bold text-slate-700">
+                    <div className="min-h-14 rounded-sm border border-slate-200 bg-slate-100 px-4 py-4 text-base font-bold text-slate-700">
                       {employeeName(rosterEmployees, assignment.employeeId)}
                       <span className="mt-1 block text-sm font-medium text-slate-500">
                         {assignment.postId === 'Pos 2'
@@ -1168,9 +1168,9 @@ export function SatpamDutyPlanPanel(props: {
                   )}
                 </div>
               ))}
-              <div className="space-y-2 rounded-xl bg-amber-50 p-3">
+              <div className="space-y-2 rounded-md bg-amber-50 p-3">
                 <Label>Libur</Label>
-                <div className="min-h-14 rounded-xl border border-amber-200 bg-white px-4 py-4 text-base font-bold text-amber-950">
+                <div className="min-h-14 rounded-sm border border-amber-200 bg-white px-4 py-4 text-base font-bold text-amber-950">
                   {employeeName(
                     rosterEmployees,
                     editingDay.offDutyEmployeeId,
@@ -1183,7 +1183,7 @@ export function SatpamDutyPlanPanel(props: {
               </div>
               <Button
                 type="button"
-                className="min-h-12 w-full gap-2"
+                className="rounded-sm min-h-12 w-full gap-2"
                 disabled={working}
                 onClick={() => void saveEditedDay()}
               >
@@ -1223,8 +1223,8 @@ export function SatpamDutyPlanPanel(props: {
   }
 
   return (
-    <Card className="overflow-hidden rounded-2xl border-indigo-200 bg-white shadow-sm">
-      <CardHeader className="border-b border-indigo-100 bg-indigo-50/70 p-5">
+    <Card className="overflow-hidden rounded-md border-indigo-200 bg-white shadow-sm">
+      <CardHeader className="rounded-t-md border-b border-indigo-100 bg-indigo-50/70 p-5">
         <CardTitle className="flex items-center gap-2 text-xl">
           <CalendarDays className="h-6 w-6 text-indigo-700" />
           Jadwal Regu Satu Periode
@@ -1645,7 +1645,7 @@ export function SatpamAbsencePanel(props: {
         {(message || error) && (
           <div
             role="status"
-            className={`rounded-xl border p-4 ${
+            className={`rounded-md border p-4 ${
               error
                 ? 'border-rose-200 bg-rose-50 text-rose-800'
                 : 'border-emerald-200 bg-emerald-50 text-emerald-800'
@@ -1655,7 +1655,7 @@ export function SatpamAbsencePanel(props: {
           </div>
         )}
         {hasRestoredDraft && (
-          <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50/90 px-3.5 py-2.5 text-xs text-amber-900">
+          <div className="flex items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50/90 px-3.5 py-2.5 text-xs text-amber-900">
             <div className="flex items-center gap-2">
               <span className="flex h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
               <span className="font-semibold">Draft pengajuan sebelumnya dipulihkan otomatis.</span>
@@ -1690,14 +1690,14 @@ export function SatpamAbsencePanel(props: {
             Memuat jadwal Anda…
           </div>
         ) : !isUnassignedSatpam && scheduledDuties.length === 0 ? (
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-slate-700">
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-slate-700">
             Belum ada kewajiban dinas yang dapat dipilih pada periode ini.
           </div>
         ) : (
           <>
             {isUnassignedSatpam ? (
               <>
-                <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-900">
+                <div className="rounded-md border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-900">
                   <p className="font-bold">Anda belum ditempatkan pada regu Satpam.</p>
                   <p className="mt-1">
                     Anda tetap dapat mengajukan izin administratif dengan memilih
@@ -1715,7 +1715,7 @@ export function SatpamAbsencePanel(props: {
                     min={selectedPeriodWindow?.startDate}
                     max={selectedPeriodWindow?.endDate}
                     onChange={(event) => selectDutyDate(event.target.value)}
-                    className="min-h-14 rounded-xl text-base font-mono"
+                    className="min-h-14 rounded-sm text-base font-mono"
                   />
                   {selectedPeriodWindow && (
                     <p className="text-xs text-slate-500">
@@ -1816,7 +1816,7 @@ export function SatpamAbsencePanel(props: {
                       type="time"
                       value={scanIn}
                       onChange={(event) => setScanIn(event.target.value)}
-                      className="min-h-14 rounded-xl text-base font-mono"
+                      className="min-h-14 rounded-sm text-base font-mono"
                     />
                   </div>
                   <div className="space-y-2">
@@ -1826,12 +1826,12 @@ export function SatpamAbsencePanel(props: {
                       type="time"
                       value={scanOut}
                       onChange={(event) => setScanOut(event.target.value)}
-                      className="min-h-14 rounded-xl text-base font-mono"
+                      className="min-h-14 rounded-sm text-base font-mono"
                     />
                   </div>
                 </div>
                 {selectedDuty?.shiftName === 'Malam' && (
-                  <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 text-sm text-indigo-900">
+                  <div className="rounded-md border border-indigo-100 bg-indigo-50 p-4 text-sm text-indigo-900">
                     Shift Malam berakhir pada hari berikutnya. Rentang{' '}
                     <strong>{scanIn || '--:--'}–{scanOut || '--:--'}</strong>{' '}
                     akan dicatat sebagai satu kewajiban dinas.
@@ -1844,11 +1844,11 @@ export function SatpamAbsencePanel(props: {
                 )}
               </>
             ) : activeReportType === 'scan' ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
                 Koreksi presensi tersedia untuk tanggal saat Anda terdaftar pada jadwal dinas.
               </div>
             ) : workflowMode === 'sick_leave' ? (
-              <div className="rounded-xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-900">
+              <div className="rounded-md border border-amber-100 bg-amber-50 p-4 text-sm text-amber-900">
                 <p className="font-bold">Jenis alasan: Sakit</p>
                 <p className="mt-1">Pengajuan sakit tidak mengurangi hak cuti tahunan.</p>
               </div>
@@ -1875,7 +1875,7 @@ export function SatpamAbsencePanel(props: {
               <Label htmlFor="absence-reason">Alasan lengkap (opsional)</Label>
               <textarea
                 id="absence-reason"
-                className="min-h-28 w-full rounded-xl border border-slate-300 p-3 text-base"
+                className="min-h-28 w-full rounded-sm border border-slate-300 p-3 text-base"
                 maxLength={500}
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
@@ -1890,7 +1890,7 @@ export function SatpamAbsencePanel(props: {
               <Label htmlFor="absence-evidence">Bukti foto/PDF (opsional)</Label>
               <label
                 htmlFor="absence-evidence"
-                className="flex min-h-12 w-full cursor-pointer items-center justify-center rounded-xl border border-slate-300 bg-white transition-colors hover:bg-slate-50 focus-within:border-amber-500 focus-within:ring-3 focus-within:ring-amber-500/20"
+                className="flex min-h-12 w-full cursor-pointer items-center justify-center rounded-sm border border-slate-300 bg-white transition-colors hover:bg-slate-50 focus-within:border-amber-500 focus-within:ring-3 focus-within:ring-amber-500/20"
               >
                 <Camera
                   className="h-6 w-6 text-slate-500"
@@ -1920,7 +1920,7 @@ export function SatpamAbsencePanel(props: {
             </div>
             <Button
               type="button"
-              className="min-h-12 w-full gap-2 bg-amber-600 hover:bg-amber-700"
+              className="rounded-sm min-h-12 w-full gap-2 bg-amber-600 hover:bg-amber-700"
               disabled={
                 working ||
                 reason.trim().length > 500 ||
@@ -1953,7 +1953,7 @@ export function SatpamAbsencePanel(props: {
               return (
                 <article
                   key={request.id}
-                  className="rounded-xl border border-slate-200 p-4"
+                  className="rounded-md border border-slate-200 p-4"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -2006,7 +2006,7 @@ export function SatpamAbsencePanel(props: {
                       <Button
                         type="button"
                         variant="outline"
-                        className="min-h-12"
+                        className="rounded-sm min-h-12"
                         disabled={working}
                         onClick={() => void withdraw(request)}
                       >
@@ -2025,8 +2025,8 @@ export function SatpamAbsencePanel(props: {
   if (embedded) return body;
 
   return (
-    <Card className="overflow-hidden rounded-2xl border-amber-200 bg-white shadow-sm">
-      <CardHeader className="border-b border-amber-100 bg-amber-50/70 p-5">
+    <Card className="overflow-hidden rounded-md border-amber-200 bg-white shadow-sm">
+      <CardHeader className="rounded-t-md border-b border-amber-100 bg-amber-50/70 p-5">
         <CardTitle className="flex items-center gap-2 text-xl">
           <ShieldCheck className="h-6 w-6 text-amber-700" />
           {workflowMode === 'presence_correction'

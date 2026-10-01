@@ -133,13 +133,13 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
           <>
             {/* ── Stats Summary ────────────────────────────────────────────── */}
             <div className="grid grid-cols-2 gap-3">
-              <Card className="bg-white rounded-2xl shadow-sm border-none">
+              <Card className="bg-white rounded-md shadow-sm border-none">
                 <CardContent className="p-4 text-center">
                   <div className="text-2xl font-extrabold text-teal-600">{stats.approved + stats.pending + stats.declined}</div>
                   <div className="text-[11px] font-semibold text-slate-400 mt-0.5">Total Kegiatan</div>
                 </CardContent>
               </Card>
-              <Card className="bg-gradient-to-br from-teal-500 to-cyan-600 rounded-2xl shadow-lg shadow-teal-200/40 border-none">
+              <Card className="bg-gradient-to-br from-teal-500 to-cyan-600 rounded-md shadow-lg shadow-teal-200/40 border-none">
                 <CardContent className="p-4 text-center">
                   <div className="text-2xl font-extrabold text-white">{fmtRp(stats.totalApprovedFee)}</div>
                   <div className="text-[11px] font-semibold text-teal-100 mt-0.5">
@@ -153,7 +153,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setStatusFilter('all')}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${statusFilter === 'all'
+                className={`flex-1 py-2 px-3 rounded-sm text-xs font-bold transition-all ${statusFilter === 'all'
                   ? 'bg-slate-800 text-white shadow-md'
                   : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
                   }`}
@@ -162,7 +162,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
               </button>
               <button
                 onClick={() => setStatusFilter('pending')}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${statusFilter === 'pending'
+                className={`flex-1 py-2 px-3 rounded-sm text-xs font-bold transition-all ${statusFilter === 'pending'
                   ? 'bg-amber-500 text-white shadow-md'
                   : 'bg-white text-amber-600 border border-amber-200 hover:bg-amber-50'
                   }`}
@@ -171,7 +171,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
               </button>
               <button
                 onClick={() => setStatusFilter('approved')}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${statusFilter === 'approved'
+                className={`flex-1 py-2 px-3 rounded-sm text-xs font-bold transition-all ${statusFilter === 'approved'
                   ? 'bg-emerald-500 text-white shadow-md'
                   : 'bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50'
                   }`}
@@ -180,7 +180,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
               </button>
               <button
                 onClick={() => setStatusFilter('declined')}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${statusFilter === 'declined'
+                className={`flex-1 py-2 px-3 rounded-sm text-xs font-bold transition-all ${statusFilter === 'declined'
                   ? 'bg-rose-500 text-white shadow-md'
                   : 'bg-white text-rose-600 border border-rose-200 hover:bg-rose-50'
                   }`}
@@ -196,9 +196,9 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                 <span className="text-sm font-medium animate-pulse">Memuat kegiatan...</span>
               </div>
             ) : filteredActivities.length === 0 ? (
-              <Card className="bg-white rounded-2xl shadow-sm border-none">
+              <Card className="bg-white rounded-md shadow-sm border-none">
                 <CardContent className="py-16 flex flex-col items-center text-center">
-                  <div className="w-16 h-16 rounded-2xl bg-slate-50 flex items-center justify-center mb-4">
+                  <div className="w-16 h-16 rounded-sm bg-slate-50 flex items-center justify-center mb-4">
                     <ClipboardList className="w-8 h-8 text-slate-300" />
                   </div>
                   <h3 className="text-base font-bold text-slate-700">Belum Ada Kegiatan</h3>
@@ -227,7 +227,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                   return (
                     <Card
                       key={activity.id}
-                      className={`bg-white rounded-2xl shadow-sm border-none overflow-hidden transition-all duration-200 ${isExpanded ? 'ring-2 ring-teal-200/60' : ''
+                      className={`bg-white rounded-md shadow-sm border-none overflow-hidden transition-all duration-200 ${isExpanded ? 'ring-2 ring-teal-200/60' : ''
                         }`}
                     >
                       <CardContent className="p-0">
@@ -244,12 +244,12 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                             <div className="flex items-center gap-2">
                               <div className="truncate text-sm font-bold text-slate-800">{displayName}</div>
                               {activity.reportKind === 'satpam_found_item' && (
-                                <Badge className="shrink-0 border-none bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
+                                <Badge className="rounded-sm shrink-0 border-none bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
                                   Penemuan Barang
                                 </Badge>
                               )}
                               {activity.reportKind === 'satpam_reprimand' && (
-                                <Badge className="shrink-0 border-none bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
+                                <Badge className="rounded-sm shrink-0 border-none bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
                                   Teguran Pengendara
                                 </Badge>
                               )}
@@ -272,7 +272,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                               Lembur Sendiri / Lembur Cover). */}
                           <div className="flex flex-col items-end gap-1 shrink-0">
                             {activity.reportKind === 'satpam_shift_assignment' && activity.shiftType && (
-                              <Badge className="border-none bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-800">
+                              <Badge className="rounded-sm border-none bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-800">
                                 {activity.shiftType === 'Off-Duty' ? 'Hari Libur' : activity.shiftType}
                               </Badge>
                             )}
@@ -284,7 +284,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                                 )}
                               </span>
                             )}
-                            <Badge className={`${sc.bgClass} ${sc.textClass} border ${sc.borderClass} text-[10px] font-bold rounded-lg px-2 py-0.5`}>
+                            <Badge className={`${sc.bgClass} ${sc.textClass} border ${sc.borderClass} text-[10px] font-bold rounded-sm px-2 py-0.5`}>
                               {sc.label}
                             </Badge>
                           </div>
@@ -319,7 +319,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                             </div>
 
                             {(activity.reportKind === 'satpam_found_item' || activity.reportKind === 'satpam_reprimand') && (
-                              <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                              <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3">
                                 <div className="flex items-center gap-2 text-sm font-bold text-amber-950">
                                   <PackageSearch className="h-4 w-4" />
                                   {activity.reportKind === 'satpam_reprimand' ? 'Foto Bukti Teguran' : 'Foto Barang Temuan'}
@@ -331,7 +331,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                                       ? [{ url: activity.photoUrl }]
                                       : []
                                   ).map((photo, index) => (
-                                    <div key={photo.url} className="aspect-square overflow-hidden rounded-xl bg-slate-100">
+                                    <div key={photo.url} className="aspect-square overflow-hidden rounded-sm bg-slate-100">
                                       {/* eslint-disable-next-line @next/next/no-img-element */}
                                       <img
                                         src={photo.url}
@@ -346,7 +346,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
 
                             {/* Driver details section */}
                             {activity.jobCategory === 'SOPIR' && (
-                              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1.5 text-xs text-slate-600">
+                              <div className="p-3 rounded-md bg-slate-50 border border-slate-100 space-y-1.5 text-xs text-slate-600">
                                 {activity.points && activity.points.length > 0 && (
                                   <div className="space-y-0.5 pb-1.5 border-b border-slate-200/60">
                                     <span className="font-semibold text-slate-400 text-[10px] uppercase block tracking-wider">Rute Perjalanan:</span>
@@ -394,7 +394,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
 
                             {/* Satpam details section */}
                             {activity.jobCategory === 'SATPAM' && (activity.shiftName || activity.shiftType || activity.postName || activity.ketuaShiftName) && (
-                              <div className="p-3 rounded-xl bg-purple-50/50 border border-purple-100/60 space-y-1.5 text-xs text-purple-950">
+                              <div className="p-3 rounded-md bg-purple-50/50 border border-purple-100/60 space-y-1.5 text-xs text-purple-950">
                                 <div className="flex justify-between">
                                   <span className="font-semibold text-slate-500">Nama Petugas:</span>
                                   <span className="font-bold text-slate-800">{activity.employeeName}</span>
@@ -430,12 +430,12 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                             {activity.jobCategory === 'SATPAM' &&
                               activity.reportKind === 'satpam_shift_assignment' &&
                               activity.photoUrl && (
-                                <div className="space-y-2 rounded-xl border border-purple-100/60 bg-purple-50/50 p-3">
+                                <div className="space-y-2 rounded-md border border-purple-100/60 bg-purple-50/50 p-3">
                                   <div className="flex items-center gap-2 text-sm font-bold text-purple-950">
                                     <Camera className="h-4 w-4" />
                                     Foto Bukti Penjagaan
                                   </div>
-                                  <div className="overflow-hidden rounded-xl bg-slate-100">
+                                  <div className="overflow-hidden rounded-sm bg-slate-100">
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
                                       src={activity.photoUrl}
@@ -449,12 +449,12 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                             {/* Proof photo attached to the general Pekarya SPJ submission */}
                             {['KEBERSIHAN', 'KEBERSIHAN_PONTI', 'PONTI', 'TEKNISI'].includes(activity.jobCategory) &&
                               activity.proofPhoto?.url && (
-                                <div className="space-y-2 rounded-xl border border-teal-100 bg-teal-50/60 p-3">
+                                <div className="space-y-2 rounded-md border border-teal-100 bg-teal-50/60 p-3">
                                   <div className="flex items-center gap-2 text-sm font-bold text-teal-900">
                                     <Camera className="h-4 w-4" />
                                     Foto Bukti Kegiatan
                                   </div>
-                                  <div className="overflow-hidden rounded-xl bg-slate-100">
+                                  <div className="overflow-hidden rounded-sm bg-slate-100">
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
                                       src={activity.proofPhoto.url}
@@ -466,7 +466,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                               )}
 
                             {activity.status === 'approved' && activity.jobCategory === 'SATPAM' && (
-                              <div className="flex flex-col gap-1 p-3 rounded-xl bg-emerald-50 border border-emerald-100">
+                              <div className="flex flex-col gap-1 p-3 rounded-md bg-emerald-50 border border-emerald-100">
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                                   <div className="flex items-center gap-2">
                                     <Banknote className="w-4 h-4 text-emerald-600" />
@@ -482,7 +482,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                             )}
 
                             {activity.status === 'approved' && activity.jobCategory !== 'SATPAM' && activity.fee > 0 && (
-                              <div className="flex flex-col gap-1 p-3 rounded-xl bg-emerald-50 border border-emerald-100">
+                              <div className="flex flex-col gap-1 p-3 rounded-md bg-emerald-50 border border-emerald-100">
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                                   <div className="flex items-center gap-2">
                                     <Banknote className="w-4 h-4 text-emerald-600" />
@@ -503,7 +503,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                                     })()
                                   )}
                                   {activity.jobCategory !== 'SOPIR' && activity.hasUangMakan && (
-                                    <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-none text-[10px] font-bold rounded-lg px-2 py-0.5">
+                                    <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-none text-[10px] font-bold rounded-sm px-2 py-0.5">
                                       + Uang Makan
                                     </Badge>
                                   )}
@@ -513,7 +513,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
 
                             {activity.status === 'pending' && (
                               activity.jobCategory === 'SATPAM' ? (
-                                <div className="flex flex-col gap-1 p-3 rounded-xl bg-amber-50 border border-amber-200">
+                                <div className="flex flex-col gap-1 p-3 rounded-md bg-amber-50 border border-amber-200">
                                   <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                                     <div className="flex items-center gap-2">
                                       <Banknote className="w-4 h-4 text-amber-600" />
@@ -557,7 +557,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                                     activity.tollParkingFee
                                   );
                                   return (
-                                    <div className="flex flex-col gap-1 p-3 rounded-xl bg-amber-50 border border-amber-200">
+                                    <div className="flex flex-col gap-1 p-3 rounded-md bg-amber-50 border border-amber-200">
                                       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                                         <div className="flex items-center gap-2">
                                           <Banknote className="w-4 h-4 text-amber-600" />
@@ -582,7 +582,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                                     : '';
 
                                   return (
-                                    <div className="flex flex-col gap-1 p-3 rounded-xl bg-amber-50 border border-amber-200">
+                                    <div className="flex flex-col gap-1 p-3 rounded-md bg-amber-50 border border-amber-200">
                                       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                                         <div className="flex items-center gap-2">
                                           <Banknote className="w-4 h-4 text-amber-600" />
@@ -608,7 +608,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                             )}
 
                             {activity.status === 'declined' && activity.declineReason && (
-                              <div className="p-3 rounded-xl bg-rose-50 border border-rose-100">
+                              <div className="p-3 rounded-md bg-rose-50 border border-rose-100">
                                 <span className="text-[10px] font-bold text-rose-400 uppercase block mb-1">Alasan Penolakan</span>
                                 <p className="text-sm text-rose-700 font-medium">{activity.declineReason}</p>
                               </div>
@@ -622,7 +622,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                                 onClick={() => openEditForm(activity)}
                                 variant="outline"
                                 size="sm"
-                                className="w-full rounded-xl border-teal-200 text-teal-600 hover:bg-teal-50 font-bold text-xs"
+                                className="w-full rounded-sm border-teal-200 text-teal-600 hover:bg-teal-50 font-bold text-xs"
                               >
                                 <Pencil className="w-3.5 h-3.5 mr-1.5" />
                                 {activity.status === 'declined' ? 'Edit & Ajukan Ulang' : 'Edit Kegiatan'}

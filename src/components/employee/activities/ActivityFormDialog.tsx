@@ -130,7 +130,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
           if (!open && !submitting && !uploadingProofPhoto) resetForm();
         }}
       >
-        <DialogContent className="sm:max-w-md max-w-[calc(100%-2rem)] rounded-3xl border-none shadow-2xl bg-white p-0 overflow-hidden">
+        <DialogContent className="sm:max-w-md max-w-[calc(100%-2rem)] rounded-md border-none shadow-2xl bg-white p-0 overflow-hidden">
           <div className="bg-gradient-to-r from-teal-500 to-cyan-600 p-5 pb-4">
             <DialogHeader>
               <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
@@ -171,7 +171,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                           setFormName(formCustomName || '');
                         }
                       }}
-                      className="w-full text-base font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3 pr-10 appearance-none focus:outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20"
+                      className="w-full text-base font-bold text-slate-700 bg-white rounded-sm border border-slate-200 h-10 px-3 pr-10 appearance-none focus:outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20"
                       style={{
                         backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2394a3b8\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")',
                         backgroundPosition: 'right 12px center',
@@ -202,10 +202,10 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                         }
                       }}
                     >
-                      <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
+                      <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white rounded-sm border border-slate-200 h-10 px-3">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                      <SelectContent className="rounded-md border-slate-100 shadow-xl bg-white">
                         <SelectItem value="Piket">Piket</SelectItem>
                         <SelectItem value="Standby">Standby</SelectItem>
                         <SelectItem value="Ro'an">Ro&apos;an</SelectItem>
@@ -230,7 +230,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                         setFormCustomName(e.target.value);
                         setFormName(e.target.value);
                       }}
-                      className="rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm"
+                      className="rounded-sm border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm"
                       required
                       autoFocus
                       autoComplete="off"
@@ -253,7 +253,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                       setFormName(e.target.value);
                       setFormCustomName(e.target.value);
                     }}
-                    className="rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm"
+                    className="rounded-sm border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm"
                     required
                     autoFocus
                     autoComplete="off"
@@ -286,7 +286,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                               setCalculatedDurationHours(0);
                               setRouteError('');
                             }}
-                            className="rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm pr-2 h-10"
+                            className="rounded-sm border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm pr-2 h-10"
                             required
                             autoComplete="off"
                           />
@@ -302,7 +302,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                               setCalculatedDurationHours(0);
                               setRouteError('');
                             }}
-                            className="h-8 w-8 p-0 text-slate-400 hover:text-rose-500 rounded-xl"
+                            className="h-8 w-8 p-0 text-slate-400 hover:text-rose-500 rounded-sm"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -332,7 +332,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                         setCalculatedDurationHours(0);
                         setRouteError('');
                       }}
-                      className="text-[11px] font-bold border-slate-200 rounded-xl hover:bg-slate-50 text-slate-600 px-3 h-8"
+                      className="text-[11px] font-bold border-slate-200 rounded-sm hover:bg-slate-50 text-slate-600 px-3 h-8"
                     >
                       + Tambah Titik Singgah
                     </Button>
@@ -342,7 +342,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                       size="sm"
                       disabled={isCalculatingRoute || formPoints.some(p => !p.trim())}
                       onClick={handleCalculateRoute}
-                      className="text-[11px] font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-xl px-3 h-8 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="text-[11px] font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-sm px-3 h-8 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isCalculatingRoute ? 'Menghitung...' : '✓ Cek Rute & Jarak'}
                     </Button>
@@ -350,23 +350,23 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                 </div>
 
                 {routeError && (
-                  <div className="p-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-xl font-medium">
+                  <div className="p-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-md font-medium">
                     ⚠️ {routeError}
                   </div>
                 )}
 
                 {calculatedDistanceKm > 0 && JSON.stringify(formPoints) === JSON.stringify(routeCalculatedPoints) && (
-                  <div className="p-3.5 bg-emerald-50 border border-emerald-100 rounded-xl space-y-1.5 animate-in fade-in duration-200">
+                  <div className="p-3.5 bg-emerald-50 border border-emerald-100 rounded-md space-y-1.5 animate-in fade-in duration-200">
                     <div className="flex justify-between text-[10px] text-slate-500 font-bold uppercase tracking-wider">
                       <span>Rincian Rute Terverifikasi</span>
                       <span className="text-emerald-600 font-extrabold">Terhitung</span>
                     </div>
                     <div className="grid grid-cols-2 gap-2 pt-1">
-                      <div className="bg-white p-2 rounded-lg border border-slate-100 text-center">
+                      <div className="bg-white p-2 rounded-sm border border-slate-100 text-center">
                         <span className="block text-[9px] text-slate-400 font-bold uppercase">Jarak Tempuh</span>
                         <span className="text-sm font-extrabold text-slate-800">{calculatedDistanceKm} km</span>
                       </div>
-                      <div className="bg-white p-2 rounded-lg border border-slate-100 text-center">
+                      <div className="bg-white p-2 rounded-sm border border-slate-100 text-center">
                         <span className="block text-[9px] text-slate-400 font-bold uppercase">Estimasi Waktu</span>
                         <span className="text-sm font-extrabold text-slate-800">{calculatedDurationHours} jam</span>
                       </div>
@@ -390,7 +390,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                 )}
 
                 {calculatedDistanceKm > 0 && JSON.stringify(formPoints) !== JSON.stringify(routeCalculatedPoints) && (
-                  <div className="p-3 text-xs bg-amber-50 border border-amber-200 text-amber-700 rounded-xl font-medium">
+                  <div className="p-3 text-xs bg-amber-50 border border-amber-200 text-amber-700 rounded-md font-medium">
                     ⚠️ Rute telah diubah. Silakan klik “Cek Rute & Jarak” kembali sebelum mengirim.
                   </div>
                 )}
@@ -407,10 +407,10 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                         if (value) setFormTripType(value as typeof formTripType);
                       }}
                     >
-                      <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
+                      <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white rounded-sm border border-slate-200 h-10 px-3">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                      <SelectContent className="rounded-md border-slate-100 shadow-xl bg-white">
                         <SelectItem value="Dalam Kota">Dalam Kota</SelectItem>
                         <SelectItem value="Luar Kota">Luar Kota</SelectItem>
                       </SelectContent>
@@ -428,10 +428,10 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                         if (value) setFormVehicleType(value as typeof formVehicleType);
                       }}
                     >
-                      <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
+                      <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white rounded-sm border border-slate-200 h-10 px-3">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                      <SelectContent className="rounded-md border-slate-100 shadow-xl bg-white">
                         <SelectItem value="Mobil Kecil">Mobil Kecil</SelectItem>
                         <SelectItem value="Bus/Truk">Bus / Truk</SelectItem>
                       </SelectContent>
@@ -440,7 +440,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                 </div>
 
                 {/* Toggle Lintas Hari / Menginap Above Time Controls */}
-                <div className="flex items-center justify-between p-3 rounded-xl bg-teal-50/60 border border-teal-100">
+                <div className="flex items-center justify-between p-3 rounded-md bg-teal-50/60 border border-teal-100">
                   <div className="flex items-center gap-2">
                     <input
                       id="toggleMultiDayApp"
@@ -485,7 +485,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                           type="date"
                           value={formDate}
                           onChange={(e) => setFormDate(e.target.value)}
-                          className="rounded-xl border-slate-200 focus:border-teal-400 text-xs h-9 px-2.5 bg-white"
+                          className="rounded-sm border-slate-200 focus:border-teal-400 text-xs h-9 px-2.5 bg-white"
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -518,7 +518,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                             }
                           }}
                           onBlur={(e) => setFormTimeStart(padTime(e.target.value))}
-                          className="rounded-xl border-slate-200 focus:border-teal-400 text-xs h-9 px-3 bg-white"
+                          className="rounded-sm border-slate-200 focus:border-teal-400 text-xs h-9 px-3 bg-white"
                         />
                       </div>
                     </div>
@@ -535,7 +535,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                           min={formDate || undefined}
                           value={formDateEnd || formDate}
                           onChange={(e) => setFormDateEnd(e.target.value)}
-                          className="rounded-xl border-slate-200 focus:border-teal-400 text-xs h-9 px-2.5 bg-white"
+                          className="rounded-sm border-slate-200 focus:border-teal-400 text-xs h-9 px-2.5 bg-white"
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -568,7 +568,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                             }
                           }}
                           onBlur={(e) => setFormTimeEnd(padTime(e.target.value))}
-                          className="rounded-xl border-slate-200 focus:border-teal-400 text-xs h-9 px-3 bg-white"
+                          className="rounded-sm border-slate-200 focus:border-teal-400 text-xs h-9 px-3 bg-white"
                         />
                       </div>
                     </div>
@@ -621,7 +621,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                           const val = e.target.value.replace(/\D/g, '');
                           setFormFuelFee(val ? Number(val).toLocaleString('id-ID') : '');
                         }}
-                        className="pl-8 rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm font-semibold text-slate-700"
+                        className="pl-8 rounded-sm border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm font-semibold text-slate-700"
                       />
                     </div>
                   </div>
@@ -642,7 +642,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                           const val = e.target.value.replace(/\D/g, '');
                           setFormTollParkingFee(val ? Number(val).toLocaleString('id-ID') : '');
                         }}
-                        className="pl-8 rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm font-semibold text-slate-700"
+                        className="pl-8 rounded-sm border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm font-semibold text-slate-700"
                       />
                     </div>
                   </div>
@@ -662,7 +662,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                     setFormName(e.target.value);
                     setFormCustomName(e.target.value);
                   }}
-                  className="h-12 rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base"
+                  className="h-12 rounded-sm border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base"
                   required
                   autoFocus
                   autoComplete="off"
@@ -685,7 +685,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                     type="date"
                     value={formDate}
                     onChange={(e) => setPersonalSpjDate(e.target.value)}
-                    className="h-12 rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base"
+                    className="h-12 rounded-sm border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base"
                     required
                   />
                 </div>
@@ -728,7 +728,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                         onBlur={(e) => {
                           setFormTimeStart(padTime(e.target.value));
                         }}
-                        className="pl-9 h-12 rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base"
+                        className="pl-9 h-12 rounded-sm border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base"
                         required
                       />
                     </div>
@@ -770,7 +770,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                           onBlur={(e) => {
                             setFormTimeEnd(padTime(e.target.value));
                           }}
-                          className="pl-9 h-12 rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base"
+                          className="pl-9 h-12 rounded-sm border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base"
                           required
                         />
                       </div>
@@ -797,7 +797,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                   }}
                 />
                 {formProofPhoto ? (
-                  <div className="flex items-center justify-between gap-2 rounded-xl border border-blue-200 bg-blue-50/80 px-3 py-2 text-base">
+                  <div className="flex items-center justify-between gap-2 rounded-md border border-blue-200 bg-blue-50/80 px-3 py-2 text-base">
                     <div className="flex min-w-0 items-center gap-1.5 font-bold text-blue-800">
                       <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-blue-600" />
                       <span className="truncate">Foto bukti kegiatan terunggah</span>
@@ -805,7 +805,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                     <button
                       type="button"
                       onClick={() => setFormProofPhoto(null)}
-                      className="h-12 w-12 flex items-center justify-center rounded-lg text-rose-600 transition-colors hover:bg-rose-100"
+                      className="h-12 w-12 flex items-center justify-center rounded-sm text-rose-600 transition-colors hover:bg-rose-100"
                       title="Hapus Foto Ini"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -817,7 +817,7 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                     variant="outline"
                     disabled={uploadingProofPhoto}
                     onClick={() => activityProofInputRef.current?.click()}
-                    className="h-12 w-full gap-2 rounded-xl border-dashed border-slate-300 bg-slate-50/60 text-base font-bold text-slate-700 hover:bg-slate-100"
+                    className="h-12 w-full gap-2 rounded-sm border-dashed border-slate-300 bg-slate-50/60 text-base font-bold text-slate-700 hover:bg-slate-100"
                   >
                     {uploadingProofPhoto ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
                     <span>{uploadingProofPhoto ? 'Mengunggah Foto...' : 'Upload Foto'}</span>
@@ -833,14 +833,14 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                 variant="ghost"
                 disabled={submitting || uploadingProofPhoto}
                 onClick={resetForm}
-                className="min-h-12 flex-1 rounded-xl text-base font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="min-h-12 flex-1 rounded-sm text-base font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Batal
               </Button>
               <Button
                 type="submit"
                 disabled={submitting || uploadingProofPhoto || tripEndsBeforeItStarts || (isSopir && (calculatedDistanceKm <= 0 || JSON.stringify(formPoints) !== JSON.stringify(routeCalculatedPoints)))}
-                className="min-h-12 flex-1 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-600 text-base text-white font-bold shadow-md shadow-teal-200 hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="min-h-12 flex-1 rounded-sm bg-gradient-to-r from-teal-500 to-cyan-600 text-base text-white font-bold shadow-md shadow-teal-200 hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitting ? (
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />
