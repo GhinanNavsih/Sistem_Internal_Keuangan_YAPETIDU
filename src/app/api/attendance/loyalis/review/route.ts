@@ -21,6 +21,7 @@ import {
   ANNUAL_PAID_LEAVE_BALANCES_COLLECTION,
   annualPaidLeaveDocumentId,
   annualPaidLeaveBalanceDocumentId,
+  dateValueToIso,
 } from '@/lib/server/annualPaidLeave';
 import {
   GANTI_LIBUR_REQUESTS_COLLECTION,
@@ -250,17 +251,6 @@ export async function POST(request: NextRequest) {
     const periodToken = date.slice(0, 7).replace('-', '_');
     const year = Number(date.slice(0, 4));
 
-    // Load employee data from Employees_Loyalis
-    const employeeRef = adminDb.collection('Employees_Loyalis').doc(employeeId);
-    const employeeSnap = await employeeRef.get();
-    const empData = employeeSnap.data() || {};
-    const serviceDate = String(
-      empData.employment_profile?.date_of_hire ||
-        empData.employment_profile?.date_recognized ||
-        '',
-    );
-    const qualifyingDate = serviceDate ? annualPaidLeaveQualifyingDate(serviceDate) : '';
-
     // Load LoyalisPresence document
     const presenceRef = adminDb.collection('LoyalisPresence').doc(periodToken);
     const presenceSnap = await presenceRef.get();
@@ -301,7 +291,14 @@ export async function POST(request: NextRequest) {
     const type = currentReq.type;
 
     if (type === 'cuti_tahunan') {
-      // 3A. Approve as Cuti Tahunan
+      // 3A. Approve as Cuti Tahunan. Only this path needs the service date, so a hire date
+      // that is missing or stored in another shape cannot block the other correction types.
+      const employeeSnap = await adminDb.collection('Employees_Loyalis').doc(employeeId).get();
+      const empData = employeeSnap.data() || {};
+      const serviceDate = dateValueToIso(
+        empData.employment_profile?.date_of_hire || empData.employment_profile?.date_recognized,
+      );
+      const qualifyingDate = serviceDate ? annualPaidLeaveQualifyingDate(serviceDate) : '';
       const annualLeaveDocId = annualPaidLeaveDocumentId(employeeId, date);
       const leaveDocRef = adminDb
         .collection(ANNUAL_PAID_LEAVE_REQUESTS_COLLECTION)

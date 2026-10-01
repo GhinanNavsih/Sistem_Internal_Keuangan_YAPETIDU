@@ -67,7 +67,7 @@ export function annualPaidLeaveEmployeeDataMatches(
   );
 }
 
-function dateValueToIso(value: unknown): string {
+export function dateValueToIso(value: unknown): string {
   let date: Date | null = null;
   if (value instanceof Date) {
     date = value;
