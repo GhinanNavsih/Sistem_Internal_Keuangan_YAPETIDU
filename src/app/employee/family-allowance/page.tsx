@@ -6,6 +6,8 @@ import { CalendarDays, ChevronLeft, GraduationCap, Loader2, LogOut } from 'lucid
 import EmployeeNavigationMenu from '@/components/EmployeeNavigationMenu';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { FloatingSnackbar, type SnackbarMessage } from '@/components/ui/floating-snackbar';
 import { Input } from '@/components/ui/input';
 import { OptionSelect } from '@/components/ui/option-select';
 import FamilyProofUploadCard from '@/components/employee/FamilyProofUploadCard';
@@ -38,6 +40,12 @@ function formatDate(value: string): string {
   return `${day}-${month}-${year}`;
 }
 
+/** "SD · lahir 12-03-2018" / "SLTP · masuk 01-07-2024". */
+function requestTitle(item: FamilyAllowanceRequest): string {
+  const level = LEVELS.find(option => option.value === item.level)?.label || item.level;
+  return `${level} · ${item.birthDate ? `lahir ${formatDate(item.birthDate)}` : `masuk ${formatDate(item.enrolledAt)}`}`;
+}
+
 async function submitWithProof(form: FormData) {
   const user = auth.currentUser;
   if (!user) throw new Error('Sesi tidak tersedia. Silakan masuk kembali.');
@@ -66,8 +74,9 @@ export default function FamilyAllowanceRequestPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [withdrawingId, setWithdrawingId] = useState('');
+  const [withdrawTarget, setWithdrawTarget] = useState<FamilyAllowanceRequest | null>(null);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [notice, setNotice] = useState<SnackbarMessage | null>(null);
   const [targetChildId, setTargetChildId] = useState('new');
   const [level, setLevel] = useState<DependentLevel>('SD');
   const [enrolledAt, setEnrolledAt] = useState('');
@@ -138,7 +147,7 @@ export default function FamilyAllowanceRequestPage() {
     event.preventDefault();
     if (busy) return;
     setError('');
-    setSuccess('');
+    setNotice(null);
     if (!data || !proof) {
       setError(isBirthDate ? 'Bukti tanggal lahir anak wajib diunggah.' : 'Bukti pertama masuk sekolah wajib diunggah.');
       return;
@@ -170,7 +179,7 @@ export default function FamilyAllowanceRequestPage() {
       setLevel('SD');
       setEnrolledAt('');
       setProof(null);
-      setSuccess('Pengajuan terkirim dan menunggu pemeriksaan admin. T. Keluarga belum berubah.');
+      setNotice({ type: 'success', text: 'Pengajuan terkirim dan menunggu pemeriksaan admin. T. Keluarga belum berubah.' });
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Pengajuan gagal dikirim.');
@@ -185,10 +194,10 @@ export default function FamilyAllowanceRequestPage() {
     setError('');
     try {
       await authenticatedJson(`/api/employee/family-allowance?requestId=${encodeURIComponent(requestId)}`, { method: 'DELETE' });
-      setSuccess('Pengajuan ditarik.');
+      setNotice({ type: 'success', text: 'Pengajuan ditarik.' });
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Pengajuan gagal ditarik.');
+      setNotice({ type: 'error', text: cause instanceof Error ? cause.message : 'Pengajuan gagal ditarik.' });
     } finally {
       setWithdrawingId('');
     }
@@ -206,6 +215,7 @@ export default function FamilyAllowanceRequestPage() {
   }
 
   return <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/70 to-slate-100 text-slate-900">
+    <FloatingSnackbar message={notice} onDismiss={() => setNotice(null)} />
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur">
       <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3 sm:px-6">
         <Link href="/employee/payslip" aria-label="Kembali ke Slip Gaji" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><ChevronLeft className="size-5" /></Link>
@@ -219,7 +229,6 @@ export default function FamilyAllowanceRequestPage() {
       <div><h2 className="text-2xl font-bold">Anak yang Sedang Sekolah</h2>
         <p className="mt-1 text-sm text-slate-600">Ajukan satu anak per formulir. Biro SDM akan memeriksa bukti sebelum anak tersebut masuk perhitungan T. Keluarga.</p></div>
       {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
-      {success && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{success}</p>}
       <Card className="rounded-2xl border-slate-200 bg-white shadow-sm"><CardContent className="p-5 sm:p-6">
         {loading ? <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="size-4 animate-spin" /> Memuat data anak...</div> :
         <form onSubmit={submit} className="space-y-5">
@@ -255,7 +264,7 @@ export default function FamilyAllowanceRequestPage() {
           </div>
           {isBirthDate && <p className="text-xs text-slate-600">Untuk anak SD atau yang belum sekolah, isi tanggal lahir. Tunjangan berhenti saat anak berusia 13 tahun.</p>}
           {projectedGraduation && <p className="flex items-center gap-2 text-xs text-slate-600"><CalendarDays className="size-4" /> {isBirthDate ? 'Tunjangan SD berhenti pada usia 13 tahun' : 'Perkiraan akhir jenjang'}: {formatDate(projectedGraduation)}</p>}
-          <div className="space-y-3"><span className="block text-sm font-semibold">{isBirthDate ? 'Bukti tanggal lahir (akta kelahiran atau Kartu Keluarga)' : 'Bukti pertama masuk sekolah'}</span>
+          <div className="space-y-3"><span className="block text-sm font-semibold">{isBirthDate ? 'Bukti tanggal lahir (Akta Kelahiran atau KK)' : 'Bukti pertama masuk sekolah'}</span>
             <FamilyProofUploadCard file={proof} onFileChange={file => { submissionIdRef.current = null; setProof(file); }} /></div>
           <Button type="submit" disabled={busy || !data} className="h-11 w-full rounded-xl bg-indigo-600 text-white hover:bg-indigo-700">
             {busy ? <><Loader2 className="mr-2 size-4 animate-spin" /> Mengirim...</> : 'Kirim Pengajuan'}
@@ -265,18 +274,32 @@ export default function FamilyAllowanceRequestPage() {
       <section className="space-y-3"><h3 className="text-lg font-bold">Riwayat Pengajuan</h3>
         {!loading && (data?.requests.length || 0) === 0 && <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-500">Belum ada pengajuan.</p>}
         {data?.requests.map(item => <Card key={item.id} className="rounded-xl border-slate-200 bg-white"><CardContent className="space-y-2 p-4">
-          <div className="flex flex-wrap items-start justify-between gap-2"><p className="font-semibold">{LEVELS.find(option => option.value === item.level)?.label || item.level} · {item.birthDate ? `lahir ${formatDate(item.birthDate)}` : `masuk ${formatDate(item.enrolledAt)}`}</p>
+          <div className="flex flex-wrap items-start justify-between gap-2"><p className="font-semibold">{requestTitle(item)}</p>
             <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${item.status === 'approved' ? 'bg-emerald-100 text-emerald-800' : item.status === 'rejected' ? 'bg-rose-100 text-rose-800' : item.status === 'withdrawn' ? 'bg-slate-100 text-slate-600' : 'bg-amber-100 text-amber-800'}`}>
               {item.status === 'approved' ? 'Disetujui' : item.status === 'rejected' ? 'Ditolak' : item.status === 'withdrawn' ? 'Ditarik' : 'Menunggu admin'}
             </span></div>
           <p className="text-xs text-slate-500">{item.requestedChildId === 'new' ? 'Anak baru' : `Anak ${data?.children.find(child => child.id === item.requestedChildId)?.number || 'tercatat'}`} · dikirim {item.submittedAt ? new Date(item.submittedAt).toLocaleDateString('id-ID') : '—'}</p>
           {item.reviewReason && <p className="text-sm text-slate-700">Catatan admin: {item.reviewReason}</p>}
           <div className="flex flex-wrap items-center gap-3"><a href={item.proofUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-indigo-700 underline">Lihat bukti</a>
-            {item.status === 'pending' && <Button type="button" variant="outline" size="sm" disabled={!!withdrawingId} onClick={() => void withdraw(item.id)}>
+            {item.status === 'pending' && <Button type="button" variant="outline" size="sm" disabled={!!withdrawingId} onClick={() => setWithdrawTarget(item)}>
               {withdrawingId === item.id ? 'Menarik...' : 'Tarik pengajuan'}
             </Button>}</div>
         </CardContent></Card>)}
       </section>
     </main>
+    <ConfirmDialog
+      open={Boolean(withdrawTarget)}
+      onOpenChange={open => { if (!open && !withdrawingId) setWithdrawTarget(null); }}
+      title="Tarik pengajuan?"
+      description={<>Pengajuan <span className="font-medium text-slate-900">{withdrawTarget ? requestTitle(withdrawTarget) : ''}</span> dibatalkan dan tidak akan diperiksa admin. Anda dapat mengajukan lagi kapan saja.</>}
+      confirmLabel="Tarik pengajuan"
+      destructive
+      loading={Boolean(withdrawingId)}
+      onConfirm={async () => {
+        if (!withdrawTarget) return;
+        await withdraw(withdrawTarget.id);
+        setWithdrawTarget(null);
+      }}
+    />
   </div>;
 }
