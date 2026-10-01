@@ -231,12 +231,11 @@ export function parseLoyalisPresenceWorkbook(
       return;
     }
 
-    // A punch on an explicit non-attendance status ("Tidak Hadir") is a
-    // source-data artifact, not a payable attendance event, and is dropped.
-    // Every other status label — "MASUK" or a source-specific one like
-    // "Staff" — means the employee was present, so its real scan times are
-    // kept rather than nulled out.
-    const isPresent = workStatus !== 'Tidak Hadir';
+    // Scan times are kept whatever the status says. A "Tidak Hadir" row can
+    // still carry real punches (typically a Jumat or Tanggal Merah the employee
+    // came in on), and ganti libur verification and the reviewer read them from
+    // the saved log. The status alone decides whether the day counts as an
+    // absence, so keeping the times never changes a total.
     parsedRows.push({
       rowNumber,
       nipy,
@@ -247,8 +246,8 @@ export function parseLoyalisPresenceWorkbook(
       date: formatDateForDisplay(dateIso),
       dateIso,
       workStatus,
-      scanIn: isPresent ? scanInValue || '' : '',
-      scanOut: isPresent ? scanOutValue || '' : '',
+      scanIn: scanInValue || '',
+      scanOut: scanOutValue || '',
       issues: Array.from(new Set(issues)),
     });
   });

@@ -144,7 +144,12 @@ export function applyApprovedPaidLeaveToLoyalisEntry(input: {
   const expectedMinutes = Math.max(0, input.expectedHours * 60);
   const existingScanIn = String(existing?.['Scan masuk'] || '').trim();
   const existingScanOut = String(existing?.['Scan pulang'] || '').trim();
-  const existingWorkedMinutes = existingScanIn && existingScanOut
+  const wasAbsent = String(existing?.['Jam kerja'] || '').trim().toUpperCase() === 'TIDAK HADIR';
+  // Scans kept on a "Tidak Hadir" row were never counted in the worked minutes
+  // (the status makes the day an absence), so there is nothing to take back.
+  const existingWorkedMinutes = wasAbsent
+    ? 0
+    : existingScanIn && existingScanOut
     ? calculateLoyalisDailyDuration(
         existingScanIn,
         existingScanOut,
@@ -159,7 +164,6 @@ export function applyApprovedPaidLeaveToLoyalisEntry(input: {
     Number(input.entry.absenceMinutes || 0) - (expectedMinutes - creditedMinutes),
   );
   const stratum = loyalisPresenceStratum(nextAbsenceMinutes, input.workingDays);
-  const wasAbsent = String(existing?.['Jam kerja'] || '').trim().toUpperCase() === 'TIDAK HADIR';
   const wasIncomplete = Boolean(
     existing &&
       !wasAbsent &&

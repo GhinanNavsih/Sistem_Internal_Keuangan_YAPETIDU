@@ -45,8 +45,8 @@ test('parses the raw Loyalis workbook shape and filters to the selected period',
     date: '01-07-2026',
     dateIso: '2026-07-01',
     workStatus: 'Tidak Hadir',
-    scanIn: '',
-    scanOut: '',
+    scanIn: '07:30:00',
+    scanOut: '14:00:00',
     issues: [],
   });
   assert.equal(parsed.rows[1].scanIn, '07:57:46');

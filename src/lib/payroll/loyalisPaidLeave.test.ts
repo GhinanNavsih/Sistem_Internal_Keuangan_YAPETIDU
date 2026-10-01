@@ -34,6 +34,30 @@ test('approved Loyalis paid leave replaces an absence with a full paid day', () 
   assert.equal(result.dailyLogs?.[0]?.['Scan pulang'], '14:00');
 });
 
+test('paid leave on an absent day with kept scans still replaces the whole absence', () => {
+  const result = applyApprovedPaidLeaveToLoyalisEntry({
+    entry: {
+      minutes: 1_000,
+      absenceMinutes: 390,
+      absentDaysCount: 1,
+      dailyLogs: [{
+        Tanggal: '22-09-2026',
+        'Jam kerja': 'TIDAK HADIR',
+        'Scan masuk': '07:30:00',
+        'Scan pulang': '10:00:00',
+      }],
+    },
+    leaveDate: '2026-09-22',
+    expectedHours: 6.5,
+    workingDays: 25,
+    isOffDay: false,
+  });
+  // The stray scans were never part of the 1,000 worked minutes.
+  assert.equal(result.minutes, 1_390);
+  assert.equal(result.absenceMinutes, 0);
+  assert.equal(result.absentDaysCount, 0);
+});
+
 test('off-day Loyalis paid leave remains visible without reducing another absence', () => {
   const result = applyApprovedPaidLeaveToLoyalisEntry({
     entry: { absenceMinutes: 390, dailyLogs: [] },
