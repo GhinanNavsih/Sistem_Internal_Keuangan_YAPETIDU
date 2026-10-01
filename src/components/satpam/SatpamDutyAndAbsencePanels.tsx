@@ -37,6 +37,13 @@ import {
   type SatpamAttendanceReportType,
 } from '@/lib/payroll/satpamAttendance';
 import { pekaryaPayrollPeriodForDate } from '@/lib/payroll/pekaryaSpj';
+import { LeaveDateRangeEndField } from '@/components/employee/LeaveDateRangeEndField';
+import {
+  describeLeaveRangeOutcome,
+  expandLeaveDateRange,
+  leaveRangeErrorMessage,
+  submitLeaveRange,
+} from '@/lib/leaveDateRange';
 import {
   SwapLiburConfirmModal,
   type SwapLiburPrompt,
@@ -1231,6 +1238,8 @@ export function SatpamDutyPlanPanel(props: {
   );
 }
 
+const NO_END_DUTY = '__single_day__';
+
 export function SatpamAbsencePanel(props: {
   employeeId: string;
   openPeriods: OpenPeriod[];
@@ -1262,6 +1271,8 @@ export function SatpamAbsencePanel(props: {
   const [scheduledDuties, setScheduledDuties] = useState<ScheduledDuty[]>([]);
   const [teamAssigned, setTeamAssigned] = useState<boolean | null>(null);
   const [dutyDate, setDutyDate] = useState('');
+  // Optional last day of a multi-day izin sakit; empty means just `dutyDate`.
+  const [endDate, setEndDate] = useState('');
   const [reportType, setReportType] =
     useState<SatpamAttendanceReportType>('izin_resmi');
   const [scanIn, setScanIn] = useState('08:00');
@@ -1342,6 +1353,30 @@ export function SatpamAbsencePanel(props: {
     () => scheduledDuties.find((duty) => duty.dutyDate === dutyDate) || null,
     [dutyDate, scheduledDuties],
   );
+  // Izin sakit over several days: a Satpam with a team gets a request for each
+  // scheduled duty from the first to the last date; one without a team gets
+  // every calendar date, kept inside the selected payroll window.
+  const rangeEnd = workflowMode === 'sick_leave' && endDate >= dutyDate ? endDate : '';
+  const calendarRange = useMemo(
+    () => expandLeaveDateRange(dutyDate, isUnassignedSatpam ? rangeEnd : ''),
+    [dutyDate, isUnassignedSatpam, rangeEnd],
+  );
+  const rangeDates = useMemo(() => {
+    if (!dutyDate) return [];
+    if (!rangeEnd) return [dutyDate];
+    if (isUnassignedSatpam) return calendarRange.dates;
+    return scheduledDuties
+      .map((duty) => duty.dutyDate)
+      .filter((day) => day >= dutyDate && day <= rangeEnd);
+  }, [calendarRange.dates, dutyDate, isUnassignedSatpam, rangeEnd, scheduledDuties]);
+  const rangeOutsideWindow = Boolean(
+    isUnassignedSatpam &&
+      selectedPeriodWindow &&
+      rangeDates.some(
+        (day) => day < selectedPeriodWindow.startDate || day > selectedPeriodWindow.endDate,
+      ),
+  );
+  const isRange = rangeDates.length > 1;
   const scanRangeInvalid = Boolean(
     activeReportType === 'scan' &&
       selectedDuty &&
@@ -1354,6 +1389,7 @@ export function SatpamAbsencePanel(props: {
 
   const selectDutyDate = useCallback((nextDutyDate: string) => {
     setDutyDate(nextDutyDate);
+    setEndDate((current) => (current > nextDutyDate ? current : ''));
     setError('');
   }, []);
 
@@ -1425,6 +1461,68 @@ export function SatpamAbsencePanel(props: {
     return () => window.clearTimeout(timer);
   }, [load]);
 
+  // One request per date, all sharing the same reason and photo.
+  const submitRange = async () => {
+    setWorking(true);
+    setError('');
+    setMessage('');
+    try {
+      let evidenceUrl: string | null = null;
+      if (evidenceFile) {
+        const compressed = await compressProofImage(evidenceFile);
+        evidenceUrl = await uploadProofFile('/api/uploads/activity-proofs', compressed, {
+          employeeId,
+          filenameHint: `izin_${dutyDate}`,
+        });
+      }
+      const outcome = await submitLeaveRange(
+        rangeDates,
+        (day) => {
+          const status = requests.find((request) => request.dutyDate === day)?.status;
+          return status === 'pending' || status === 'approved';
+        },
+        async (day) => {
+          await authenticatedJson('/api/satpam/absences', {
+            method: 'POST',
+            body: JSON.stringify({
+              action: 'submit',
+              requestId: createFinancialRequestId('satpam-absence'),
+              dutyDate: day,
+              reportType: 'izin_resmi',
+              scanIn: null,
+              scanOut: null,
+              absenceType: activeAbsenceType,
+              reason,
+              evidenceUrl,
+              expectedRevision: requests.find((request) => request.dutyDate === day)?.revision || 0,
+            }),
+          });
+        },
+        (done, total) => setMessage(`Mengirim izin sakit ${Math.min(done + 1, total)} dari ${total}…`),
+      );
+      const summary = describeLeaveRangeOutcome(outcome, 'izin sakit');
+      if (summary.failed) {
+        setMessage('');
+        setError(summary.text);
+      } else {
+        setMessage(`${summary.text} Menunggu keputusan Kepala SatKer.`);
+      }
+      if (outcome.succeeded.length > 0) {
+        if (autoSaveDraft) clearSatpamLeaveDraft(employeeId);
+        setHasRestoredDraft(false);
+        setReason('');
+        setEvidenceFile(null);
+        setEndDate('');
+      }
+      await load();
+    } catch (cause) {
+      setMessage('');
+      setError(cause instanceof Error ? cause.message : 'Pengajuan izin gagal dikirim.');
+    } finally {
+      setWorking(false);
+    }
+  };
+
   const submit = async () => {
     if (!dutyDate) {
       setError(
@@ -1448,6 +1546,18 @@ export function SatpamAbsencePanel(props: {
           ? 'Jam scan Shift Malam harus membentuk rentang dinas yang valid hingga hari berikutnya.'
           : 'Scan keluar harus lebih lambat dari scan masuk.',
       );
+      return;
+    }
+    if (isRange) {
+      if (calendarRange.error) {
+        setError(leaveRangeErrorMessage(calendarRange.error));
+        return;
+      }
+      if (rangeOutsideWindow) {
+        setError('Semua tanggal harus berada dalam periode payroll yang dipilih.');
+        return;
+      }
+      await submitRange();
       return;
     }
     setWorking(true);
@@ -1561,7 +1671,10 @@ export function SatpamAbsencePanel(props: {
           <LargeSelect
             id="absence-period"
             value={period}
-            onValueChange={setPeriod}
+            onValueChange={(value) => {
+              setPeriod(value);
+              setEndDate('');
+            }}
             options={openPeriods.map((item) => ({
               value: item.period,
               label: payrollPeriodLabel(item.period),
@@ -1608,6 +1721,22 @@ export function SatpamAbsencePanel(props: {
                     </p>
                   )}
                 </div>
+                {workflowMode === 'sick_leave' && (
+                  <LeaveDateRangeEndField
+                    id="absence-end-date"
+                    value={endDate}
+                    onChange={(value) => {
+                      setEndDate(value);
+                      setError('');
+                    }}
+                    min={dutyDate}
+                    max={selectedPeriodWindow?.endDate}
+                    dayCount={rangeDates.length}
+                    error={calendarRange.error}
+                    disabled={working}
+                    noun="izin sakit"
+                  />
+                )}
               </>
             ) : (
               <div className="space-y-2">
@@ -1621,6 +1750,33 @@ export function SatpamAbsencePanel(props: {
                     label: `${duty.dutyDate} · ${duty.shiftName} · ${formatSatpamPostLabel(duty.postId)}`,
                   }))}
                 />
+              </div>
+            )}
+            {!isUnassignedSatpam && workflowMode === 'sick_leave' && (
+              <div className="space-y-2">
+                <Label htmlFor="absence-end-duty-date">Sampai tanggal dinas (opsional)</Label>
+                <LargeSelect
+                  id="absence-end-duty-date"
+                  value={rangeEnd || NO_END_DUTY}
+                  onValueChange={(value) => {
+                    setEndDate(value === NO_END_DUTY ? '' : value);
+                    setError('');
+                  }}
+                  options={[
+                    { value: NO_END_DUTY, label: 'Hanya satu hari' },
+                    ...scheduledDuties
+                      .filter((duty) => duty.dutyDate > dutyDate)
+                      .map((duty) => ({
+                        value: duty.dutyDate,
+                        label: `${duty.dutyDate} · ${duty.shiftName} · ${formatSatpamPostLabel(duty.postId)}`,
+                      })),
+                  ]}
+                />
+                <p className="text-xs text-slate-500">
+                  {isRange
+                    ? `${rangeDates.length} kewajiban dinas akan diajukan sekaligus, satu pengajuan untuk setiap tanggal.`
+                    : 'Pilih jika sakit lebih dari satu hari dinas.'}
+                </p>
               </div>
             )}
             {!isUnassignedSatpam && workflowMode === 'all' && (
@@ -1758,6 +1914,7 @@ export function SatpamAbsencePanel(props: {
               disabled={
                 working ||
                 reason.trim().length > 500 ||
+                (isRange && (Boolean(calendarRange.error) || rangeOutsideWindow)) ||
                 (activeReportType === 'scan' && scanRangeInvalid) ||
                 (workflowMode === 'presence_correction' && isUnassignedSatpam)
               }
@@ -1768,7 +1925,9 @@ export function SatpamAbsencePanel(props: {
               ) : (
                 <Upload className="h-5 w-5" />
               )}
-              Kirim Pengajuan ke Kepala SatKer
+              {isRange
+                ? `Kirim ${rangeDates.length} Hari Izin Sakit ke Kepala SatKer`
+                : 'Kirim Pengajuan ke Kepala SatKer'}
             </Button>
           </>
         )}

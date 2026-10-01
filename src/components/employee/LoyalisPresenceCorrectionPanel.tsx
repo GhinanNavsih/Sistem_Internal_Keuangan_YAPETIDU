@@ -55,6 +55,13 @@ import {
   type PresenceCorrectionType,
 } from '@/lib/payroll/presenceCorrections';
 import { PresensiCorrectionHistorySkeleton } from '@/components/PresensiCorrectionSkeleton';
+import { LeaveDateRangeEndField } from '@/components/employee/LeaveDateRangeEndField';
+import {
+  describeLeaveRangeOutcome,
+  expandLeaveDateRange,
+  leaveRangeErrorMessage,
+  submitLeaveRange,
+} from '@/lib/leaveDateRange';
 
 const CLOCK_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
@@ -87,6 +94,8 @@ export function LoyalisPresenceCorrectionPanel({
     const d = String(today.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
   });
+  // Optional last day of a multi-day izin sakit; empty means just `date`.
+  const [endDate, setEndDate] = useState('');
   const [type, setType] = useState<PresenceCorrectionType>('izin_resmi');
   const effectiveType = workflowMode === 'sick_leave'
     ? 'izin_resmi'
@@ -122,22 +131,64 @@ export function LoyalisPresenceCorrectionPanel({
     };
   }, [filePreview]);
 
-  // Calculate current month boundaries
-  const { minDate, maxDate } = useMemo(() => {
+  // Izin sakit may be filed for any payroll month that is not closed yet (the
+  // previous month stays reachable until finance closes it). Presence
+  // corrections stay on the current month.
+  const [openPayrollMonths, setOpenPayrollMonths] = useState<string[]>([]);
+  const isSickLeave = workflowMode === 'sick_leave';
+
+  useEffect(() => {
+    if (!isSickLeave) return;
+    let cancelled = false;
+    authenticatedJson<{ openPeriods: { period: string }[] }>('/api/payroll/periods', {
+      method: 'GET',
+    })
+      .then((response) => {
+        if (!cancelled) setOpenPayrollMonths((response.openPeriods || []).map((item) => item.period));
+      })
+      .catch(() => {
+        // Falls back to the current month, which the server always accepts.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isSickLeave]);
+
+  const currentMonthToken = useMemo(() => {
     const today = new Date();
-    const y = today.getFullYear();
-    const m = today.getMonth(); // 0-indexed
-
-    // First day of current month
-    const firstDay = new Date(y, m, 1);
-    const minStr = `${firstDay.getFullYear()}-${String(firstDay.getMonth() + 1).padStart(2, '0')}-01`;
-
-    // Last day of current month
-    const lastDay = new Date(y, m + 1, 0);
-    const maxStr = `${lastDay.getFullYear()}-${String(lastDay.getMonth() + 1).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
-
-    return { minDate: minStr, maxDate: maxStr };
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
   }, []);
+
+  // Months the date picker accepts: the current month, plus (for izin sakit)
+  // every earlier month whose payroll period is still open.
+  const allowedMonths = useMemo(() => {
+    const months = new Set([currentMonthToken]);
+    if (isSickLeave) {
+      for (const month of openPayrollMonths) {
+        if (month < currentMonthToken) months.add(month);
+      }
+    }
+    return months;
+  }, [currentMonthToken, isSickLeave, openPayrollMonths]);
+
+  const { minDate, maxDate } = useMemo(() => {
+    const earliest = Array.from(allowedMonths).sort()[0];
+    const [minYear, minMonth] = earliest.split('-').map(Number);
+    const [maxYear, maxMonth] = currentMonthToken.split('-').map(Number);
+    const lastDay = new Date(maxYear, maxMonth, 0).getDate();
+    return {
+      minDate: `${minYear}-${String(minMonth).padStart(2, '0')}-01`,
+      maxDate: `${maxYear}-${String(maxMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`,
+    };
+  }, [allowedMonths, currentMonthToken]);
+
+  // A multi-day izin sakit is only for a new submission; editing one request
+  // keeps its single date.
+  const range = useMemo(
+    () => expandLeaveDateRange(date, isSickLeave && !editingRequestId ? endDate : ''),
+    [date, endDate, isSickLeave, editingRequestId],
+  );
+  const isRange = range.dates.length > 1;
 
   // Check if check-out time is earlier than check-in time when type is 'both'
   const isTimeRangeInvalid = useMemo(() => {
@@ -212,6 +263,7 @@ export function LoyalisPresenceCorrectionPanel({
     const m = String(today.getMonth() + 1).padStart(2, '0');
     const d = String(today.getDate()).padStart(2, '0');
     setDate(`${y}-${m}-${d}`);
+    setEndDate('');
     setType(workflowMode === 'presence_correction' ? 'both' : 'izin_resmi');
     setReason('');
     setCheckInTime('');
@@ -288,6 +340,84 @@ export function LoyalisPresenceCorrectionPanel({
     }
   };
 
+  // One izin sakit document per date, all sharing the same reason and proof.
+  // Dates that already hold a visible request are left alone (changing one
+  // goes through its own edit), and a date whose earlier request was archived
+  // gets a fresh document instead of replacing the archive.
+  const submitRangeRequests = async () => {
+    setSubmitLoading(true);
+    setUploadProgress(null);
+    setMessage(null);
+    try {
+      const empId = profile?.linkedEmployeeId || profile?.uid || 'unknown';
+      const existing = await getDocs(
+        query(collection(db, 'LoyalisPresenceCorrections'), where('employeeId', '==', empId)),
+      );
+      const visibleDates = new Set<string>();
+      const archivedDates = new Set<string>();
+      for (const snapshot of existing.docs) {
+        const data = snapshot.data();
+        const day = typeof data.date === 'string' ? data.date : '';
+        (data.hiddenFromEmployee === true ? archivedDates : visibleDates).add(day);
+      }
+
+      let proofUrl = '';
+      if (file) {
+        setUploadProgress(0);
+        proofUrl = await uploadProofFile(
+          '/api/uploads/presence-corrections',
+          await compressProofImage(file),
+          { employeeId: empId },
+        );
+        setUploadProgress(100);
+      }
+
+      const outcome = await submitLeaveRange(
+        range.dates,
+        (day) => visibleDates.has(day),
+        async (day) => {
+          const [year, month, dayOfMonth] = day.split('-');
+          const baseDocId = `${empId}_${year.slice(-2)}${month}${dayOfMonth}`;
+          const docId = archivedDates.has(day)
+            ? `${baseDocId}_${createFinancialRequestId('retry')}`
+            : baseDocId;
+          await setDoc(doc(db, 'LoyalisPresenceCorrections', docId), {
+            period: day.slice(0, 7),
+            date: day,
+            type: 'izin_resmi',
+            checkInTime: '07:30',
+            checkOutTime: '14:00',
+            reason: reason.trim(),
+            proofUrl,
+            employeeId: empId,
+            employeeName: profile?.displayName || 'Karyawan',
+            status: 'pending',
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        },
+        (done, total) =>
+          setMessage({ type: 'success', text: `Mengirim izin sakit ${Math.min(done + 1, total)} dari ${total}…` }),
+      );
+
+      const summary = describeLeaveRangeOutcome(outcome, 'izin sakit', (day) =>
+        formatPresenceDate(day, { day: 'numeric', month: 'short', year: 'numeric' }),
+      );
+      setMessage({ type: summary.failed ? 'error' : 'success', text: summary.text });
+      if (outcome.succeeded.length > 0) handleCancelEdit();
+      await fetchRequests(false);
+      void invalidateLoyalisPresenceCorrections();
+    } catch (err: unknown) {
+      console.error(err);
+      setMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Gagal mengajukan izin sakit. Silakan coba lagi.',
+      });
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!date || !parseDateOnly(date)) {
@@ -295,13 +425,16 @@ export function LoyalisPresenceCorrectionPanel({
       return;
     }
 
-    const today = new Date();
-    const currentMonthToken = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-    if (date.slice(0, 7) !== currentMonthToken) {
+    if (range.error) {
+      setMessage({ type: 'error', text: leaveRangeErrorMessage(range.error) });
+      return;
+    }
+
+    if (!range.dates.every((day) => allowedMonths.has(day.slice(0, 7)))) {
       setMessage({
         type: 'error',
         text: workflowMode === 'sick_leave'
-          ? 'Pengajuan izin sakit hanya diizinkan untuk periode bulan berjalan.'
+          ? 'Pengajuan izin sakit hanya diizinkan untuk periode payroll yang belum ditutup.'
           : 'Pengajuan koreksi hanya diizinkan untuk periode bulan berjalan.',
       });
       return;
@@ -313,6 +446,11 @@ export function LoyalisPresenceCorrectionPanel({
           ? 'Masukkan keterangan izin sakit Anda.'
           : 'Masukkan alasan koreksi presensi Anda.',
       });
+      return;
+    }
+
+    if (isRange) {
+      await submitRangeRequests();
       return;
     }
 
@@ -536,7 +674,7 @@ export function LoyalisPresenceCorrectionPanel({
                 </CardTitle>
                 <CardDescription className="text-xs text-slate-450 mt-1">
                   {workflowMode === 'sick_leave'
-                    ? 'Izin sakit diajukan untuk tanggal pada periode bulan berjalan.'
+                    ? 'Izin sakit dapat diajukan untuk tanggal pada periode payroll yang belum ditutup.'
                     : 'Koreksi hanya diizinkan untuk periode bulan berjalan.'}
                 </CardDescription>
               </div>
@@ -555,6 +693,20 @@ export function LoyalisPresenceCorrectionPanel({
                     className="rounded-xl border-slate-200 bg-white shadow-none h-11 text-sm font-semibold focus:ring-2 focus:ring-indigo-500/20"
                   />
                 </div>
+
+                {isSickLeave && !editingRequestId && (
+                  <LeaveDateRangeEndField
+                    id="sick-leave-end-date"
+                    value={endDate}
+                    onChange={setEndDate}
+                    min={date}
+                    max={maxDate}
+                    dayCount={range.dates.length}
+                    error={range.error}
+                    disabled={submitLoading}
+                    noun="izin sakit"
+                  />
+                )}
 
                 {workflowMode !== 'sick_leave' && <div className="space-y-1.5">
                   <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Tipe Koreksi</label>
@@ -726,7 +878,7 @@ export function LoyalisPresenceCorrectionPanel({
                         {uploadProgress !== null ? `Mengunggah (${uploadProgress}%)...` : 'Menyimpan...'}
                       </>
                     ) : (
-                      editingRequestId ? 'Simpan Perubahan' : 'Kirim Pengajuan'
+                      editingRequestId ? 'Simpan Perubahan' : isRange ? `Kirim ${range.dates.length} Hari Izin Sakit` : 'Kirim Pengajuan'
                     )}
                   </Button>
                 </div>

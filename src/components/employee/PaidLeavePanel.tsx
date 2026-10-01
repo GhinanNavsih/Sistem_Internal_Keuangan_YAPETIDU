@@ -11,6 +11,7 @@ import {
   Undo2,
 } from 'lucide-react';
 import { GantiLiburAttachmentLinks } from '@/components/GantiLiburAttachmentLinks';
+import { LeaveDateRangeEndField } from '@/components/employee/LeaveDateRangeEndField';
 import {
   SuratResmiUploader,
   suratResmiItemsFromAttachments,
@@ -40,6 +41,11 @@ import {
   annualPaidLeaveEntitlementDays,
   isDateOnly,
 } from '@/lib/payroll/annualPaidLeave';
+import {
+  describeLeaveRangeOutcome,
+  expandLeaveDateRange,
+  submitLeaveRange,
+} from '@/lib/leaveDateRange';
 
 interface PaidLeaveResponse {
   employee: {
@@ -102,6 +108,8 @@ export function PaidLeavePanel() {
   const currentYear = Number(today.slice(0, 4));
   const [year, setYear] = useState(currentYear);
   const [leaveDate, setLeaveDate] = useState(today);
+  // Optional last day of a multi-day leave; empty means just `leaveDate`.
+  const [endDate, setEndDate] = useState('');
   const [reason, setReason] = useState('');
   const [files, setFiles] = useState<SuratResmiItem[]>([]);
   // The request the reason and files were last filled in from ('' for none).
@@ -162,6 +170,36 @@ export function PaidLeavePanel() {
     data &&
       data.balance.reservedDays + data.balance.usedDays < selectedDateEntitlement,
   );
+
+  // A date that already holds a request is that request's edit view, so the
+  // end date only applies to a date with nothing active on it.
+  const rangeAvailable = !pendingRequest && !approvedRequest;
+  const rangeEnd = rangeAvailable ? endDate : '';
+  const range = expandLeaveDateRange(leaveDate, rangeEnd);
+  const isRange = range.dates.length > 1;
+  const isActiveOn = useCallback(
+    (date: string) =>
+      Boolean(
+        data?.requests.some(
+          (request) =>
+            request.leaveDate === date &&
+            (request.status === 'pending' || request.status === 'approved'),
+        ),
+      ),
+    [data],
+  );
+  const newRangeDates = range.dates.filter((date) => !isActiveOn(date));
+  // Each new day is checked the way the server will: the days already held
+  // plus the ones before it in this range must stay under that date's limit.
+  const rangeWithinBalance = Boolean(
+    data &&
+      newRangeDates.length > 0 &&
+      newRangeDates.every(
+        (date, index) =>
+          data.balance.reservedDays + data.balance.usedDays + index <
+          annualPaidLeaveEntitlementDays(data.employee.serviceDate, date),
+      ),
+  );
   // The surat resmi is optional, but a file still uploading or failed holds the
   // submission back.
   const proofReady = files.every((item) => item.status === 'done');
@@ -179,11 +217,54 @@ export function PaidLeavePanel() {
       proofReady &&
       (pendingRequest
         ? pendingRequestChanged
-        : !approvedRequest && eligibleForSelectedDate && underSelectedDateLimit),
+        : isRange
+          ? !range.error && rangeWithinBalance
+          : !range.error && !approvedRequest && eligibleForSelectedDate && underSelectedDateLimit),
   );
+
+  const submitOne = async (date: string) => {
+    const previous = data?.requests.find((request) => request.leaveDate === date);
+    await authenticatedJson('/api/employee/paid-leave', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'submit',
+        requestId: createFinancialRequestId('annual-paid-leave'),
+        leaveDate: date,
+        reason,
+        attachmentPaths: suratResmiPaths(files),
+        expectedRevision: previous?.revision || 0,
+      }),
+    });
+  };
+
+  const submitRange = async () => {
+    setWorking(true);
+    setError('');
+    setMessage('');
+    try {
+      const outcome = await submitLeaveRange(
+        range.dates,
+        isActiveOn,
+        submitOne,
+        (done, total) => setWorkingLabel(`Mengirim pengajuan cuti ${Math.min(done + 1, total)} dari ${total}…`),
+      );
+      const summary = describeLeaveRangeOutcome(outcome, 'cuti', formatDate);
+      if (summary.failed) setError(summary.text);
+      else setMessage(`${summary.text} Setiap hari dicadangkan sampai diputuskan.`);
+      if (outcome.succeeded.length > 0) setEndDate('');
+      await load();
+    } finally {
+      setWorking(false);
+      setWorkingLabel('');
+    }
+  };
 
   const submit = async () => {
     if (!canSubmit) return;
+    if (isRange) {
+      await submitRange();
+      return;
+    }
     const previous = data?.requests.find((request) => request.leaveDate === leaveDate);
     setWorking(true);
     setWorkingLabel(pendingRequest ? 'Menyimpan perubahan…' : 'Mengirim pengajuan cuti…');
@@ -275,6 +356,7 @@ export function PaidLeavePanel() {
               onValueChange={(value) => {
                 const nextYear = Number(value);
                 setYear(nextYear);
+                setEndDate('');
                 setLeaveDate((current) =>
                   current.startsWith(`${nextYear}-`) ? current : `${nextYear}-01-01`,
                 );
@@ -330,6 +412,33 @@ export function PaidLeavePanel() {
                 />
               </div>
 
+              {rangeAvailable && (
+                <LeaveDateRangeEndField
+                  id="paid-leave-end-date"
+                  value={endDate}
+                  onChange={(value) => {
+                    setEndDate(value);
+                    setError('');
+                  }}
+                  min={leaveDate}
+                  max={`${year}-12-31`}
+                  dayCount={newRangeDates.length}
+                  error={range.error}
+                  disabled={working}
+                  noun="cuti"
+                />
+              )}
+              {isRange && !range.error && newRangeDates.length < range.dates.length && (
+                <p className="text-sm text-slate-600">
+                  {range.dates.length - newRangeDates.length} tanggal sudah memiliki pengajuan cuti dan akan dilewati.
+                </p>
+              )}
+              {isRange && !range.error && newRangeDates.length > 0 && !rangeWithinBalance && (
+                <p className="text-sm font-semibold text-rose-700">
+                  Sisa hak cuti tidak cukup untuk {newRangeDates.length} hari. Pendekkan rentang tanggal.
+                </p>
+              )}
+
               <div className="space-y-2">
                 <Label htmlFor="paid-leave-reason">Alasan (opsional)</Label>
                 <textarea
@@ -368,7 +477,7 @@ export function PaidLeavePanel() {
                 ) : (
                   <Send className="h-5 w-5" />
                 )}
-                {pendingRequest ? 'Simpan Perubahan' : 'Kirim Pengajuan Cuti'}
+                {pendingRequest ? 'Simpan Perubahan' : isRange ? `Kirim ${newRangeDates.length} Hari Cuti` : 'Kirim Pengajuan Cuti'}
               </Button>
 
               {data.requests.length > 0 && (

@@ -80,16 +80,24 @@ export async function PUT(request: NextRequest) {
     if (!parseDateOnly(date)) {
       throw new HttpError(400, 'Tanggal pengajuan tidak valid.');
     }
-    const today = jakartaToday();
-    const period = date.slice(0, 7);
-    if (period !== today.slice(0, 7)) {
-      throw new HttpError(400, 'Pengajuan izin sakit dan koreksi hanya diizinkan untuk periode bulan berjalan.');
-    }
-
     if (!isPresenceCorrectionType(body.type)) {
       throw new HttpError(400, 'Tipe pengajuan tidak valid.');
     }
     const type = body.type;
+    const currentPeriod = jakartaToday().slice(0, 7);
+    const period = date.slice(0, 7);
+    // Izin sakit (izin_resmi) may be edited for any earlier month whose payroll
+    // period is still open; the transaction below refuses closed periods.
+    // Corrections stay on the current month, and nothing reaches into the future.
+    const periodAllowed = type === 'izin_resmi' ? period <= currentPeriod : period === currentPeriod;
+    if (!periodAllowed) {
+      throw new HttpError(
+        400,
+        type === 'izin_resmi'
+          ? 'Pengajuan izin sakit hanya diizinkan untuk periode payroll yang belum ditutup.'
+          : 'Pengajuan koreksi hanya diizinkan untuk periode bulan berjalan.',
+      );
+    }
     const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
     if (!reason) throw new HttpError(400, 'Keterangan wajib diisi.');
 

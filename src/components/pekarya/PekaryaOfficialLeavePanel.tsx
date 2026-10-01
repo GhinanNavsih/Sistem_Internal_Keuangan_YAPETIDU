@@ -35,6 +35,12 @@ import {
   clearPekaryaLeaveDraft,
 } from '@/lib/payroll/leaveDraft';
 import { EvidenceLightbox } from '@/components/EvidenceLightbox';
+import { LeaveDateRangeEndField } from '@/components/employee/LeaveDateRangeEndField';
+import {
+  describeLeaveRangeOutcome,
+  expandLeaveDateRange,
+  submitLeaveRange,
+} from '@/lib/leaveDateRange';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -79,6 +85,17 @@ function timeToMinutes(value: string): number {
   return hours * 60 + minutes;
 }
 
+function formatRangeDate(day: string): string {
+  const [year, month, dayOfMonth] = day.split('-').map(Number);
+  if (!year || !month || !dayOfMonth) return day;
+  return new Intl.DateTimeFormat('id-ID', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Asia/Jakarta',
+  }).format(new Date(Date.UTC(year, month - 1, dayOfMonth)));
+}
+
 export function PekaryaOfficialLeavePanel(props: {
   employeeId: string;
   openPeriods: OpenPeriod[];
@@ -101,6 +118,8 @@ export function PekaryaOfficialLeavePanel(props: {
     [openPeriods],
   );
   const [date, setDate] = useState('');
+  // Optional last day of a multi-day izin sakit; empty means just `date`.
+  const [endDate, setEndDate] = useState('');
   const [reportType, setReportType] = useState<PekaryaAttendanceReportType>('izin_resmi');
   const activeReportType = workflowMode === 'presence_correction'
     ? 'scan'
@@ -183,6 +202,22 @@ export function PekaryaOfficialLeavePanel(props: {
       effectiveDate <= selectedPeriodData.endDate,
   );
 
+  const dayIsOpen = useCallback(
+    (day: string) => {
+      const dayPeriod = availablePeriods.find(
+        (item) => item.period === pekaryaPayrollPeriodForDate(day),
+      );
+      return Boolean(dayPeriod && day >= dayPeriod.startDate && day <= dayPeriod.endDate);
+    },
+    [availablePeriods],
+  );
+  const range = useMemo(
+    () => expandLeaveDateRange(effectiveDate, workflowMode === 'sick_leave' ? endDate : ''),
+    [effectiveDate, endDate, workflowMode],
+  );
+  const isRange = range.dates.length > 1;
+  const rangeAllOpen = range.dates.every(dayIsOpen);
+
   const scanRangeInvalid =
     activeReportType === 'scan' &&
     CLOCK_TIME_PATTERN.test(scanIn) &&
@@ -245,7 +280,88 @@ export function PekaryaOfficialLeavePanel(props: {
     }
   };
 
+  // One request per date, all sharing the same reason and photo. Requests are
+  // read for every payroll period the range touches, so a date that was
+  // declined or withdrawn earlier is resent with its current revision.
+  const submitRange = async () => {
+    if (range.error || !rangeAllOpen || reason.trim().length < 8) {
+      setError(
+        range.error
+          ? 'Periksa kembali rentang tanggal.'
+          : 'Semua tanggal harus berada dalam periode payroll terbuka.',
+      );
+      return;
+    }
+    setWorking(true);
+    setError('');
+    setMessage('');
+    try {
+      const periods = Array.from(new Set(range.dates.map(pekaryaPayrollPeriodForDate)));
+      const responses = await Promise.all(
+        periods.map((item) =>
+          authenticatedJson<{ requests: PekaryaOfficialLeaveRequest[] }>(
+            `/api/attendance/pekarya/official-leave?period=${encodeURIComponent(item)}`,
+          ),
+        ),
+      );
+      const byDate = new Map(
+        responses.flatMap((response) => response.requests || []).map((item) => [item.date, item]),
+      );
+      const outcome = await submitLeaveRange(
+        range.dates,
+        (day) => {
+          const status = byDate.get(day)?.status;
+          return status === 'pending' || status === 'approved';
+        },
+        async (day) => {
+          await authenticatedJson('/api/attendance/pekarya/official-leave', {
+            method: 'POST',
+            body: JSON.stringify({
+              action: 'submit',
+              requestId: createFinancialRequestId('pekarya-attendance'),
+              period: pekaryaPayrollPeriodForDate(day),
+              date: day,
+              reportType: 'izin_resmi',
+              scanIn: null,
+              scanOut: null,
+              reason: reason.trim(),
+              evidenceUrl: evidence?.url || null,
+              evidenceAuditMetadata: evidence?.auditMetadata || null,
+              expectedRevision: byDate.get(day)?.revision || 0,
+            }),
+          });
+        },
+        (done, total) => setMessage(`Mengirim izin sakit ${Math.min(done + 1, total)} dari ${total}…`),
+      );
+      const summary = describeLeaveRangeOutcome(outcome, 'izin sakit', formatRangeDate);
+      if (summary.failed) {
+        setMessage('');
+        setError(summary.text);
+      } else {
+        setMessage(`${summary.text} Menunggu keputusan Kepala SatKer.`);
+      }
+      if (outcome.succeeded.length > 0) {
+        if (autoSaveDraft) clearPekaryaLeaveDraft(employeeId);
+        setHasRestoredDraft(false);
+        setReason('');
+        setEvidence(null);
+        setSelectedExifImage(null);
+        setEndDate('');
+      }
+      await load();
+    } catch (cause) {
+      setMessage('');
+      setError(cause instanceof Error ? cause.message : 'Pengajuan izin sakit gagal dikirim.');
+    } finally {
+      setWorking(false);
+    }
+  };
+
   const submit = async () => {
+    if (isRange) {
+      await submitRange();
+      return;
+    }
     if (!period || !effectiveDate || !dateIsOpen || reason.trim().length < 8) {
       if (!dateIsOpen) {
         setError('Tanggal presensi harus berada dalam periode payroll terbuka.');
@@ -397,6 +513,29 @@ export function PekaryaOfficialLeavePanel(props: {
               </p>
             )}
           </div>
+          {workflowMode === 'sick_leave' && (
+            <>
+              <LeaveDateRangeEndField
+                id="official-leave-end-date"
+                value={endDate}
+                onChange={(value) => {
+                  setEndDate(value);
+                  setError('');
+                }}
+                min={effectiveDate}
+                max={availablePeriods[availablePeriods.length - 1]?.endDate}
+                dayCount={range.dates.length}
+                error={range.error}
+                disabled={working}
+                noun="izin sakit"
+              />
+              {isRange && !range.error && !rangeAllOpen && (
+                <p className="text-sm font-semibold text-rose-700">
+                  Ada tanggal dalam rentang ini yang tidak termasuk periode payroll terbuka.
+                </p>
+              )}
+            </>
+          )}
           {workflowMode === 'all' && <div className="space-y-2">
             <Label htmlFor="official-leave-report-type">Jenis pengajuan</Label>
             <Select
@@ -565,6 +704,7 @@ export function PekaryaOfficialLeavePanel(props: {
               evidenceUploading ||
               !effectiveDate ||
               !dateIsOpen ||
+              (isRange && (Boolean(range.error) || !rangeAllOpen)) ||
               reason.trim().length < 8 ||
               (activeReportType === 'scan' &&
                 (!CLOCK_TIME_PATTERN.test(scanIn) ||
@@ -574,7 +714,9 @@ export function PekaryaOfficialLeavePanel(props: {
             onClick={() => void submit()}
           >
             {working ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
-            Kirim Pengajuan ke Kepala SatKer
+            {isRange
+              ? `Kirim ${range.dates.length} Hari Izin Sakit ke Kepala SatKer`
+              : 'Kirim Pengajuan ke Kepala SatKer'}
           </Button>
         </>
       )}
