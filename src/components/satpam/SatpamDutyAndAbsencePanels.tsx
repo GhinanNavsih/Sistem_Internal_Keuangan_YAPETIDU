@@ -37,7 +37,10 @@ import {
   type SatpamAttendanceReportType,
 } from '@/lib/payroll/satpamAttendance';
 import { pekaryaPayrollPeriodForDate } from '@/lib/payroll/pekaryaSpj';
-import { LeaveDateRangeEndField } from '@/components/employee/LeaveDateRangeEndField';
+import {
+  LeaveDateRangeEndField,
+  LeaveRangeDisclosure,
+} from '@/components/employee/LeaveDateRangeEndField';
 import {
   describeLeaveRangeOutcome,
   expandLeaveDateRange,
@@ -1753,31 +1756,38 @@ export function SatpamAbsencePanel(props: {
               </div>
             )}
             {!isUnassignedSatpam && workflowMode === 'sick_leave' && (
-              <div className="space-y-2">
-                <Label htmlFor="absence-end-duty-date">Sampai tanggal dinas (opsional)</Label>
-                <LargeSelect
-                  id="absence-end-duty-date"
-                  value={rangeEnd || NO_END_DUTY}
-                  onValueChange={(value) => {
-                    setEndDate(value === NO_END_DUTY ? '' : value);
-                    setError('');
-                  }}
-                  options={[
-                    { value: NO_END_DUTY, label: 'Hanya satu hari' },
-                    ...scheduledDuties
-                      .filter((duty) => duty.dutyDate > dutyDate)
-                      .map((duty) => ({
-                        value: duty.dutyDate,
-                        label: `${duty.dutyDate} · ${duty.shiftName} · ${formatSatpamPostLabel(duty.postId)}`,
-                      })),
-                  ]}
-                />
-                <p className="text-xs text-slate-500">
-                  {isRange
-                    ? `${rangeDates.length} kewajiban dinas akan diajukan sekaligus, satu pengajuan untuk setiap tanggal.`
-                    : 'Pilih jika sakit lebih dari satu hari dinas.'}
-                </p>
-              </div>
+              <LeaveRangeDisclosure
+                noun="izin sakit"
+                initiallyOpen={Boolean(rangeEnd)}
+                disabled={working}
+                onClose={() => setEndDate('')}
+              >
+                <div className="space-y-2">
+                  <Label htmlFor="absence-end-duty-date">Sampai tanggal dinas</Label>
+                  <LargeSelect
+                    id="absence-end-duty-date"
+                    value={rangeEnd || NO_END_DUTY}
+                    onValueChange={(value) => {
+                      setEndDate(value === NO_END_DUTY ? '' : value);
+                      setError('');
+                    }}
+                    options={[
+                      { value: NO_END_DUTY, label: 'Pilih tanggal dinas terakhir' },
+                      ...scheduledDuties
+                        .filter((duty) => duty.dutyDate > dutyDate)
+                        .map((duty) => ({
+                          value: duty.dutyDate,
+                          label: `${duty.dutyDate} · ${duty.shiftName} · ${formatSatpamPostLabel(duty.postId)}`,
+                        })),
+                    ]}
+                  />
+                  <p className="text-xs text-slate-500">
+                    {isRange
+                      ? `${rangeDates.length} kewajiban dinas akan diajukan sekaligus, satu pengajuan untuk setiap tanggal.`
+                      : 'Pilih tanggal dinas terakhir yang tidak dapat Anda hadiri.'}
+                  </p>
+                </div>
+              </LeaveRangeDisclosure>
             )}
             {!isUnassignedSatpam && workflowMode === 'all' && (
               <div className="space-y-2">
