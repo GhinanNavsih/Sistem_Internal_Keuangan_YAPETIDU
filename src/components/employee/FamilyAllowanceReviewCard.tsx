@@ -168,14 +168,14 @@ export default function FamilyAllowanceReviewCard({ onApproved }: Props) {
                     <p className="mt-1 font-semibold text-slate-900">{item.level === 'S1' || item.level === 'S2' ? `Kuliah ${item.level}` : item.level}</p>
                   </div>
                   <div className="rounded-xl bg-slate-50 px-4 py-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Tanggal Pertama Masuk</p>
-                    <p className="mt-1 font-semibold tabular-nums text-slate-900">{formatDate(item.enrolledAt)}</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{item.level === 'SD' ? 'Tanggal Lahir' : 'Tanggal Pertama Masuk'}</p>
+                    <p className="mt-1 font-semibold tabular-nums text-slate-900">{formatDate(item.birthDate || item.enrolledAt)}</p>
                   </div>
                 </div>
                 <a href={item.proofUrl} target="_blank" rel="noopener noreferrer"
                   className="group flex items-center gap-3 rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 text-indigo-700 transition-colors hover:border-indigo-200 hover:bg-indigo-50">
                   <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white text-indigo-600"><FileText className="size-4" /></span>
-                  <span className="min-w-0 flex-1"><span className="block text-xs font-semibold">Lihat bukti sekolah</span><span className="block truncate text-sm" title={item.proofName || 'berkas'}>{item.proofName || 'berkas'}</span></span>
+                  <span className="min-w-0 flex-1"><span className="block text-xs font-semibold">{item.level === 'SD' ? 'Lihat bukti tanggal lahir' : 'Lihat bukti sekolah'}</span><span className="block truncate text-sm" title={item.proofName || 'berkas'}>{item.proofName || 'berkas'}</span></span>
                   <ExternalLink className="size-4 shrink-0" />
                 </a>
                 <div className="space-y-4 border-t border-slate-100 pt-4">
@@ -187,7 +187,7 @@ export default function FamilyAllowanceReviewCard({ onApproved }: Props) {
                         { value: 'new', label: 'Anak baru (tambahkan satu tanggungan)' },
                         ...children.map(child => ({
                           value: child.id,
-                          label: `Anak ${child.number} · ${child.level}${child.enrolledAt ? ` · masuk ${formatDate(child.enrolledAt)}` : ' · tanggal belum tercatat'}${!child.requestable ? ' · tidak dapat diajukan' : ''}`,
+                          label: `Anak ${child.number} · ${child.level}${child.birthDate ? ` · lahir ${formatDate(child.birthDate)}` : child.enrolledAt ? ` · masuk ${formatDate(child.enrolledAt)}` : ' · tanggal belum tercatat'}${!child.requestable ? ' · tidak dapat diajukan' : ''}`,
                           disabled: !child.requestable,
                         })),
                       ]} />

@@ -10,11 +10,11 @@ import {
   dependentChildren,
   dependentHistory,
   eligibleFamilyMetrics,
-  graduationDate,
   isDateOnly,
   isDependentEligible,
   nextDependentLevel,
   pendingGraduatedChildren,
+  stageGraduationDate,
   type DependentEnrollment,
   type DependentLevel,
   type FamilyAllowanceMetrics,
@@ -71,11 +71,24 @@ export default function FamilyAllowanceFields({ value, onChange, focusChildId }:
     if (history.length >= 100) return;
     const id = crypto.randomUUID();
     setNewlyAddedIds(previous => new Set(previous).add(id));
-    saveHistory([...history, { id, child_id: id, level: 'SD', enrolled_at: '' }]);
+    saveHistory([...history, { id, child_id: id, level: 'SD', enrolled_at: '', birth_date: '' }]);
   };
 
   const updateDependent = (id: string, changes: Partial<DependentEnrollment>) => {
     saveHistory(history.map(item => item.id === id ? { ...item, ...changes } : item));
+  };
+
+  // SD rows are entered by birth date, every other level by enrolment date, so
+  // the date means something different once a row crosses that line and is
+  // cleared for re-entry. Changing between the other levels keeps it.
+  const changeLevel = (id: string, level: DependentLevel) => {
+    saveHistory(history.map(item => {
+      if (item.id !== id || item.level === level) return item;
+      const { birth_date: _birthDate, ...rest } = item;
+      void _birthDate;
+      if (level === 'SD') return { ...rest, level, enrolled_at: '', birth_date: '' };
+      return item.level === 'SD' ? { ...rest, level, enrolled_at: '' } : { ...rest, level };
+    }));
   };
 
   const removeDependent = (id: string) => {
@@ -129,7 +142,7 @@ export default function FamilyAllowanceFields({ value, onChange, focusChildId }:
             <TableRow>
               <TableHead className="whitespace-normal break-words">Tanggungan</TableHead>
               <TableHead className="whitespace-normal break-words">Jenjang Sekolah</TableHead>
-              <TableHead className="whitespace-normal break-words">Tanggal Pertama Masuk</TableHead>
+              <TableHead className="whitespace-normal break-words">Tanggal Masuk / Lahir (SD)</TableHead>
               <TableHead className="whitespace-normal break-words">Tanggal Lulus</TableHead>
               <TableHead className="whitespace-normal break-words">Status</TableHead>
               <TableHead className="whitespace-normal break-words">Aksi</TableHead>
@@ -160,9 +173,11 @@ export default function FamilyAllowanceFields({ value, onChange, focusChildId }:
               const item = child.latest;
               const active = isDependentEligible(item, today);
               const isNew = newlyAddedIds.has(item.id);
+              const birthMode = item.level === 'SD' && item.birth_date !== undefined;
+              const dateValue = birthMode ? item.birth_date || '' : item.enrolled_at || '';
               const needsDate = isNew && !isDateOnly(item.enrolled_at);
               const end = isDateOnly(item.enrolled_at) && item.level !== 'PT'
-                ? graduationDate(item.enrolled_at, item.level) : '';
+                ? stageGraduationDate(item) : '';
               const pending = pendingChildIds.has(child.id);
               const graduated = !!end && end <= today;
               const correcting = correctionIds.has(item.id);
@@ -179,19 +194,30 @@ export default function FamilyAllowanceFields({ value, onChange, focusChildId }:
                     <OptionSelect aria-label={`Jenjang sekolah Anak ${index + 1}`} size="sm" placeholder="Pilih jenjang"
                       value={item.level === 'PT' ? '' : item.level}
                       disabled={lockGraduatedStage}
-                      onValueChange={value => updateDependent(item.id, { level: value as DependentLevel })}
+                      onValueChange={value => changeLevel(item.id, value as DependentLevel)}
                       options={LEVELS.map(option => ({ value: option.level, label: option.label }))} />
                   </TableCell>
                   <TableCell className="whitespace-normal">
-                    <Input id={`family-date-${item.id}`} aria-label={`Tanggal pertama masuk Anak ${index + 1}`} type="date" max={today} value={item.enrolled_at || ''}
+                    <Input id={`family-date-${item.id}`}
+                      aria-label={birthMode ? `Tanggal lahir Anak ${index + 1}` : `Tanggal pertama masuk Anak ${index + 1}`}
+                      type="date" max={today} value={dateValue}
                       disabled={lockGraduatedStage}
-                      onChange={event => updateDependent(item.id, { enrolled_at: event.target.value })}
+                      onChange={event => updateDependent(item.id, birthMode
+                        ? { birth_date: event.target.value, enrolled_at: event.target.value }
+                        : { enrolled_at: event.target.value })}
                       className="h-9 w-full min-w-0 rounded-lg border-slate-200 px-1.5 text-xs sm:px-2 sm:text-sm" />
+                    {birthMode && <p className="mt-1 text-[11px] text-slate-500">Tanggal lahir · berhenti di usia 13 tahun</p>}
+                    {item.level === 'SD' && !birthMode && !lockGraduatedStage && (
+                      <button type="button" className="mt-1 text-[11px] font-medium text-indigo-700 underline"
+                        onClick={() => updateDependent(item.id, { birth_date: '', enrolled_at: '' })}>
+                        Gunakan tanggal lahir
+                      </button>
+                    )}
                   </TableCell>
                   <TableCell className="whitespace-normal">{end ? formatDateForDisplay(end) : item.level === 'PT' ? 'Pilih jenjang' : '—'}</TableCell>
                   <TableCell className="whitespace-normal">
                     <span className={`text-xs ${needsDate || pending ? 'text-amber-700' : active ? 'text-emerald-700' : 'text-slate-500'}`}>
-                      {needsDate ? 'Isi tanggal masuk' : pending ? 'Lulus · perlu ditinjau' :
+                      {needsDate ? (birthMode ? 'Isi tanggal lahir' : 'Isi tanggal masuk') : pending ? 'Lulus · perlu ditinjau' :
                         item.ended_at ? 'Dihentikan' : graduated && item.no_further_study ? 'Lulus · tidak lanjut' :
                         graduated ? 'Lulus' : active ? 'Aktif' : 'Tidak aktif'}
                     </span>
@@ -251,9 +277,9 @@ export default function FamilyAllowanceFields({ value, onChange, focusChildId }:
                         <ul className="mt-2 space-y-1 pl-4">
                           {child.stages.map(stage => (
                             <li key={stage.id}>
-                              {stage.level}: masuk {formatDateForDisplay(stage.enrolled_at)}
+                              {stage.level}: {stage.birth_date ? 'lahir' : 'masuk'} {formatDateForDisplay(stage.birth_date || stage.enrolled_at)}
                               {stage.level !== 'PT' && isDateOnly(stage.enrolled_at)
-                                ? ` · lulus ${formatDateForDisplay(graduationDate(stage.enrolled_at, stage.level))}` : ''}
+                                ? ` · lulus ${formatDateForDisplay(stageGraduationDate(stage))}` : ''}
                             </li>
                           ))}
                         </ul>

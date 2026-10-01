@@ -1,5 +1,5 @@
 import { adminDb } from '@/lib/firebase-admin';
-import { dependentChildren, graduationDate, isDateOnly, isDependentEligible, nextDependentLevel, type FamilyAllowanceMetrics } from '@/lib/payroll/familyAllowance';
+import { dependentChildren, isDateOnly, isDependentEligible, nextDependentLevel, stageGraduationDate, type FamilyAllowanceMetrics } from '@/lib/payroll/familyAllowance';
 import { type FamilyAllowanceRequest } from '@/lib/payroll/familyAllowanceRequests';
 import { assertRequestId } from '@/lib/payroll/domain';
 import { HttpError, requireRole, type AuthenticatedProfile } from './auth';
@@ -41,6 +41,7 @@ export function serializeFamilyRequest(id: string, data: FirebaseFirestore.Docum
     requestedChildId: String(data.requestedChildId || 'new'),
     level: data.level,
     enrolledAt: String(data.enrolledAt || ''),
+    ...(data.birthDate ? { birthDate: String(data.birthDate) } : {}),
     proofName: String(data.proofName || ''),
     proofPath: String(data.proofPath || ''),
     proofUrl: String(data.proofUrl || ''),
@@ -60,13 +61,14 @@ export function familyRequestChildOptions(metrics: FamilyAllowanceMetrics | null
   return dependentChildren(metrics).map((child, index) => {
     const latest = child.latest;
     const graduation = latest.level !== 'PT' && isDateOnly(latest.enrolled_at)
-      ? graduationDate(latest.enrolled_at, latest.level)
+      ? stageGraduationDate(latest)
       : '';
     return {
       id: child.id,
       number: index + 1,
       level: latest.level,
       enrolledAt: latest.enrolled_at || '',
+      birthDate: latest.birth_date || '',
       graduatedAt: graduation,
       eligibleToday: isDependentEligible(latest, today),
       requestable: !latest.ended_at && (!isDateOnly(latest.enrolled_at) ||

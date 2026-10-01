@@ -6,8 +6,11 @@ import {
   isDateOnly,
   isDependentEligible,
   nextDependentLevel,
+  sdGraduationDateFromBirth,
+  stageGraduationDate,
   validateDependentHistory,
   withCurrentFamilyCounts,
+  type DependentEnrollment,
   type DependentLevel,
   type FamilyAllowanceMetrics,
 } from './familyAllowance';
@@ -24,7 +27,10 @@ export interface FamilyAllowanceRequest {
   employeeName: string;
   requestedChildId: string;
   level: DependentLevel;
+  /** For SD this mirrors `birthDate`, the date the allowance starts. */
   enrolledAt: string;
+  /** SD only: the allowance runs from birth to the 13th birthday. */
+  birthDate?: string;
   proofName: string;
   proofPath: string;
   proofUrl: string;
@@ -44,6 +50,7 @@ export interface FamilyRequestChildOption {
   number: number;
   level: string;
   enrolledAt: string;
+  birthDate: string;
   graduatedAt: string;
   eligibleToday: boolean;
   requestable: boolean;
@@ -53,12 +60,32 @@ export interface EnrollmentProposal {
   targetChildId: string;
   level: DependentLevel;
   enrolledAt: string;
+  /** Required for SD; `enrolledAt` must then equal it. */
+  birthDate?: string;
   stageId: string;
 }
 
-export function assertActiveEnrollment(level: unknown, enrolledAt: unknown, today: string): asserts level is DependentLevel {
+export function assertActiveEnrollment(
+  level: unknown,
+  enrolledAt: unknown,
+  today: string,
+  birthDate?: unknown,
+): asserts level is DependentLevel {
   if (!['SD', 'SLTP', 'SLTA', 'S1', 'S2'].includes(String(level))) {
     throw new Error('Jenjang sekolah tidak valid.');
+  }
+  if (level === 'SD') {
+    // SD is tracked by birth date: the allowance runs until the 13th birthday.
+    if (!isDateOnly(birthDate) || birthDate > today) {
+      throw new Error('Tanggal lahir anak harus valid dan tidak di masa depan.');
+    }
+    if (enrolledAt !== birthDate) {
+      throw new Error('Tanggal mulai tunjangan anak SD harus sama dengan tanggal lahirnya.');
+    }
+    if (sdGraduationDateFromBirth(birthDate) <= today) {
+      throw new Error('Anak sudah berusia 13 tahun. Ajukan jenjang yang masih aktif.');
+    }
+    return;
   }
   if (!isDateOnly(enrolledAt) || enrolledAt > today) {
     throw new Error('Tanggal pertama masuk harus valid dan tidak di masa depan.');
@@ -68,13 +95,23 @@ export function assertActiveEnrollment(level: unknown, enrolledAt: unknown, toda
   }
 }
 
+function proposedStage(proposal: EnrollmentProposal, id: string, childId: string): DependentEnrollment {
+  return {
+    id,
+    child_id: childId,
+    level: proposal.level,
+    enrolled_at: proposal.enrolledAt,
+    ...(proposal.level === 'SD' ? { birth_date: proposal.birthDate } : {}),
+  };
+}
+
 /** Applies an approved request to the latest profile snapshot, never to client-supplied counts. */
 export function applyRequestedEnrollment(
   metrics: FamilyAllowanceMetrics | null | undefined,
   proposal: EnrollmentProposal,
   today: string,
 ): { metrics: FamilyAllowanceMetrics; childId: string } {
-  assertActiveEnrollment(proposal.level, proposal.enrolledAt, today);
+  assertActiveEnrollment(proposal.level, proposal.enrolledAt, today, proposal.birthDate);
   const spouseCount = Number(metrics?.spouse_count ?? 0);
   if (!Number.isSafeInteger(spouseCount) || spouseCount < 0 || spouseCount > 1) {
     throw new Error('Data pasangan pada profil tidak valid. Admin perlu memeriksanya.');
@@ -90,7 +127,7 @@ export function applyRequestedEnrollment(
   if (proposal.targetChildId === NEW_CHILD_TARGET) {
     if (history.length >= 100) throw new Error('Jumlah riwayat tanggungan sudah mencapai batas.');
     childId = proposal.stageId;
-    nextHistory.push({ id: childId, child_id: childId, level: proposal.level, enrolled_at: proposal.enrolledAt });
+    nextHistory.push(proposedStage(proposal, childId, childId));
   } else {
     const child = children.find(item => item.id === proposal.targetChildId);
     if (!child) throw new Error('Anak yang dipilih tidak ditemukan. Muat ulang data karyawan.');
@@ -104,17 +141,12 @@ export function applyRequestedEnrollment(
       }
       if (latest.level === proposal.level) {
         nextHistory = nextHistory.map(stage => stage.id === latest.id
-          ? { ...stage, enrolled_at: proposal.enrolledAt }
+          ? { ...stage, enrolled_at: proposal.enrolledAt, ...(proposal.level === 'SD' ? { birth_date: proposal.birthDate } : {}) }
           : stage);
       } else if ((latest.level === 'PT' && (proposal.level === 'S1' || proposal.level === 'S2')) ||
         nextDependentLevel(latest.level) === proposal.level) {
         if (history.length >= 100) throw new Error('Jumlah riwayat tanggungan sudah mencapai batas.');
-        nextHistory.push({
-          id: proposal.stageId,
-          child_id: child.id,
-          level: proposal.level,
-          enrolled_at: proposal.enrolledAt,
-        });
+        nextHistory.push(proposedStage(proposal, proposal.stageId, child.id));
       } else {
         throw new Error('Jenjang baru harus sama atau satu tingkat setelah jenjang anak yang tercatat.');
       }
@@ -122,7 +154,7 @@ export function applyRequestedEnrollment(
       if (isDependentEligible(latest, today)) {
         throw new Error('Anak ini sudah memiliki jenjang aktif dalam T. Keluarga.');
       }
-      const priorGraduation = latest.level === 'PT' ? '' : graduationDate(latest.enrolled_at, latest.level);
+      const priorGraduation = stageGraduationDate(latest);
       if (!priorGraduation || nextDependentLevel(latest.level) !== proposal.level ||
         proposal.enrolledAt < priorGraduation) {
         throw new Error('Jenjang berikutnya harus sesuai urutan sekolah dan dimulai setelah jenjang sebelumnya lulus.');
@@ -131,12 +163,7 @@ export function applyRequestedEnrollment(
       nextHistory = nextHistory.map(stage => stage.id === latest.id
         ? { ...stage, no_further_study: false }
         : stage);
-      nextHistory.push({
-        id: proposal.stageId,
-        child_id: child.id,
-        level: proposal.level,
-        enrolled_at: proposal.enrolledAt,
-      });
+      nextHistory.push(proposedStage(proposal, proposal.stageId, child.id));
     }
   }
 

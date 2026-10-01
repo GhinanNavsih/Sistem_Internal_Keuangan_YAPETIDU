@@ -368,6 +368,7 @@ export function parseLoyalisConversionInput(value: unknown): LoyalisConversionIn
             id: text(entry.id),
             level: text(entry.level) as DependentEnrollment['level'],
             enrolled_at: text(entry.enrolled_at),
+            ...(entry.birth_date ? { birth_date: text(entry.birth_date) } : {}),
             ...(entry.ended_at ? { ended_at: text(entry.ended_at) } : {}),
           };
         })

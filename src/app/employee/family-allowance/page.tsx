@@ -12,7 +12,7 @@ import FamilyProofUploadCard from '@/components/employee/FamilyProofUploadCard';
 import { useAuth } from '@/lib/AuthContext';
 import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import { auth } from '@/lib/firebase';
-import { graduationDate, nextDependentLevel, todayInJakarta, type DependentLevel } from '@/lib/payroll/familyAllowance';
+import { graduationDate, nextDependentLevel, sdGraduationDateFromBirth, todayInJakarta, type DependentLevel } from '@/lib/payroll/familyAllowance';
 import { createFinancialRequestId, authenticatedJson } from '@/lib/payroll/client';
 import { FAMILY_PROOF_MAX_BYTES, type FamilyAllowanceRequest, type FamilyRequestChildOption } from '@/lib/payroll/familyAllowanceRequests';
 import { gantiLiburAttachmentContentType } from '@/lib/payroll/gantiLiburAttachments';
@@ -106,13 +106,19 @@ export default function FamilyAllowanceRequestPage() {
           option.value === nextDependentLevel(selectedChild.level as DependentLevel) ||
           (selectedChild.level === 'PT' && (option.value === 'S1' || option.value === 'S2')))
       : LEVELS.filter(option => option.value === nextLevel);
+  // SD is tracked by birth date (the allowance ends at the 13th birthday); the
+  // other levels by the date the child first enrolled.
+  const isBirthDate = level === 'SD';
+  const dateLabel = isBirthDate ? 'Tanggal Lahir Anak' : 'Tanggal Pertama Masuk';
   const projectedGraduation = enrolledAt ? (() => {
-    try { return graduationDate(enrolledAt, level); } catch { return ''; }
+    try { return isBirthDate ? sdGraduationDateFromBirth(enrolledAt) : graduationDate(enrolledAt, level); } catch { return ''; }
   })() : '';
   // Typing a date bypasses the field's min/max, so say what is wrong right away.
   const enrolledMessage = enrolledAt && enrolledAt > today
-    ? 'Tanggal pertama masuk tidak boleh setelah hari ini.'
-    : enrolledAt && selectedChild?.graduatedAt && enrolledAt < selectedChild.graduatedAt
+    ? `${dateLabel} tidak boleh setelah hari ini.`
+    : isBirthDate && enrolledAt && projectedGraduation && projectedGraduation <= today
+      ? 'Anak sudah berusia 13 tahun, jadi tidak lagi masuk tunjangan SD. Ajukan jenjang berikutnya.'
+    : !isBirthDate && enrolledAt && selectedChild?.graduatedAt && enrolledAt < selectedChild.graduatedAt
       ? `Tanggal harus setelah jenjang sebelumnya selesai (${formatDate(selectedChild.graduatedAt)}).`
       : '';
   const pendingChildIds = new Set(data?.requests.filter(item => item.status === 'pending').map(item => item.requestedChildId) || []);
@@ -134,7 +140,7 @@ export default function FamilyAllowanceRequestPage() {
     setError('');
     setSuccess('');
     if (!data || !proof) {
-      setError('Bukti pertama masuk sekolah wajib diunggah.');
+      setError(isBirthDate ? 'Bukti tanggal lahir anak wajib diunggah.' : 'Bukti pertama masuk sekolah wajib diunggah.');
       return;
     }
     if (proof.size < 1 || proof.size > FAMILY_PROOF_MAX_BYTES ||
@@ -143,8 +149,10 @@ export default function FamilyAllowanceRequestPage() {
       return;
     }
     if (!enrolledAt || enrolledAt > today || !projectedGraduation || projectedGraduation <= today ||
-      (selectedChild?.graduatedAt && enrolledAt < selectedChild.graduatedAt)) {
-      setError('Isi tanggal pertama masuk yang valid untuk jenjang yang masih aktif.');
+      (!isBirthDate && selectedChild?.graduatedAt && enrolledAt < selectedChild.graduatedAt)) {
+      setError(isBirthDate
+        ? 'Isi tanggal lahir anak yang valid. Anak harus belum berusia 13 tahun.'
+        : 'Isi tanggal pertama masuk yang valid untuk jenjang yang masih aktif.');
       return;
     }
     const form = new FormData();
@@ -152,7 +160,7 @@ export default function FamilyAllowanceRequestPage() {
     form.set('requestId', submissionIdRef.current);
     form.set('targetChildId', targetChildId);
     form.set('level', level);
-    form.set('enrolledAt', enrolledAt);
+    form.set(isBirthDate ? 'birthDate' : 'enrolledAt', enrolledAt);
     form.set('file', proof);
     setBusy(true);
     try {
@@ -230,10 +238,14 @@ export default function FamilyAllowanceRequestPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2"><label htmlFor="family-level" className="text-sm font-semibold">Jenjang Sekolah</label>
               <OptionSelect id="family-level" value={level}
-                onValueChange={value => { setLevel(value as DependentLevel); submissionIdRef.current = null; }}
+                onValueChange={value => {
+                  if ((value === 'SD') !== isBirthDate) setEnrolledAt('');
+                  setLevel(value as DependentLevel);
+                  submissionIdRef.current = null;
+                }}
                 options={selectableLevels} /></div>
-            <div className="space-y-2"><label htmlFor="family-enrolled" className="text-sm font-semibold">Tanggal Pertama Masuk</label>
-              <Input id="family-enrolled" type="date" required max={today} min={selectedChild?.graduatedAt || undefined}
+            <div className="space-y-2"><label htmlFor="family-enrolled" className="text-sm font-semibold">{dateLabel}</label>
+              <Input id="family-enrolled" type="date" required max={today} min={isBirthDate ? undefined : selectedChild?.graduatedAt || undefined}
                 value={enrolledAt} aria-invalid={enrolledMessage ? true : undefined}
                 aria-describedby={enrolledMessage ? 'family-enrolled-message' : undefined}
                 onChange={event => { setEnrolledAt(event.target.value); submissionIdRef.current = null; }}
@@ -241,8 +253,9 @@ export default function FamilyAllowanceRequestPage() {
               {enrolledMessage && <p id="family-enrolled-message" role="alert" className="text-xs text-rose-700">{enrolledMessage}</p>}
             </div>
           </div>
-          {projectedGraduation && <p className="flex items-center gap-2 text-xs text-slate-600"><CalendarDays className="size-4" /> Perkiraan akhir jenjang: {formatDate(projectedGraduation)}</p>}
-          <div className="space-y-3"><span className="block text-sm font-semibold">Bukti pertama masuk sekolah</span>
+          {isBirthDate && <p className="text-xs text-slate-600">Untuk anak SD atau yang belum sekolah, isi tanggal lahir. Tunjangan berhenti saat anak berusia 13 tahun.</p>}
+          {projectedGraduation && <p className="flex items-center gap-2 text-xs text-slate-600"><CalendarDays className="size-4" /> {isBirthDate ? 'Tunjangan SD berhenti pada usia 13 tahun' : 'Perkiraan akhir jenjang'}: {formatDate(projectedGraduation)}</p>}
+          <div className="space-y-3"><span className="block text-sm font-semibold">{isBirthDate ? 'Bukti tanggal lahir (akta kelahiran atau Kartu Keluarga)' : 'Bukti pertama masuk sekolah'}</span>
             <FamilyProofUploadCard file={proof} onFileChange={file => { submissionIdRef.current = null; setProof(file); }} /></div>
           <Button type="submit" disabled={busy || !data} className="h-11 w-full rounded-xl bg-indigo-600 text-white hover:bg-indigo-700">
             {busy ? <><Loader2 className="mr-2 size-4 animate-spin" /> Mengirim...</> : 'Kirim Pengajuan'}
@@ -252,7 +265,7 @@ export default function FamilyAllowanceRequestPage() {
       <section className="space-y-3"><h3 className="text-lg font-bold">Riwayat Pengajuan</h3>
         {!loading && (data?.requests.length || 0) === 0 && <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-500">Belum ada pengajuan.</p>}
         {data?.requests.map(item => <Card key={item.id} className="rounded-xl border-slate-200 bg-white"><CardContent className="space-y-2 p-4">
-          <div className="flex flex-wrap items-start justify-between gap-2"><p className="font-semibold">{LEVELS.find(option => option.value === item.level)?.label || item.level} · masuk {formatDate(item.enrolledAt)}</p>
+          <div className="flex flex-wrap items-start justify-between gap-2"><p className="font-semibold">{LEVELS.find(option => option.value === item.level)?.label || item.level} · {item.birthDate ? `lahir ${formatDate(item.birthDate)}` : `masuk ${formatDate(item.enrolledAt)}`}</p>
             <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${item.status === 'approved' ? 'bg-emerald-100 text-emerald-800' : item.status === 'rejected' ? 'bg-rose-100 text-rose-800' : item.status === 'withdrawn' ? 'bg-slate-100 text-slate-600' : 'bg-amber-100 text-amber-800'}`}>
               {item.status === 'approved' ? 'Disetujui' : item.status === 'rejected' ? 'Ditolak' : item.status === 'withdrawn' ? 'Ditarik' : 'Menunggu admin'}
             </span></div>

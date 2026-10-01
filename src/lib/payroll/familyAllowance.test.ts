@@ -7,6 +7,8 @@ import {
   familyAllowancePeriodDate,
   graduationDate,
   pendingGraduatedChildren,
+  sdGraduationDateFromBirth,
+  stageGraduationDate,
   synchronizeFamilyAllowanceEarnings,
   validateDependentHistory,
 } from './familyAllowance';
@@ -167,4 +169,65 @@ test('linked stages must follow the next school level and start after graduation
   assert.throws(() => validateDependentHistory({ dependents: [
     { ...sd, no_further_study: true },
   ] }, '2026-06-30'), /setelah anak lulus/);
+});
+
+const sdByBirth = (birth: string) => ({
+  dependents: [{ id: 'kid', level: 'SD' as const, enrolled_at: birth, birth_date: birth }],
+});
+
+test('an SD child entered by birth date is paid from birth, even before starting school', () => {
+  const metrics = sdByBirth('2023-03-10');
+  validateDependentHistory(metrics, '2026-09-28');
+  assert.equal(eligibleFamilyMetrics(metrics, '2023-02-28').children_sd, 0);
+  assert.equal(eligibleFamilyMetrics(metrics, '2023-03-31').children_sd, 1);
+  const rows = [{ label: 'Gaji Pokok', amount: 4_000_000 }, { label: 'T. Keluarga', amount: 0 }];
+  assert.equal(synchronizeFamilyAllowanceEarnings(rows, metrics, '2026_09')[1].amount, 200_000);
+});
+
+test('an SD child stops in the month of the 13th birthday', () => {
+  const metrics = sdByBirth('2013-07-15');
+  assert.equal(sdGraduationDateFromBirth('2013-07-15'), '2026-07-15');
+  assert.equal(stageGraduationDate(metrics.dependents[0]), '2026-07-15');
+  assert.equal(eligibleFamilyMetrics(metrics, familyAllowancePeriodDate('2026-06')).children_sd, 1);
+  assert.equal(eligibleFamilyMetrics(metrics, familyAllowancePeriodDate('2026-07')).children_sd, 0);
+  assert.equal(eligibleFamilyMetrics(metrics, '2026-07-14').children_sd, 1);
+  assert.equal(eligibleFamilyMetrics(metrics, '2026-07-15').children_sd, 0);
+  assert.deepEqual(pendingGraduatedChildren(metrics, '2026-07-14'), []);
+  assert.deepEqual(pendingGraduatedChildren(metrics, '2026-07-15').map(child => child.graduatedAt), ['2026-07-15']);
+});
+
+test('a leap-day birth turns 13 on the last day of February', () => {
+  assert.equal(sdGraduationDateFromBirth('2012-02-29'), '2025-02-28');
+});
+
+test('rows saved with a masuk date keep ending after six years', () => {
+  const legacy = { dependents: [{ id: 'old', level: 'SD' as const, enrolled_at: '2020-07-01' }] };
+  validateDependentHistory(legacy, '2026-09-28');
+  assert.equal(stageGraduationDate(legacy.dependents[0]), '2026-07-01');
+  assert.equal(eligibleFamilyMetrics(legacy, '2026-06-30').children_sd, 1);
+  assert.equal(eligibleFamilyMetrics(legacy, '2026-07-31').children_sd, 0);
+});
+
+test('birth date is validated: SD only, valid, not in the future, same as the start date', () => {
+  const today = '2026-09-28';
+  assert.throws(() => validateDependentHistory({ dependents: [
+    { id: 'kid', level: 'SLTP', enrolled_at: '2023-07-01', birth_date: '2013-07-01' },
+  ] }, today), /hanya digunakan untuk anak SD/);
+  assert.throws(() => validateDependentHistory(sdByBirth('2026-09-29'), today), /masa depan/);
+  assert.throws(() => validateDependentHistory({ dependents: [
+    { id: 'kid', level: 'SD', enrolled_at: '2023-03-10', birth_date: '2023-03-11' },
+  ] }, today), /sama dengan tanggal lahir/);
+  assert.throws(() => validateDependentHistory({ dependents: [
+    { id: 'kid', level: 'SD', enrolled_at: '', birth_date: '' },
+  ] }, today), /Tanggal lahir anak SD wajib diisi/);
+});
+
+test('SLTP after a birth-dated SD child must start on or after the 13th birthday', () => {
+  const sd = { id: 'kid', level: 'SD' as const, enrolled_at: '2013-07-15', birth_date: '2013-07-15' };
+  assert.throws(() => validateDependentHistory({ dependents: [sd,
+    { id: 'early', child_id: 'kid', level: 'SLTP', enrolled_at: '2026-07-14' },
+  ] }, '2026-09-28'), /setelah jenjang sebelumnya lulus/);
+  validateDependentHistory({ dependents: [sd,
+    { id: 'next', child_id: 'kid', level: 'SLTP', enrolled_at: '2026-07-15' },
+  ] }, '2026-09-28');
 });

@@ -47,7 +47,10 @@ export async function POST(request: NextRequest) {
     const requestId = parseFamilyRequestId(form.get('requestId'));
     const targetChildId = String(form.get('targetChildId') || '').trim();
     const level = form.get('level');
-    const enrolledAt = form.get('enrolledAt');
+    // SD is tracked by birth date: the allowance starts at birth, so the date
+    // the employee sends is also the allowance start (`enrolledAt`).
+    const birthDate = level === 'SD' ? form.get('birthDate') : undefined;
+    const enrolledAt = level === 'SD' ? birthDate : form.get('enrolledAt');
     const file = form.get('file');
     const today = todayInJakarta();
 
@@ -55,19 +58,21 @@ export async function POST(request: NextRequest) {
       throw new HttpError(400, 'Anak yang diajukan tidak valid.');
     }
     try {
-      assertActiveEnrollment(level, enrolledAt, today);
+      assertActiveEnrollment(level, enrolledAt, today, birthDate);
     } catch (error) {
       throw new HttpError(400, error instanceof Error ? error.message : 'Data sekolah tidak valid.');
     }
     if (!(file instanceof File) || file.size < 1 || file.size > FAMILY_PROOF_MAX_BYTES) {
-      throw new HttpError(400, 'Bukti pertama masuk sekolah wajib berupa berkas maksimal 5 MB.');
+      throw new HttpError(400, level === 'SD'
+        ? 'Bukti tanggal lahir anak wajib berupa berkas maksimal 5 MB.'
+        : 'Bukti pertama masuk sekolah wajib berupa berkas maksimal 5 MB.');
     }
     const contentType = gantiLiburAttachmentContentType(file.name, file.type);
     if (!contentType) {
       throw new HttpError(400, 'Bukti harus berupa foto atau PDF, bukan SVG.');
     }
     const fileBytes = Buffer.from(await file.arrayBuffer());
-    const fingerprint = createHash('sha256').update(JSON.stringify({ targetChildId, level, enrolledAt }))
+    const fingerprint = createHash('sha256').update(JSON.stringify({ targetChildId, level, enrolledAt, birthDate }))
       .update(fileBytes).digest('hex');
     const requestRef = adminDb.collection(FAMILY_ALLOWANCE_REQUESTS_COLLECTION).doc(requestId);
     const existing = await requestRef.get();
@@ -81,7 +86,8 @@ export async function POST(request: NextRequest) {
 
     try {
       applyRequestedEnrollment(employee.data()?.family_allowance_metrics, {
-        targetChildId, level: level as DependentLevel, enrolledAt: enrolledAt as string, stageId: requestId,
+        targetChildId, level: level as DependentLevel, enrolledAt: enrolledAt as string,
+          birthDate: birthDate as string | undefined, stageId: requestId,
       }, today);
     } catch (error) {
       throw new HttpError(409, error instanceof Error ? error.message : 'Data anak telah berubah.');
@@ -120,7 +126,8 @@ export async function POST(request: NextRequest) {
       }
       try {
         applyRequestedEnrollment(latestEmployee.data()?.family_allowance_metrics, {
-          targetChildId, level: level as DependentLevel, enrolledAt: enrolledAt as string, stageId: requestId,
+          targetChildId, level: level as DependentLevel, enrolledAt: enrolledAt as string,
+          birthDate: birthDate as string | undefined, stageId: requestId,
         }, today);
       } catch (error) {
         throw new HttpError(409, error instanceof Error ? error.message : 'Data anak telah berubah.');
@@ -132,6 +139,7 @@ export async function POST(request: NextRequest) {
         requestedChildId: targetChildId,
         level,
         enrolledAt,
+        ...(birthDate ? { birthDate } : {}),
         proofName: file.name.trim().slice(0, 180),
         proofPath: uploadedPath,
         proofUrl,

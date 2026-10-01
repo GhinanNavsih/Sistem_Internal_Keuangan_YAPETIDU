@@ -114,6 +114,7 @@ export async function POST(request: NextRequest) {
             targetChildId,
             level: current.level,
             enrolledAt: current.enrolledAt,
+            birthDate: current.birthDate,
             stageId: familyRequestId,
           }, today);
           nextMetrics = applied.metrics;
@@ -151,6 +152,7 @@ export async function POST(request: NextRequest) {
           appliedChildId,
           level: current.level,
           enrolledAt: current.enrolledAt,
+          ...(current.birthDate ? { birthDate: current.birthDate } : {}),
           proofPath,
           payImpact: 'Tunjangan Keluarga',
           percentageBefore: familyAllowancePercentage(eligibleFamilyMetrics(oldMetrics, asOf)),

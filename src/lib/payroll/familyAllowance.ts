@@ -9,6 +9,13 @@ export interface DependentEnrollment {
   child_id?: string;
   level: StoredDependentLevel;
   enrolled_at: string;
+  /**
+   * SD children are entered by birth date instead of enrolment: the allowance
+   * runs from birth to the 13th birthday, so a child who has not started school
+   * yet is covered too. `enrolled_at` then mirrors this date as the allowance
+   * start. Older SD rows have no birth date and keep ending at enrolment + 6 years.
+   */
+  birth_date?: string;
   /** The first date on which a manually removed dependent is ineligible. */
   ended_at?: string;
   /** Admin has reviewed graduation and confirmed there is no next school stage. */
@@ -73,12 +80,39 @@ export function todayInJakarta(): string {
   return new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
+/** Adds whole years; a leap-day date lands on the final day of February in the target year. */
+function addYearsClamped(date: string, years: number): string {
+  const [year, month, day] = date.split('-').map(Number);
+  const lastDay = new Date(Date.UTC(year + years, month, 0)).getUTCDate();
+  return `${year + years}-${String(month).padStart(2, '0')}-${String(Math.min(day, lastDay)).padStart(2, '0')}`;
+}
+
 /** A leap-day enrollment ends on the final day of February in the target year. */
 export function graduationDate(enrolledAt: string, level: DependentLevel): string {
   if (!isDateOnly(enrolledAt)) throw new Error('Tanggal masuk sekolah tidak valid.');
-  const [year, month, day] = enrolledAt.split('-').map(Number);
-  const lastDay = new Date(Date.UTC(year + YEARS[level], month, 0)).getUTCDate();
-  return `${year + YEARS[level]}-${String(month).padStart(2, '0')}-${String(Math.min(day, lastDay)).padStart(2, '0')}`;
+  return addYearsClamped(enrolledAt, YEARS[level]);
+}
+
+/** SD age 7 plus the 6 years of SD. */
+export const SD_GRADUATION_AGE = 13;
+
+/** The 13th birthday, when an SD child's allowance ends. */
+export function sdGraduationDateFromBirth(birthDate: string): string {
+  if (!isDateOnly(birthDate)) throw new Error('Tanggal lahir tidak valid.');
+  return addYearsClamped(birthDate, SD_GRADUATION_AGE);
+}
+
+/**
+ * The first day a stage no longer pays: the 13th birthday for an SD child
+ * entered by birth date, enrolment + the school's years otherwise. A college
+ * row of unknown degree (`PT`) has no end date.
+ */
+export function stageGraduationDate(
+  stage: Pick<DependentEnrollment, 'level' | 'enrolled_at' | 'birth_date'>,
+): string {
+  if (stage.level === 'PT') return '';
+  if (stage.level === 'SD' && isDateOnly(stage.birth_date)) return sdGraduationDateFromBirth(stage.birth_date);
+  return graduationDate(stage.enrolled_at, stage.level);
 }
 
 /** Old records have counts only. Keep them eligible until an admin supplies dates. */
@@ -118,7 +152,7 @@ export function pendingGraduatedChildren(metrics: FamilyAllowanceMetrics | null 
     const latest = child.latest;
     if (latest.level === 'PT' || latest.level === 'S2' || !isDateOnly(latest.enrolled_at) ||
       latest.ended_at || latest.no_further_study) return [];
-    const graduatedAt = graduationDate(latest.enrolled_at, latest.level);
+    const graduatedAt = stageGraduationDate(latest);
     return graduatedAt <= day ? [{ ...child, childNumber: index + 1, graduatedAt }] : [];
   });
 }
@@ -130,7 +164,7 @@ export function isDependentEligible(dependent: DependentEnrollment, asOf: Date |
   // cannot affect pay until its required enrollment date has been entered.
   if (!isDateOnly(dependent.enrolled_at)) return !dependent.enrolled_at && isUndatedLegacyDependent(dependent);
   if (dependent.enrolled_at > day) return false;
-  return dependent.level === 'PT' || day < graduationDate(dependent.enrolled_at, dependent.level);
+  return dependent.level === 'PT' || day < stageGraduationDate(dependent);
 }
 
 export function eligibleFamilyMetrics(metrics: FamilyAllowanceMetrics | null | undefined, asOf: Date | string) {
@@ -216,7 +250,20 @@ export function validateDependentHistory(metrics: FamilyAllowanceMetrics, today:
       throw new Error('Keputusan pendidikan lanjutan tidak valid.');
     }
     if (!dependent.enrolled_at && !isUndatedLegacyDependent(dependent)) {
-      throw new Error(`Tanggal pertama masuk ${dependent.level} wajib diisi untuk setiap anak.`);
+      throw new Error(dependent.level === 'SD'
+        ? 'Tanggal lahir anak SD wajib diisi.'
+        : `Tanggal pertama masuk ${dependent.level} wajib diisi untuk setiap anak.`);
+    }
+    if (dependent.birth_date !== undefined) {
+      if (dependent.level !== 'SD') {
+        throw new Error('Tanggal lahir hanya digunakan untuk anak SD.');
+      }
+      if (!isDateOnly(dependent.birth_date) || dependent.birth_date > today) {
+        throw new Error('Tanggal lahir anak harus tanggal yang valid dan tidak di masa depan.');
+      }
+      if (dependent.enrolled_at !== dependent.birth_date) {
+        throw new Error('Tanggal mulai tunjangan anak SD harus sama dengan tanggal lahirnya.');
+      }
     }
     if (dependent.level === 'PT' && dependent.enrolled_at) {
       throw new Error('Anak kuliah lama harus dipilih S1 atau S2 sebelum tanggal masuk dicatat.');
@@ -232,7 +279,7 @@ export function validateDependentHistory(metrics: FamilyAllowanceMetrics, today:
     if (child.stages.length === 1) {
       const stage = child.latest;
       if (stage.no_further_study && (stage.level === 'PT' || stage.level === 'S2' ||
-        !isDateOnly(stage.enrolled_at) || graduationDate(stage.enrolled_at, stage.level) > today)) {
+        !isDateOnly(stage.enrolled_at) || stageGraduationDate(stage) > today)) {
         throw new Error('Keputusan tidak lanjut hanya dapat dicatat setelah anak lulus.');
       }
       continue;
@@ -249,7 +296,7 @@ export function validateDependentHistory(metrics: FamilyAllowanceMetrics, today:
           : nextDependentLevel(previous.level) === current.level);
       const datedTransition = previous.level !== 'PT' && isDateOnly(previous.enrolled_at) &&
         nextDependentLevel(previous.level) === current.level && isDateOnly(current.enrolled_at) &&
-        current.enrolled_at >= graduationDate(previous.enrolled_at, previous.level);
+        current.enrolled_at >= stageGraduationDate(previous);
       if ((!legacyTransition && !datedTransition) || !isDateOnly(current.enrolled_at) ||
         previous.no_further_study || previous.ended_at) {
         throw new Error('Jenjang lanjutan harus sesuai urutan sekolah dan dimulai setelah jenjang sebelumnya lulus.');
@@ -260,7 +307,7 @@ export function validateDependentHistory(metrics: FamilyAllowanceMetrics, today:
     }
     const latest = child.latest;
     if (latest.no_further_study && (latest.level === 'S2' ||
-      graduationDate(latest.enrolled_at, latest.level as DependentLevel) > today)) {
+      stageGraduationDate(latest) > today)) {
       throw new Error('Keputusan tidak lanjut hanya dapat dicatat setelah anak lulus.');
     }
   }

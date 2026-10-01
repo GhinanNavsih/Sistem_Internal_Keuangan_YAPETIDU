@@ -112,7 +112,7 @@ import {
   eligibleFamilyMetrics,
   dependentChildren,
   dependentHistory,
-  graduationDate,
+  stageGraduationDate,
   isDateOnly,
   pendingGraduatedChildren,
   validateDependentHistory,
@@ -568,8 +568,8 @@ function familyDependentDiffs(oldMetrics: FamilyAllowanceMetrics | undefined, ne
     if (!entry) return null;
     const number = dependentChildren(metrics).findIndex(child => child.stages.some(stage => stage.id === entry.id)) + 1;
     const graduation = entry.level !== 'PT' && isDateOnly(entry.enrolled_at)
-      ? graduationDate(entry.enrolled_at, entry.level) : null;
-    return `Anak ${number}; ${entry.level}; masuk ${entry.enrolled_at || 'belum dicatat'}${graduation ? `; lulus ${graduation}` : ''}${entry.ended_at ? `; dihentikan ${entry.ended_at}` : ''}${entry.no_further_study ? '; tidak lanjut sekolah' : ''}; ID anak ${entry.child_id || entry.id}`;
+      ? stageGraduationDate(entry) : null;
+    return `Anak ${number}; ${entry.level}; ${entry.birth_date !== undefined ? `lahir ${entry.birth_date || 'belum dicatat'}` : `masuk ${entry.enrolled_at || 'belum dicatat'}`}${graduation ? `; lulus ${graduation}` : ''}${entry.ended_at ? `; dihentikan ${entry.ended_at}` : ''}${entry.no_further_study ? '; tidak lanjut sekolah' : ''}; ID anak ${entry.child_id || entry.id}`;
   };
   const ids = new Set([...oldById.keys(), ...newById.keys()]);
   return [...ids].flatMap(id => {
@@ -2107,7 +2107,7 @@ export default function EmployeesPage() {
           'Anak Perguruan Tinggi (total)': metrics.children_pt,
           'Riwayat Tanggal Masuk Anak': dependentChildren(emp.family_allowance_metrics)
             .map((child, index) => `Anak ${index + 1}: ${child.stages.map(item =>
-              `${item.level}: ${item.enrolled_at || 'belum dicatat'}${item.ended_at ? ` (dihentikan ${item.ended_at})` : ''}${item.no_further_study ? ' (tidak lanjut)' : ''}`,
+              `${item.level}: ${item.birth_date ? `lahir ${item.birth_date}` : item.enrolled_at || 'belum dicatat'}${item.ended_at ? ` (dihentikan ${item.ended_at})` : ''}${item.no_further_study ? ' (tidak lanjut)' : ''}`,
             ).join(' → ')}`)
             .join('; '),
         };
@@ -3113,7 +3113,7 @@ export default function EmployeesPage() {
                 className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 p-4">
                 <div className="min-w-0">
                   <p className="font-semibold text-slate-900">{getEmpName(child.employee)} · Anak {child.childNumber}</p>
-                  <p className="text-xs text-slate-500">{getEmpId(child.employee)} · {child.latest.level} · masuk {child.latest.enrolled_at} · lulus {child.graduatedAt}</p>
+                  <p className="text-xs text-slate-500">{getEmpId(child.employee)} · {child.latest.level} · {child.latest.birth_date ? `lahir ${child.latest.birth_date}` : `masuk ${child.latest.enrolled_at}`} · lulus {child.graduatedAt}</p>
                 </div>
                 <Button type="button" variant="outline" size="sm" onClick={() => {
                   setIsGraduationDialogOpen(false);
