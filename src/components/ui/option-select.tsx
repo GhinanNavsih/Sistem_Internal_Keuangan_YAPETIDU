@@ -64,8 +64,8 @@ export function OptionSelect({
         className={cn(
           "w-full border-slate-200 bg-white text-slate-900 shadow-xs hover:border-indigo-300 focus-visible:border-indigo-500 focus-visible:ring-indigo-500/25 data-[popup-open]:border-indigo-500 data-[popup-open]:ring-3 data-[popup-open]:ring-indigo-500/25 data-[size=default]:h-auto *:data-[slot=select-value]:line-clamp-2 [&_svg]:text-slate-400",
           size === "md"
-            ? "rounded-xl px-3 py-2 data-[size=default]:min-h-11"
-            : "rounded-lg px-2 py-1.5 data-[size=default]:min-h-9",
+            ? "rounded-sm px-3 py-2 data-[size=default]:min-h-11"
+            : "rounded-sm px-2 py-1.5 data-[size=default]:min-h-9",
           className
         )}
       >
@@ -77,13 +77,13 @@ export function OptionSelect({
           )}
         </SelectValue>
       </SelectTrigger>
-      <SelectContent className="rounded-xl border border-slate-200 bg-white p-1 shadow-xl ring-0">
+      <SelectContent className="rounded-md border border-slate-200 bg-white p-1 shadow-xl ring-0">
         {options.map((option) => (
           <SelectItem
             key={option.value}
             value={option.value}
             disabled={option.disabled}
-            className="rounded-lg py-2.5 pr-8 pl-3 text-slate-700 focus:bg-indigo-50 focus:text-indigo-900 data-[selected]:font-semibold data-[selected]:text-indigo-700"
+            className="rounded-sm py-2.5 pr-8 pl-3 text-slate-700 focus:bg-indigo-50 focus:text-indigo-900 data-[selected]:font-semibold data-[selected]:text-indigo-700"
           >
             <span className="block whitespace-normal leading-snug">{option.label}</span>
           </SelectItem>

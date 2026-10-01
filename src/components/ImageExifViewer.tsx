@@ -66,7 +66,7 @@ export function ImageExifViewer({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className={`${showMetadata ? 'w-[94vw] max-w-5xl sm:max-w-5xl md:max-w-5xl' : 'w-[90vw] max-w-xl sm:max-w-xl'} bg-white rounded-3xl shadow-2xl border-none p-0 overflow-hidden max-h-[90vh] flex flex-col`}>
+      <DialogContent className={`${showMetadata ? 'w-[94vw] max-w-5xl sm:max-w-5xl md:max-w-5xl' : 'w-[90vw] max-w-xl sm:max-w-xl'} bg-white rounded-md shadow-2xl border-none p-0 overflow-hidden max-h-[90vh] flex flex-col`}>
         <DialogHeader className="p-4 sm:p-5 border-b border-slate-100 flex flex-row items-center justify-between space-y-0 shrink-0">
           <div>
             <DialogTitle className="text-base font-extrabold text-slate-900 flex items-center gap-2">
@@ -90,7 +90,7 @@ export function ImageExifViewer({
                   <FileImage className="w-4 h-4 text-blue-600" />
                   <span>Berkas Bukti</span>
                 </h4>
-                <div className="bg-slate-950 rounded-2xl overflow-hidden flex items-center justify-center min-h-[320px] max-h-[480px] relative shadow-inner border border-slate-800 p-2">
+                <div className="bg-slate-950 rounded-md overflow-hidden flex items-center justify-center min-h-[320px] max-h-[480px] relative shadow-inner border border-slate-800 p-2">
                   {isPdf ? (
                     <iframe src={imageUrl} className="w-full h-[420px] border-none" title="Dokumen PDF" />
                   ) : (
@@ -98,7 +98,7 @@ export function ImageExifViewer({
                     <img
                       src={imageUrl}
                       alt={title}
-                      className="max-h-[450px] w-auto max-w-full object-contain mx-auto rounded-lg shadow-md"
+                      className="max-h-[450px] w-auto max-w-full object-contain mx-auto rounded-sm shadow-md"
                     />
                   )}
                 </div>
@@ -115,13 +115,13 @@ export function ImageExifViewer({
                   <div className="space-y-3.5">
                     {/* Date Verification Alert Badge */}
                     {dateMatchStatus === 'match' && (
-                      <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2.5 text-xs font-bold text-emerald-800 shadow-xs">
+                      <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-md flex items-center gap-2.5 text-xs font-bold text-emerald-800 shadow-xs">
                         <ShieldCheck className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
                         <span>✓ Foto diambil pada tanggal yang sesuai dengan SPJ ({activityDate})</span>
                       </div>
                     )}
                     {dateMatchStatus === 'mismatch' && (
-                      <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-2.5 text-xs font-bold text-amber-900 shadow-xs">
+                      <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-md flex items-start gap-2.5 text-xs font-bold text-amber-900 shadow-xs">
                         <AlertTriangle className="w-4.5 h-4.5 text-amber-600 shrink-0 mt-0.5" />
                         <div>
                           <p className="font-extrabold">⚠️ Perhatian: Tanggal Foto Berbeda dari Tanggal SPJ</p>
@@ -135,7 +135,7 @@ export function ImageExifViewer({
                     {/* Metadata Details Cards Stack */}
                     <div className="space-y-3 text-xs">
                       {/* Timestamp */}
-                      <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-1">
+                      <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-md space-y-1">
                         <div className="flex items-center gap-1.5 font-bold text-slate-500 text-[11px]">
                           <Calendar className="w-4 h-4 text-blue-600" />
                           <span>Waktu Pengambilan Foto</span>
@@ -146,7 +146,7 @@ export function ImageExifViewer({
                       </div>
 
                       {/* Device Info */}
-                      <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-1">
+                      <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-md space-y-1">
                         <div className="flex items-center gap-1.5 font-bold text-slate-500 text-[11px]">
                           <Smartphone className="w-4 h-4 text-purple-600" />
                           <span>Perangkat Kamera</span>
@@ -158,7 +158,7 @@ export function ImageExifViewer({
 
                       {/* GPS Coordinates */}
                       {hasCoordinates ? (
-                        <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-2xl space-y-1 flex items-center justify-between">
+                        <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-md space-y-1 flex items-center justify-between">
                           <div>
                             <div className="flex items-center gap-1.5 font-bold text-blue-700 text-[11px]">
                               <MapPin className="w-4 h-4 text-blue-600" />
@@ -179,7 +179,7 @@ export function ImageExifViewer({
                               href={mapsUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm transition-colors shrink-0 ml-3"
+                              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-sm font-bold text-xs flex items-center gap-1.5 shadow-sm transition-colors shrink-0 ml-3"
                             >
                               <span>Buka Map</span>
                               <ExternalLink className="w-3.5 h-3.5" />
@@ -187,7 +187,7 @@ export function ImageExifViewer({
                           )}
                         </div>
                       ) : (
-                        <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-1">
+                        <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-md space-y-1">
                           <div className="flex items-center gap-1.5 font-bold text-slate-500 text-[11px]">
                             <MapPin className="w-4 h-4 text-slate-400" />
                             <span>Lokasi GPS Foto</span>
@@ -200,7 +200,7 @@ export function ImageExifViewer({
                     </div>
                   </div>
                 ) : (
-                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex items-start gap-2.5 text-xs text-slate-600 font-medium">
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-md flex items-start gap-2.5 text-xs text-slate-600 font-medium">
                     <Info className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
                     <div>
                       <p className="font-extrabold text-slate-800">Metadata belum direkam untuk foto lama ini</p>
@@ -213,7 +213,7 @@ export function ImageExifViewer({
               </div>
             </div>
           ) : (
-            <div className="bg-slate-900 rounded-2xl overflow-hidden flex items-center justify-center min-h-[250px] max-h-[480px] relative shadow-inner">
+            <div className="bg-slate-900 rounded-md overflow-hidden flex items-center justify-center min-h-[250px] max-h-[480px] relative shadow-inner">
               {isPdf ? (
                 <iframe src={imageUrl} className="w-full h-[450px] border-none" title="Dokumen PDF" />
               ) : (
@@ -243,7 +243,7 @@ export function ImageExifViewer({
             type="button"
             onClick={onClose}
             variant="outline"
-            className="rounded-xl font-bold text-xs h-9 px-4 border-slate-200"
+            className="rounded-sm font-bold text-xs h-9 px-4 border-slate-200"
           >
             Tutup
           </Button>

@@ -62,7 +62,7 @@ export function FloatingSnackbar({ message, onDismiss, title, duration = DEFAULT
       aria-atomic="true"
     >
       <div
-        className={`pointer-events-auto flex w-full max-w-[640px] items-start gap-3 rounded-2xl border px-4 py-3.5 text-sm font-semibold shadow-2xl animate-in fade-in slide-in-from-top-4 duration-300 ${
+        className={`pointer-events-auto flex w-full max-w-[640px] items-start gap-3 rounded-md border px-4 py-3.5 text-sm font-semibold shadow-2xl animate-in fade-in slide-in-from-top-4 duration-300 ${
           isError
             ? "border-rose-200 bg-rose-50 text-rose-900"
             : isWarning
@@ -90,7 +90,7 @@ export function FloatingSnackbar({ message, onDismiss, title, duration = DEFAULT
             type="button"
             onClick={onDismiss}
             aria-label="Tutup pemberitahuan"
-            className="-mr-1 -mt-1 shrink-0 rounded-lg p-1 text-slate-400 transition-colors hover:bg-black/5 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+            className="-mr-1 -mt-1 shrink-0 rounded-sm p-1 text-slate-400 transition-colors hover:bg-black/5 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>

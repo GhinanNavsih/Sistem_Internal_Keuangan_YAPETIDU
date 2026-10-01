@@ -103,7 +103,7 @@ export default function EmployeeNavigationMenu() {
             <Button
               variant="outline"
               size="icon"
-              className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer shrink-0"
+              className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border border-slate-200 bg-white rounded-sm h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer shrink-0"
               title="Menu"
               aria-label="Buka menu navigasi"
             />
@@ -111,10 +111,10 @@ export default function EmployeeNavigationMenu() {
         >
           <MenuIcon className="w-4.5 h-4.5 text-indigo-500" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent className="min-w-[220px] p-2.5">
+        <DropdownMenuContent className="rounded-md min-w-[220px] p-2.5">
           {!isLoyalis && pathname !== activitiesHref && (
             <DropdownMenuItem
-              className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+              className="min-h-11 rounded-sm px-3.5 py-2.5 text-sm"
               render={<Link href={activitiesHref} />}
             >
               <ClipboardList className="text-indigo-500" />
@@ -123,7 +123,7 @@ export default function EmployeeNavigationMenu() {
           )}
           {pathname !== '/employee/payslip' && (
             <DropdownMenuItem
-              className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+              className="min-h-11 rounded-sm px-3.5 py-2.5 text-sm"
               render={<Link href="/employee/payslip" />}
             >
               <Banknote className="text-emerald-500" />
@@ -132,7 +132,7 @@ export default function EmployeeNavigationMenu() {
           )}
           {isLoyalis && pathname !== '/employee/family-allowance' && (
             <DropdownMenuItem
-              className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+              className="min-h-11 rounded-sm px-3.5 py-2.5 text-sm"
               render={<Link href="/employee/family-allowance" />}
             >
               <GraduationCap className="text-indigo-500" />
@@ -141,7 +141,7 @@ export default function EmployeeNavigationMenu() {
           )}
           {isSopir && pathname !== '/employee/driver-history' && (
             <DropdownMenuItem
-              className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+              className="min-h-11 rounded-sm px-3.5 py-2.5 text-sm"
               render={<Link href="/employee/driver-history" />}
             >
               <Compass className="text-indigo-500" />
@@ -150,7 +150,7 @@ export default function EmployeeNavigationMenu() {
           )}
           {currentProfile.role === 'ketua_shift_satpam' && pathname !== '/employee/satpam-duty-plan' && (
             <DropdownMenuItem
-              className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+              className="min-h-11 rounded-sm px-3.5 py-2.5 text-sm"
               render={<Link href="/employee/satpam-duty-plan" />}
             >
               <CalendarDays className="text-indigo-500" />
@@ -159,7 +159,7 @@ export default function EmployeeNavigationMenu() {
           )}
           {(isLoyalis || isBlueCollarHonorer) && pathname !== facilityReportsHref && (
             <DropdownMenuItem
-              className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+              className="min-h-11 rounded-sm px-3.5 py-2.5 text-sm"
               render={<Link href={facilityReportsHref} />}
             >
               <Wrench className="text-amber-500" />
@@ -170,7 +170,7 @@ export default function EmployeeNavigationMenu() {
           )}
           {isBlueCollarFacilityDashboardUser(currentProfile) && pathname !== VENUE_INSPECTION_PATH && (
             <DropdownMenuItem
-              className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+              className="min-h-11 rounded-sm px-3.5 py-2.5 text-sm"
               render={<Link href={VENUE_INSPECTION_PATH} />}
             >
               <ClipboardCheck className="text-sky-500" />
@@ -179,7 +179,7 @@ export default function EmployeeNavigationMenu() {
           )}
           {(isLoyalis || isBlueCollarHonorer) && pathname !== '/employee/simpan-pinjam' && (
             <DropdownMenuItem
-              className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+              className="min-h-11 rounded-sm px-3.5 py-2.5 text-sm"
               render={<Link href="/employee/simpan-pinjam" />}
             >
               <PiggyBank className="text-emerald-500" />
@@ -190,7 +190,7 @@ export default function EmployeeNavigationMenu() {
             <>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+                className="min-h-11 rounded-sm px-3.5 py-2.5 text-sm"
                 render={<Link href={leaveHref} />}
               >
                 {isSatpam ? (
@@ -204,7 +204,7 @@ export default function EmployeeNavigationMenu() {
           )}
           <DropdownMenuSeparator />
           <DropdownMenuItem
-            className="min-h-11 rounded-xl px-3.5 py-2.5 text-sm"
+            className="min-h-11 rounded-sm px-3.5 py-2.5 text-sm"
             onClick={() => void handlePasswordReset()}
             disabled={passwordResetLoading}
           >
