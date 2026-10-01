@@ -21,6 +21,24 @@ The core color palette shifts away from harsh, high-contrast primary saturated c
 
 ---
 
+## 📐 Corner Radius
+
+Keep corners minimal. Rounding only softens an edge; it is not a style in itself, so nothing on screen should look like a pill, a bubble, or a tablet. Use these two steps and nothing larger.
+
+| Step | Tailwind class | Size* | Use for |
+| :--- | :--- | :--- | :--- |
+| **Small** | `rounded-sm` | 6px | Buttons, inputs, select triggers, tabs, status badges, chips |
+| **Medium** | `rounded-md` | 8px | Cards, action bars, tables, banners and alerts, dropdown menus, modals |
+
+\*Sizes follow the `--radius: 0.625rem` token in `src/app/globals.css` (`rounded-sm` is 0.6×, `rounded-md` is 0.8×).
+
+*   **Do not use** `rounded-lg`, `rounded-xl`, `rounded-2xl`, `rounded-3xl`, or arbitrary values such as `rounded-[20px]` on any UI element.
+*   **`rounded-full` is only for things that are really circles**: avatars, status dots, spinners, and the decorative background blobs. Never use it on buttons, badges, tabs, or inputs.
+*   **Nested shapes**: the inner element takes the small step and its container the medium step (for example the tab switcher). Do not repeat the container's radius on what sits inside it.
+*   **The shadcn/ui primitives** in `src/components/ui/` (`Button`, `Input`, `SelectTrigger`) default to `rounded-lg` (10px). In new code pass the class from the table through `className`; it overrides the default.
+
+---
+
 ## 💎 Design Tokens & Component Specs
 
 ### 1. Canvas & Global Page Layout
@@ -30,7 +48,7 @@ All primary views should use a gradient background layout with absolute decorati
     ```html
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 p-6 lg:p-8 pb-24 lg:pb-32 font-sans selection:bg-indigo-100 relative overflow-hidden">
     ```
-*   **Decorative Background Blobs** (Place at the top of the canvas, behind content with pointer-events disabled):
+*   **Decorative Background Blobs** (Place at the top of the canvas, behind content with pointer-events disabled; `rounded-full` is correct here because they are circles):
     ```html
     {/* Decorative soft blurred background blobs */}
     <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
@@ -74,17 +92,17 @@ All primary views should use a gradient background layout with absolute decorati
 ---
 
 ### 3. Cards & Structure Containers
-Card designs avoid harsh borders and leverage extra-large rounded corners with extremely soft, low-opacity drop shadows.
+Card designs avoid harsh borders and use the medium corner radius (`rounded-md`) with extremely soft, low-opacity drop shadows.
 
 *   **Standard Content Card**:
     ```html
-    <div className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6">
+    <div className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6">
       {/* Content */}
     </div>
     ```
 *   **Accent Global Action Bar** (Used for main action rows above grids):
     ```html
-    <div className="flex flex-wrap items-center gap-3 bg-white p-4 rounded-[20px] border border-slate-200/60 shadow-sm">
+    <div className="flex flex-wrap items-center gap-3 bg-white p-4 rounded-md border border-slate-200/60 shadow-sm">
       {/* Buttons / Actions */}
     </div>
     ```
@@ -92,11 +110,11 @@ Card designs avoid harsh borders and leverage extra-large rounded corners with e
 ---
 
 ### 4. Form Controls & Selectors
-Form items use soft borders, clean typography, and a smooth light blue border expansion transition on hover.
+Form items use soft borders, clean typography, the small corner radius (`rounded-sm`), and a smooth light blue border expansion transition on hover.
 
 *   **Dropdown / Select Trigger (Shadcn/UI SelectTrigger)**:
     ```html
-    <SelectTrigger className="bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 focus:border-indigo-500 transition-all text-slate-700">
+    <SelectTrigger className="bg-white shadow-sm border-slate-200 rounded-sm font-semibold hover:border-indigo-300 focus:border-indigo-500 transition-all text-slate-700">
       <SelectValue />
     </SelectTrigger>
     ```
@@ -104,12 +122,12 @@ Form items use soft borders, clean typography, and a smooth light blue border ex
     ```html
     <input
       type="text"
-      className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full hover:border-indigo-300 focus:border-indigo-500 transition-all placeholder:text-slate-400"
+      className="rounded-sm border-slate-200 font-bold text-slate-700 text-xs h-10 w-full hover:border-indigo-300 focus:border-indigo-500 transition-all placeholder:text-slate-400"
     />
     ```
 *   **Custom Autocomplete Suggestions Dropdown**:
     ```html
-    <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50 animate-in fade-in slide-in-from-top-1">
+    <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50 animate-in fade-in slide-in-from-top-1">
       {/* Option Active State */}
       <div className="px-4 py-2.5 text-xs font-semibold cursor-pointer transition-colors bg-indigo-50 text-indigo-600 font-bold">
         <p className="text-indigo-700">Active Name</p>
@@ -127,53 +145,53 @@ Form items use soft borders, clean typography, and a smooth light blue border ex
 ---
 
 ### 5. Premium Button System
-Buttons utilize rounded extra-large borders, shadows, soft color filters, and smooth state changes.
+Buttons use the small corner radius (`rounded-sm`), shadows, soft color filters, and smooth state changes.
 
 *   **Solid Primary Button** (e.g., *Simpan*, *Submit*):
     ```html
-    <button className="rounded-xl px-6 py-2.5 bg-indigo-600 shadow-lg shadow-indigo-200 text-white font-bold transition-all hover:bg-indigo-700 hover:shadow-indigo-300 flex items-center gap-2">
+    <button className="rounded-sm px-6 py-2.5 bg-indigo-600 shadow-lg shadow-indigo-200 text-white font-bold transition-all hover:bg-indigo-700 hover:shadow-indigo-300 flex items-center gap-2">
       Save Changes
     </button>
     ```
 *   **Outline Soft Indigo Button** (e.g., *Kegiatan SPJ*):
     ```html
-    <button className="rounded-xl border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-all font-semibold flex items-center gap-2 shadow-sm">
+    <button className="rounded-sm border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-all font-semibold flex items-center gap-2 shadow-sm">
       Action Button
     </button>
     ```
 *   **Outline Soft Teal Button** (e.g., *Review Laporan*):
     ```html
-    <button className="rounded-xl border border-teal-200 text-teal-700 bg-teal-50 hover:bg-teal-100 hover:border-teal-300 transition-all font-semibold flex items-center gap-2 shadow-sm">
+    <button className="rounded-sm border border-teal-200 text-teal-700 bg-teal-50 hover:bg-teal-100 hover:border-teal-300 transition-all font-semibold flex items-center gap-2 shadow-sm">
       Review Reports
     </button>
     ```
 *   **Outline Soft Emerald Button** (e.g., *Ekspor PDF*):
     ```html
-    <button className="rounded-xl border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-300 transition-all font-semibold flex items-center gap-2 shadow-sm">
+    <button className="rounded-sm border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-300 transition-all font-semibold flex items-center gap-2 shadow-sm">
       Download PDF
     </button>
     ```
 *   **Outline Soft Amber Button** (e.g., *Ekspor Templat*):
     ```html
-    <button className="rounded-xl border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 hover:border-amber-300 transition-all font-semibold flex items-center gap-2 shadow-sm">
+    <button className="rounded-sm border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 hover:border-amber-300 transition-all font-semibold flex items-center gap-2 shadow-sm">
       Get Template
     </button>
     ```
 *   **Neutral Outline Button** (e.g., *Tambah Kolom*):
     ```html
-    <button className="rounded-xl border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 bg-white font-semibold transition-all shadow-sm flex items-center gap-2">
+    <button className="rounded-sm border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 bg-white font-semibold transition-all shadow-sm flex items-center gap-2">
       Add Column
     </button>
     ```
 *   **Destructive Soft Rose Button** (e.g., *Keluar*, *Hapus*):
     ```html
-    <button className="rounded-xl text-rose-600 border border-rose-200 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 hover:border-rose-300 transition-all flex items-center gap-2 shadow-sm">
+    <button className="rounded-sm text-rose-600 border border-rose-200 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 hover:border-rose-300 transition-all flex items-center gap-2 shadow-sm">
       Delete Item
     </button>
     ```
 *   **Ghost Navigation / Back Button**:
     ```html
-    <button className="group text-slate-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-xl px-4 py-2.5 transition-all flex items-center gap-2">
+    <button className="group text-slate-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-sm px-4 py-2.5 transition-all flex items-center gap-2">
       <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
       Kembali
     </button>
@@ -182,17 +200,17 @@ Buttons utilize rounded extra-large borders, shadows, soft color filters, and sm
 ---
 
 ### 6. Premium Tab Switcher Container
-Perfect for segmented controls, lists views, and context switching.
+Perfect for segmented controls, lists views, and context switching. The container takes the medium radius and the tabs inside it the small one.
 
 ```html
-<div className="flex bg-white p-1 rounded-xl w-fit shadow-sm border border-slate-200/60">
+<div className="flex bg-white p-1 rounded-md w-fit shadow-sm border border-slate-200/60">
   {/* Active Tab */}
-  <button className="px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 bg-indigo-600 text-white shadow-sm">
+  <button className="px-5 py-2.5 rounded-sm text-xs font-bold transition-all flex items-center gap-2 bg-indigo-600 text-white shadow-sm">
     Active View
   </button>
   
   {/* Inactive Tab */}
-  <button className="px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 text-slate-500 hover:text-slate-800 hover:bg-slate-50">
+  <button className="px-5 py-2.5 rounded-sm text-xs font-bold transition-all flex items-center gap-2 text-slate-500 hover:text-slate-800 hover:bg-slate-50">
     Inactive View
   </button>
 </div>
@@ -200,36 +218,36 @@ Perfect for segmented controls, lists views, and context switching.
 
 ---
 
-### 7. Status Badges & Pill Indicators
-Small indicators representing records states (used extensively in grid lists & review queues).
+### 7. Status Badges
+Small indicators representing records states (used extensively in grid lists & review queues). They are rounded rectangles (`rounded-sm`), never fully rounded pills.
 
 *   **Draft State (Gray)**:
     ```html
-    <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+    <span className="px-2.5 py-1 rounded-sm text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
       Draft
     </span>
     ```
 *   **Pending Review (Amber)**:
     ```html
-    <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+    <span className="px-2.5 py-1 rounded-sm text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
       Menunggu Review
     </span>
     ```
 *   **Approved (Emerald)**:
     ```html
-    <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+    <span className="px-2.5 py-1 rounded-sm text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
       Disetujui
     </span>
     ```
 *   **Revision Needed (Orange)**:
     ```html
-    <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200">
+    <span className="px-2.5 py-1 rounded-sm text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200">
       Minta Revisi
     </span>
     ```
 *   **Declined (Rose)**:
     ```html
-    <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+    <span className="px-2.5 py-1 rounded-sm text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
       Ditolak
     </span>
     ```
@@ -241,13 +259,13 @@ Used for temporary feedback messages or context notifications inside card bodies
 
 *   **Success Banner**:
     ```html
-    <div className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+    <div className="flex items-center gap-2 px-4 py-3 rounded-md text-sm font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
       <CheckCircle2 className="w-4 h-4" /> Message text here.
     </div>
     ```
 *   **Error / Attention Banner**:
     ```html
-    <div className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium bg-red-50 text-red-700 border border-red-200">
+    <div className="flex items-center gap-2 px-4 py-3 rounded-md text-sm font-medium bg-red-50 text-red-700 border border-red-200">
       <AlertCircle className="w-4 h-4" /> Error explanation text here.
     </div>
     ```
@@ -258,7 +276,7 @@ Used for temporary feedback messages or context notifications inside card bodies
 Nested records, workers lists, or action-rich tables.
 
 ```html
-<div className="border border-slate-100 rounded-2xl shadow-sm overflow-visible bg-white">
+<div className="border border-slate-100 rounded-md shadow-sm overflow-visible bg-white">
   <table className="w-full text-left border-collapse">
     <thead>
       <tr className="bg-slate-50 border-b border-slate-100">
