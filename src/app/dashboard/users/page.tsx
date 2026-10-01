@@ -206,6 +206,11 @@ export default function UserManagementPage() {
   const [newTeamMembers, setNewTeamMembers] = useState<string[]>([]);
   const [editTeamNumber, setEditTeamNumber] = useState<string>('1');
   const [editTeamMembers, setEditTeamMembers] = useState<string[]>([]);
+  // The ketua is the team's tenth guard, never one of its nine members. A saved
+  // roster can still list them (a member being promoted) while the checklist
+  // hides the ketua, so that stale tick is neither counted nor sent.
+  const newMemberIds = newTeamMembers.filter(id => id !== newLinkedEmployeeId);
+  const editMemberIds = editTeamMembers.filter(id => id !== editLinkedEmployeeId);
 
   // Delete User modal state
   const [deletingUser, setDeletingUser] = useState<ManagedUser | null>(null);
@@ -365,8 +370,8 @@ export default function UserManagementPage() {
         setErrorMsg('Konfigurasi Regu Satpam belum lengkap: Pilih 1 Ketua Shift Satpam terlebih dahulu.');
         return;
       }
-      if (newTeamMembers.length !== 9) {
-        setErrorMsg(`Konfigurasi Regu Satpam belum lengkap: Wajib memilih tepat 9 anggota regu (saat ini terpilih ${newTeamMembers.length} anggota).`);
+      if (newMemberIds.length !== 9) {
+        setErrorMsg(`Konfigurasi Regu Satpam belum lengkap: Wajib memilih tepat 9 anggota regu (saat ini terpilih ${newMemberIds.length} anggota).`);
         return;
       }
     }
@@ -409,7 +414,7 @@ export default function UserManagementPage() {
           body: JSON.stringify({
             teamId: `team_${newTeamNumber}`,
             ketuaShiftId: newLinkedEmployeeId,
-            memberEmployeeIds: newTeamMembers,
+            memberEmployeeIds: newMemberIds,
             reason: 'Konfigurasi regu untuk akun Ketua Shift baru',
           }),
         });
@@ -486,8 +491,8 @@ export default function UserManagementPage() {
         setErrorMsg('Konfigurasi Regu Satpam belum lengkap: Silakan pilih 1 Ketua Shift Satpam terlebih dahulu.');
         return;
       }
-      if (editTeamMembers.length !== 9) {
-        setErrorMsg(`Konfigurasi Regu Satpam belum lengkap: Wajib memilih tepat 9 anggota regu (saat ini terpilih ${editTeamMembers.length} anggota).`);
+      if (editMemberIds.length !== 9) {
+        setErrorMsg(`Konfigurasi Regu Satpam belum lengkap: Wajib memilih tepat 9 anggota regu (saat ini terpilih ${editMemberIds.length} anggota).`);
         return;
       }
     }
@@ -528,7 +533,7 @@ export default function UserManagementPage() {
           body: JSON.stringify({
             teamId: `team_${editTeamNumber}`,
             ketuaShiftId: editLinkedEmployeeId,
-            memberEmployeeIds: editTeamMembers,
+            memberEmployeeIds: editMemberIds,
             reason: 'Perubahan konfigurasi regu oleh Super Administrator',
           }),
         });
@@ -929,7 +934,7 @@ export default function UserManagementPage() {
                             const selectedEmpName = allEmployees.find(e => e.id === newLinkedEmployeeId)?.name || 'Pengguna baru ini';
                             const otherTeam = shiftTeams.find(t => t.ketuaShiftId === newLinkedEmployeeId && t.id !== `team_${newTeamNumber}`);
 
-                            const overlappingMembers = newTeamMembers.map(empId => {
+                            const overlappingMembers = newMemberIds.map(empId => {
                               const emp = allEmployees.find(e => e.id === empId);
                               const other = shiftTeams.find(t => t.id !== `team_${newTeamNumber}` && (t.ketuaShiftId === empId || t.memberEmployeeIds?.includes(empId)));
                               return other ? { name: emp?.name || empId, teamNum: other.id.split('_')[1] } : null;
@@ -980,19 +985,19 @@ export default function UserManagementPage() {
                           <div className="space-y-1.5">
                             <Label className="text-xs font-semibold text-slate-500 flex justify-between items-center">
                               <span>Pilih Anggota Regu</span>
-                              <span className={newTeamMembers.length === 9 ? "text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-sm font-bold text-xs flex items-center gap-1" : "text-rose-700 bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-sm font-bold text-xs flex items-center gap-1"}>
-                                {newTeamMembers.length === 9 ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-rose-600" />}
-                                {newTeamMembers.length} / 9 Terpilih
+                              <span className={newMemberIds.length === 9 ? "text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-sm font-bold text-xs flex items-center gap-1" : "text-rose-700 bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-sm font-bold text-xs flex items-center gap-1"}>
+                                {newMemberIds.length === 9 ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-rose-600" />}
+                                {newMemberIds.length} / 9 Terpilih
                               </span>
                             </Label>
                             
-                            {newTeamMembers.length !== 9 && (
+                            {newMemberIds.length !== 9 && (
                               <div className="p-2.5 rounded-md bg-rose-50 border border-rose-200/80 text-rose-800 text-xs font-medium flex items-center gap-2">
                                 <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                                 <span>
-                                  {newTeamMembers.length < 9 
-                                    ? `Jumlah anggota kurang. Pilih ${9 - newTeamMembers.length} anggota regu lagi.`
-                                    : `Jumlah anggota kelebihan. Hapus ${newTeamMembers.length - 9} anggota regu.`}
+                                  {newMemberIds.length < 9 
+                                    ? `Jumlah anggota kurang. Pilih ${9 - newMemberIds.length} anggota regu lagi.`
+                                    : `Jumlah anggota kelebihan. Hapus ${newMemberIds.length - 9} anggota regu.`}
                                 </span>
                               </div>
                             )}
@@ -1659,7 +1664,7 @@ export default function UserManagementPage() {
                         const selectedEmpName = allEmployees.find(e => e.id === editLinkedEmployeeId)?.name || 'Pengguna ini';
                         const otherTeam = shiftTeams.find(t => t.ketuaShiftId === editLinkedEmployeeId && t.id !== `team_${editTeamNumber}`);
 
-                        const overlappingMembers = editTeamMembers.map(empId => {
+                        const overlappingMembers = editMemberIds.map(empId => {
                           const emp = allEmployees.find(e => e.id === empId);
                           const other = shiftTeams.find(t => t.id !== `team_${editTeamNumber}` && (t.ketuaShiftId === empId || t.memberEmployeeIds?.includes(empId)));
                           return other ? { name: emp?.name || empId, teamNum: other.id.split('_')[1] } : null;
@@ -1710,19 +1715,19 @@ export default function UserManagementPage() {
                       <div className="space-y-1.5 flex-1 flex flex-col min-h-0">
                         <Label className="text-xs font-semibold text-slate-600 flex justify-between items-center">
                           <span>Pilih Anggota Regu</span>
-                          <span className={editTeamMembers.length === 9 ? "text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-sm font-bold text-xs flex items-center gap-1" : "text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-sm font-bold text-xs flex items-center gap-1"}>
-                            {editTeamMembers.length === 9 ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-rose-600" />}
-                            {editTeamMembers.length} / 9 Terpilih
+                          <span className={editMemberIds.length === 9 ? "text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-sm font-bold text-xs flex items-center gap-1" : "text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-sm font-bold text-xs flex items-center gap-1"}>
+                            {editMemberIds.length === 9 ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-rose-600" />}
+                            {editMemberIds.length} / 9 Terpilih
                           </span>
                         </Label>
                         
-                        {editTeamMembers.length !== 9 && (
+                        {editMemberIds.length !== 9 && (
                           <div className="p-2.5 rounded-md bg-rose-50 border border-rose-200/80 text-rose-800 text-xs font-medium flex items-center gap-2">
                             <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                             <span>
-                              {editTeamMembers.length < 9 
-                                ? `Jumlah anggota kurang. Pilih ${9 - editTeamMembers.length} anggota regu lagi agar tepat 9 orang.`
-                                : `Jumlah anggota kelebihan. Hapus ${editTeamMembers.length - 9} anggota regu agar tepat 9 orang.`}
+                              {editMemberIds.length < 9 
+                                ? `Jumlah anggota kurang. Pilih ${9 - editMemberIds.length} anggota regu lagi agar tepat 9 orang.`
+                                : `Jumlah anggota kelebihan. Hapus ${editMemberIds.length - 9} anggota regu agar tepat 9 orang.`}
                             </span>
                           </div>
                         )}
