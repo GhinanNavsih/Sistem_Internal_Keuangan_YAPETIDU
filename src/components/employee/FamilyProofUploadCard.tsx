@@ -1,12 +1,16 @@
 "use client";
 
-import { AlertCircle, CheckCircle2, FileUp } from 'lucide-react';
+import { useRef } from 'react';
+import { Paperclip, Trash2, Upload } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { FAMILY_PROOF_MAX_BYTES } from '@/lib/payroll/familyAllowanceRequests';
 import { gantiLiburAttachmentContentType } from '@/lib/payroll/gantiLiburAttachments';
 
 interface Props {
   file: File | null;
   onFileChange: (file: File | null) => void;
+  /** Goes on the pick button, so a `Field` label can point at it. */
+  id?: string;
 }
 
 function formatFileSize(bytes: number): string {
@@ -24,55 +28,65 @@ export function familyProofProblem(file: File | null): string {
 }
 
 /**
- * The proof-of-enrollment picker. It turns green once an acceptable file is
- * chosen, and red when the file can't be sent, so the sopir sees the outcome
- * before pressing Kirim. The file itself is only uploaded on submit.
+ * The proof picker: the chosen file as a quiet row (name, size, a red remove
+ * icon) above an upload button, in the same shape as `ReceiptAttachments`. A
+ * file that cannot be sent is flagged here, so it shows before Kirim is pressed.
+ * The file itself is only uploaded on submit.
  */
-export default function FamilyProofUploadCard({ file, onFileChange }: Props) {
+export default function FamilyProofUploadCard({ file, onFileChange, id }: Props) {
+  const inputRef = useRef<HTMLInputElement>(null);
   const problem = familyProofProblem(file);
-  const state = !file ? 'empty' : problem ? 'rejected' : 'accepted';
-
-  const frame = {
-    empty: 'border-dashed border-indigo-200 bg-indigo-50/50 hover:bg-indigo-50',
-    accepted: 'border-solid border-emerald-300 bg-emerald-50 hover:bg-emerald-100/70',
-    rejected: 'border-solid border-rose-300 bg-rose-50 hover:bg-rose-100/70',
-  }[state];
 
   return (
-    <label className={`relative flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-xl border-2 p-4 text-center transition-colors ${frame}`}>
-      {state === 'empty' && <FileUp className="mb-2 size-6 text-indigo-600" />}
-      {state === 'accepted' && (
-        <span className="mb-2 flex size-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-          <CheckCircle2 className="size-6" />
-        </span>
+    <div className="space-y-2">
+      {file && (
+        <div
+          className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+            problem ? 'border-red-200' : 'border-slate-200'
+          }`}
+        >
+          <Paperclip className="size-4 shrink-0 text-slate-400" />
+          <span className="min-w-0 flex-1 truncate text-slate-700">{file.name}</span>
+          <span className="shrink-0 text-xs tabular-nums text-slate-500">{formatFileSize(file.size)}</span>
+          <Button
+            type="button"
+            variant="danger-ghost"
+            size="icon-sm"
+            onClick={() => onFileChange(null)}
+            aria-label="Hapus berkas"
+            title="Hapus berkas"
+          >
+            <Trash2 />
+          </Button>
+        </div>
       )}
-      {state === 'rejected' && (
-        <span className="mb-2 flex size-10 items-center justify-center rounded-full bg-rose-100 text-rose-600">
-          <AlertCircle className="size-6" />
-        </span>
+      {problem && (
+        <p role="alert" className="text-xs text-red-600">
+          {problem}
+        </p>
       )}
-
-      <span className={`block max-w-full truncate text-sm font-medium ${
-        state === 'accepted' ? 'font-semibold text-emerald-900' : state === 'rejected' ? 'font-semibold text-rose-900' : 'text-indigo-800'
-      }`}>
-        {file ? file.name : 'Ketuk untuk memilih foto atau PDF'}
-      </span>
-
-      <span role="status" className={`mt-1 text-xs ${
-        state === 'accepted' ? 'text-emerald-800' : state === 'rejected' ? 'text-rose-800' : 'text-slate-500'
-      }`}>
-        {state === 'empty' && 'Surat keterangan aktif sekolah, kartu pelajar, atau bukti pendaftaran · maksimal 5 MB'}
-        {state === 'accepted' && `Bukti siap dikirim · ${formatFileSize(file!.size)} · ketuk untuk mengganti`}
-        {state === 'rejected' && `${problem} Ketuk untuk memilih berkas lain.`}
-      </span>
-
-      <input type="file" accept="image/*,application/pdf" aria-label="Bukti pertama masuk sekolah"
-        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+      <Button
+        id={id}
+        type="button"
+        variant="outline"
+        size="lg"
+        onClick={() => inputRef.current?.click()}
+        className="w-full border-dashed"
+      >
+        <Upload />
+        {file ? 'Ganti berkas' : 'Pilih foto atau PDF'}
+      </Button>
+      <input
+        ref={inputRef}
+        type="file"
+        hidden
+        accept="image/*,application/pdf"
         onChange={event => {
           const chosen = event.target.files?.[0] || null;
           event.target.value = '';
           onFileChange(chosen);
-        }} />
-    </label>
+        }}
+      />
+    </div>
   );
 }
