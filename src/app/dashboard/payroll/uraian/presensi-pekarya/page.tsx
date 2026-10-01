@@ -383,7 +383,7 @@ function ScanCell({
           onBlur={(event) => {
             if (!disabled) onCommit?.(event.target.value);
           }}
-          className={`h-8 w-28 rounded-lg border px-2 text-xs font-mono read-only:opacity-60 ${
+          className={`h-8 w-28 rounded-sm border px-2 text-xs font-mono read-only:opacity-60 ${
             auto
               ? 'border-amber-300 bg-amber-50/10 font-bold text-amber-700 ring-2 ring-amber-100/50'
               : 'border-slate-200 bg-white text-slate-700'
@@ -391,7 +391,7 @@ function ScanCell({
         />
         {auto && (
           <span
-            className="inline-flex shrink-0 select-none items-center rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-amber-700 border border-amber-200 cursor-help"
+            className="inline-flex shrink-0 select-none items-center rounded-sm bg-amber-50 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-amber-700 border border-amber-200 cursor-help"
             title="Diisi otomatis (150 menit dari scan yang tercatat) karena satu sisi lupa discan."
           >
             Auto
@@ -406,7 +406,7 @@ function ScanCell({
     <span className="inline-flex items-center gap-1">
       <span className="font-mono text-amber-700 font-semibold">{value}</span>
       <span
-        className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-amber-50 text-amber-700 border border-amber-200 select-none shrink-0 cursor-help"
+        className="inline-flex px-1.5 py-0.5 rounded-sm text-[9px] font-extrabold uppercase bg-amber-50 text-amber-700 border border-amber-200 select-none shrink-0 cursor-help"
         title="Diisi otomatis (150 menit dari scan yang tercatat) karena satu sisi lupa discan."
       >
         Auto
@@ -885,7 +885,7 @@ function BlueCollarSubmissionsCard({
   );
 
   return (
-    <Card className="overflow-hidden rounded-[24px] border-none bg-white shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
+    <Card className="overflow-hidden rounded-md border-none bg-white shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
       <div className="border-b border-slate-100 px-5 py-4 lg:px-6">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
@@ -901,7 +901,7 @@ function BlueCollarSubmissionsCard({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex w-fit items-center rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+            <span className="inline-flex w-fit items-center rounded-sm border border-emerald-100 bg-emerald-50 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
               {profileRole === 'super_admin' ? 'Review oleh Super Admin' : 'Review oleh Kepala SatKer'}
             </span>
             {canEdit && pendingItems.length > 0 && (
@@ -909,7 +909,7 @@ function BlueCollarSubmissionsCard({
                 type="button"
                 onClick={() => void onBulkApprove(selectedPendingItems)}
                 disabled={working || selectedPendingItems.length === 0}
-                className="h-9 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white shadow-sm hover:bg-emerald-700"
+                className="h-9 rounded-sm bg-emerald-600 px-3 text-xs font-bold text-white shadow-sm hover:bg-emerald-700"
               >
                 {working ? (
                   <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
@@ -1005,7 +1005,7 @@ function BlueCollarSubmissionsCard({
                       </TableCell>
                       <TableCell className="min-w-48">
                         <div className="font-bold text-slate-800">{item.employeeName}</div>
-                        <div className="mt-1 inline-flex items-center rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase text-indigo-700">
+                        <div className="mt-1 inline-flex items-center rounded-sm border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase text-indigo-700">
                           {item.category === 'SATPAM' ? 'SATPAM' : categoryLabel(item.category)}
                         </div>
                       </TableCell>
@@ -1024,18 +1024,18 @@ function BlueCollarSubmissionsCard({
                         <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[10px] font-semibold text-slate-500">
                           <span>{item.subtitle}</span>
                           {item.isUnassignedSatpam && (
-                            <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 font-bold text-indigo-700">
+                            <span className="inline-flex items-center rounded-sm border border-indigo-200 bg-indigo-50 px-2 py-0.5 font-bold text-indigo-700">
                               Tanpa regu
                             </span>
                           )}
                           {item.hasShiftRegistrationConflict && (
-                            <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-bold text-amber-800">
+                            <span className="inline-flex items-center rounded-sm border border-amber-200 bg-amber-50 px-2 py-0.5 font-bold text-amber-800">
                               ⚠ Shift sudah terdaftar
                             </span>
                           )}
                           {item.attendanceCheck && (
                             <span
-                              className={`inline-flex rounded-md border px-1.5 py-0.5 text-[9px] font-semibold ${checkClass(
+                              className={`inline-flex rounded-sm border px-1.5 py-0.5 text-[9px] font-semibold ${checkClass(
                                 item.attendanceCheck,
                               )}`}
                             >
@@ -1046,7 +1046,7 @@ function BlueCollarSubmissionsCard({
                       </TableCell>
                       <TableCell>
                         <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${
+                          className={`inline-flex items-center gap-1 rounded-sm px-2.5 py-1 text-[10px] font-bold uppercase ${
                             item.status === 'approved'
                               ? 'border border-emerald-100 bg-emerald-50 text-emerald-700'
                               : item.status === 'declined' || item.status === 'rejected'
@@ -1077,7 +1077,7 @@ function BlueCollarSubmissionsCard({
                                 Detail Pengajuan
                               </span>
                               <div className="grid grid-cols-1 gap-4 text-left md:grid-cols-2">
-                                <div className="space-y-2 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                                <div className="space-y-2 rounded-md border border-slate-100 bg-slate-50 p-4">
                                   <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
                                     Data Presensi
                                   </span>
@@ -1106,7 +1106,7 @@ function BlueCollarSubmissionsCard({
                                                 }
                                               }}
                                               disabled={typeActionLoading !== null}
-                                              className="h-6 rounded-md border-indigo-200 px-2 text-[10px] font-bold text-indigo-700 hover:bg-indigo-50"
+                                              className="h-6 rounded-sm border-indigo-200 px-2 text-[10px] font-bold text-indigo-700 hover:bg-indigo-50"
                                             >
                                               {editingTypeKey === item.key ? 'Tutup' : 'Ubah'}
                                             </Button>
@@ -1114,7 +1114,7 @@ function BlueCollarSubmissionsCard({
                                       </div>
                                     </div>
                                     {editingTypeKey === item.key && (
-                                      <div className="mt-3 space-y-3 rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 text-left">
+                                      <div className="mt-3 space-y-3 rounded-md border border-indigo-100 bg-indigo-50/60 p-3 text-left">
                                         <div>
                                           <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700">
                                             Ubah Jenis Ajuan
@@ -1131,12 +1131,12 @@ function BlueCollarSubmissionsCard({
                                             }
                                           }}
                                         >
-                                          <SelectTrigger className="h-9 rounded-lg border-indigo-200 bg-white text-xs font-bold text-slate-800">
+                                          <SelectTrigger className="h-9 rounded-sm border-indigo-200 bg-white text-xs font-bold text-slate-800">
                                             <SelectValue>
                                               {editingReportType === 'scan' ? 'Koreksi Scan' : 'Izin Resmi'}
                                             </SelectValue>
                                           </SelectTrigger>
-                                          <SelectContent className="rounded-lg bg-white">
+                                          <SelectContent className="rounded-md bg-white">
                                             <SelectItem value="scan" className="text-xs font-semibold">
                                               Koreksi Scan
                                             </SelectItem>
@@ -1153,7 +1153,7 @@ function BlueCollarSubmissionsCard({
                                                 type="time"
                                                 value={editingScanIn}
                                                 onChange={(event) => setEditingScanIn(event.target.value)}
-                                                className="h-8 rounded-lg bg-white font-mono text-xs"
+                                                className="h-8 rounded-sm bg-white font-mono text-xs"
                                               />
                                             </label>
                                             <label className="space-y-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
@@ -1162,7 +1162,7 @@ function BlueCollarSubmissionsCard({
                                                 type="time"
                                                 value={editingScanOut}
                                                 onChange={(event) => setEditingScanOut(event.target.value)}
-                                                className="h-8 rounded-lg bg-white font-mono text-xs"
+                                                className="h-8 rounded-sm bg-white font-mono text-xs"
                                               />
                                             </label>
                                           </div>
@@ -1174,10 +1174,10 @@ function BlueCollarSubmissionsCard({
                                               if (value) setEditingAbsenceType(value);
                                             }}
                                           >
-                                            <SelectTrigger className="h-9 rounded-lg border-indigo-200 bg-white text-xs font-bold text-slate-800">
+                                            <SelectTrigger className="h-9 rounded-sm border-indigo-200 bg-white text-xs font-bold text-slate-800">
                                               <SelectValue>Jenis alasan izin</SelectValue>
                                             </SelectTrigger>
-                                            <SelectContent className="rounded-lg bg-white">
+                                            <SelectContent className="rounded-md bg-white">
                                               {SATPAM_ABSENCE_TYPE_OPTIONS.map((option) => (
                                                 <SelectItem key={option.value} value={option.value} className="text-xs font-semibold">
                                                   {option.label}
@@ -1192,7 +1192,7 @@ function BlueCollarSubmissionsCard({
                                             variant="outline"
                                             onClick={cancelTypeEdit}
                                             disabled={typeActionLoading !== null}
-                                            className="h-7 rounded-lg bg-white px-2.5 text-[10px] font-bold"
+                                            className="h-7 rounded-sm bg-white px-2.5 text-[10px] font-bold"
                                           >
                                             Batal
                                           </Button>
@@ -1200,7 +1200,7 @@ function BlueCollarSubmissionsCard({
                                             type="button"
                                             onClick={() => void handleChangeType(item)}
                                             disabled={typeActionLoading !== null}
-                                            className="h-7 rounded-lg bg-indigo-600 px-3 text-[10px] font-bold text-white hover:bg-indigo-700"
+                                            className="h-7 rounded-sm bg-indigo-600 px-3 text-[10px] font-bold text-white hover:bg-indigo-700"
                                           >
                                             {typeActionLoading === item.key && (
                                               <Loader2 className="mr-1 h-3 w-3 animate-spin" />
@@ -1234,7 +1234,7 @@ function BlueCollarSubmissionsCard({
                                       </div>
                                     )}
                                     {item.hasShiftRegistrationConflict && (
-                                      <div className="space-y-1 rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-900">
+                                      <div className="space-y-1 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900">
                                         <p className="font-bold">
                                           ⚠ Pegawai sudah terdaftar pada shift tanggal ini
                                         </p>
@@ -1256,7 +1256,7 @@ function BlueCollarSubmissionsCard({
                                         ))}
                                         <Link
                                           href={satpamShiftReviewHref(item.raw)}
-                                          className="mt-2 inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-2.5 text-xs font-bold text-amber-800 transition-colors hover:bg-amber-100"
+                                          className="mt-2 inline-flex min-h-8 items-center gap-1.5 rounded-sm border border-amber-300 bg-white px-2.5 text-xs font-bold text-amber-800 transition-colors hover:bg-amber-100"
                                         >
                                           <ExternalLink className="h-3.5 w-3.5" />
                                           Check Shift
@@ -1267,7 +1267,7 @@ function BlueCollarSubmissionsCard({
                                       <div className="flex items-center justify-between gap-3">
                                         <span>Verifikasi Kehadiran:</span>
                                         <span
-                                          className={`inline-flex rounded-lg border px-2 py-0.5 text-xs font-semibold ${checkClass(
+                                          className={`inline-flex rounded-sm border px-2 py-0.5 text-xs font-semibold ${checkClass(
                                             item.attendanceCheck,
                                           )}`}
                                         >
@@ -1316,7 +1316,7 @@ function BlueCollarSubmissionsCard({
                                   </span>
                                   {item.evidenceUrl ? (
                                     isImageProofUrl(item.evidenceUrl) ? (
-                                      <div className="h-[calc(100%-1.25rem)] overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 p-2">
+                                      <div className="h-[calc(100%-1.25rem)] overflow-hidden rounded-md border border-slate-100 bg-slate-50 p-2">
                                         <button
                                           type="button"
                                           onClick={() =>
@@ -1331,9 +1331,9 @@ function BlueCollarSubmissionsCard({
                                           <img
                                             src={item.evidenceUrl}
                                             alt="Bukti Pendukung"
-                                            className="h-full max-h-[280px] w-full rounded-xl object-contain transition-opacity hover:opacity-90"
+                                            className="h-full max-h-[280px] w-full rounded-sm object-contain transition-opacity hover:opacity-90"
                                           />
-                                          <div className="absolute inset-0 flex items-center justify-center gap-1 rounded-xl bg-black/40 text-[10px] font-bold text-white opacity-0 transition-opacity group-hover:opacity-100">
+                                          <div className="absolute inset-0 flex items-center justify-center gap-1 rounded-sm bg-black/40 text-[10px] font-bold text-white opacity-0 transition-opacity group-hover:opacity-100">
                                             <ZoomIn className="h-3.5 w-3.5" /> Perbesar Gambar
                                           </div>
                                         </button>
@@ -1350,13 +1350,13 @@ function BlueCollarSubmissionsCard({
                                       </a>
                                     )
                                   ) : item.attachments && item.attachments.length > 0 ? (
-                                    <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                                    <div className="rounded-md border border-slate-100 bg-slate-50 p-3">
                                       <GantiLiburAttachmentLinks
                                         attachments={item.attachments}
                                       />
                                     </div>
                                   ) : (
-                                    <div className="flex h-[calc(100%-1.25rem)] min-h-[160px] items-center justify-center rounded-2xl border border-dashed border-slate-200 text-xs font-semibold text-slate-400">
+                                    <div className="flex h-[calc(100%-1.25rem)] min-h-[160px] items-center justify-center rounded-md border border-dashed border-slate-200 text-xs font-semibold text-slate-400">
                                       Tidak ada dokumen pendukung
                                     </div>
                                   )}
@@ -1403,7 +1403,7 @@ function BlueCollarSubmissionsCard({
                                   }}
                                   disabled={working}
                                   variant="outline"
-                                  className="flex h-9 cursor-pointer items-center gap-1.5 rounded-xl border-rose-200 bg-white px-4 text-xs font-bold text-rose-600 shadow-sm hover:bg-rose-50"
+                                  className="flex h-9 cursor-pointer items-center gap-1.5 rounded-sm border-rose-200 bg-white px-4 text-xs font-bold text-rose-600 shadow-sm hover:bg-rose-50"
                                 >
                                   <X className="h-3.5 w-3.5" /> {isSupersede ? 'Tolak Ulang' : 'Tolak'}
                                 </Button>
@@ -1422,7 +1422,7 @@ function BlueCollarSubmissionsCard({
                                     }
                                   }}
                                   disabled={working}
-                                  className="flex h-9 cursor-pointer items-center gap-1.5 rounded-xl bg-indigo-600 px-5 text-xs font-bold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95"
+                                  className="flex h-9 cursor-pointer items-center gap-1.5 rounded-sm bg-indigo-600 px-5 text-xs font-bold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95"
                                 >
                                   <Check className="h-3.5 w-3.5" />
                                   {isSupersede ? 'Setujui Ulang' : 'Setujui'}
@@ -2300,7 +2300,7 @@ export default function PekaryaAttendancePage() {
 
   if (period < '2026-08' && category !== 'SATPAM') {
     return (
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-amber-900">
+      <div className="rounded-md border border-amber-200 bg-amber-50 p-6 text-amber-900">
         Presensi Pekarya otomatis mulai berlaku pada periode Agustus 2026.
         Periode sebelumnya tetap memakai perhitungan historis.
       </div>
@@ -2320,7 +2320,7 @@ export default function PekaryaAttendancePage() {
         }}
       />
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="font-bold text-slate-900">
@@ -2334,7 +2334,7 @@ export default function PekaryaAttendancePage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {canViewSatpamCategory && (
-              <div className="flex rounded-xl border border-slate-200 bg-slate-50 p-1">
+              <div className="flex rounded-md border border-slate-200 bg-slate-50 p-1">
                 {[
                   [ALL_BLUE_COLLAR_CATEGORY, 'Semua Pekarya'],
                   ['SATPAM', 'Satpam'],
@@ -2343,7 +2343,7 @@ export default function PekaryaAttendancePage() {
                     key={value}
                     type="button"
                     onClick={() => setCategory(value)}
-                    className={`min-h-10 rounded-lg px-3 text-sm font-bold transition-all ${
+                    className={`min-h-10 rounded-sm px-3 text-sm font-bold transition-all ${
                       category === value
                         ? 'bg-indigo-600 text-white shadow-sm'
                         : 'text-slate-500 hover:bg-slate-100'
@@ -2356,7 +2356,7 @@ export default function PekaryaAttendancePage() {
             )}
             <Button
               variant="outline"
-              className="min-h-12 gap-2"
+              className="rounded-sm min-h-12 gap-2"
               onClick={() => void refresh()}
               disabled={loading || refreshing || !category}
             >
@@ -2370,7 +2370,7 @@ export default function PekaryaAttendancePage() {
       {data &&
         !isSatpamView(data) &&
         category === ALL_BLUE_COLLAR_CATEGORY && (
-          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5 text-blue-900">
+          <div className="rounded-md border border-blue-200 bg-blue-50 p-5 text-blue-900">
             <p className="font-bold">Semua pegawai blue collar</p>
             <p className="mt-1 text-sm">
               Daftar ini menggabungkan seluruh kategori yang memakai upah
@@ -2381,7 +2381,7 @@ export default function PekaryaAttendancePage() {
         )}
 
       {loading && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500">
+        <div className="rounded-md border border-slate-200 bg-white p-8 text-center text-slate-500">
           Memuat hasil presensi…
         </div>
       )}
@@ -2390,7 +2390,7 @@ export default function PekaryaAttendancePage() {
           itself, next to the people they belong with. Satpam has no such table
           — it is a verification view — so they are listed on their own there. */}
       {!loading && data && isSatpamView(data) && departmentUnmatched.length > 0 && (
-        <section className="overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm">
+        <section className="overflow-hidden rounded-md border border-amber-200 bg-white shadow-sm">
           <div className="border-b border-amber-100 bg-amber-50 p-5 text-amber-900">
             <p className="flex items-center gap-2 font-bold">
               <UserRoundX className="h-5 w-5" />
@@ -2421,7 +2421,7 @@ export default function PekaryaAttendancePage() {
                 {canLinkAttendance && (
                   <Button
                     variant="outline"
-                    className="min-h-12 shrink-0"
+                    className="rounded-sm min-h-12 shrink-0"
                     onClick={() => {
                       setLinkTarget(row);
                       setLinkEmployeeId('');
@@ -2440,7 +2440,7 @@ export default function PekaryaAttendancePage() {
 
       {!loading && data && isSatpamView(data) && (
         <>
-          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5 text-blue-900">
+          <div className="rounded-md border border-blue-200 bg-blue-50 p-5 text-blue-900">
             <div className="flex gap-3">
               <ShieldCheck className="mt-0.5 h-6 w-6 shrink-0" />
               <div>
@@ -2452,7 +2452,7 @@ export default function PekaryaAttendancePage() {
               </div>
             </div>
             {satpamAttendanceNotice && (
-              <p className="mt-3 rounded-xl border border-blue-200 bg-white/70 p-3 text-sm">
+              <p className="mt-3 rounded-md border border-blue-200 bg-white/70 p-3 text-sm">
                 Presensi belum dapat dibandingkan: {satpamAttendanceNotice}
                 {' '}
                 Rencana dinas, izin, dan rekonsiliasi tetap dapat diperiksa.
@@ -2462,7 +2462,7 @@ export default function PekaryaAttendancePage() {
 
           {satpamOperations && (
             <div
-              className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm lg:grid-cols-4"
+              className="grid grid-cols-2 gap-2 rounded-md border border-slate-200 bg-white p-2 shadow-sm lg:grid-cols-4"
               role="tablist"
               aria-label="Pemeriksaan Satpam"
             >
@@ -2484,7 +2484,7 @@ export default function PekaryaAttendancePage() {
                   type="button"
                   role="tab"
                   aria-selected={satpamTab === tab}
-                  className={`min-h-12 rounded-xl px-3 py-2 text-sm font-bold ${
+                  className={`min-h-12 rounded-sm px-3 py-2 text-sm font-bold ${
                     satpamTab === tab
                       ? 'bg-indigo-600 text-white'
                       : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
@@ -2508,7 +2508,7 @@ export default function PekaryaAttendancePage() {
           {satpamOperations && satpamTab === 'plans' && (
             <section className="space-y-3">
               {!satpamOperations.dutyPlans.enabled && (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-slate-700">
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-5 text-slate-700">
                   Periode ini masih memakai alur Satpam lama. Rencana dinas
                   kanonis berlaku untuk periode pertama yang dibuka setelah
                   fitur diterapkan.
@@ -2519,7 +2519,7 @@ export default function PekaryaAttendancePage() {
                 return (
                   <article
                     key={plan.id}
-                    className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+                    className="rounded-md border border-slate-200 bg-white p-5 shadow-sm"
                   >
                     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                       <div>
@@ -2540,7 +2540,7 @@ export default function PekaryaAttendancePage() {
                       </div>
                     </div>
                     {(plan.generatedDays?.length || 0) > 0 && (
-                      <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50">
+                      <details className="mt-4 rounded-md border border-slate-200 bg-slate-50">
                         <summary className="min-h-12 cursor-pointer p-3 font-semibold text-slate-700">
                           Lihat dan koreksi tanggal rencana
                         </summary>
@@ -2566,7 +2566,7 @@ export default function PekaryaAttendancePage() {
                               {canEdit && (
                                 <Button
                                   variant="outline"
-                                  className="min-h-12"
+                                  className="rounded-sm min-h-12"
                                   onClick={() =>
                                     setPlanCorrection({
                                       plan,
@@ -2613,7 +2613,7 @@ export default function PekaryaAttendancePage() {
           {satpamOperations && satpamTab === 'reconciliation' && (
             <section className="space-y-4">
               <div
-                className={`rounded-2xl border p-5 ${
+                className={`rounded-md border p-5 ${
                   satpamOperations.reconciliation.blockers.length > 0
                     ? 'border-amber-200 bg-amber-50 text-amber-900'
                     : 'border-emerald-200 bg-emerald-50 text-emerald-900'
@@ -2633,7 +2633,7 @@ export default function PekaryaAttendancePage() {
               {satpamOperations.reconciliation.plans.map((plan) => (
                 <article
                   key={plan.planId}
-                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+                  className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm"
                 >
                   <div className="border-b border-slate-200 p-5">
                     <h2 className="font-bold">{plan.teamId}</h2>
@@ -2685,7 +2685,7 @@ export default function PekaryaAttendancePage() {
               ))}
               {satpamOperations.reconciliation.unassignedExternalEmployees
                 .length > 0 && (
-                <article className="rounded-2xl border border-blue-200 bg-blue-50 p-5 text-blue-900">
+                <article className="rounded-md border border-blue-200 bg-blue-50 p-5 text-blue-900">
                   <h2 className="font-bold">
                     Pengganti eksternal tanpa regu
                   </h2>
@@ -2698,7 +2698,7 @@ export default function PekaryaAttendancePage() {
                       (employee) => (
                         <div
                           key={employee.employeeId}
-                          className="rounded-xl bg-white/80 p-3 font-semibold"
+                          className="rounded-md bg-white/80 p-3 font-semibold"
                         >
                           {employee.employeeName} · {employee.extraDuties}{' '}
                           penugasan ekstra
@@ -2712,7 +2712,7 @@ export default function PekaryaAttendancePage() {
           )}
 
           {(!satpamOperations || satpamTab === 'mismatches') && (
-          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <section className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-200 p-5">
               <h2 className="font-bold">Perbedaan yang perlu diperiksa</h2>
               <p className="text-sm text-slate-500">
@@ -2775,14 +2775,14 @@ export default function PekaryaAttendancePage() {
               ],
               ['Total', money(totals.amount)],
             ].map(([label, value]) => (
-              <div key={String(label)} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div key={String(label)} className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
                 <p className="text-sm text-slate-500">{label}</p>
                 <p className="mt-1 text-xl font-bold text-slate-900">{value}</p>
               </div>
             ))}
           </div>
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <section className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="flex items-center gap-2 font-bold text-slate-900">
@@ -2798,7 +2798,7 @@ export default function PekaryaAttendancePage() {
               </div>
               {canEdit && (
                 <Button
-                  className="min-h-12 gap-2 bg-indigo-600 hover:bg-indigo-700"
+                  className="rounded-sm min-h-12 gap-2 bg-indigo-600 hover:bg-indigo-700"
                   onClick={() => void publish()}
                   disabled={
                     working ||
@@ -2818,7 +2818,7 @@ export default function PekaryaAttendancePage() {
               )}
             </div>
             {!data.importRevisionId && (
-              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
                 Publikasi menunggu presensi bulanan diimpor. Menyetujui atau
                 menolak pengajuan di bawah tetap bisa dilakukan sekarang — begitu
                 presensi bulanan diimpor, keputusan yang sudah diambil ikut
@@ -2826,7 +2826,7 @@ export default function PekaryaAttendancePage() {
               </div>
             )}
             {data.employees.some((employee) => employee.publishBlocked) && (
-              <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+              <div className="mt-4 rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
                 Publikasi ditahan sampai semua pegawai aktif memiliki NIPY yang
                 unik. Peringatan scan satu sisi tidak menghalangi publikasi.
               </div>
@@ -2880,7 +2880,7 @@ export default function PekaryaAttendancePage() {
               return (
                 <article
                   key={row.key}
-                  className={`border-2 rounded-2xl shadow-sm bg-white transition-all hover:border-indigo-300 overflow-hidden ${
+                  className={`border-2 rounded-md shadow-sm bg-white transition-all hover:border-indigo-300 overflow-hidden ${
                     isExpanded
                       ? 'ring-4 ring-indigo-50 border-indigo-400 bg-indigo-50/40'
                       : unlinked
@@ -2901,7 +2901,7 @@ export default function PekaryaAttendancePage() {
                   >
                     {/* Left: Index & Identity */}
                     <div className="flex items-center gap-3 w-full lg:w-[280px] xl:w-[300px] shrink-0 min-w-0">
-                      <div className="w-8 h-8 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500 font-mono shrink-0">
+                      <div className="w-8 h-8 rounded-sm bg-slate-50 border border-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500 font-mono shrink-0">
                         {idx + 1}
                       </div>
                       <div className="space-y-1 min-w-0 flex-1">
@@ -2915,12 +2915,12 @@ export default function PekaryaAttendancePage() {
                               : unlinked!.sourceName || 'Tanpa nama'}
                           </h4>
                           {category === ALL_BLUE_COLLAR_CATEGORY && employee && (
-                            <span className="inline-flex text-[9px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full shrink-0">
+                            <span className="inline-flex text-[9px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-sm shrink-0">
                               {categoryLabel(employee.category)}
                             </span>
                           )}
                           {unlinked && (
-                            <span className="inline-flex items-center gap-1 text-[9px] font-bold text-rose-600 bg-rose-50 border border-rose-200/80 px-2 py-0.5 rounded-full shrink-0">
+                            <span className="inline-flex items-center gap-1 text-[9px] font-bold text-rose-600 bg-rose-50 border border-rose-200/80 px-2 py-0.5 rounded-sm shrink-0">
                               <AlertTriangle className="w-3 h-3 text-rose-500 shrink-0" />
                               Belum Terhubung
                             </span>
@@ -2951,14 +2951,14 @@ export default function PekaryaAttendancePage() {
                                 setLinkSearch(unlinked!.sourceName || '');
                                 setError('');
                               }}
-                              className="text-left px-2 py-1 rounded-lg border transition-all text-[9px] font-bold flex items-center gap-1 cursor-pointer bg-rose-50 border-rose-200/80 text-rose-700 hover:bg-rose-100/60"
+                              className="text-left px-2 py-1 rounded-sm border transition-all text-[9px] font-bold flex items-center gap-1 cursor-pointer bg-rose-50 border-rose-200/80 text-rose-700 hover:bg-rose-100/60"
                             >
                               <span className="truncate max-w-[190px]">
                                 Hubungkan Pegawai Manual…
                               </span>
                             </button>
                           ) : (
-                            <span className="inline-flex items-center gap-0.5 text-rose-500 bg-rose-50 border border-rose-100 text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0">
+                            <span className="inline-flex items-center gap-0.5 text-rose-500 bg-rose-50 border border-rose-100 text-[9px] font-bold px-1.5 py-0.5 rounded-sm shrink-0">
                               PIN {unlinked!.sourceNipy || 'kosong'} tidak cocok
                             </span>
                           )}
@@ -2996,7 +2996,7 @@ export default function PekaryaAttendancePage() {
                         </span>
                         <div className="mt-0.5 font-mono flex justify-center">
                           {employee && employee.incompletePunchCount > 0 ? (
-                            <span className="inline-flex items-center gap-1 text-[9px] text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full font-bold">
+                            <span className="inline-flex items-center gap-1 text-[9px] text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-sm font-bold">
                               <AlertTriangle className="w-3 h-3 shrink-0" />
                               {employee.incompletePunchCount} hari
                             </span>
@@ -3077,7 +3077,7 @@ export default function PekaryaAttendancePage() {
                         {unlinked.dates.map((date) => (
                           <span
                             key={date}
-                            className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-mono text-slate-600"
+                            className="rounded-sm border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-mono text-slate-600"
                           >
                             {date}
                           </span>
@@ -3092,7 +3092,7 @@ export default function PekaryaAttendancePage() {
                         {canEdit && (
                           <Button
                             variant="outline"
-                            className="min-h-12"
+                            className="rounded-sm min-h-12"
                             onClick={() => openCorrection(employee)}
                           >
                             Tambah Hari Tanpa Scan
@@ -3155,7 +3155,7 @@ export default function PekaryaAttendancePage() {
                                 </td>
                                 <td className="p-3">
                                   <span
-                                    className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold ${
+                                    className={`inline-flex items-center gap-1 rounded-sm px-2 py-1 text-xs font-semibold ${
                                       day.present
                                         ? day.completePunch
                                           ? 'bg-emerald-50 text-emerald-700'
@@ -3178,7 +3178,7 @@ export default function PekaryaAttendancePage() {
                                   <td className="p-3">
                                     <Button
                                       variant="outline"
-                                      className="min-h-12"
+                                      className="rounded-sm min-h-12"
                                       onClick={() => openCorrection(employee, day)}
                                     >
                                       Koreksi
@@ -3198,7 +3198,7 @@ export default function PekaryaAttendancePage() {
           </section>
 
           {data.correctionHistory.length > 0 && (
-            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <section className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
               <div className="border-b border-slate-200 p-5">
                 <h2 className="font-bold">Riwayat Koreksi</h2>
                 <p className="text-sm text-slate-500">
@@ -3228,7 +3228,7 @@ export default function PekaryaAttendancePage() {
         open={Boolean(planCorrection)}
         onOpenChange={(open) => !open && setPlanCorrection(null)}
       >
-        <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
+        <DialogContent className="rounded-md max-h-[90vh] max-w-xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Koreksi Rencana Dinas Satpam</DialogTitle>
             <DialogDescription>
@@ -3251,7 +3251,7 @@ export default function PekaryaAttendancePage() {
               <div className="space-y-2">
                 <Label>Shift yang dilaporkan</Label>
                 <select
-                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3"
+                  className="min-h-12 w-full rounded-sm border border-slate-300 bg-white px-3"
                   value={planCorrection.day.shiftName}
                   onChange={(event) =>
                     setPlanCorrection({
@@ -3272,7 +3272,7 @@ export default function PekaryaAttendancePage() {
                 <div key={assignment.postId} className="space-y-2">
                   <Label>{assignment.postId}</Label>
                   <select
-                    className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3"
+                    className="min-h-12 w-full rounded-sm border border-slate-300 bg-white px-3"
                     value={assignment.employeeId}
                     onChange={(event) =>
                       setPlanCorrection({
@@ -3306,10 +3306,10 @@ export default function PekaryaAttendancePage() {
                   </select>
                 </div>
               ))}
-              <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3">
                 <Label>Off-duty</Label>
                 <select
-                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3"
+                  className="min-h-12 w-full rounded-sm border border-slate-300 bg-white px-3"
                   value={planCorrection.day.offDutyEmployeeId}
                   onChange={(event) =>
                     setPlanCorrection({
@@ -3337,7 +3337,7 @@ export default function PekaryaAttendancePage() {
                 <Label htmlFor="plan-correction-reason">Alasan wajib</Label>
                 <textarea
                   id="plan-correction-reason"
-                  className="min-h-24 w-full rounded-xl border border-slate-300 p-3"
+                  className="min-h-24 w-full rounded-sm border border-slate-300 p-3"
                   value={planCorrection.reason}
                   onChange={(event) =>
                     setPlanCorrection({
@@ -3350,16 +3350,16 @@ export default function PekaryaAttendancePage() {
               </div>
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="rounded-b-md">
             <Button
               variant="outline"
-              className="min-h-12"
+              className="rounded-sm min-h-12"
               onClick={() => setPlanCorrection(null)}
             >
               Batal
             </Button>
             <Button
-              className="min-h-12"
+              className="rounded-sm min-h-12"
               disabled={
                 working ||
                 !planCorrection ||
@@ -3384,7 +3384,7 @@ export default function PekaryaAttendancePage() {
           }
         }}
       >
-        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
+        <DialogContent className="rounded-md max-h-[90vh] max-w-lg overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Hubungkan Baris Presensi</DialogTitle>
             <DialogDescription>
@@ -3395,7 +3395,7 @@ export default function PekaryaAttendancePage() {
           </DialogHeader>
           {linkTarget && (
             <div className="space-y-4">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
                 <p className="font-bold text-slate-900">
                   {linkTarget.sourceName || 'Tanpa nama'}
                 </p>
@@ -3406,14 +3406,14 @@ export default function PekaryaAttendancePage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="manual-link-search">Cari pegawai</Label>
-                <Input
+                <Input className="rounded-sm"
                   id="manual-link-search"
                   value={linkSearch}
                   onChange={(event) => setLinkSearch(event.target.value)}
                   placeholder="Nama atau NIPY pegawai"
                 />
               </div>
-              <div className="max-h-64 divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200">
+              <div className="max-h-64 divide-y divide-slate-100 overflow-y-auto rounded-md border border-slate-200">
                 {linkCandidates.length === 0 ? (
                   <p className="p-4 text-center text-sm text-slate-500">
                     Pegawai tidak ditemukan.
@@ -3454,16 +3454,16 @@ export default function PekaryaAttendancePage() {
                 )}
               </div>
               {error && (
-                <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+                <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
                   {error}
                 </p>
               )}
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="rounded-b-md">
             <Button
               variant="outline"
-              className="min-h-12"
+              className="rounded-sm min-h-12"
               onClick={() => {
                 setLinkTarget(null);
                 setLinkEmployeeId('');
@@ -3473,7 +3473,7 @@ export default function PekaryaAttendancePage() {
               Batal
             </Button>
             <Button
-              className="min-h-12 gap-2"
+              className="rounded-sm min-h-12 gap-2"
               disabled={working || !linkEmployeeId}
               onClick={() => void saveManualLink()}
             >
@@ -3485,7 +3485,7 @@ export default function PekaryaAttendancePage() {
       </Dialog>
 
       <Dialog open={Boolean(correction)} onOpenChange={(open) => !open && setCorrection(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="rounded-md max-w-lg">
           <DialogHeader>
             <DialogTitle>Koreksi Presensi</DialogTitle>
             <DialogDescription>
@@ -3501,7 +3501,7 @@ export default function PekaryaAttendancePage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="correction-date">Tanggal</Label>
-                <Input
+                <Input className="rounded-sm"
                   id="correction-date"
                   type="date"
                   min={`${period}-01`}
@@ -3524,7 +3524,7 @@ export default function PekaryaAttendancePage() {
                   }}
                 />
               </div>
-              <label className="flex min-h-12 items-center gap-3 rounded-xl border p-3">
+              <label className="flex min-h-12 items-center gap-3 rounded-md border p-3">
                 <input
                   type="checkbox"
                   className="h-5 w-5"
@@ -3543,7 +3543,7 @@ export default function PekaryaAttendancePage() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label htmlFor="scan-in">Scan masuk (opsional)</Label>
-                  <Input
+                  <Input className="rounded-sm"
                     id="scan-in"
                     type="time"
                     step="1"
@@ -3556,7 +3556,7 @@ export default function PekaryaAttendancePage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="scan-out">Scan pulang (opsional)</Label>
-                  <Input
+                  <Input className="rounded-sm"
                     id="scan-out"
                     type="time"
                     step="1"
@@ -3569,7 +3569,7 @@ export default function PekaryaAttendancePage() {
                 </div>
               </div>
               {correctionTimeRangeInvalid && (
-                <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+                <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
                   Scan pulang harus lebih lambat dari scan masuk.
                 </p>
               )}
@@ -3577,7 +3577,7 @@ export default function PekaryaAttendancePage() {
                 <Label htmlFor="correction-reason">Alasan wajib</Label>
                 <textarea
                   id="correction-reason"
-                  className="min-h-24 w-full rounded-xl border border-slate-300 p-3"
+                  className="min-h-24 w-full rounded-sm border border-slate-300 p-3"
                   value={correction.reason}
                   onChange={(event) =>
                     setCorrection({ ...correction, reason: event.target.value })
@@ -3587,16 +3587,16 @@ export default function PekaryaAttendancePage() {
               </div>
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="rounded-b-md">
             <Button
               variant="outline"
-              className="min-h-12"
+              className="rounded-sm min-h-12"
               onClick={() => setCorrection(null)}
             >
               Batal
             </Button>
             <Button
-              className="min-h-12 gap-2"
+              className="rounded-sm min-h-12 gap-2"
               onClick={() => void saveCorrection()}
               disabled={
                 working ||
@@ -3621,7 +3621,7 @@ export default function PekaryaAttendancePage() {
           }
         }}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent className="rounded-md max-w-md">
           <DialogHeader>
             <DialogTitle>{declineTarget?.title || 'Tolak Pengajuan'}</DialogTitle>
             <DialogDescription>
@@ -3635,18 +3635,18 @@ export default function PekaryaAttendancePage() {
                 id="decline-reason"
                 rows={3}
                 maxLength={500}
-                className="w-full rounded-xl border border-slate-300 p-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="w-full rounded-sm border border-slate-300 p-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 placeholder="Contoh: Hari kerja pengganti tidak memenuhi ketentuan."
                 value={declineReason}
                 onChange={(e) => setDeclineReason(e.target.value)}
               />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="rounded-b-md">
             <Button
               type="button"
               variant="outline"
-              className="min-h-12"
+              className="rounded-sm min-h-12"
               onClick={() => {
                 setDeclineTarget(null);
                 setDeclineReason('');
@@ -3656,7 +3656,7 @@ export default function PekaryaAttendancePage() {
             </Button>
             <Button
               type="button"
-              className="min-h-12 bg-rose-600 text-white hover:bg-rose-700"
+              className="rounded-sm min-h-12 bg-rose-600 text-white hover:bg-rose-700"
               disabled={working || !declineReason.trim()}
               onClick={() => void handleConfirmDecline()}
             >

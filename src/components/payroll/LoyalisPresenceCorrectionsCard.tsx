@@ -213,7 +213,7 @@ function AttendanceCheckBadge({
       : '';
   return (
     <div
-      className={`mt-2 inline-flex items-center rounded-xl border px-3 py-1.5 text-xs font-semibold ${checkClass(
+      className={`mt-2 inline-flex items-center rounded-sm border px-3 py-1.5 text-xs font-semibold ${checkClass(
         check,
       )}`}
     >
@@ -935,7 +935,7 @@ export function LoyalisPresenceCorrectionsCard({
     <>
       <FloatingSnackbar message={message} />
 
-      <Card className="bg-white rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none overflow-hidden">
+      <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none overflow-hidden">
         {/* Header */}
         <div className="border-b border-slate-100 px-5 py-4 lg:px-6">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -954,11 +954,11 @@ export function LoyalisPresenceCorrectionsCard({
 
             <div className="flex flex-wrap items-center gap-2">
               {/* Quick Status Pill Filters */}
-              <div className="inline-flex rounded-xl bg-slate-100/80 p-1 text-xs font-semibold">
+              <div className="inline-flex rounded-md bg-slate-100/80 p-1 text-xs font-semibold">
                 <button
                   type="button"
                   onClick={() => setSelectedStatus('pending')}
-                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 transition-all ${
+                  className={`flex items-center gap-1.5 rounded-sm px-2.5 py-1 transition-all ${
                     selectedStatus === 'pending'
                       ? 'bg-white text-amber-700 font-bold shadow-sm'
                       : 'text-slate-600 hover:text-slate-900'
@@ -966,7 +966,7 @@ export function LoyalisPresenceCorrectionsCard({
                 >
                   Tertunda
                   {stats.pending > 0 && (
-                    <span className="rounded-full bg-amber-100 px-1.5 py-0.2 text-[10px] font-bold text-amber-800">
+                    <span className="rounded-sm bg-amber-100 px-1.5 py-0.2 text-[10px] font-bold text-amber-800">
                       {stats.pending}
                     </span>
                   )}
@@ -974,7 +974,7 @@ export function LoyalisPresenceCorrectionsCard({
                 <button
                   type="button"
                   onClick={() => setSelectedStatus('approved')}
-                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 transition-all ${
+                  className={`flex items-center gap-1.5 rounded-sm px-2.5 py-1 transition-all ${
                     selectedStatus === 'approved'
                       ? 'bg-white text-emerald-700 font-bold shadow-sm'
                       : 'text-slate-600 hover:text-slate-900'
@@ -982,7 +982,7 @@ export function LoyalisPresenceCorrectionsCard({
                 >
                   Disetujui
                   {stats.approved > 0 && (
-                    <span className="rounded-full bg-emerald-100 px-1.5 py-0.2 text-[10px] font-bold text-emerald-800">
+                    <span className="rounded-sm bg-emerald-100 px-1.5 py-0.2 text-[10px] font-bold text-emerald-800">
                       {stats.approved}
                     </span>
                   )}
@@ -990,7 +990,7 @@ export function LoyalisPresenceCorrectionsCard({
                 <button
                   type="button"
                   onClick={() => setSelectedStatus('rejected')}
-                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 transition-all ${
+                  className={`flex items-center gap-1.5 rounded-sm px-2.5 py-1 transition-all ${
                     selectedStatus === 'rejected'
                       ? 'bg-white text-rose-700 font-bold shadow-sm'
                       : 'text-slate-600 hover:text-slate-900'
@@ -998,7 +998,7 @@ export function LoyalisPresenceCorrectionsCard({
                 >
                   Ditolak
                   {stats.rejected > 0 && (
-                    <span className="rounded-full bg-rose-100 px-1.5 py-0.2 text-[10px] font-bold text-rose-800">
+                    <span className="rounded-sm bg-rose-100 px-1.5 py-0.2 text-[10px] font-bold text-rose-800">
                       {stats.rejected}
                     </span>
                   )}
@@ -1006,7 +1006,7 @@ export function LoyalisPresenceCorrectionsCard({
                 <button
                   type="button"
                   onClick={() => setSelectedStatus('all')}
-                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 transition-all ${
+                  className={`flex items-center gap-1.5 rounded-sm px-2.5 py-1 transition-all ${
                     selectedStatus === 'all'
                       ? 'bg-white text-slate-800 font-bold shadow-sm'
                       : 'text-slate-600 hover:text-slate-900'
@@ -1027,7 +1027,7 @@ export function LoyalisPresenceCorrectionsCard({
                   void fetchExtraRequests();
                 }}
                 disabled={loading}
-                className="h-8 rounded-xl border-slate-200 bg-white text-slate-600 hover:bg-slate-50 text-xs"
+                className="h-8 rounded-sm border-slate-200 bg-white text-slate-600 hover:bg-slate-50 text-xs"
               >
                 <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
                 Segarkan
@@ -1039,7 +1039,7 @@ export function LoyalisPresenceCorrectionsCard({
                   type="button"
                   onClick={() => void handleBulkApproveLoyalisRequests()}
                   disabled={actionLoading !== null || selectedBulkLoyalisRequests.length === 0}
-                  className="h-8 rounded-xl bg-indigo-600 px-3 text-xs font-bold text-white shadow-sm hover:bg-indigo-700"
+                  className="h-8 rounded-sm bg-indigo-600 px-3 text-xs font-bold text-white shadow-sm hover:bg-indigo-700"
                 >
                   {actionLoading === 'bulk-loyalis-approve' ? (
                     <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
@@ -1146,11 +1146,11 @@ export function LoyalisPresenceCorrectionsCard({
                               Diajukan {formatCreatedAt(item.request.createdAt)}
                             </div>
                           ) : item.kind === 'paid_leave' ? (
-                            <div className="mt-0.5 inline-flex items-center rounded-full border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                            <div className="mt-0.5 inline-flex items-center rounded-sm border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
                               Cuti Tahunan · Periode {item.request.period}
                             </div>
                           ) : (
-                            <div className="mt-0.5 inline-flex items-center rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700">
+                            <div className="mt-0.5 inline-flex items-center rounded-sm border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700">
                               Ganti Libur · {item.request.category || 'LOYALIS'}
                             </div>
                           )}
@@ -1196,7 +1196,7 @@ export function LoyalisPresenceCorrectionsCard({
                         </TableCell>
                         <TableCell>
                           <span
-                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-sm text-[10px] font-bold uppercase ${
                               status === 'approved'
                                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
                                 : status === 'rejected' || status === 'declined'
@@ -1231,7 +1231,7 @@ export function LoyalisPresenceCorrectionsCard({
                                           Bandingkan Data Presensi
                                         </span>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left">
-                                          <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4 space-y-2">
+                                          <div className="bg-slate-50 rounded-md border border-slate-100 p-4 space-y-2">
                                             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
                                               Data Log Asli (Excel)
                                             </span>
@@ -1268,7 +1268,7 @@ export function LoyalisPresenceCorrectionsCard({
                                             )}
                                           </div>
 
-                                          <div className="bg-indigo-50/20 rounded-2xl border border-indigo-100/50 p-4 space-y-2">
+                                          <div className="bg-indigo-50/20 rounded-md border border-indigo-100/50 p-4 space-y-2">
                                             <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">
                                               Koreksi yang Diajukan
                                             </span>
@@ -1295,7 +1295,7 @@ export function LoyalisPresenceCorrectionsCard({
                                                           }
                                                         }}
                                                         disabled={actionLoading !== null}
-                                                        className="h-6 rounded-md border-indigo-200 px-2 text-[10px] font-bold text-indigo-700 hover:bg-indigo-50"
+                                                        className="h-6 rounded-sm border-indigo-200 px-2 text-[10px] font-bold text-indigo-700 hover:bg-indigo-50"
                                                       >
                                                         {editingLoyalisReqId === item.request.id
                                                           ? 'Tutup'
@@ -1319,7 +1319,7 @@ export function LoyalisPresenceCorrectionsCard({
                                             </div>
 
                                             {editingLoyalisReqId === item.request.id && (
-                                              <div className="mt-3 space-y-3 rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 text-left">
+                                              <div className="mt-3 space-y-3 rounded-md border border-indigo-100 bg-indigo-50/60 p-3 text-left">
                                                 <div>
                                                   <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700">
                                                     Ubah Jenis Ajuan
@@ -1344,12 +1344,12 @@ export function LoyalisPresenceCorrectionsCard({
                                                     }
                                                   }}
                                                 >
-                                                  <SelectTrigger className="h-9 rounded-lg border-indigo-200 bg-white text-xs font-bold text-slate-800">
+                                                  <SelectTrigger className="h-9 rounded-sm border-indigo-200 bg-white text-xs font-bold text-slate-800">
                                                     <SelectValue>
                                                       {correctionTypeLabel(editingLoyalisType)}
                                                     </SelectValue>
                                                   </SelectTrigger>
-                                                  <SelectContent className="rounded-lg bg-white">
+                                                  <SelectContent className="rounded-md bg-white">
                                                     <SelectItem
                                                       value="izin_resmi"
                                                       className="text-xs font-semibold"
@@ -1403,7 +1403,7 @@ export function LoyalisPresenceCorrectionsCard({
                                                           onChange={(e) =>
                                                             setEditingLoyalisScanIn(e.target.value)
                                                           }
-                                                          className="h-8 rounded-lg bg-white font-mono text-xs"
+                                                          className="h-8 rounded-sm bg-white font-mono text-xs"
                                                         />
                                                       </label>
                                                     )}
@@ -1417,7 +1417,7 @@ export function LoyalisPresenceCorrectionsCard({
                                                           onChange={(e) =>
                                                             setEditingLoyalisScanOut(e.target.value)
                                                           }
-                                                          className="h-8 rounded-lg bg-white font-mono text-xs"
+                                                          className="h-8 rounded-sm bg-white font-mono text-xs"
                                                         />
                                                       </label>
                                                     )}
@@ -1430,7 +1430,7 @@ export function LoyalisPresenceCorrectionsCard({
                                                     variant="outline"
                                                     onClick={cancelLoyalisTypeEdit}
                                                     disabled={actionLoading !== null}
-                                                    className="h-7 rounded-lg bg-white px-2.5 text-[10px] font-bold"
+                                                    className="h-7 rounded-sm bg-white px-2.5 text-[10px] font-bold"
                                                   >
                                                     Batal
                                                   </Button>
@@ -1440,7 +1440,7 @@ export function LoyalisPresenceCorrectionsCard({
                                                       void handleChangeLoyalisType(item.request)
                                                     }
                                                     disabled={actionLoading !== null}
-                                                    className="h-7 rounded-lg bg-indigo-600 px-3 text-[10px] font-bold text-white hover:bg-indigo-700"
+                                                    className="h-7 rounded-sm bg-indigo-600 px-3 text-[10px] font-bold text-white hover:bg-indigo-700"
                                                   >
                                                     {actionLoading ===
                                                       `loyalis_type:${item.request.id}` && (
@@ -1455,7 +1455,7 @@ export function LoyalisPresenceCorrectionsCard({
                                         </div>
                                       </div>
 
-                                      <div className="space-y-1.5 bg-slate-50/50 p-4 rounded-2xl border border-slate-100 text-left">
+                                      <div className="space-y-1.5 bg-slate-50/50 p-4 rounded-md border border-slate-100 text-left">
                                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                                           Alasan Pengajuan
                                         </span>
@@ -1471,7 +1471,7 @@ export function LoyalisPresenceCorrectionsCard({
                                       </span>
                                       {item.request.proofUrl ? (
                                         isImageProofUrl(item.request.proofUrl) ? (
-                                          <div className="border border-slate-100 rounded-2xl overflow-hidden bg-slate-50 p-2 h-[calc(100%-1.25rem)]">
+                                          <div className="border border-slate-100 rounded-md overflow-hidden bg-slate-50 p-2 h-[calc(100%-1.25rem)]">
                                             <button
                                               type="button"
                                               onClick={() =>
@@ -1483,9 +1483,9 @@ export function LoyalisPresenceCorrectionsCard({
                                               <img
                                                 src={item.request.proofUrl}
                                                 alt="Bukti Pendukung"
-                                                className="h-full max-h-[280px] object-contain rounded-xl w-full hover:opacity-90 transition-opacity"
+                                                className="h-full max-h-[280px] object-contain rounded-sm w-full hover:opacity-90 transition-opacity"
                                               />
-                                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-[10px] font-bold gap-1 rounded-xl">
+                                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-[10px] font-bold gap-1 rounded-sm">
                                                 <ZoomIn className="w-3.5 h-3.5" /> Perbesar Gambar
                                               </div>
                                             </button>
@@ -1502,7 +1502,7 @@ export function LoyalisPresenceCorrectionsCard({
                                           </a>
                                         )
                                       ) : (
-                                        <div className="h-[calc(100%-1.25rem)] min-h-[160px] flex items-center justify-center rounded-2xl border border-dashed border-slate-200 text-xs font-semibold text-slate-400">
+                                        <div className="h-[calc(100%-1.25rem)] min-h-[160px] flex items-center justify-center rounded-md border border-dashed border-slate-200 text-xs font-semibold text-slate-400">
                                           Tidak ada dokumen pendukung
                                         </div>
                                       )}
@@ -1511,14 +1511,14 @@ export function LoyalisPresenceCorrectionsCard({
 
                                   {item.request.status === 'rejected' &&
                                     item.request.rejectionReason && (
-                                      <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 text-xs text-rose-800 font-medium text-left">
+                                      <div className="bg-rose-50 border border-rose-100 rounded-md p-4 text-xs text-rose-800 font-medium text-left">
                                         <strong>Catatan Penolakan Admin:</strong>{' '}
                                         {item.request.rejectionReason}
                                       </div>
                                     )}
 
                                   {item.request.status === 'approved' && item.request.resolvedBy && (
-                                    <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 text-xs text-emerald-800 font-medium text-left">
+                                    <div className="bg-emerald-50 border border-emerald-100 rounded-md p-4 text-xs text-emerald-800 font-medium text-left">
                                       <strong>Disetujui dan Diterapkan oleh:</strong>{' '}
                                       {item.request.resolvedBy}
                                     </div>
@@ -1527,7 +1527,7 @@ export function LoyalisPresenceCorrectionsCard({
                               ) : item.kind === 'paid_leave' ? (
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                                   <div className="space-y-4">
-                                    <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4 space-y-2 text-left">
+                                    <div className="bg-slate-50 rounded-md border border-slate-100 p-4 space-y-2 text-left">
                                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
                                         Detail Cuti Tahunan
                                       </span>
@@ -1567,7 +1567,7 @@ export function LoyalisPresenceCorrectionsCard({
                                       )}
                                     </div>
 
-                                    <div className="space-y-1.5 bg-slate-50/50 p-4 rounded-2xl border border-slate-100 text-left">
+                                    <div className="space-y-1.5 bg-slate-50/50 p-4 rounded-md border border-slate-100 text-left">
                                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                                         Alasan Pengajuan
                                       </span>
@@ -1582,7 +1582,7 @@ export function LoyalisPresenceCorrectionsCard({
                                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                                         Informasi &amp; Catatan
                                       </span>
-                                      <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-xs font-medium text-slate-600 space-y-2">
+                                      <div className="rounded-md border border-slate-100 bg-slate-50 p-4 text-xs font-medium text-slate-600 space-y-2">
                                         <p>
                                           Persetujuan cuti tahunan Loyalis membuat presensi
                                           berbayar penuh pada tanggal pengajuan.
@@ -1595,7 +1595,7 @@ export function LoyalisPresenceCorrectionsCard({
                                     </div>
                                     {item.request.decisionReason && (
                                       <div
-                                        className={`p-4 rounded-2xl border text-xs font-medium text-left ${
+                                        className={`p-4 rounded-md border text-xs font-medium text-left ${
                                           item.request.status === 'approved'
                                             ? 'bg-emerald-50 border-emerald-100 text-emerald-800'
                                             : 'bg-rose-50 border-rose-100 text-rose-800'
@@ -1610,7 +1610,7 @@ export function LoyalisPresenceCorrectionsCard({
                               ) : (
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                                   <div className="space-y-4">
-                                    <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4 space-y-2 text-left">
+                                    <div className="bg-slate-50 rounded-md border border-slate-100 p-4 space-y-2 text-left">
                                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
                                         Detail Ganti Libur
                                       </span>
@@ -1642,7 +1642,7 @@ export function LoyalisPresenceCorrectionsCard({
                                       )}
                                     </div>
 
-                                    <div className="space-y-1.5 bg-slate-50/50 p-4 rounded-2xl border border-slate-100 text-left">
+                                    <div className="space-y-1.5 bg-slate-50/50 p-4 rounded-md border border-slate-100 text-left">
                                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                                         Alasan Pengajuan
                                       </span>
@@ -1659,7 +1659,7 @@ export function LoyalisPresenceCorrectionsCard({
                                       </span>
                                       {item.request.attachments &&
                                       item.request.attachments.length > 0 ? (
-                                        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                                        <div className="rounded-md border border-slate-100 bg-slate-50 p-4">
                                           <div className="text-xs font-semibold text-slate-500 mb-2">
                                             Surat resmi ({item.request.attachments.length})
                                           </div>
@@ -1668,14 +1668,14 @@ export function LoyalisPresenceCorrectionsCard({
                                           />
                                         </div>
                                       ) : (
-                                        <div className="h-28 flex items-center justify-center rounded-2xl border border-dashed border-slate-200 text-xs font-semibold text-slate-400">
+                                        <div className="h-28 flex items-center justify-center rounded-md border border-dashed border-slate-200 text-xs font-semibold text-slate-400">
                                           Tanpa surat resmi
                                         </div>
                                       )}
                                     </div>
                                     {item.request.decisionReason && (
                                       <div
-                                        className={`p-4 rounded-2xl border text-xs font-medium text-left ${
+                                        className={`p-4 rounded-md border text-xs font-medium text-left ${
                                           item.request.status === 'approved'
                                             ? 'bg-emerald-50 border-emerald-100 text-emerald-800'
                                             : 'bg-rose-50 border-rose-100 text-rose-800'
@@ -1702,12 +1702,12 @@ export function LoyalisPresenceCorrectionsCard({
                                         onChange={(event) => setRejectionReason(event.target.value)}
                                         placeholder="Masukkan alasan penolakan..."
                                         required
-                                        className="rounded-xl border-slate-200 text-xs h-9 bg-white w-full"
+                                        className="rounded-sm border-slate-200 text-xs h-9 bg-white w-full"
                                       />
                                       <Button
                                         type="submit"
                                         disabled={actionLoading === key}
-                                        className="bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs h-9 px-3 shrink-0 flex items-center gap-1 cursor-pointer"
+                                        className="bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-sm text-xs h-9 px-3 shrink-0 flex items-center gap-1 cursor-pointer"
                                       >
                                         {actionLoading === key ? (
                                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1723,7 +1723,7 @@ export function LoyalisPresenceCorrectionsCard({
                                           setRejectionReason('');
                                         }}
                                         variant="ghost"
-                                        className="rounded-xl text-slate-450 hover:bg-slate-200/50 text-xs h-9 px-3 shrink-0 cursor-pointer"
+                                        className="rounded-sm text-slate-450 hover:bg-slate-200/50 text-xs h-9 px-3 shrink-0 cursor-pointer"
                                       >
                                         Batal
                                       </Button>
@@ -1745,7 +1745,7 @@ export function LoyalisPresenceCorrectionsCard({
                                         }}
                                         disabled={actionLoading !== null}
                                         variant="outline"
-                                        className="text-rose-600 border-rose-200 hover:bg-rose-50 rounded-xl text-xs h-9 px-4 font-bold flex items-center gap-1.5 cursor-pointer shadow-sm bg-white"
+                                        className="text-rose-600 border-rose-200 hover:bg-rose-50 rounded-sm text-xs h-9 px-4 font-bold flex items-center gap-1.5 cursor-pointer shadow-sm bg-white"
                                       >
                                         <X className="w-3.5 h-3.5" /> Tolak
                                       </Button>
@@ -1753,7 +1753,7 @@ export function LoyalisPresenceCorrectionsCard({
                                         type="button"
                                         onClick={() => void handleApproveLoyalisItem(item)}
                                         disabled={actionLoading !== null}
-                                        className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs h-9 px-5 font-bold flex items-center gap-1.5 cursor-pointer shadow-md active:scale-95 transition-all"
+                                        className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-sm text-xs h-9 px-5 font-bold flex items-center gap-1.5 cursor-pointer shadow-md active:scale-95 transition-all"
                                       >
                                         {actionLoading === key ? (
                                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1788,7 +1788,7 @@ export function LoyalisPresenceCorrectionsCard({
           }
         }}
       >
-        <DialogContent className="max-w-md rounded-2xl bg-white p-6">
+        <DialogContent className="max-w-md rounded-md bg-white p-6">
           <DialogHeader>
             <DialogTitle className="text-base font-bold text-slate-800">
               {reviewProgress?.status === 'processing'
@@ -1812,7 +1812,7 @@ export function LoyalisPresenceCorrectionsCard({
               )}
               {reviewProgress.scope === 'bulk' && (
                 <div className="space-y-1">
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-2 w-full overflow-hidden rounded-sm bg-slate-100">
                     <div
                       className="h-full bg-indigo-600 transition-all duration-300"
                       style={{
@@ -1836,7 +1836,7 @@ export function LoyalisPresenceCorrectionsCard({
                   {reviewProgress?.failed ? ` · ${reviewProgress.failed} gagal` : ''}
                 </p>
                 {reviewProgress?.errors && reviewProgress.errors.length > 0 && (
-                  <div className="max-h-24 overflow-y-auto rounded-xl bg-rose-50 p-3 text-left text-[11px] text-rose-700">
+                  <div className="max-h-24 overflow-y-auto rounded-md bg-rose-50 p-3 text-left text-[11px] text-rose-700">
                     {reviewProgress.errors.slice(0, 4).map((error, index) => (
                       <p key={`${error}-${index}`}>{error}</p>
                     ))}
@@ -1848,11 +1848,11 @@ export function LoyalisPresenceCorrectionsCard({
                   </div>
                 )}
               </div>
-              <DialogFooter className="pt-2 sm:justify-center">
+              <DialogFooter className="rounded-b-md pt-2 sm:justify-center">
                 <Button
                   type="button"
                   onClick={() => setReviewProgress(null)}
-                  className={`rounded-xl px-6 font-bold text-white ${
+                  className={`rounded-sm px-6 font-bold text-white ${
                     reviewProgress?.status === 'success'
                       ? 'bg-emerald-600 hover:bg-emerald-700'
                       : 'bg-rose-600 hover:bg-rose-700'
@@ -1873,7 +1873,7 @@ export function LoyalisPresenceCorrectionsCard({
           onClick={closeImageLightbox}
         >
           <div
-            className="relative max-w-5xl w-full h-[88vh] flex flex-col bg-slate-900/95 p-4 rounded-3xl border border-white/10 shadow-2xl overflow-hidden"
+            className="relative max-w-5xl w-full h-[88vh] flex flex-col bg-slate-900/95 p-4 rounded-md border border-white/10 shadow-2xl overflow-hidden"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between w-full pb-3 mb-3 border-b border-white/10 px-2 shrink-0">
@@ -1892,7 +1892,7 @@ export function LoyalisPresenceCorrectionsCard({
                     setLightboxZoom((z) => Math.max(0.5, Number((z - 0.25).toFixed(2))))
                   }
                   disabled={lightboxZoom <= 0.5}
-                  className="text-slate-300 hover:text-white hover:bg-white/10 rounded-full h-8 w-8 transition-colors disabled:opacity-30"
+                  className="text-slate-300 hover:text-white hover:bg-white/10 rounded-sm h-8 w-8 transition-colors disabled:opacity-30"
                 >
                   <ZoomOut className="w-4 h-4" />
                 </Button>
@@ -1907,7 +1907,7 @@ export function LoyalisPresenceCorrectionsCard({
                     setLightboxZoom((z) => Math.min(4, Number((z + 0.25).toFixed(2))))
                   }
                   disabled={lightboxZoom >= 4}
-                  className="text-slate-300 hover:text-white hover:bg-white/10 rounded-full h-8 w-8 transition-colors disabled:opacity-30"
+                  className="text-slate-300 hover:text-white hover:bg-white/10 rounded-sm h-8 w-8 transition-colors disabled:opacity-30"
                 >
                   <ZoomIn className="w-4 h-4" />
                 </Button>
@@ -1916,7 +1916,7 @@ export function LoyalisPresenceCorrectionsCard({
                   variant="ghost"
                   size="icon"
                   onClick={() => setLightboxRotation((r) => (r + 90) % 360)}
-                  className="text-slate-300 hover:text-white hover:bg-white/10 rounded-full h-8 w-8 transition-colors"
+                  className="text-slate-300 hover:text-white hover:bg-white/10 rounded-sm h-8 w-8 transition-colors"
                 >
                   <RotateCw className="w-4 h-4" />
                 </Button>
@@ -1924,7 +1924,7 @@ export function LoyalisPresenceCorrectionsCard({
                   href={lightboxImageUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all shadow-md ml-1"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all shadow-md ml-1"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Buka di Tab Baru</span>
@@ -1934,14 +1934,14 @@ export function LoyalisPresenceCorrectionsCard({
                   variant="ghost"
                   size="icon"
                   onClick={closeImageLightbox}
-                  className="text-slate-400 hover:text-white hover:bg-white/10 rounded-full h-8 w-8 transition-colors ml-1"
+                  className="text-slate-400 hover:text-white hover:bg-white/10 rounded-sm h-8 w-8 transition-colors ml-1"
                 >
                   <X className="w-5 h-5" />
                 </Button>
               </div>
             </div>
 
-            <div className="w-full flex-1 flex items-center justify-center overflow-hidden rounded-2xl bg-slate-950/60">
+            <div className="w-full flex-1 flex items-center justify-center overflow-hidden rounded-md bg-slate-950/60">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={lightboxImageUrl}
@@ -1950,7 +1950,7 @@ export function LoyalisPresenceCorrectionsCard({
                 onPointerDown={handleLightboxPointerDown}
                 onPointerMove={handleLightboxPointerMove}
                 onPointerUp={handleLightboxPointerUp}
-                className={`max-w-none rounded-2xl object-contain shadow-2xl select-none touch-none ${
+                className={`max-w-none rounded-sm object-contain shadow-2xl select-none touch-none ${
                   isPanningLightbox ? '' : 'transition-transform duration-150'
                 } ${
                   lightboxZoom <= 1

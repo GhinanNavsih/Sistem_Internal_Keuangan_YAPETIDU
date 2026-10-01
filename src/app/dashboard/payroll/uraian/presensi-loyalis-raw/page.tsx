@@ -2273,11 +2273,11 @@ export default function PresensiLoyalisRawPage() {
     <div className="space-y-8 animate-in fade-in duration-500">
       {/* Target Type Toggle */}
       {profile?.role !== 'loyalis_admin' && (
-        <div className="flex bg-white p-1 rounded-xl w-fit shadow-sm border border-slate-200/60">
+        <div className="flex bg-white p-1 rounded-md w-fit shadow-sm border border-slate-200/60">
           <button
             type="button"
             onClick={() => setPresensiTargetType('loyalis')}
-            className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${presensiTargetType === 'loyalis'
+            className={`px-5 py-2.5 rounded-sm text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${presensiTargetType === 'loyalis'
                 ? 'bg-indigo-600 text-white shadow-sm'
                 : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
               }`}
@@ -2288,7 +2288,7 @@ export default function PresensiLoyalisRawPage() {
           <button
             type="button"
             onClick={() => setPresensiTargetType('pekarya')}
-            className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${presensiTargetType === 'pekarya'
+            className={`px-5 py-2.5 rounded-sm text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${presensiTargetType === 'pekarya'
                 ? 'bg-indigo-600 text-white shadow-sm'
                 : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
               }`}
@@ -2305,7 +2305,7 @@ export default function PresensiLoyalisRawPage() {
         <div
           role="status"
           aria-live="polite"
-          className={`pointer-events-none fixed right-4 top-4 z-[70] max-w-sm rounded-xl border px-4 py-3 text-sm shadow-lg ${
+          className={`pointer-events-none fixed right-4 top-4 z-[70] max-w-sm rounded-md border px-4 py-3 text-sm shadow-lg ${
             autosaveState === 'error'
               ? 'border-red-200 bg-red-50 text-red-800'
               : autosaveState === 'saved'
@@ -2326,7 +2326,7 @@ export default function PresensiLoyalisRawPage() {
       {presensiTargetType === 'pekarya' &&
       profile?.role !== 'loyalis_admin' &&
       usesSharedImport ? (
-        <Card className="rounded-[20px] border border-indigo-200 bg-indigo-50 p-6">
+        <Card className="rounded-md border border-indigo-200 bg-indigo-50 p-6">
           <h3 className="font-bold text-indigo-950">Presensi Pekarya memakai data NIPY per pegawai</h3>
           <p className="mt-2 text-sm text-indigo-800">
             Mulai Agustus 2026, pengisian massal jumlah hari dinonaktifkan.
@@ -2335,13 +2335,13 @@ export default function PresensiLoyalisRawPage() {
           </p>
           <Link
             href={`/dashboard/payroll/uraian/presensi-pekarya?month=${month}&year=${year}&category=${selectedPekaryaCategory}`}
-            className="mt-4 inline-flex min-h-12 items-center rounded-xl bg-indigo-600 px-5 py-3 font-bold text-white hover:bg-indigo-700"
+            className="mt-4 inline-flex min-h-12 items-center rounded-sm bg-indigo-600 px-5 py-3 font-bold text-white hover:bg-indigo-700"
           >
             Buka Presensi Pekarya
           </Link>
         </Card>
       ) : presensiTargetType === 'pekarya' && profile?.role !== 'loyalis_admin' ? (
-        <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
+        <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
           <div className="flex justify-between items-center border-b border-slate-50 pb-4">
             <div>
               <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
@@ -2361,10 +2361,10 @@ export default function PresensiLoyalisRawPage() {
                 value={selectedPekaryaCategory}
                 onValueChange={(val) => val && setSelectedPekaryaCategory(val)}
               >
-                <SelectTrigger className="w-full bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
+                <SelectTrigger className="w-full bg-white shadow-sm border-slate-200 rounded-sm font-semibold hover:border-indigo-300 transition-all">
                   <SelectValue placeholder="Pilih Satker..." />
                 </SelectTrigger>
-                <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                <SelectContent className="rounded-md border-slate-100 shadow-xl bg-white">
                   {dynamicCategories.map(c => (
                     <SelectItem key={c} value={c}>
                       {c}
@@ -2382,7 +2382,7 @@ export default function PresensiLoyalisRawPage() {
                 max={31}
                 value={pekaryaWorkingDays}
                 onChange={(e) => setPekaryaWorkingDays(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full"
+                className="rounded-sm border-slate-200 font-bold text-slate-700 text-xs h-10 w-full"
               />
             </div>
 
@@ -2394,7 +2394,7 @@ export default function PresensiLoyalisRawPage() {
                 max={31}
                 value={pekaryaHolidays}
                 onChange={(e) => setPekaryaHolidays(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full"
+                className="rounded-sm border-slate-200 font-bold text-slate-700 text-xs h-10 w-full"
               />
             </div>
           </div>
@@ -2404,7 +2404,7 @@ export default function PresensiLoyalisRawPage() {
               type="button"
               onClick={handleApplyPekaryaPresence}
               disabled={savingPresence || !selectedPekaryaCategory}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-2 shadow-md active:scale-95 transition-all cursor-pointer"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-sm px-6 text-xs flex items-center gap-2 shadow-md active:scale-95 transition-all cursor-pointer"
             >
               {savingPresence ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
               Terapkan Presensi Pekarya Massal
@@ -2419,7 +2419,7 @@ export default function PresensiLoyalisRawPage() {
               onResolved={fetchExistingPresence}
             />
 
-            <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
+            <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
             <div className="flex justify-between items-center border-b border-slate-50 pb-4">
               <div>
                 <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
@@ -2435,7 +2435,7 @@ export default function PresensiLoyalisRawPage() {
                     size="sm"
                     onClick={handleDeletePresence}
                     disabled={savingPresence}
-                    className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl h-9 px-3"
+                    className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-sm h-9 px-3"
                   >
                     <Trash2 className="w-4 h-4 mr-2" />
                     Hapus Data
@@ -2447,27 +2447,27 @@ export default function PresensiLoyalisRawPage() {
             {usesSharedImport && (
               <div className="space-y-3">
                 {!activeImport?.activeRevision && (
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                  <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
                     Unggah satu XLSX yang memuat Loyalis dan Pekarya untuk periode
                     ini. Unggahan baru selalu membuat revisi pengganti dan tetap
                     menyimpan file lama.
                   </div>
                 )}
                 {existingPresence?.sourceCalendarStale && (
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-900">
+                  <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-900">
                     Kalender kerja periode ini berubah sejak hasil Loyalis
                     terakhir disimpan. Proses dan simpan ulang sebelum periode
                     ditutup.
                   </div>
                 )}
                 {importHistory.length > 0 && (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs font-bold text-slate-700">Riwayat file presensi</p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {importHistory.map((revision) => (
                         <div
                           key={revision.id}
-                          className={`inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white pl-3 pr-1.5 text-xs font-semibold ${
+                          className={`inline-flex min-h-10 items-center gap-2 rounded-sm border border-slate-200 bg-white pl-3 pr-1.5 text-xs font-semibold ${
                             revision.downloadUrl ? 'text-indigo-700' : 'text-slate-500'
                           }`}
                         >
@@ -2486,7 +2486,7 @@ export default function PresensiLoyalisRawPage() {
                               title="Hapus revisi yang gagal/tidak selesai diaktifkan ini"
                               onClick={() => handleDeleteRevision(revision.id)}
                               disabled={deletingRevisionId === revision.id}
-                              className="flex items-center justify-center rounded-lg p-1.5 text-rose-500 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 cursor-pointer"
+                              className="flex items-center justify-center rounded-sm p-1.5 text-rose-500 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 cursor-pointer"
                             >
                               {deletingRevisionId === revision.id ? (
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -2504,7 +2504,7 @@ export default function PresensiLoyalisRawPage() {
             )}
 
             {existingPresence && Object.keys(existingPresence.entries || {}).length === 0 && !uploadedData && (
-              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex items-start gap-3">
+              <div className="bg-blue-50 border border-blue-100 rounded-md p-4 flex items-start gap-3">
                 <Calendar className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
                 <div>
                   <h4 className="text-blue-800 text-xs font-bold">Hari Kerja Telah Dikonfigurasi</h4>
@@ -2517,7 +2517,7 @@ export default function PresensiLoyalisRawPage() {
             )}
 
             {existingPresence && Object.keys(existingPresence.entries || {}).length > 0 && !uploadedData && (
-              <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex items-start gap-3">
+              <div className="bg-emerald-50 border border-emerald-100 rounded-md p-4 flex items-start gap-3">
                 <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
                 <div className="space-y-3 w-full">
                   <div>
@@ -2528,14 +2528,14 @@ export default function PresensiLoyalisRawPage() {
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                    <div className="flex flex-wrap gap-4 text-[10px] text-emerald-700 font-bold bg-white/50 px-3 py-1.5 rounded-xl border border-emerald-100/50 w-fit">
+                    <div className="flex flex-wrap gap-4 text-[10px] text-emerald-700 font-bold bg-white/50 px-3 py-1.5 rounded-sm border border-emerald-100/50 w-fit">
                       <span>Hari Kerja: {existingPresence.workingDays || 25} hari</span>
                       <span>Target: {expectedHours} jam/hari (Capped)</span>
                     </div>
                     <Button
                       type="button"
                       onClick={handleStartEdit}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs h-9 px-4 flex items-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer"
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-sm text-xs h-9 px-4 flex items-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer"
                     >
                       <Edit className="w-4 h-4" />
                       Ubah Data
@@ -2564,13 +2564,13 @@ export default function PresensiLoyalisRawPage() {
                           setWorkingDays(isNaN(parsed) ? 0 : Math.max(0, parsed));
                         }
                       }}
-                      className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full"
+                      className="rounded-sm border-slate-200 font-bold text-slate-700 text-xs h-10 w-full"
                     />
                     <Button
                       type="button"
                       onClick={handleSaveWorkingDaysConfig}
                       disabled={savingPresence}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-10 px-4 rounded-xl shadow-md transition-all flex items-center gap-1.5 shrink-0"
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-10 px-4 rounded-sm shadow-md transition-all flex items-center gap-1.5 shrink-0"
                     >
                       <Save className="w-4 h-4" />
                       <span>Simpan</span>
@@ -2589,7 +2589,7 @@ export default function PresensiLoyalisRawPage() {
                   <Button
                     type="button"
                     onClick={() => document.getElementById('presence-excel-file')?.click()}
-                    className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold h-10 flex items-center justify-center gap-2 transition-all"
+                    className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-sm text-xs font-bold h-10 flex items-center justify-center gap-2 transition-all"
                   >
                     <Upload className="w-4 h-4 text-slate-400" />
                     {usesSharedImport
@@ -2610,7 +2610,7 @@ export default function PresensiLoyalisRawPage() {
             {displayRows && (
               <div className="space-y-4 pt-4 border-t border-slate-100 animate-in fade-in">
                 {newlyConvertedWithoutScans.length > 0 && (
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                  <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
                     <p className="font-bold">
                       Baru pindah dari Pekarya bulan ini, belum ada data scan:{' '}
                       {newlyConvertedWithoutScans.map((employee) => employee.name).join(', ')}
@@ -2622,13 +2622,13 @@ export default function PresensiLoyalisRawPage() {
                     </p>
                   </div>
                 )}
-                <div className="flex flex-wrap justify-between items-center gap-4 bg-slate-50/70 p-3 rounded-2xl border border-slate-200/70">
+                <div className="flex flex-wrap justify-between items-center gap-4 bg-slate-50/70 p-3 rounded-md border border-slate-200/70">
                   <div className="flex flex-col gap-1.5">
                     <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                       {uploadedData ? 'Preview Hasil Perhitungan Presensi (Raw Daily Logs)' : 'Data Perhitungan Presensi Tersimpan'}
                     </span>
                     <div className="flex flex-wrap items-center gap-2 mt-0.5">
-                      <span className="text-[10px] bg-white text-slate-600 border border-slate-200/80 px-2.5 py-0.5 rounded-full font-semibold shadow-2xs">
+                      <span className="text-[10px] bg-white text-slate-600 border border-slate-200/80 px-2.5 py-0.5 rounded-sm font-semibold shadow-2xs">
                         Target Menit Kerja Kehadiran Penuh: {(activeWorkingDays * expectedHours * 60).toLocaleString('id-ID')} menit
                       </span>
                     </div>
@@ -2638,7 +2638,7 @@ export default function PresensiLoyalisRawPage() {
                   <div className="flex flex-wrap items-center gap-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-xs font-bold text-slate-600">Filter Strata:</span>
-                      <div className="inline-flex bg-white p-1 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs">
+                      <div className="inline-flex bg-white p-1 rounded-md border border-slate-200/80 text-xs font-bold shadow-2xs">
                         {(['all', '1', '2', '3', '4', '5'] as const).map((val) => {
                           const isActive = strataFilter === val;
                           const label = val === 'all' ? 'Semua' : `Strata ${val}`;
@@ -2648,14 +2648,14 @@ export default function PresensiLoyalisRawPage() {
                               key={val}
                               type="button"
                               onClick={() => setStrataFilter(val)}
-                              className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer text-[11px] flex items-center gap-1.5 ${
+                              className={`px-2.5 py-1 rounded-sm transition-all cursor-pointer text-[11px] flex items-center gap-1.5 ${
                                 isActive
                                   ? 'bg-indigo-600 text-white shadow-xs font-extrabold'
                                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                               }`}
                             >
                               <span>{label}</span>
-                              <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
+                              <span className={`text-[9px] px-1.5 py-0.2 rounded-sm font-mono ${
                                 isActive ? 'bg-indigo-700 text-indigo-100' : 'bg-slate-100 text-slate-500'
                               }`}>
                                 {count}
@@ -2669,7 +2669,7 @@ export default function PresensiLoyalisRawPage() {
                     <Button
                       type="button"
                       onClick={handleExportXlsx}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs h-9 px-3.5 flex items-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-sm text-xs h-9 px-3.5 flex items-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer"
                     >
                       <FileSpreadsheet className="w-4 h-4" />
                       <span>Export XLSX</span>
@@ -2686,7 +2686,7 @@ export default function PresensiLoyalisRawPage() {
 
                 <div className="space-y-3.5 pr-1">
                   {filteredDisplayRows && filteredDisplayRows.length === 0 ? (
-                    <div className="text-center py-10 bg-slate-50/50 rounded-2xl border-2 border-dashed border-slate-200 space-y-2">
+                    <div className="text-center py-10 bg-slate-50/50 rounded-md border-2 border-dashed border-slate-200 space-y-2">
                       <p className="text-xs font-bold text-slate-500">
                         Tidak ada pegawai pada <strong className="text-indigo-600">Strata {strataFilter}</strong>.
                       </p>
@@ -2705,7 +2705,7 @@ export default function PresensiLoyalisRawPage() {
                       <Card
                         key={row.key}
                         data-row-key={row.key}
-                        className={`border-2 rounded-2xl shadow-sm transition-all hover:border-indigo-300 ${isExpanded ? 'ring-4 ring-indigo-50 border-indigo-400 bg-indigo-50/40' : 'border-indigo-200/80 bg-indigo-50/20'
+                        className={`border-2 rounded-md shadow-sm transition-all hover:border-indigo-300 ${isExpanded ? 'ring-4 ring-indigo-50 border-indigo-400 bg-indigo-50/40' : 'border-indigo-200/80 bg-indigo-50/20'
                           } ${activeSearchRowKey === row.key ? 'overflow-visible z-30 relative' : 'overflow-hidden'}`}
                       >
                         <div
@@ -2714,14 +2714,14 @@ export default function PresensiLoyalisRawPage() {
                         >
                           {/* Left: Index & Name */}
                           <div className="flex items-center gap-3 w-full lg:w-[260px] xl:w-[280px] shrink-0 min-w-0">
-                            <div className="w-8 h-8 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500 font-mono shrink-0">
+                            <div className="w-8 h-8 rounded-sm bg-slate-50 border border-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500 font-mono shrink-0">
                               {idx + 1}
                             </div>
                             <div className="space-y-1 min-w-0 flex-1">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <h4 className="font-bold text-slate-800 text-xs tracking-wide truncate max-w-full" title={row.excelName}>{row.excelName}</h4>
                                 {!row.isMatched && row.excelName !== '-' && (
-                                  <span className="inline-flex items-center gap-1 text-[9px] font-bold text-rose-600 bg-rose-50 border border-rose-200/80 px-2 py-0.5 rounded-full shrink-0">
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-bold text-rose-600 bg-rose-50 border border-rose-200/80 px-2 py-0.5 rounded-sm shrink-0">
                                     <AlertCircle className="w-3 h-3 text-rose-500 shrink-0" />
                                     Belum Terhubung
                                   </span>
@@ -2744,9 +2744,9 @@ export default function PresensiLoyalisRawPage() {
                                             setActiveSearchRowKey(null);
                                           }, 200);
                                         }}
-                                        className="h-7 rounded-lg border-indigo-300 font-semibold text-slate-800 text-[10px] w-full bg-white pr-7"
+                                        className="h-7 rounded-sm border-indigo-300 font-semibold text-slate-800 text-[10px] w-full bg-white pr-7"
                                       />
-                                      <div className="absolute left-0 right-0 top-8 max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl z-50 divide-y divide-slate-50">
+                                      <div className="absolute left-0 right-0 top-8 max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-md shadow-xl z-50 divide-y divide-slate-50">
                                         <div className="p-2 bg-indigo-50/50 border-b border-indigo-100 text-[9px] font-semibold text-indigo-900">
                                           Hubungkan <strong className="font-bold">{row.excelName}</strong> ke:
                                         </div>
@@ -2798,7 +2798,7 @@ export default function PresensiLoyalisRawPage() {
                                         setActiveSearchRowKey(row.key);
                                         setSearchQuery(row.employeeName || "");
                                       }}
-                                      className={`text-left px-2 py-1 rounded-lg border transition-all text-[9px] font-bold flex items-center gap-1 cursor-pointer ${row.isMatched
+                                      className={`text-left px-2 py-1 rounded-sm border transition-all text-[9px] font-bold flex items-center gap-1 cursor-pointer ${row.isMatched
                                           ? 'bg-indigo-50/40 text-indigo-700 border-indigo-100/50 hover:bg-indigo-50 hover:border-indigo-200'
                                           : 'bg-rose-50 border-rose-200/80 text-rose-700 hover:bg-rose-100/60'
                                         }`}
@@ -2820,7 +2820,7 @@ export default function PresensiLoyalisRawPage() {
                                     )}
                                   </div>
                                 ) : (
-                                  <span className="inline-flex items-center gap-0.5 text-rose-500 bg-rose-50 border border-rose-100 text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0">
+                                  <span className="inline-flex items-center gap-0.5 text-rose-500 bg-rose-50 border border-rose-100 text-[9px] font-bold px-1.5 py-0.5 rounded-sm shrink-0">
                                     <AlertCircle className="w-2.5 h-2.5" />
                                     {usesSharedImport
                                       ? `NIPY ${row.nipy || 'kosong'} tidak cocok`
@@ -2833,7 +2833,7 @@ export default function PresensiLoyalisRawPage() {
                               {!row.isMatched && row.excelName !== '-' && (() => {
                                 const reasonInfo = getUnmatchedReason(row.excelName, row.nipy, loyalisEmployees, usesSharedImport);
                                 return (
-                                  <div className="mt-1.5 text-[10px] bg-rose-50/70 border border-rose-150/80 rounded-lg p-2 space-y-1 text-slate-700 max-w-sm">
+                                  <div className="mt-1.5 text-[10px] bg-rose-50/70 border border-rose-150/80 rounded-md p-2 space-y-1 text-slate-700 max-w-sm">
                                     <div className="flex items-center gap-1.5 font-bold text-rose-700 text-[10px]">
                                       <Info className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                                       <span>Alasan: {reasonInfo.reason}</span>
@@ -2851,7 +2851,7 @@ export default function PresensiLoyalisRawPage() {
                                             holdRow(e.currentTarget);
                                             handleLinkEmployee(row.excelName, reasonInfo.suggestedEmp.id);
                                           }}
-                                          className="inline-flex items-center gap-1 text-[9px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-md transition-all cursor-pointer shadow-xs active:scale-95"
+                                          className="inline-flex items-center gap-1 text-[9px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-sm transition-all cursor-pointer shadow-xs active:scale-95"
                                         >
                                           <CheckCircle2 className="w-3 h-3 text-indigo-600" />
                                           Hubungkan ke "{reasonInfo.suggestedEmp.name}"
@@ -2877,7 +2877,7 @@ export default function PresensiLoyalisRawPage() {
                               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Hari Tidak Lengkap</span>
                               <div className="mt-0.5 font-mono flex justify-center">
                                 {row.incompleteDaysCount > 0 ? (
-                                  <span className="inline-flex items-center gap-1 text-[9px] text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full font-bold">
+                                  <span className="inline-flex items-center gap-1 text-[9px] text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-sm font-bold">
                                     <AlertCircle className="w-3 h-3 shrink-0" />
                                     {row.incompleteDaysCount} hari
                                   </span>
@@ -2898,7 +2898,7 @@ export default function PresensiLoyalisRawPage() {
                                       min={0}
                                       value={row.minutes}
                                       onChange={(e) => handleUpdateMinutes(row.excelName, Math.max(0, parseInt(e.target.value, 10) || 0))}
-                                      className="w-16 text-center font-bold font-mono h-7 rounded-lg border-slate-200 text-[10px] p-1 bg-white"
+                                      className="w-16 text-center font-bold font-mono h-7 rounded-sm border-slate-200 text-[10px] p-1 bg-white"
                                     />
                                     <span className="text-slate-400 text-[9px]">min</span>
                                   </div>
@@ -2937,7 +2937,7 @@ export default function PresensiLoyalisRawPage() {
                               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Strata Bonus</span>
                               <div className="mt-0.5 flex justify-center">
                                 {row.isMatched ? (
-                                  <span className="inline-flex items-center text-[9px] font-bold px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                                  <span className="inline-flex items-center text-[9px] font-bold px-2.5 py-0.5 rounded-sm bg-purple-50 text-purple-700 border border-purple-200">
                                     Strata {row.stratum || 5}
                                   </span>
                                 ) : (
@@ -2961,7 +2961,7 @@ export default function PresensiLoyalisRawPage() {
                         {isExpanded && (
                           <div className="border-t border-slate-100 p-4 bg-slate-50/20 space-y-4">
                             {row.corrections && row.corrections.length > 0 && (
-                              <div className="space-y-3 p-4 bg-indigo-50/30 border border-indigo-150/60 rounded-2xl">
+                              <div className="space-y-3 p-4 bg-indigo-50/30 border border-indigo-150/60 rounded-md">
                                 <h5 className="text-[11px] font-bold text-indigo-750 uppercase tracking-wider flex items-center gap-1.5">
                                   <Clock className="w-3.5 h-3.5 text-indigo-500 shrink-0 animate-pulse" />
                                   Pengajuan Koreksi Presensi Pegawai ({row.corrections.filter((c: any) => !pendingResolutionUpdates[c.id] && c.status === 'pending').length} Tertunda)
@@ -2974,29 +2974,29 @@ export default function PresensiLoyalisRawPage() {
                                     const currentStatus = resolution ? resolution.status : c.status;
 
                                     return (
-                                      <div key={c.id} className="bg-white border border-slate-100 rounded-xl p-3.5 text-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                      <div key={c.id} className="bg-white border border-slate-100 rounded-md p-3.5 text-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                         <div className="space-y-1 text-left">
                                           <div className="flex items-center gap-2 flex-wrap">
                                             <span className="font-extrabold text-slate-700">
                                               {new Date(c.date).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}
                                             </span>
-                                            <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${currentStatus === 'approved' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                                            <span className={`inline-flex px-2 py-0.5 rounded-sm text-[9px] font-bold uppercase ${currentStatus === 'approved' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
                                                 currentStatus === 'rejected' ? 'bg-rose-50 text-rose-700 border border-rose-100' :
                                                   'bg-amber-50 text-amber-700 border border-amber-100'
                                               }`}>
                                               {currentStatus === 'approved' ? 'Disetujui' : currentStatus === 'rejected' ? 'Ditolak' : 'Tertunda'} {resolution && '(Belum Disimpan)'}
                                             </span>
-                                            <span className="text-[10px] font-bold text-indigo-750 bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 rounded-full">
+                                            <span className="text-[10px] font-bold text-indigo-750 bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 rounded-sm">
                                               {c.type === 'izin_resmi' ? 'Izin Resmi (Hari Penuh)' : c.type === 'both' ? 'Masuk & Pulang' : c.type === 'tap_in' ? 'Masuk Saja' : 'Pulang Saja'}
                                             </span>
                                           </div>
                                           <div className="text-[11px] text-slate-650 font-semibold space-y-0.5 mt-1">
                                             {c.type === 'izin_resmi' ? (
-                                              <div>Izin Resmi: <span className="font-mono font-bold text-emerald-600 bg-emerald-50/50 px-1.5 py-0.5 rounded">07:30 — 14:00 (Hari Penuh)</span></div>
+                                              <div>Izin Resmi: <span className="font-mono font-bold text-emerald-600 bg-emerald-50/50 px-1.5 py-0.5 rounded-sm">07:30 — 14:00 (Hari Penuh)</span></div>
                                             ) : (
                                               <>
-                                                {c.type !== 'tap_out' && <div>Koreksi Masuk: <span className="font-mono font-bold text-indigo-600 bg-indigo-50/50 px-1.5 py-0.5 rounded">{c.checkInTime || '--:--'}</span></div>}
-                                                {c.type !== 'tap_in' && <div>Koreksi Pulang: <span className="font-mono font-bold text-indigo-600 bg-indigo-50/50 px-1.5 py-0.5 rounded">{c.checkOutTime || '--:--'}</span></div>}
+                                                {c.type !== 'tap_out' && <div>Koreksi Masuk: <span className="font-mono font-bold text-indigo-600 bg-indigo-50/50 px-1.5 py-0.5 rounded-sm">{c.checkInTime || '--:--'}</span></div>}
+                                                {c.type !== 'tap_in' && <div>Koreksi Pulang: <span className="font-mono font-bold text-indigo-600 bg-indigo-50/50 px-1.5 py-0.5 rounded-sm">{c.checkOutTime || '--:--'}</span></div>}
                                               </>
                                             )}
                                             <div className="italic text-slate-500 mt-1 font-medium">"Alasan: {c.reason}"</div>
@@ -3024,7 +3024,7 @@ export default function PresensiLoyalisRawPage() {
                                                   placeholder="Alasan penolakan..."
                                                   value={declineReasonInput[c.id] || ''}
                                                   onChange={(e) => setDeclineReasonInput(prev => ({ ...prev, [c.id]: e.target.value }))}
-                                                  className="h-8 text-xs rounded-lg w-48 bg-white border-slate-200"
+                                                  className="h-8 text-xs rounded-sm w-48 bg-white border-slate-200"
                                                 />
                                                 <Button
                                                   size="sm"
@@ -3037,7 +3037,7 @@ export default function PresensiLoyalisRawPage() {
                                                     handleDeclineCorrection(c.id, reason);
                                                     setActiveDeclineId(null);
                                                   }}
-                                                  className="bg-rose-600 hover:bg-rose-700 text-white font-bold h-8 rounded-lg text-xs"
+                                                  className="bg-rose-600 hover:bg-rose-700 text-white font-bold h-8 rounded-sm text-xs"
                                                 >
                                                   Kirim
                                                 </Button>
@@ -3045,7 +3045,7 @@ export default function PresensiLoyalisRawPage() {
                                                   size="sm"
                                                   variant="ghost"
                                                   onClick={() => setActiveDeclineId(null)}
-                                                  className="h-8 rounded-lg text-xs text-slate-500"
+                                                  className="h-8 rounded-sm text-xs text-slate-500"
                                                 >
                                                   Batal
                                                 </Button>
@@ -3056,14 +3056,14 @@ export default function PresensiLoyalisRawPage() {
                                                   size="sm"
                                                   variant="outline"
                                                   onClick={() => setActiveDeclineId(c.id)}
-                                                  className="text-rose-600 border-rose-200 hover:bg-rose-50 rounded-lg text-xs font-extrabold h-8 px-3"
+                                                  className="text-rose-600 border-rose-200 hover:bg-rose-50 rounded-sm text-xs font-extrabold h-8 px-3"
                                                 >
                                                   Tolak
                                                 </Button>
                                                 <Button
                                                   size="sm"
                                                   onClick={() => handleAcceptCorrection(row.employeeId, c)}
-                                                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-lg text-xs h-8 px-4"
+                                                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-sm text-xs h-8 px-4"
                                                 >
                                                   Setujui & Terapkan
                                                 </Button>
@@ -3078,14 +3078,14 @@ export default function PresensiLoyalisRawPage() {
                               </div>
                             )}
 
-                            <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-sm space-y-3">
+                            <div className="bg-white border border-slate-100 rounded-md p-4 shadow-sm space-y-3">
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                                   <Clock className="w-4 h-4 text-slate-400" />
                                   Logs Presensi Harian: {row.employeeName || row.excelName}
                                   {(row.offDayScannedCount || 0) > 0 && (
                                     <span
-                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold normal-case bg-rose-50 text-rose-700 border border-rose-100 cursor-help"
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[9px] font-bold normal-case bg-rose-50 text-rose-700 border border-rose-100 cursor-help"
                                       title={`Scan pada ${row.offDayScannedCount} hari libur (Jumat / Tanggal Merah) senilai ${row.offDayExcludedMinutes || 0} menit tidak dihitung ke total menit kerja maupun upah presensi.`}
                                     >
                                       <AlertCircle className="w-3 h-3" />
@@ -3104,7 +3104,7 @@ export default function PresensiLoyalisRawPage() {
                                           e.stopPropagation();
                                           openBulkFill(row.excelName, row.employeeName || row.excelName);
                                         }}
-                                        className="h-8 rounded-lg bg-indigo-50 px-3 text-[11px] font-bold text-indigo-700 hover:bg-indigo-100 flex items-center gap-1.5 shadow-none"
+                                        className="h-8 rounded-sm bg-indigo-50 px-3 text-[11px] font-bold text-indigo-700 hover:bg-indigo-100 flex items-center gap-1.5 shadow-none"
                                       >
                                         <Wand2 className="w-3.5 h-3.5" />
                                         Isi Massal Scan Sebulan
@@ -3116,7 +3116,7 @@ export default function PresensiLoyalisRawPage() {
                                             e.stopPropagation();
                                             handleUndoBulkFill(row.excelName, row.employeeName || row.excelName);
                                           }}
-                                          className="h-8 rounded-lg bg-rose-50 px-3 text-[11px] font-bold text-rose-700 hover:bg-rose-100 flex items-center gap-1.5 shadow-none"
+                                          className="h-8 rounded-sm bg-rose-50 px-3 text-[11px] font-bold text-rose-700 hover:bg-rose-100 flex items-center gap-1.5 shadow-none"
                                         >
                                           <Undo2 className="w-3.5 h-3.5" />
                                           Undo Isi Massal
@@ -3126,7 +3126,7 @@ export default function PresensiLoyalisRawPage() {
                                   )}
                               </div>
                               {row.dailyLogs && row.dailyLogs.length > 0 ? (
-                                <div className="border border-slate-100 rounded-xl">
+                                <div className="border border-slate-100 rounded-md">
                                   <table className="w-full text-left border-collapse text-[11px]">
                                     <thead className="bg-slate-50 sticky top-0 shadow-[0_1px_0_0_rgba(241,245,249,1)]">
                                       <tr className="border-b border-slate-100">
@@ -3175,7 +3175,7 @@ export default function PresensiLoyalisRawPage() {
                                                 <span>{log.Tanggal}</span>
                                                 {isOffDayRow && (
                                                   <span
-                                                    className="inline-flex px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase bg-rose-100 text-rose-700 border border-rose-200 select-none shrink-0 cursor-help"
+                                                    className="inline-flex px-1.5 py-0.5 rounded-sm text-[8px] font-extrabold uppercase bg-rose-100 text-rose-700 border border-rose-200 select-none shrink-0 cursor-help"
                                                     title="Hari libur (Jumat / Tanggal Merah). Pegawai tidak seharusnya masuk, sehingga menit kerja dan upah presensi hari ini tidak dihitung."
                                                   >
                                                     {offDayLabel}
@@ -3189,19 +3189,19 @@ export default function PresensiLoyalisRawPage() {
                                                   value={log['Jam kerja'] || 'MASUK'}
                                                   onValueChange={(val) => handleUpdateDailyLog(row.excelName, log.Tanggal, 'Jam kerja', val)}
                                                 >
-                                                  <SelectTrigger className="h-8 text-[11px] rounded-lg border-slate-200 bg-white">
+                                                  <SelectTrigger className="h-8 text-[11px] rounded-sm border-slate-200 bg-white">
                                                     <SelectValue>
                                                       {log['Jam kerja'] || 'MASUK'}
                                                     </SelectValue>
                                                   </SelectTrigger>
-                                                  <SelectContent className="bg-white rounded-lg border border-slate-100 shadow-lg">
+                                                  <SelectContent className="bg-white rounded-md border border-slate-100 shadow-lg">
                                                     <SelectItem value="MASUK">MASUK</SelectItem>
                                                     <SelectItem value="Tidak Hadir">Tidak Hadir</SelectItem>
                                                     <SelectItem value="Libur Rutin">Libur Rutin</SelectItem>
                                                   </SelectContent>
                                                 </Select>
                                               ) : (
-                                                <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${log['Jam kerja'] === 'MASUK' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                                                <span className={`inline-flex px-2 py-0.5 rounded-sm text-[10px] font-bold ${log['Jam kerja'] === 'MASUK' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
                                                     log['Jam kerja'] === 'Tidak Hadir' ? 'bg-rose-50 text-rose-600 border border-rose-100' :
                                                       'bg-slate-50 text-slate-600 border border-slate-100'
                                                   }`}>
@@ -3217,23 +3217,23 @@ export default function PresensiLoyalisRawPage() {
                                                     step="1"
                                                     value={log['Scan masuk'] || ''}
                                                     onChange={(e) => handleUpdateDailyLog(row.excelName, log.Tanggal, 'Scan masuk', e.target.value)}
-                                                    className={`h-8 rounded-lg text-center font-mono text-[11px] w-32 bg-white ${
+                                                    className={`h-8 rounded-sm text-center font-mono text-[11px] w-32 bg-white ${
                                                       log.scanMasukAuto ? 'border-amber-300 ring-2 ring-amber-100/50 text-amber-750 font-bold bg-amber-50/10' : 'border-slate-200'
                                                     }`}
                                                   />
                                                   {log.scanMasukAuto && (
-                                                    <span className="inline-flex px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase bg-amber-50 text-amber-700 border border-amber-200 select-none shrink-0 cursor-help" title="Diisi otomatis (150 menit sebelum scan pulang)">
+                                                    <span className="inline-flex px-1.5 py-0.5 rounded-sm text-[8px] font-extrabold uppercase bg-amber-50 text-amber-700 border border-amber-200 select-none shrink-0 cursor-help" title="Diisi otomatis (150 menit sebelum scan pulang)">
                                                       Auto
                                                     </span>
                                                   )}
                                                 </div>
                                               ) : (
                                                 <div className="flex items-center gap-1 justify-center">
-                                                  <span className={`font-mono ${log.scanMasukAuto ? 'text-amber-700 font-extrabold bg-amber-50/40 px-1.5 py-0.5 rounded border border-amber-100' : 'text-slate-600'}`}>
+                                                  <span className={`font-mono ${log.scanMasukAuto ? 'text-amber-700 font-extrabold bg-amber-50/40 px-1.5 py-0.5 rounded-sm border border-amber-100' : 'text-slate-600'}`}>
                                                     {log['Scan masuk'] || '-'}
                                                   </span>
                                                   {log.scanMasukAuto && (
-                                                    <span className="inline-flex px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase bg-amber-50 text-amber-700 border border-amber-200 select-none shrink-0 cursor-help" title="Diisi otomatis (150 menit sebelum scan pulang)">
+                                                    <span className="inline-flex px-1.5 py-0.5 rounded-sm text-[8px] font-extrabold uppercase bg-amber-50 text-amber-700 border border-amber-200 select-none shrink-0 cursor-help" title="Diisi otomatis (150 menit sebelum scan pulang)">
                                                       Auto
                                                     </span>
                                                   )}
@@ -3248,23 +3248,23 @@ export default function PresensiLoyalisRawPage() {
                                                     step="1"
                                                     value={log['Scan pulang'] || ''}
                                                     onChange={(e) => handleUpdateDailyLog(row.excelName, log.Tanggal, 'Scan pulang', e.target.value)}
-                                                    className={`h-8 rounded-lg text-center font-mono text-[11px] w-32 bg-white ${
+                                                    className={`h-8 rounded-sm text-center font-mono text-[11px] w-32 bg-white ${
                                                       log.scanPulangAuto ? 'border-amber-300 ring-2 ring-amber-100/50 text-amber-750 font-bold bg-amber-50/10' : 'border-slate-200'
                                                     }`}
                                                   />
                                                   {log.scanPulangAuto && (
-                                                    <span className="inline-flex px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase bg-amber-50 text-amber-700 border border-amber-200 select-none shrink-0 cursor-help" title="Diisi otomatis (150 menit setelah scan masuk)">
+                                                    <span className="inline-flex px-1.5 py-0.5 rounded-sm text-[8px] font-extrabold uppercase bg-amber-50 text-amber-700 border border-amber-200 select-none shrink-0 cursor-help" title="Diisi otomatis (150 menit setelah scan masuk)">
                                                       Auto
                                                     </span>
                                                   )}
                                                 </div>
                                               ) : (
                                                 <div className="flex items-center gap-1 justify-center">
-                                                  <span className={`font-mono ${log.scanPulangAuto ? 'text-amber-700 font-extrabold bg-amber-50/40 px-1.5 py-0.5 rounded border border-amber-100' : 'text-slate-600'}`}>
+                                                  <span className={`font-mono ${log.scanPulangAuto ? 'text-amber-700 font-extrabold bg-amber-50/40 px-1.5 py-0.5 rounded-sm border border-amber-100' : 'text-slate-600'}`}>
                                                     {log['Scan pulang'] || '-'}
                                                   </span>
                                                   {log.scanPulangAuto && (
-                                                    <span className="inline-flex px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase bg-amber-50 text-amber-700 border border-amber-200 select-none shrink-0 cursor-help" title="Diisi otomatis (150 menit setelah scan masuk)">
+                                                    <span className="inline-flex px-1.5 py-0.5 rounded-sm text-[8px] font-extrabold uppercase bg-amber-50 text-amber-700 border border-amber-200 select-none shrink-0 cursor-help" title="Diisi otomatis (150 menit setelah scan masuk)">
                                                       Auto
                                                     </span>
                                                   )}
@@ -3292,7 +3292,7 @@ export default function PresensiLoyalisRawPage() {
                                   </table>
                                 </div>
                               ) : (
-                                <p className="text-xs text-slate-400 text-center py-4 bg-slate-50/50 rounded-xl">Tidak ada log kehadiran harian untuk pegawai ini.</p>
+                                <p className="text-xs text-slate-400 text-center py-4 bg-slate-50/50 rounded-md">Tidak ada log kehadiran harian untuk pegawai ini.</p>
                               )}
                             </div>
                           </div>
@@ -3319,7 +3319,7 @@ export default function PresensiLoyalisRawPage() {
                         // on the next visit.
                         clearPresenceDraft();
                       }}
-                      className="rounded-xl border-slate-200 text-slate-600 text-xs font-bold"
+                      className="rounded-sm border-slate-200 text-slate-600 text-xs font-bold"
                     >
                       Batal
                     </Button>
@@ -3327,7 +3327,7 @@ export default function PresensiLoyalisRawPage() {
                       type="button"
                       onClick={handleSavePresence}
                       disabled={savingPresence || autosaveState === 'saving' || uploadedData.filter(r => r.employeeId).length === 0}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-2 shadow-md active:scale-95 transition-all cursor-pointer"
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-sm px-6 text-xs flex items-center gap-2 shadow-md active:scale-95 transition-all cursor-pointer"
                     >
                       {savingPresence ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                       Simpan Data Presensi
@@ -3345,7 +3345,7 @@ export default function PresensiLoyalisRawPage() {
         open={Boolean(bulkFillTarget)}
         onOpenChange={(open) => !open && setBulkFillTarget(null)}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent className="rounded-md max-w-md">
           <DialogHeader>
             <DialogTitle>Isi Massal Scan Sebulan</DialogTitle>
             <DialogDescription>
@@ -3358,7 +3358,7 @@ export default function PresensiLoyalisRawPage() {
           </DialogHeader>
           {bulkFillTarget && (
             <div className="space-y-4">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
                 <p className="text-xs font-bold text-slate-900">
                   {bulkFillTarget.employeeName}
                 </p>
@@ -3374,7 +3374,7 @@ export default function PresensiLoyalisRawPage() {
                     step="1"
                     value={bulkScanMasuk}
                     onChange={(e) => setBulkScanMasuk(e.target.value)}
-                    className="rounded-lg border-slate-200 font-mono text-xs h-10"
+                    className="rounded-sm border-slate-200 font-mono text-xs h-10"
                   />
                 </div>
                 <div className="space-y-2">
@@ -3387,7 +3387,7 @@ export default function PresensiLoyalisRawPage() {
                     step="1"
                     value={bulkScanPulang}
                     onChange={(e) => setBulkScanPulang(e.target.value)}
-                    className="rounded-lg border-slate-200 font-mono text-xs h-10"
+                    className="rounded-sm border-slate-200 font-mono text-xs h-10"
                   />
                 </div>
               </div>
@@ -3395,7 +3395,7 @@ export default function PresensiLoyalisRawPage() {
                 Kosongkan salah satu kolom untuk hanya mengganti sisi yang
                 diisi — sisi yang kosong pada tiap tanggal tidak akan diubah.
               </p>
-              <div className="rounded-xl border border-sky-200 bg-sky-50 p-3">
+              <div className="rounded-md border border-sky-200 bg-sky-50 p-3">
                 <p className="text-[11px] font-semibold text-sky-800">
                   Tanggal yang sudah memiliki scan masuk &amp; scan pulang akan
                   dilewati — fitur ini hanya mengisi tanggal yang datanya
@@ -3403,7 +3403,7 @@ export default function PresensiLoyalisRawPage() {
                   sudah tercatat.
                 </p>
               </div>
-              <label className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3 cursor-pointer">
+              <label className="flex items-start gap-2.5 rounded-md border border-amber-200 bg-amber-50 p-3 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={bulkIncludeAbsent}
@@ -3418,11 +3418,11 @@ export default function PresensiLoyalisRawPage() {
               </label>
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="rounded-b-md">
             <Button
               type="button"
               variant="outline"
-              className="rounded-xl border-slate-200 text-slate-600 text-xs font-bold"
+              className="rounded-sm border-slate-200 text-slate-600 text-xs font-bold"
               onClick={() => setBulkFillTarget(null)}
             >
               Batal
@@ -3431,7 +3431,7 @@ export default function PresensiLoyalisRawPage() {
               type="button"
               onClick={applyBulkFill}
               disabled={!bulkScanMasuk && !bulkScanPulang}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-5 text-xs flex items-center gap-2 shadow-md active:scale-95 transition-all cursor-pointer"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-sm px-5 text-xs flex items-center gap-2 shadow-md active:scale-95 transition-all cursor-pointer"
             >
               <Wand2 className="w-4 h-4" />
               Terapkan ke Semua Tanggal
