@@ -1,6 +1,11 @@
 import { NextRequest } from 'next/server';
 import admin, { adminDb, adminStorage } from '@/lib/firebase-admin';
-import { isPresenceCorrectionType, parseDateOnly } from '@/lib/payroll/presenceCorrections';
+import {
+  EMPLOYEE_CANCEL_REASON,
+  employeeRemovalAction,
+  isPresenceCorrectionType,
+  parseDateOnly,
+} from '@/lib/payroll/presenceCorrections';
 import { assertPeriodAcceptsInput, jakartaToday } from '@/lib/server/payrollPeriod';
 import {
   errorResponse,
@@ -183,6 +188,8 @@ export async function PUT(request: NextRequest) {
         proofUrl,
         status: 'pending',
         rejectionReason: null,
+        cancelledByEmployee: admin.firestore.FieldValue.delete(),
+        cancelledAt: admin.firestore.FieldValue.delete(),
         employeeId,
         employeeName: actor.displayName || 'Karyawan',
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -197,8 +204,11 @@ export async function PUT(request: NextRequest) {
 }
 
 /**
- * Hide the request only from the employee's own history. The original
- * document and all of its correction data stay available to Finance/admin.
+ * "Hapus" from the employee's history. A request still waiting for a decision
+ * is withdrawn: it becomes `rejected` with a cancellation note and stays in the
+ * history, so an admin cannot approve something the employee took back. A
+ * decided request is only hidden from the employee's own history. Either way
+ * the document and its correction data stay available to Finance/admin.
  */
 export async function DELETE(request: NextRequest) {
   try {
@@ -215,34 +225,47 @@ export async function DELETE(request: NextRequest) {
     }
 
     const requestRef = adminDb.collection(CORRECTIONS_COLLECTION).doc(requestId);
-    const requestSnapshot = await requestRef.get();
-    if (!requestSnapshot.exists) {
-      throw new HttpError(404, 'Pengajuan koreksi tidak ditemukan.');
-    }
+    const result = await adminDb.runTransaction(async (transaction) => {
+      const requestSnapshot = await transaction.get(requestRef);
+      if (!requestSnapshot.exists) {
+        throw new HttpError(404, 'Pengajuan koreksi tidak ditemukan.');
+      }
 
-    const requestData = requestSnapshot.data() || {};
-    if (String(requestData.employeeId || '') !== actor.linkedEmployeeId) {
-      throw new HttpError(403, 'Anda hanya dapat menghapus pengajuan milik Anda sendiri.');
-    }
+      const requestData = requestSnapshot.data() || {};
+      if (String(requestData.employeeId || '') !== actor.linkedEmployeeId) {
+        throw new HttpError(403, 'Anda hanya dapat menghapus pengajuan milik Anda sendiri.');
+      }
 
-    // Make the operation idempotent so a repeated request cannot alter the
-    // original audit data or create a second history event.
-    if (requestData.hiddenFromEmployee === true) {
-      return Response.json(
-        { requestId, hiddenFromEmployee: true },
-        { headers: { 'Cache-Control': 'no-store' } },
-      );
-    }
+      // Idempotent: a repeated request cannot alter the original audit data or
+      // create a second history event.
+      if (requestData.hiddenFromEmployee === true) {
+        return { hiddenFromEmployee: true, cancelled: false };
+      }
 
-    await requestRef.update({
-      hiddenFromEmployee: true,
-      hiddenAt: admin.firestore.FieldValue.serverTimestamp(),
-      hiddenByUid: actor.uid,
-      hiddenByRole: actor.role,
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      if (employeeRemovalAction(requestData.status) === 'cancel') {
+        transaction.update(requestRef, {
+          status: 'rejected',
+          rejectionReason: EMPLOYEE_CANCEL_REASON,
+          cancelledByEmployee: true,
+          cancelledAt: now,
+          resolvedBy: actor.displayName || actor.email || 'Pegawai',
+          updatedAt: now,
+        });
+        return { hiddenFromEmployee: false, cancelled: true };
+      }
+
+      transaction.update(requestRef, {
+        hiddenFromEmployee: true,
+        hiddenAt: now,
+        hiddenByUid: actor.uid,
+        hiddenByRole: actor.role,
+      });
+      return { hiddenFromEmployee: true, cancelled: false };
     });
 
     return Response.json(
-      { requestId, hiddenFromEmployee: true },
+      { requestId, ...result },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {

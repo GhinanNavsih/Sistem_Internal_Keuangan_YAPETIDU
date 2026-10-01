@@ -22,6 +22,9 @@ export interface PresenceCorrectionRequest {
   employeeName?: string;
   rejectionReason?: string | null;
   resolvedBy?: string;
+  /** Set when the employee withdrew a pending request; it is stored as `rejected`. */
+  cancelledByEmployee?: boolean;
+  cancelledAt?: unknown;
   hiddenFromEmployee?: boolean;
   hiddenAt?: unknown;
   hiddenByUid?: string;
@@ -53,6 +56,18 @@ export function asPresenceCorrectionRequest(
   data: Record<string, unknown>,
 ): PresenceCorrectionRequest {
   return { id, ...data } as PresenceCorrectionRequest;
+}
+
+export const EMPLOYEE_CANCEL_REASON = 'Dibatalkan oleh pegawai.';
+
+/**
+ * What "Hapus" means for the employee. A request still waiting for a decision
+ * is withdrawn, because hiding it would leave it pending for the admin who
+ * could still approve it. A decided request is only hidden from the employee's
+ * own history.
+ */
+export function employeeRemovalAction(status: unknown): 'cancel' | 'hide' {
+  return status === 'pending' ? 'cancel' : 'hide';
 }
 
 /**

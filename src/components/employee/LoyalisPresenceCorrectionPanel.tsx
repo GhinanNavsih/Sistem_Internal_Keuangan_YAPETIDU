@@ -46,6 +46,8 @@ import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/clien
 import {
   asPresenceCorrectionRequest,
   correctionTimeLabel,
+  EMPLOYEE_CANCEL_REASON,
+  employeeRemovalAction,
   formatPresenceDate,
   isPresenceCorrectionType,
   isPresenceCorrectionVisibleToEmployee,
@@ -275,30 +277,50 @@ export function LoyalisPresenceCorrectionPanel({
     setCheckOutFocused(false);
   };
 
+  const patchRequest = (id: string, patch: Partial<PresenceCorrectionRequest>) =>
+    setRequests((current) =>
+      current.map((request) => (request.id === id ? { ...request, ...patch } : request)),
+    );
+
   const handleDeleteRequest = async (id: string) => {
     setActiveMenuId(null);
+    const target = requests.find((request) => request.id === id);
+    const cancelling = employeeRemovalAction(target?.status) === 'cancel';
     const confirmed = window.confirm(
-      'Hapus pengajuan ini dari riwayat Anda? Data tetap tersimpan untuk kebutuhan audit.',
+      cancelling
+        ? 'Batalkan pengajuan ini? Pengajuan tidak akan diproses dan statusnya menjadi Dibatalkan.'
+        : 'Hapus pengajuan ini dari riwayat Anda? Data tetap tersimpan untuk kebutuhan audit.',
     );
     if (!confirmed) return;
 
     setDeletingRequestId(id);
     setMessage(null);
     try {
-      await authenticatedJson<{ requestId: string; hiddenFromEmployee: boolean }>(
+      const result = await authenticatedJson<{ requestId: string; hiddenFromEmployee: boolean; cancelled: boolean }>(
         `/api/employee/presensi-correction?requestId=${encodeURIComponent(id)}`,
         { method: 'DELETE' },
       );
-      setRequests((current) => current.filter((request) => request.id !== id));
+      if (result.cancelled) {
+        patchRequest(id, {
+          status: 'rejected',
+          rejectionReason: EMPLOYEE_CANCEL_REASON,
+          cancelledByEmployee: true,
+        });
+      } else {
+        setRequests((current) => current.filter((request) => request.id !== id));
+      }
       if (editingRequestId === id) {
         handleCancelEdit();
       }
+      void invalidateLoyalisPresenceCorrections();
       setMessage({
         type: 'success',
-        text: 'Pengajuan dihapus dari riwayat Anda. Data tetap tersimpan di database.',
+        text: result.cancelled
+          ? 'Pengajuan dibatalkan.'
+          : 'Pengajuan dihapus dari riwayat Anda. Data tetap tersimpan di database.',
       });
     } catch (err: unknown) {
-      console.error('Error hiding presence correction:', err);
+      console.error('Error removing presence correction:', err);
       setMessage({
         type: 'error',
         text: err instanceof Error ? err.message : 'Gagal menghapus pengajuan dari riwayat.',
@@ -941,12 +963,16 @@ export function LoyalisPresenceCorrectionPanel({
                         <div className="flex items-center gap-1.5">
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${req.status === 'approved'
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                            : req.status === 'rejected'
-                              ? 'bg-rose-50 text-rose-700 border border-rose-100'
-                              : 'bg-amber-50 text-amber-700 border border-amber-100'
+                            : req.cancelledByEmployee
+                              ? 'bg-slate-100 text-slate-600 border border-slate-200'
+                              : req.status === 'rejected'
+                                ? 'bg-rose-50 text-rose-700 border border-rose-100'
+                                : 'bg-amber-50 text-amber-700 border border-amber-100'
                             }`}>
                             {req.status === 'approved' ? (
                               <><CheckCircle2 className="w-3 h-3" /> Disetujui</>
+                            ) : req.cancelledByEmployee ? (
+                              <><XCircle className="w-3 h-3" /> Dibatalkan</>
                             ) : req.status === 'rejected' ? (
                               <><XCircle className="w-3 h-3" /> Ditolak</>
                             ) : (
@@ -991,7 +1017,7 @@ export function LoyalisPresenceCorrectionPanel({
                                     ) : (
                                       <Trash2 className="w-3.5 h-3.5 text-rose-500" />
                                     )}
-                                    Hapus
+                                    {req.status === 'pending' ? 'Batalkan' : 'Hapus'}
                                   </button>
                                 </div>
                               </>
@@ -1025,7 +1051,7 @@ export function LoyalisPresenceCorrectionPanel({
                       )}
 
                       {/* Rejection reason */}
-                      {req.rejectionReason && (
+                      {req.rejectionReason && !req.cancelledByEmployee && (
                         <div className="text-[10px] text-rose-600 bg-rose-50 border border-rose-100/50 p-2.5 rounded-xl mt-2.5 font-medium">
                           <strong>Catatan Penolakan:</strong> {req.rejectionReason}
                         </div>

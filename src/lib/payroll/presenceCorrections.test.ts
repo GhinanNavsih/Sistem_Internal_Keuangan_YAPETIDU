@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   correctionTimeLabel,
   correctionTypeLabel,
+  employeeRemovalAction,
   isPresenceCorrectionType,
   isPresenceCorrectionVisibleToEmployee,
 } from './presenceCorrections';
@@ -11,6 +12,13 @@ test('employee history hides only explicitly soft-deleted requests', () => {
   assert.equal(isPresenceCorrectionVisibleToEmployee({}), true);
   assert.equal(isPresenceCorrectionVisibleToEmployee({ hiddenFromEmployee: false }), true);
   assert.equal(isPresenceCorrectionVisibleToEmployee({ hiddenFromEmployee: true }), false);
+});
+
+test('removing a request withdraws it while pending and only hides it once decided', () => {
+  assert.equal(employeeRemovalAction('pending'), 'cancel');
+  assert.equal(employeeRemovalAction('approved'), 'hide');
+  assert.equal(employeeRemovalAction('rejected'), 'hide');
+  assert.equal(employeeRemovalAction(undefined), 'hide');
 });
 
 test('isPresenceCorrectionType validates all valid correction types including cuti_tahunan and ganti_libur', () => {
