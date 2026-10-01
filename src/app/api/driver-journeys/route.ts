@@ -1020,18 +1020,32 @@ export async function POST(request: NextRequest) {
       }
       const draft = body.draft as Record<string, unknown>;
       const draftData: Record<string, unknown> = {};
+      if (draft.clientUpdatedAt !== undefined) {
+        draftData.draftClientUpdatedAt = numberField(draft.clientUpdatedAt, 'Waktu perubahan draft', {
+          min: 0, max: Number.MAX_SAFE_INTEGER, integer: true,
+        });
+      }
       if (draft.isMultiDay !== undefined && typeof draft.isMultiDay !== 'boolean') throw new HttpError(400, 'Status multi-hari tidak valid.');
       const draftIsMultiDay = draft.isMultiDay === true;
-      const draftDate = draft.date !== undefined ? dateField(draft.date, 'Tanggal draft') : '';
+      const draftDate = draft.date !== undefined && draft.date !== ''
+        ? dateField(draft.date, 'Tanggal draft') : '';
       if (draft.date !== undefined) draftData.draftDate = draftDate;
       if (!draftIsMultiDay && draftDate) {
         draftData.draftDateEnd = draftDate;
-      } else if (draft.dateEnd !== undefined && draft.dateEnd !== '') {
-        draftData.draftDateEnd = dateField(draft.dateEnd, 'Tanggal selesai draft');
+      } else if (draft.dateEnd !== undefined) {
+        draftData.draftDateEnd = draft.dateEnd === ''
+          ? '' : dateField(draft.dateEnd, 'Tanggal selesai draft');
       }
       if (draft.isMultiDay !== undefined) draftData.draftIsMultiDay = draftIsMultiDay;
       for (const [source, target] of [['timeStart', 'draftTimeStart'], ['timeEnd', 'draftTimeEnd']] as const) {
-        if (draft[source] !== undefined) draftData[target] = stringField(draft[source], source, 5);
+        if (draft[source] !== undefined) {
+          // A draft can be incomplete or explicitly cleared without blocking
+          // a successful input in a different field. Submission validates times.
+          if (typeof draft[source] !== 'string' || draft[source].length > 5) {
+            throw new HttpError(400, `${source} tidak valid.`);
+          }
+          draftData[target] = draft[source].trim();
+        }
       }
       if (draft.nightCount !== undefined) {
         draftData.draftNightCount = draftIsMultiDay
@@ -1055,13 +1069,10 @@ export async function POST(request: NextRequest) {
         ) {
           return;
         }
-        const fee = draft[feeSource] === undefined
-          ? 0
-          : numberField(draft[feeSource], feeSource, { min: 0, max: MAX_MONEY });
         const url = typeof draft[urlSource] === 'string'
           ? draft[urlSource].split(',').map((item) => item.trim()).filter(Boolean).join(',')
           : '';
-        if (fee <= 0 || !url) {
+        if (!url) {
           draftData[urlTarget] = '';
           draftData[evidenceTarget] = admin.firestore.FieldValue.delete();
           return;
@@ -1103,11 +1114,14 @@ export async function POST(request: NextRequest) {
         draftData.startPoint = draftStartPoint;
       }
       if (draft.mainDestinations !== undefined) {
-        const draftMainDestinations = mainDestinationsField(draft.mainDestinations);
+        // Removing the last stop must also save; final reports still require
+        // at least one destination through the submission endpoint.
+        const draftMainDestinations = Array.isArray(draft.mainDestinations) && draft.mainDestinations.length === 0
+          ? [] : mainDestinationsField(draft.mainDestinations);
         draftData.draftMainDestinations = draftMainDestinations;
         draftData.mainDestinations = draftMainDestinations;
-        draftData.draftEndPoint = draftMainDestinations[0];
-        draftData.endPoint = draftMainDestinations[0];
+        draftData.draftEndPoint = draftMainDestinations[0] || '';
+        draftData.endPoint = draftMainDestinations[0] || '';
       } else if (draft.endPoint !== undefined) {
         draftData.draftEndPoint = stringField(draft.endPoint, 'Tujuan perjalanan', 300);
         draftData.endPoint = draftData.draftEndPoint;
@@ -1157,6 +1171,13 @@ export async function POST(request: NextRequest) {
           journey.employeeId !== actor.linkedEmployeeId
         ) {
           throw new HttpError(403, 'Draft hanya dapat diubah oleh sopir yang sedang memegang perjalanan.');
+        }
+        if (
+          typeof journey.draftClientUpdatedAt === 'number' &&
+          typeof draftData.draftClientUpdatedAt === 'number' &&
+          journey.draftClientUpdatedAt > draftData.draftClientUpdatedAt
+        ) {
+          throw new HttpError(409, 'Draft perjalanan sudah diperbarui dari sesi lain. Muat ulang untuk mengambil perubahan terbaru.');
         }
         transaction.update(journeyRef, {
           ...draftData,

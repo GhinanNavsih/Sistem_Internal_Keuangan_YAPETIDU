@@ -1272,6 +1272,7 @@ export async function POST(request: NextRequest) {
           submittedAt: now,
           updatedAt: now,
           draftDate: admin.firestore.FieldValue.delete(),
+          draftClientUpdatedAt: admin.firestore.FieldValue.delete(),
           draftDateEnd: admin.firestore.FieldValue.delete(),
           draftIsMultiDay: admin.firestore.FieldValue.delete(),
           draftTimeStart: admin.firestore.FieldValue.delete(),
@@ -1288,7 +1289,9 @@ export async function POST(request: NextRequest) {
           draftCalculatedDistanceKm: admin.firestore.FieldValue.delete(),
           draftCalculatedDurationHours: admin.firestore.FieldValue.delete(),
           draftStartPoint: admin.firestore.FieldValue.delete(),
+          draftStartPointLocation: admin.firestore.FieldValue.delete(),
           draftMainDestinations: admin.firestore.FieldValue.delete(),
+          draftMainDestinationLocations: admin.firestore.FieldValue.delete(),
           draftEndPoint: admin.firestore.FieldValue.delete(),
         };
         journeyUpdate.fuelReceiptEvidence = shouldClearFuelReceiptEvidence
@@ -1463,6 +1466,7 @@ export async function DELETE(request: NextRequest) {
               claimedByName: admin.firestore.FieldValue.delete(),
               claimedAt: admin.firestore.FieldValue.delete(),
               draftTimeStart: admin.firestore.FieldValue.delete(),
+              draftClientUpdatedAt: admin.firestore.FieldValue.delete(),
               draftTimeEnd: admin.firestore.FieldValue.delete(),
               draftNightCount: admin.firestore.FieldValue.delete(),
               draftFuelFee: admin.firestore.FieldValue.delete(),

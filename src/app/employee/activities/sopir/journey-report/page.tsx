@@ -95,6 +95,8 @@ import {
   type CostSafePlaceSuggestion,
   useCostSafePlaceAutocomplete,
 } from '@/hooks/useCostSafePlaceAutocomplete';
+import { useJourneyReportDraft } from '@/hooks/useJourneyReportDraft';
+import { isLocalJourneyReportDraftNewer } from '@/lib/payroll/driverJourneyReportDraft';
 
 const loadGoogleMapsScript = (callback: () => void) => {
   if (typeof window === 'undefined') return;
@@ -309,7 +311,6 @@ function JourneyReportContent() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
-  const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Form states
@@ -370,7 +371,7 @@ function JourneyReportContent() {
     cancelSearch: cancelPlaceSearch,
   } = useCostSafePlaceAutocomplete({ loadGoogleMapsScript });
 
-  const isDraftLoadedRef = useRef(false);
+  const [draftLoadedJourneyId, setDraftLoadedJourneyId] = useState<string | null>(null);
   const routeHydratedJourneyRef = useRef<string | null>(null);
   const routeCalculationRequestRef = useRef(0);
 
@@ -394,6 +395,7 @@ function JourneyReportContent() {
     const fetchJourney = async () => {
       if (cancelled || skipJourneyLoadRef.current) return;
       setLoading(true);
+      setDraftLoadedJourneyId(null);
       try {
         let targetId = journeyIdParam;
         if (!targetId) {
@@ -464,11 +466,6 @@ function JourneyReportContent() {
             reportData.startPoint = submittedPoints[0].trim();
             reportData.mainDestinations = submittedPoints.slice(1).map((point: string) => point.trim());
             reportData.endPoint = reportData.mainDestinations[0];
-            reportData.draftStartPoint = undefined;
-            reportData.draftStartPointLocation = undefined;
-            reportData.draftMainDestinations = undefined;
-            reportData.draftMainDestinationLocations = undefined;
-            reportData.draftEndPoint = undefined;
           }
 
           if (reportData.status !== 'claimed' && !isExplicitEdit) {
@@ -492,6 +489,9 @@ function JourneyReportContent() {
           } catch (e) {
             console.error('Error parsing local draft:', e);
           }
+          if (localDraft && !isLocalJourneyReportDraftNewer(localDraft.updatedAt, reportData.draftClientUpdatedAt)) {
+            localDraft = null;
+          }
 
           const storedStartPoint =
             localDraft?.startPoint ??
@@ -504,7 +504,8 @@ function JourneyReportContent() {
             reportData.mainDestinations;
           const initialMainDestinations = normalizeDriverJourneyDestinations(
             storedMainDestinations,
-            reportData.draftEndPoint ?? reportData.endPoint,
+            Array.isArray(storedMainDestinations) && storedMainDestinations.length === 0
+              ? '' : reportData.draftEndPoint ?? reportData.endPoint,
           );
           const normalizedStartPoint =
             typeof storedStartPoint === 'string' && storedStartPoint.trim()
@@ -551,6 +552,7 @@ function JourneyReportContent() {
           const initialDate =
             (authorizedDeparture ? jakartaDateFrom(reportData.authorizedAt) : null) ??
             localDraft?.formDate ??
+            reportData.draftDate ??
             reportData.activityDate ??
             reportData.dateStart ??
             reportData.journeyDate ??
@@ -659,7 +661,7 @@ function JourneyReportContent() {
               : (isExplicitEdit && reportData.tollParkingFee !== undefined && reportData.tollParkingFee !== null ? (reportData.tollParkingFee ? Number(reportData.tollParkingFee).toLocaleString('id-ID') : '') : ''));
           setFormTollParkingFee(rawTollVal);
 
-          const rawFuelUrls = reportData.draftFuelReceiptUrl || reportData.fuelReceiptUrl || '';
+          const rawFuelUrls = reportData.draftFuelReceiptUrl ?? reportData.fuelReceiptUrl ?? '';
           setFormFuelReceiptUrls(
             Array.isArray(localDraft?.formFuelReceiptUrls)
               ? localDraft.formFuelReceiptUrls
@@ -668,10 +670,12 @@ function JourneyReportContent() {
           setFormFuelReceiptEvidence(
             Array.isArray(localDraft?.formFuelReceiptEvidence)
               ? localDraft.formFuelReceiptEvidence
-              : (Array.isArray(reportData.fuelReceiptEvidence) ? reportData.fuelReceiptEvidence : [])
+              : (reportData.draftFuelReceiptUrl !== undefined
+                ? (Array.isArray(reportData.draftFuelReceiptEvidence) ? reportData.draftFuelReceiptEvidence : [])
+                : (Array.isArray(reportData.fuelReceiptEvidence) ? reportData.fuelReceiptEvidence : []))
           );
 
-          const rawTollUrls = reportData.draftTollReceiptUrl || reportData.tollReceiptUrl || '';
+          const rawTollUrls = reportData.draftTollReceiptUrl ?? reportData.tollReceiptUrl ?? '';
           setFormTollReceiptUrls(
             Array.isArray(localDraft?.formTollReceiptUrls)
               ? localDraft.formTollReceiptUrls
@@ -680,7 +684,9 @@ function JourneyReportContent() {
           setFormTollReceiptEvidence(
             Array.isArray(localDraft?.formTollReceiptEvidence)
               ? localDraft.formTollReceiptEvidence
-              : (Array.isArray(reportData.tollReceiptEvidence) ? reportData.tollReceiptEvidence : [])
+              : (reportData.draftTollReceiptUrl !== undefined
+                ? (Array.isArray(reportData.draftTollReceiptEvidence) ? reportData.draftTollReceiptEvidence : [])
+                : (Array.isArray(reportData.tollReceiptEvidence) ? reportData.tollReceiptEvidence : []))
           );
 
           const initialNightCount = localDraft?.formNightCount !== undefined
@@ -731,9 +737,7 @@ function JourneyReportContent() {
           setHasMeasuredRoundTrip(false);
           setRouteHydrationKey(targetId);
 
-          setTimeout(() => {
-            isDraftLoadedRef.current = true;
-          }, 100);
+          setDraftLoadedJourneyId(targetId);
         } else {
           // Journey document does not exist — clean up any orphan ActivityReports
           try {
@@ -762,7 +766,7 @@ function JourneyReportContent() {
         journeyLoadAttemptRef.current = null;
       }
     };
-  }, [journeyIdParam, profile?.linkedEmployeeId, isSopir, authLoading, router, user]);
+  }, [journeyIdParam, editReportIdParam, profile?.linkedEmployeeId, isSopir, authLoading, router, user]);
 
   const recalculateRouteChain = useCallback(async (
     list: any[],
@@ -966,11 +970,9 @@ function JourneyReportContent() {
     };
   };
 
-  // Auto-save form progress to localStorage synchronously on any state change
-  useEffect(() => {
-    if (!activeReportingJourney || !isDraftLoadedRef.current) return;
-    const localDraftKey = `journey_draft_${activeReportingJourney.id}`;
-    const draftPayload = {
+  const draftAutosave = useJourneyReportDraft(
+    activeReportingJourney?.id === draftLoadedJourneyId ? draftLoadedJourneyId : null,
+    {
       formDate,
       formDateEnd,
       formIsMultiDay,
@@ -984,132 +986,21 @@ function JourneyReportContent() {
       formTollReceiptUrls,
       formFuelReceiptEvidence,
       formTollReceiptEvidence,
-      startPoint: activeReportingJourney.startPoint,
-      startPointLocation: activeReportingJourney.startPointLocation || null,
+      startPoint: activeReportingJourney?.startPoint || '',
+      startPointLocation: activeReportingJourney?.startPointLocation || null,
       mainDestinations: currentMainDestinations,
       mainDestinationLocations: currentMainDestinationLocations,
       extraActivities,
       calculatedDistanceKm,
       calculatedDurationHours,
-      updatedAt: Date.now(),
-    };
-    try {
-      localStorage.setItem(localDraftKey, JSON.stringify(draftPayload));
-    } catch (e) {
-      console.error('Failed to save draft to localStorage:', e);
-    }
-  }, [
-    activeReportingJourney?.id,
-    formDate,
-    formDateEnd,
-    formIsMultiDay,
-    formTimeStart,
-    formTimeEnd,
-    formNightCount,
-    formNdalemMealMoneyFee,
-    formFuelFee,
-    formTollParkingFee,
-    formFuelReceiptUrls,
-    formTollReceiptUrls,
-    formFuelReceiptEvidence,
-    formTollReceiptEvidence,
-    activeReportingJourney?.startPoint,
-    activeReportingJourney?.startPointLocation,
-    currentMainDestinations,
-    currentMainDestinationLocations,
-    extraActivities,
-    calculatedDistanceKm,
-    calculatedDurationHours,
-  ]);
-
-  const handleSaveDraft = async () => {
-    if (!activeReportingJourney) return;
-    setIsSavingDraft(true);
-    try {
-      const fuelVal = formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0;
-      const tollVal = formTollParkingFee ? (parseInt(formTollParkingFee.replace(/\D/g, ''), 10) || 0) : 0;
-      const ndalemMealMoneyVal = formNdalemMealMoneyFee ? (parseInt(formNdalemMealMoneyFee.replace(/\D/g, ''), 10) || 0) : 0;
-      const draftFuelReceiptUrls = fuelVal > 0 ? formFuelReceiptUrls.filter(Boolean) : [];
-      const draftTollReceiptUrls = tollVal > 0 ? formTollReceiptUrls.filter(Boolean) : [];
-      const draftFuelReceiptEvidence =
-        draftFuelReceiptUrls.length > 0 && formFuelReceiptEvidence.length === draftFuelReceiptUrls.length
-          ? formFuelReceiptEvidence
-          : [];
-      const draftTollReceiptEvidence =
-        draftTollReceiptUrls.length > 0 && formTollReceiptEvidence.length === draftTollReceiptUrls.length
-          ? formTollReceiptEvidence
-          : [];
-      const draftDateEnd = formIsMultiDay ? (formDateEnd || formDate) : formDate;
-      const draftNightCount = formIsMultiDay ? formNightCount : 0;
-      await authenticatedJson('/api/driver-journeys', {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'save_draft',
-          journeyId: activeReportingJourney.id,
-          draft: {
-            date: formDate,
-            dateEnd: draftDateEnd,
-            isMultiDay: formIsMultiDay,
-            timeStart: formTimeStart,
-            timeEnd: formTimeEnd,
-            nightCount: draftNightCount,
-            ndalemMealMoneyReceived: ndalemMealMoneyVal,
-            fuelFee: fuelVal,
-            tollParkingFee: tollVal,
-            fuelReceiptUrl: draftFuelReceiptUrls.join(','),
-            tollReceiptUrl: draftTollReceiptUrls.join(','),
-            ...(draftFuelReceiptEvidence.length > 0 ? { fuelReceiptEvidence: draftFuelReceiptEvidence } : {}),
-            ...(draftTollReceiptEvidence.length > 0 ? { tollReceiptEvidence: draftTollReceiptEvidence } : {}),
-            startPoint: activeReportingJourney.startPoint,
-            startPointLocation: activeReportingJourney.startPointLocation || null,
-            mainDestinations: currentMainDestinations,
-            mainDestinationLocations: currentMainDestinationLocations,
-            extraActivities,
-            calculatedDistanceKm,
-            calculatedDurationHours,
-            endPoint: currentMainDestinations[0] || activeReportingJourney.endPoint || undefined,
-          },
-        }),
-      });
-
-      // Also ensure localStorage is synced
-      const localDraftKey = `journey_draft_${activeReportingJourney.id}`;
-      localStorage.setItem(localDraftKey, JSON.stringify({
-        formDate,
-        formDateEnd: draftDateEnd,
-        formIsMultiDay,
-        formTimeStart,
-        formTimeEnd,
-        formNightCount: draftNightCount,
-        formNdalemMealMoneyFee,
-        formFuelFee,
-        formTollParkingFee,
-        formFuelReceiptUrls: draftFuelReceiptUrls,
-        formTollReceiptUrls: draftTollReceiptUrls,
-            formFuelReceiptEvidence: draftFuelReceiptEvidence,
-            formTollReceiptEvidence: draftTollReceiptEvidence,
-            startPoint: activeReportingJourney.startPoint,
-            startPointLocation: activeReportingJourney.startPointLocation || null,
-            mainDestinations: currentMainDestinations,
-            mainDestinationLocations: currentMainDestinationLocations,
-            extraActivities,
-        calculatedDistanceKm,
-        calculatedDurationHours,
-        updatedAt: Date.now(),
-      }));
-
-      setMessage({ type: 'success', text: 'Draft laporan berhasil disimpan.' });
-    } catch (err) {
-      console.error('Error saving draft:', err);
-      setMessage({ type: 'error', text: 'Gagal menyimpan draft.' });
-    } finally {
-      setIsSavingDraft(false);
-    }
-  };
+      outboundDistanceKm,
+      outboundDurationHours,
+    },
+  );
 
   const handleBackToDashboard = async () => {
     if (activeReportingJourney && !skipSaveDraftRef.current) {
-      await handleSaveDraft();
+      await draftAutosave.flush();
     }
     router.push(EMPLOYEE_ACTIVITY_PATHS.sopir);
   };
@@ -1455,6 +1346,7 @@ function JourneyReportContent() {
     skipSaveDraftRef.current = true;
     skipJourneyLoadRef.current = true;
     try {
+      await draftAutosave.pause();
       await authenticatedJson(
         `/api/pekarya/activities?journeyId=${encodeURIComponent(activeReportingJourney.id)}${activeReportingJourney.activityDocId ? `&reportId=${encodeURIComponent(activeReportingJourney.activityDocId)}` : ''}`,
         { method: 'DELETE' }
@@ -1474,6 +1366,7 @@ function JourneyReportContent() {
       setIsCancelling(false);
       skipSaveDraftRef.current = false;
       skipJourneyLoadRef.current = false;
+      draftAutosave.resume();
       setShowCancelModal(false);
     }
   };
@@ -1705,6 +1598,7 @@ function JourneyReportContent() {
         finalActivityName = finalActivityName.slice(0, 177) + '...';
       }
 
+      await draftAutosave.pause();
       await authenticatedJson('/api/pekarya/activities', {
         method: 'POST',
         body: JSON.stringify({
@@ -1786,6 +1680,7 @@ function JourneyReportContent() {
       isSubmittingRef.current = false;
       setSubmitting(false);
       skipSaveDraftRef.current = false;
+      draftAutosave.resume();
     }
   };
 
@@ -2712,16 +2607,24 @@ function JourneyReportContent() {
           {/* ── Actions ──────────────────────────────────────────────── */}
           <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)]">
             <div className="mx-auto flex max-w-2xl items-center gap-2 px-4 py-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleSaveDraft}
-                disabled={isSavingDraft || submitting}
-                className="h-10 px-4"
-              >
-                {isSavingDraft && <Loader2 className="animate-spin" />}
-                Simpan draft
-              </Button>
+              <div role="status" aria-live="polite" className="flex min-w-0 flex-1 items-center gap-2 text-xs text-slate-500">
+                {draftAutosave.status === 'saving' && <Loader2 className="size-4 shrink-0 animate-spin" />}
+                <span>
+                  {draftAutosave.status === 'saving'
+                    ? 'Menyimpan draft…'
+                    : draftAutosave.status === 'saved'
+                      ? 'Draft tersimpan otomatis'
+                      : draftAutosave.conflict ? 'Draft berubah di sesi lain' : 'Sinkronisasi draft tertunda'}
+                </span>
+                {draftAutosave.status === 'error' && (
+                  <Button type="button" variant="ghost" size="sm" onClick={() => {
+                    if (draftAutosave.conflict) window.location.reload();
+                    else void draftAutosave.flush();
+                  }} disabled={submitting || isCancelling}>
+                    {draftAutosave.conflict ? 'Muat ulang' : 'Coba lagi'}
+                  </Button>
+                )}
+              </div>
               <Button
                 type="submit"
                 variant="accent"
@@ -2731,7 +2634,7 @@ function JourneyReportContent() {
                   !hasMeasuredRoundTrip ||
                   Boolean(extraRouteError)
                 }
-                className="h-10 flex-1 px-4"
+                className="h-10 shrink-0 px-4"
               >
                 {submitting && <Loader2 className="animate-spin" />}
                 {submitLabel}
