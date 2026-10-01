@@ -3458,12 +3458,12 @@ export default function PayrollValidationDashboard() {
       {/* Subtle decorative blobs */}
       <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
-      <div className="max-w-7xl mx-auto relative z-10">
+      <div className="relative z-10">
         {/* Header Section */}
         <GlobalHeader />
 
         {/* Main Card */}
-        <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none overflow-hidden">
+        <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none overflow-hidden">
           <div className="p-8 pb-0">
             {/* Title & Info */}
             <div className="flex justify-between items-start mb-6">
@@ -3495,10 +3495,10 @@ export default function PayrollValidationDashboard() {
                 {/* Filter Controls */}
                 <div className="flex flex-wrap items-center gap-4 mb-6">
                   {/* Collar Switch Toggle */}
-                  <div className="flex bg-slate-100 p-1 rounded-xl">
+                  <div className="flex bg-slate-100 p-1 rounded-md">
                     <button
                       onClick={() => setPayrollCollar('blue')}
-                      className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${payrollCollar === 'blue'
+                      className={`px-4 py-1.5 rounded-sm text-xs font-semibold transition-all ${payrollCollar === 'blue'
                         ? 'bg-white text-indigo-600 shadow-sm font-bold'
                         : 'text-slate-500 hover:text-slate-700'
                         }`}
@@ -3507,7 +3507,7 @@ export default function PayrollValidationDashboard() {
                     </button>
                     <button
                       onClick={() => setPayrollCollar('loyalis')}
-                      className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${payrollCollar === 'loyalis'
+                      className={`px-4 py-1.5 rounded-sm text-xs font-semibold transition-all ${payrollCollar === 'loyalis'
                         ? 'bg-white text-indigo-600 shadow-sm font-bold'
                         : 'text-slate-500 hover:text-slate-700'
                         }`}
@@ -3520,7 +3520,7 @@ export default function PayrollValidationDashboard() {
                   <select
                     value={categoryFilter}
                     onChange={(e) => setCategoryFilter(e.target.value)}
-                    className="bg-white border border-slate-200 text-slate-600 text-xs font-semibold rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-sm"
+                    className="bg-white border border-slate-200 text-slate-600 text-xs font-semibold rounded-sm px-3 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-sm"
                   >
                     <option value="all">Semua Kategori</option>
                     {categories.map(cat => (
@@ -3538,7 +3538,7 @@ export default function PayrollValidationDashboard() {
                       placeholder="Cari nama atau ID pegawai..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full bg-white border border-slate-200 text-slate-700 placeholder:text-slate-400 text-xs font-semibold rounded-xl pl-10 pr-4 py-2.5 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all shadow-sm"
+                      className="w-full bg-white border border-slate-200 text-slate-700 placeholder:text-slate-400 text-xs font-semibold rounded-sm pl-10 pr-4 py-2.5 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all shadow-sm"
                     />
                   </div>
                 </div>
@@ -3555,7 +3555,7 @@ export default function PayrollValidationDashboard() {
                           setTargetDate(new Date(Number(y), Number(m) - 1, 1));
                         }
                       }}
-                      className="bg-white border border-slate-200 text-slate-700 text-sm font-semibold rounded-xl px-3 py-1 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer mt-0.5"
+                      className="bg-white border border-slate-200 text-slate-700 text-sm font-semibold rounded-sm px-3 py-1 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer mt-0.5"
                     />
                   </div>
                   <div>
@@ -3568,8 +3568,8 @@ export default function PayrollValidationDashboard() {
                         variant="outline"
                         className={
                           attendancePeriodStatus === 'closed'
-                            ? 'border-rose-200 bg-rose-50 text-rose-700'
-                            : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                            ? 'rounded-sm border-rose-200 bg-rose-50 text-rose-700'
+                            : 'rounded-sm border-emerald-200 bg-emerald-50 text-emerald-700'
                         }
                       >
                         {attendancePeriodStatus === 'closed' ? 'DITUTUP' : 'DIBUKA'}
@@ -3579,7 +3579,7 @@ export default function PayrollValidationDashboard() {
                           <Button
                             type="button"
                             variant="outline"
-                            className="h-7 rounded-lg px-2 text-[11px]"
+                            className="h-7 rounded-sm px-2 text-[11px]"
                             onClick={() => handleSetAttendancePeriod('closed')}
                             disabled={
                               preparingAllDrafts ||
@@ -3595,7 +3595,7 @@ export default function PayrollValidationDashboard() {
                           <Button
                             type="button"
                             variant="outline"
-                            className="h-7 rounded-lg px-2 text-[11px]"
+                            className="h-7 rounded-sm px-2 text-[11px]"
                             onClick={() => void handleOpenCalendarEditor()}
                             disabled={isSubmittingModal}
                           >
@@ -3668,7 +3668,7 @@ export default function PayrollValidationDashboard() {
                     type="button"
                     onClick={handlePrepareAllDrafts}
                     disabled={preparingAllDrafts || loading || !pekaryaPreviewsReady || missingPayrollDraftCount === 0}
-                    className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${(preparingAllDrafts || loading || !pekaryaPreviewsReady || missingPayrollDraftCount === 0) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${(preparingAllDrafts || loading || !pekaryaPreviewsReady || missingPayrollDraftCount === 0) ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     {preparingAllDrafts ? (
                       <>
@@ -3687,7 +3687,7 @@ export default function PayrollValidationDashboard() {
                   type="button"
                   onClick={handleBulkVerifyAndLock}
                   disabled={confirmingBulk || loading || attendancePeriodStatus !== 'closed'}
-                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${(confirmingBulk || loading || attendancePeriodStatus !== 'closed') ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${(confirmingBulk || loading || attendancePeriodStatus !== 'closed') ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   {confirmingBulk ? (
                     <>
@@ -3711,7 +3711,7 @@ export default function PayrollValidationDashboard() {
                   type="button"
                   onClick={handleBulkRefresh}
                   disabled={refreshingBulk || loading || attendancePeriodStatus === 'closed'}
-                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-indigo-200 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${(refreshingBulk || loading || attendancePeriodStatus === 'closed') ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-indigo-200 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${(refreshingBulk || loading || attendancePeriodStatus === 'closed') ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   {refreshingBulk ? (
                     <>
@@ -3730,7 +3730,7 @@ export default function PayrollValidationDashboard() {
                   onClick={handleBulkEmail}
                   disabled={loading}
                   title={isBulkEmailActive ? 'Pengiriman sedang berjalan — klik untuk melihat detail' : undefined}
-                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-indigo-200 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-indigo-200 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   {isBulkEmailPaused ? (
                     <>
@@ -3753,7 +3753,7 @@ export default function PayrollValidationDashboard() {
                   type="button"
                   onClick={() => setPrintSelectorOpen(true)}
                   disabled={loading}
-                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <Printer className="w-4 h-4 text-slate-500" />
                   Cetak Dokumen
@@ -3762,7 +3762,7 @@ export default function PayrollValidationDashboard() {
                   type="button"
                   onClick={handleExportExcel}
                   disabled={loading}
-                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
                   Ekspor Excel
@@ -3771,7 +3771,7 @@ export default function PayrollValidationDashboard() {
             </div>
             {displayedPekaryaPreviewsRequired &&
               (pekaryaPreviewsLoading || pekaryaPreviewProblem) && (
-                <div className="mx-8 mt-5 flex items-start justify-between gap-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                <div className="mx-8 mt-5 flex items-start justify-between gap-4 rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
                   <div className="flex items-start gap-2">
                     {pekaryaPreviewsLoading ? (
                       <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
@@ -3799,7 +3799,7 @@ export default function PayrollValidationDashboard() {
                       onClick={() =>
                         setPekaryaPreviewReloadToken((token) => token + 1)
                       }
-                      className="shrink-0 border-rose-300 bg-white text-rose-700 hover:bg-rose-100"
+                      className="shrink-0 rounded-sm border-rose-300 bg-white text-rose-700 hover:bg-rose-100"
                     >
                       <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
                       Coba Lagi
@@ -3892,7 +3892,7 @@ export default function PayrollValidationDashboard() {
                             )}
                             <span className="block truncate" title={emp.name}>{emp.name}</span>
                             {previewUnavailable && (
-                              <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[10px] text-rose-600">
+                              <Badge variant="outline" className="rounded-sm border-rose-200 bg-rose-50 text-[10px] text-rose-600">
                                 Preview tidak tersedia
                               </Badge>
                             )}
@@ -3903,7 +3903,7 @@ export default function PayrollValidationDashboard() {
                             <div className="flex items-center gap-2">
                               <span className="block truncate max-w-[280px]" title={emp.role}>{emp.role}</span>
                               {!emp.isActive && (
-                                <Badge variant="secondary" className="bg-slate-100 text-slate-500 text-[10px] h-4 px-1.5 font-normal uppercase shrink-0">
+                                <Badge variant="secondary" className="rounded-sm bg-slate-100 text-slate-500 text-[10px] h-4 px-1.5 font-normal uppercase shrink-0">
                                   Keluar
                                 </Badge>
                               )}
@@ -3928,7 +3928,7 @@ export default function PayrollValidationDashboard() {
                             <button
                               id={`edit-${emp.id}`}
                               onClick={() => openEditDialog(emp)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-semibold
                                 bg-amber-50 text-amber-600 border border-amber-200
                                 hover:bg-amber-100 hover:border-amber-300 hover:shadow-sm
                                 transition-all duration-150 cursor-pointer shadow-sm"
@@ -3944,7 +3944,7 @@ export default function PayrollValidationDashboard() {
                                 setSelectedEmployee(emp);
                                 setCetakKirimOpen(true);
                               }}
-                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border
+                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-semibold border
                                 transition-all duration-150 cursor-pointer shadow-sm
                                 ${slip && isTransferEligibleStatus(slip.status)
                                   ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 hover:shadow-sm'
@@ -4154,16 +4154,16 @@ export default function PayrollValidationDashboard() {
 
       {/* ─── Print Selection Dialog ─────────────────────────────────── */}
       <Dialog open={printSelectorOpen} onOpenChange={setPrintSelectorOpen}>
-        <DialogContent className="sm:max-w-[760px] p-6 rounded-2xl bg-white border border-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.1)]">
+        <DialogContent className="sm:max-w-[760px] p-6 rounded-md bg-white border border-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.1)]">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold tracking-tight text-slate-900 flex items-center justify-between gap-2.5 w-full">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-indigo-50 text-indigo-600">
+                <div className="p-2 rounded-sm bg-indigo-50 text-indigo-600">
                   <Printer className="w-5 h-5" />
                 </div>
                 Cetak Dokumen Payroll
               </div>
-              <Badge className={payrollCollar === 'loyalis' ? "bg-indigo-600 hover:bg-indigo-600 text-white rounded-lg px-2.5 py-0.5" : "bg-amber-500 hover:bg-amber-500 text-white rounded-lg px-2.5 py-0.5"}>
+              <Badge className={payrollCollar === 'loyalis' ? "bg-indigo-600 hover:bg-indigo-600 text-white rounded-sm px-2.5 py-0.5" : "bg-amber-500 hover:bg-amber-500 text-white rounded-sm px-2.5 py-0.5"}>
                 {payrollCollar === 'loyalis' ? 'Loyalis' : 'Pekarya'}
               </Badge>
             </DialogTitle>
@@ -4180,9 +4180,9 @@ export default function PayrollValidationDashboard() {
                   setPrintSelectorOpen(false);
                   setLegalitasDialogOpen(true);
                 }}
-                className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-indigo-50/30 hover:border-indigo-100 transition-all duration-200 text-left outline-none cursor-pointer"
+                className="group flex items-start gap-4 p-4 rounded-md border border-slate-100 bg-slate-50/40 hover:bg-indigo-50/30 hover:border-indigo-100 transition-all duration-200 text-left outline-none cursor-pointer"
               >
-                <div className="flex-shrink-0 p-3 rounded-xl bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100/70 transition-colors">
+                <div className="flex-shrink-0 p-3 rounded-sm bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100/70 transition-colors">
                   <Award className="w-5 h-5" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -4205,9 +4205,9 @@ export default function PayrollValidationDashboard() {
                 setPrintSelectorOpen(false);
                 setCetakRekapDialogOpen(true);
               }}
-              className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-emerald-50/30 hover:border-emerald-100 transition-all duration-200 text-left outline-none cursor-pointer"
+              className="group flex items-start gap-4 p-4 rounded-md border border-slate-100 bg-slate-50/40 hover:bg-emerald-50/30 hover:border-emerald-100 transition-all duration-200 text-left outline-none cursor-pointer"
             >
-              <div className="flex-shrink-0 p-3 rounded-xl bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100/70 transition-colors">
+              <div className="flex-shrink-0 p-3 rounded-sm bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100/70 transition-colors">
                 <FileSpreadsheet className="w-5 h-5" />
               </div>
               <div className="flex-1 min-w-0">
@@ -4229,9 +4229,9 @@ export default function PayrollValidationDashboard() {
                 setPrintSelectorOpen(false);
                 setCetakPayrollDialogOpen(true);
               }}
-              className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-amber-50/30 hover:border-amber-100 transition-all duration-200 text-left outline-none cursor-pointer"
+              className="group flex items-start gap-4 p-4 rounded-md border border-slate-100 bg-slate-50/40 hover:bg-amber-50/30 hover:border-amber-100 transition-all duration-200 text-left outline-none cursor-pointer"
             >
-              <div className="flex-shrink-0 p-3 rounded-xl bg-amber-50 text-amber-600 group-hover:bg-amber-100/70 transition-colors">
+              <div className="flex-shrink-0 p-3 rounded-sm bg-amber-50 text-amber-600 group-hover:bg-amber-100/70 transition-colors">
                 <Banknote className="w-5 h-5" />
               </div>
               <div className="flex-1 min-w-0">
@@ -4253,9 +4253,9 @@ export default function PayrollValidationDashboard() {
                 setPrintSelectorOpen(false);
                 handleBulkPdf();
               }}
-              className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-blue-50/30 hover:border-blue-100 transition-all duration-200 text-left outline-none cursor-pointer"
+              className="group flex items-start gap-4 p-4 rounded-md border border-slate-100 bg-slate-50/40 hover:bg-blue-50/30 hover:border-blue-100 transition-all duration-200 text-left outline-none cursor-pointer"
             >
-              <div className="flex-shrink-0 p-3 rounded-xl bg-blue-50 text-blue-600 group-hover:bg-blue-100/70 transition-colors">
+              <div className="flex-shrink-0 p-3 rounded-sm bg-blue-50 text-blue-600 group-hover:bg-blue-100/70 transition-colors">
                 <FileText className="w-5 h-5" />
               </div>
               <div className="flex-1 min-w-0">
@@ -4278,9 +4278,9 @@ export default function PayrollValidationDashboard() {
                   setPrintSelectorOpen(false);
                   setTunjanganJabatanDialogOpen(true);
                 }}
-                className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-purple-50/30 hover:border-purple-100 transition-all duration-200 text-left outline-none cursor-pointer"
+                className="group flex items-start gap-4 p-4 rounded-md border border-slate-100 bg-slate-50/40 hover:bg-purple-50/30 hover:border-purple-100 transition-all duration-200 text-left outline-none cursor-pointer"
               >
-                <div className="flex-shrink-0 p-3 rounded-xl bg-purple-50 text-purple-600 group-hover:bg-purple-100/70 transition-colors">
+                <div className="flex-shrink-0 p-3 rounded-sm bg-purple-50 text-purple-600 group-hover:bg-purple-100/70 transition-colors">
                   <Briefcase className="w-5 h-5" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -4304,9 +4304,9 @@ export default function PayrollValidationDashboard() {
                   setPrintSelectorOpen(false);
                   setVakasiPimpinanStafDialogOpen(true);
                 }}
-                className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-indigo-50/30 hover:border-indigo-100 transition-all duration-200 text-left outline-none cursor-pointer"
+                className="group flex items-start gap-4 p-4 rounded-md border border-slate-100 bg-slate-50/40 hover:bg-indigo-50/30 hover:border-indigo-100 transition-all duration-200 text-left outline-none cursor-pointer"
               >
-                <div className="flex-shrink-0 p-3 rounded-xl bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100/70 transition-colors">
+                <div className="flex-shrink-0 p-3 rounded-sm bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100/70 transition-colors">
                   <FileText className="w-5 h-5" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -4330,9 +4330,9 @@ export default function PayrollValidationDashboard() {
                   setPrintSelectorOpen(false);
                   setVakasiLainLainDialogOpen(true);
                 }}
-                className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-rose-50/30 hover:border-rose-100 transition-all duration-200 text-left outline-none cursor-pointer"
+                className="group flex items-start gap-4 p-4 rounded-md border border-slate-100 bg-slate-50/40 hover:bg-rose-50/30 hover:border-rose-100 transition-all duration-200 text-left outline-none cursor-pointer"
               >
-                <div className="flex-shrink-0 p-3 rounded-xl bg-rose-50 text-rose-600 group-hover:bg-rose-100/70 transition-colors">
+                <div className="flex-shrink-0 p-3 rounded-sm bg-rose-50 text-rose-600 group-hover:bg-rose-100/70 transition-colors">
                   <FileText className="w-5 h-5" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -4355,9 +4355,9 @@ export default function PayrollValidationDashboard() {
                 setPrintSelectorOpen(false);
                 setPotonganGajiDialogOpen(true);
               }}
-              className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-indigo-50/30 hover:border-indigo-100 transition-all duration-200 text-left outline-none cursor-pointer"
+              className="group flex items-start gap-4 p-4 rounded-md border border-slate-100 bg-slate-50/40 hover:bg-indigo-50/30 hover:border-indigo-100 transition-all duration-200 text-left outline-none cursor-pointer"
             >
-              <div className="flex-shrink-0 p-3 rounded-xl bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100/70 transition-colors">
+              <div className="flex-shrink-0 p-3 rounded-sm bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100/70 transition-colors">
                 <FileText className="w-5 h-5" />
               </div>
               <div className="flex-1 min-w-0">
@@ -4380,9 +4380,9 @@ export default function PayrollValidationDashboard() {
                   setPrintSelectorOpen(false);
                   setGabunganDialogOpen(true);
                 }}
-                className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-indigo-50/30 hover:border-indigo-100 transition-all duration-200 text-left outline-none cursor-pointer"
+                className="group flex items-start gap-4 p-4 rounded-md border border-slate-100 bg-slate-50/40 hover:bg-indigo-50/30 hover:border-indigo-100 transition-all duration-200 text-left outline-none cursor-pointer"
               >
-                <div className="flex-shrink-0 p-3 rounded-xl bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100/70 transition-colors">
+                <div className="flex-shrink-0 p-3 rounded-sm bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100/70 transition-colors">
                   <FileText className="w-5 h-5" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -4406,9 +4406,9 @@ export default function PayrollValidationDashboard() {
                   setPrintSelectorOpen(false);
                   setCetakKebutuhanDanaGajiDialogOpen(true);
                 }}
-                className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-emerald-50/30 hover:border-emerald-100 transition-all duration-200 text-left outline-none cursor-pointer"
+                className="group flex items-start gap-4 p-4 rounded-md border border-slate-100 bg-slate-50/40 hover:bg-emerald-50/30 hover:border-emerald-100 transition-all duration-200 text-left outline-none cursor-pointer"
               >
-                <div className="flex-shrink-0 p-3 rounded-xl bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100/70 transition-colors">
+                <div className="flex-shrink-0 p-3 rounded-sm bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100/70 transition-colors">
                   <FileSpreadsheet className="w-5 h-5" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -4430,10 +4430,10 @@ export default function PayrollValidationDashboard() {
 
       {/* ─── Cetak & Kirim Dialog ──────────────────────────────────── */}
       <Dialog open={cetakKirimOpen} onOpenChange={setCetakKirimOpen}>
-        <DialogContent className="sm:max-w-[460px] p-6 rounded-2xl bg-white border border-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.1)]">
+        <DialogContent className="sm:max-w-[460px] p-6 rounded-md bg-white border border-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.1)]">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600">
+              <div className="p-2 rounded-sm bg-emerald-50 text-emerald-600">
                 <Share2 className="w-5 h-5" />
               </div>
               Cetak / Kirim Slip Gaji
@@ -4455,9 +4455,9 @@ export default function PayrollValidationDashboard() {
                   await handleSendWhatsApp(selectedEmployee, slip);
                 }
               }}
-              className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-emerald-50/30 hover:border-emerald-100 transition-all duration-200 text-left outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="group flex items-start gap-4 p-4 rounded-md border border-slate-100 bg-slate-50/40 hover:bg-emerald-50/30 hover:border-emerald-100 transition-all duration-200 text-left outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <div className="flex-shrink-0 p-3 rounded-xl bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100/70 transition-colors">
+              <div className="flex-shrink-0 p-3 rounded-sm bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100/70 transition-colors">
                 <MessageCircle className="w-5 h-5" />
               </div>
               <div className="flex-1 min-w-0">
@@ -4482,9 +4482,9 @@ export default function PayrollValidationDashboard() {
                   await handleSendSingleEmail(selectedEmployee);
                 }
               }}
-              className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-indigo-50/30 hover:border-indigo-100 transition-all duration-200 text-left outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="group flex items-start gap-4 p-4 rounded-md border border-slate-100 bg-slate-50/40 hover:bg-indigo-50/30 hover:border-indigo-100 transition-all duration-200 text-left outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <div className="flex-shrink-0 p-3 rounded-xl bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100/70 transition-colors">
+              <div className="flex-shrink-0 p-3 rounded-sm bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100/70 transition-colors">
                 {sendingSingleEmail ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
@@ -4517,9 +4517,9 @@ export default function PayrollValidationDashboard() {
                 generatePaySlipPdf(slipData, true);
                 setCetakKirimOpen(false);
               }}
-              className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-slate-100 hover:border-slate-300 transition-all duration-200 text-left outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="group flex items-start gap-4 p-4 rounded-md border border-slate-100 bg-slate-50/40 hover:bg-slate-100 hover:border-slate-300 transition-all duration-200 text-left outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <div className="flex-shrink-0 p-3 rounded-xl bg-slate-100 text-slate-600 group-hover:bg-slate-200 transition-colors">
+              <div className="flex-shrink-0 p-3 rounded-sm bg-slate-100 text-slate-600 group-hover:bg-slate-200 transition-colors">
                 <Printer className="w-5 h-5" />
               </div>
               <div className="flex-1 min-w-0">
@@ -4554,7 +4554,7 @@ export default function PayrollValidationDashboard() {
       >
         <DialogContent
           showCloseButton={closePeriodDialog?.status !== 'loading'}
-          className="sm:max-w-md rounded-2xl"
+          className="sm:max-w-md rounded-md"
         >
           <DialogHeader>
             <DialogTitle
@@ -4595,15 +4595,15 @@ export default function PayrollValidationDashboard() {
               role="status"
               aria-live="polite"
               aria-busy="true"
-              className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-4"
+              className="space-y-3 rounded-md border border-indigo-100 bg-indigo-50/60 px-4 py-4"
             >
               <div
                 role="progressbar"
                 aria-label="Kemajuan penutupan periode"
                 aria-valuetext="Sedang diproses"
-                className="h-2 w-full overflow-hidden rounded-full bg-indigo-100"
+                className="h-2 w-full overflow-hidden rounded-sm bg-indigo-100"
               >
-                <div className="h-full w-2/3 rounded-full bg-indigo-600 animate-pulse" />
+                <div className="h-full w-2/3 rounded-sm bg-indigo-600 animate-pulse" />
               </div>
               <div className="flex items-center gap-2 text-xs font-semibold text-indigo-700">
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -4615,7 +4615,7 @@ export default function PayrollValidationDashboard() {
             </div>
           ) : (
             <div
-              className={`rounded-xl border px-4 py-3 ${
+              className={`rounded-md border px-4 py-3 ${
                 closePeriodDialog?.status === 'success'
                   ? 'border-emerald-100 bg-emerald-50/70 text-emerald-800'
                   : closePeriodDialog?.status === 'warning'
@@ -4634,11 +4634,11 @@ export default function PayrollValidationDashboard() {
           )}
 
           {closePeriodDialog?.status !== 'loading' && (
-            <DialogFooter className="pt-2">
+            <DialogFooter className="rounded-b-md pt-2">
               <Button
                 type="button"
                 onClick={() => setClosePeriodDialog(null)}
-                className="rounded-xl bg-indigo-600 text-white hover:bg-indigo-700"
+                className="rounded-sm bg-indigo-600 text-white hover:bg-indigo-700"
               >
                 {closePeriodDialog?.status === 'error' ? 'Tutup' : 'Selesai'}
               </Button>
@@ -4649,7 +4649,7 @@ export default function PayrollValidationDashboard() {
 
       {/* ─── Bulk Email Confirmation Dialog ─────────────────── */}
       <Dialog open={bulkConfirmDialogOpen} onOpenChange={setBulkConfirmDialogOpen}>
-        <DialogContent className="sm:max-w-md rounded-2xl">
+        <DialogContent className="sm:max-w-md rounded-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg">
               <Mail className="w-5 h-5 text-indigo-600" />
@@ -4661,14 +4661,14 @@ export default function PayrollValidationDashboard() {
           </DialogHeader>
 
           <div className="grid grid-cols-2 gap-2 pt-1">
-            <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 px-3 py-2.5">
+            <div className="rounded-md border border-indigo-100 bg-indigo-50/70 px-3 py-2.5">
               <p className="text-[11px] font-semibold text-indigo-700">Penerima</p>
               <p className="text-xl font-bold text-indigo-800 tabular-nums leading-tight">
                 {bulkEmailPlan.items.length}
               </p>
               <p className="text-[11px] text-indigo-600/80">karyawan terkunci</p>
             </div>
-            <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
+            <div className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2.5">
               <p className="text-[11px] font-semibold text-slate-500">Estimasi waktu</p>
               <p className="text-xl font-bold text-slate-700 tabular-nums leading-tight">
                 ± {Math.max(1, Math.ceil((bulkEmailPlan.items.length * ESTIMATED_SECONDS_PER_EMAIL) / 60))} mnt
@@ -4678,7 +4678,7 @@ export default function PayrollValidationDashboard() {
           </div>
 
           {bulkEmailPlan.skipped.length > 0 && (
-            <div className="flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2.5">
+            <div className="flex items-start gap-2 rounded-md border border-amber-100 bg-amber-50 px-3 py-2.5">
               <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
               <div className="min-w-0">
                 <p className="text-xs font-semibold text-amber-800">
@@ -4700,14 +4700,14 @@ export default function PayrollValidationDashboard() {
             <Button
               variant="outline"
               onClick={() => setBulkConfirmDialogOpen(false)}
-              className="rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50"
+              className="rounded-sm border-slate-200 text-slate-600 hover:bg-slate-50"
             >
               Batal
             </Button>
             <Button
               onClick={confirmBulkEmail}
               disabled={bulkEmailPlan.items.length === 0}
-              className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white"
+              className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white"
             >
               <Mail className="w-4 h-4 mr-2" />
               Kirim Sekarang ({bulkEmailPlan.items.length})
@@ -4718,7 +4718,7 @@ export default function PayrollValidationDashboard() {
 
       {/* ─── Bulk Refresh Dialog ─────────────────── */}
       <Dialog open={bulkRefreshDialogOpen} onOpenChange={setBulkRefreshDialogOpen}>
-        <DialogContent className="sm:max-w-2xl rounded-2xl max-h-[85vh] flex flex-col p-0 overflow-hidden">
+        <DialogContent className="sm:max-w-2xl rounded-md max-h-[85vh] flex flex-col p-0 overflow-hidden">
           <DialogHeader className="p-6 pb-2">
             <DialogTitle className="flex items-center gap-2 text-lg text-slate-800">
               <RefreshCw className="w-5 h-5 text-indigo-600" />
@@ -4744,7 +4744,7 @@ export default function PayrollValidationDashboard() {
 
           <div className="flex-1 overflow-y-auto px-6 py-2 space-y-4 max-h-[50vh]">
             {bulkChanges.map((change) => (
-              <div key={change.employeeId} className="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
+              <div key={change.employeeId} className="border border-slate-100 rounded-md p-4 bg-slate-50/50">
                 <div className="flex justify-between items-center mb-3">
                   <label className="flex items-center gap-2.5 cursor-pointer">
                     <input
@@ -4756,11 +4756,11 @@ export default function PayrollValidationDashboard() {
                     <span className="font-semibold text-sm text-slate-700">{change.employeeName}</span>
                   </label>
                   {change.isLocked ? (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-full px-2 py-0.5">
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-sm px-2 py-0.5">
                       🔒 Terkunci
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5">
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 bg-slate-100 border border-slate-200 rounded-sm px-2 py-0.5">
                       🔓 Draf
                     </span>
                   )}
@@ -4776,7 +4776,7 @@ export default function PayrollValidationDashboard() {
                     const isChecked = selectedBulkRefreshFields[change.employeeId]?.has(fieldKey) ?? false;
 
                     return (
-                      <div key={idx} className="flex justify-between items-center text-xs text-slate-600 py-0.5 hover:bg-slate-100/50 rounded px-1 -mx-1 transition-colors">
+                      <div key={idx} className="flex justify-between items-center text-xs text-slate-600 py-0.5 hover:bg-slate-100/50 rounded-sm px-1 -mx-1 transition-colors">
                         <label className="flex items-center gap-2 cursor-pointer select-none">
                           <input
                             type="checkbox"
@@ -4804,19 +4804,19 @@ export default function PayrollValidationDashboard() {
             ))}
           </div>
 
-          <DialogFooter className="p-6 pt-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
+          <DialogFooter className="rounded-b-md p-6 pt-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
             <Button
               variant="outline"
               disabled={refreshingBulk}
               onClick={() => setBulkRefreshDialogOpen(false)}
-              className="rounded-xl border-slate-200 text-slate-600 hover:bg-slate-100"
+              className="rounded-sm border-slate-200 text-slate-600 hover:bg-slate-100"
             >
               Batal
             </Button>
             <Button
               disabled={refreshingBulk || selectedBulkRefreshEmployeeIds.size === 0}
               onClick={handleApplyBulkRefresh}
-              className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center gap-2 shadow-md shadow-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center gap-2 shadow-md shadow-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {refreshingBulk ? (
                 <>
@@ -4839,7 +4839,7 @@ export default function PayrollValidationDashboard() {
         open={!!failuresDialog}
         onOpenChange={(open) => !open && setFailuresDialog(null)}
       >
-        <DialogContent className="sm:max-w-lg rounded-2xl max-h-[85vh] flex flex-col p-0 overflow-hidden">
+        <DialogContent className="sm:max-w-lg rounded-md max-h-[85vh] flex flex-col p-0 overflow-hidden">
           <DialogHeader className="p-6 pb-2">
             <DialogTitle className="flex items-center gap-2 text-lg text-rose-700">
               <AlertCircle className="w-5 h-5" />
@@ -4853,17 +4853,17 @@ export default function PayrollValidationDashboard() {
             {failuresDialog?.failures.map((failure, idx) => (
               <div
                 key={`${failure.name}-${idx}`}
-                className="border border-rose-100 bg-rose-50/50 rounded-xl p-3 text-sm"
+                className="border border-rose-100 bg-rose-50/50 rounded-md p-3 text-sm"
               >
                 <span className="font-semibold text-slate-800">{failure.name}</span>
                 <span className="text-slate-600">: {failure.message}</span>
               </div>
             ))}
           </div>
-          <DialogFooter className="p-6 pt-4 border-t border-slate-100 bg-slate-50/50">
+          <DialogFooter className="rounded-b-md p-6 pt-4 border-t border-slate-100 bg-slate-50/50">
             <Button
               onClick={() => setFailuresDialog(null)}
-              className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+              className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
             >
               OK
             </Button>
@@ -4878,7 +4878,7 @@ export default function PayrollValidationDashboard() {
         open={!!warningsDialog}
         onOpenChange={(open) => !open && setWarningsDialog(null)}
       >
-        <DialogContent className="sm:max-w-lg rounded-2xl max-h-[85vh] flex flex-col p-0 overflow-hidden">
+        <DialogContent className="sm:max-w-lg rounded-md max-h-[85vh] flex flex-col p-0 overflow-hidden">
           <DialogHeader className="p-6 pb-2">
             <DialogTitle className="flex items-center gap-2 text-lg text-amber-700">
               <AlertTriangle className="w-5 h-5" />
@@ -4892,17 +4892,17 @@ export default function PayrollValidationDashboard() {
             {warningsDialog?.warnings.map((warning, idx) => (
               <div
                 key={`${warning.name}-${idx}`}
-                className="border border-amber-100 bg-amber-50/50 rounded-xl p-3 text-sm"
+                className="border border-amber-100 bg-amber-50/50 rounded-md p-3 text-sm"
               >
                 <span className="font-semibold text-slate-800">{warning.name}</span>
                 <span className="text-slate-600">: {warning.message}</span>
               </div>
             ))}
           </div>
-          <DialogFooter className="p-6 pt-4 border-t border-slate-100 bg-slate-50/50">
+          <DialogFooter className="rounded-b-md p-6 pt-4 border-t border-slate-100 bg-slate-50/50">
             <Button
               onClick={() => setWarningsDialog(null)}
-              className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+              className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
             >
               OK, Mengerti
             </Button>
@@ -4913,11 +4913,11 @@ export default function PayrollValidationDashboard() {
       {/* Full-Screen Open Period Calendar Modal */}
       {showOpenPeriodModal && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full border border-slate-100 overflow-hidden flex flex-col max-h-[90vh]">
+          <div className="bg-white rounded-md shadow-2xl max-w-4xl w-full border border-slate-100 overflow-hidden flex flex-col max-h-[90vh]">
             {/* Header */}
             <div className="px-6 py-5 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-white/10 rounded-2xl border border-white/20">
+                <div className="p-2.5 bg-white/10 rounded-sm border border-white/20">
                   <CalendarDays className="w-6 h-6 text-white" />
                 </div>
                 <div>
@@ -4935,7 +4935,7 @@ export default function PayrollValidationDashboard() {
               <button
                 type="button"
                 onClick={() => setShowOpenPeriodModal(false)}
-                className="p-2 hover:bg-white/20 rounded-xl transition-colors text-white cursor-pointer"
+                className="p-2 hover:bg-white/20 rounded-sm transition-colors text-white cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -4945,8 +4945,8 @@ export default function PayrollValidationDashboard() {
             <div className="p-6 overflow-y-auto space-y-6 flex-1">
               {/* Live Metrics Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center gap-3">
-                  <div className="p-2.5 rounded-xl bg-slate-200/70 text-slate-700">
+                <div className="p-4 rounded-md bg-slate-50 border border-slate-200/80 flex items-center gap-3">
+                  <div className="p-2.5 rounded-sm bg-slate-200/70 text-slate-700">
                     <CalendarDays className="w-5 h-5" />
                   </div>
                   <div>
@@ -4955,8 +4955,8 @@ export default function PayrollValidationDashboard() {
                   </div>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/70 flex items-center gap-3">
-                  <div className="p-2.5 rounded-xl bg-emerald-100 text-emerald-700">
+                <div className="p-4 rounded-md bg-emerald-50/70 border border-emerald-200/70 flex items-center gap-3">
+                  <div className="p-2.5 rounded-sm bg-emerald-100 text-emerald-700">
                     <CheckCircle2 className="w-5 h-5" />
                   </div>
                   <div>
@@ -4965,8 +4965,8 @@ export default function PayrollValidationDashboard() {
                   </div>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-rose-50/80 border border-rose-200/70 flex items-center gap-3">
-                  <div className="p-2.5 rounded-xl bg-rose-100 text-rose-700">
+                <div className="p-4 rounded-md bg-rose-50/80 border border-rose-200/70 flex items-center gap-3">
+                  <div className="p-2.5 rounded-sm bg-rose-100 text-rose-700">
                     <AlertCircle className="w-5 h-5" />
                   </div>
                   <div>
@@ -4977,7 +4977,7 @@ export default function PayrollValidationDashboard() {
               </div>
 
               {/* Info Banner */}
-              <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200/80 text-xs font-semibold text-amber-900 flex items-start gap-2.5">
+              <div className="p-3.5 rounded-md bg-amber-50/80 border border-amber-200/80 text-xs font-semibold text-amber-900 flex items-start gap-2.5">
                 <span className="text-base leading-none">💡</span>
                 <span>
                   Setiap hari <strong>Jumat</strong> otomatis menjadi hari premium dan
@@ -5003,7 +5003,7 @@ export default function PayrollValidationDashboard() {
                 <div className="grid grid-cols-7 gap-2">
                   {/* Empty Offset Tiles */}
                   {Array.from({ length: modalStartOffset }).map((_, i) => (
-                    <div key={`offset-${i}`} className="h-14 sm:h-16 rounded-2xl bg-slate-50/50 border border-slate-100/50" />
+                    <div key={`offset-${i}`} className="h-14 sm:h-16 rounded-sm bg-slate-50/50 border border-slate-100/50" />
                   ))}
 
                   {/* Actual Day Tiles */}
@@ -5031,7 +5031,7 @@ export default function PayrollValidationDashboard() {
                             return next;
                           });
                         }}
-                        className={`h-14 sm:h-16 rounded-2xl p-2 flex flex-col justify-between items-start transition-all border text-left relative overflow-hidden group select-none ${
+                        className={`h-14 sm:h-16 rounded-sm p-2 flex flex-col justify-between items-start transition-all border text-left relative overflow-hidden group select-none ${
                           isHoliday
                             ? isFriday
                               ? 'bg-rose-600 text-white border-rose-700 shadow-sm cursor-not-allowed'
@@ -5042,7 +5042,7 @@ export default function PayrollValidationDashboard() {
                         <div className="flex items-center justify-between w-full">
                           <span className="font-extrabold text-sm sm:text-base">{dayNum}</span>
                           {isHoliday && (
-                            <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-white/20 text-white">
+                            <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-sm bg-white/20 text-white">
                               {isFriday ? 'Jumat' : 'Libur'}
                             </span>
                           )}
@@ -5067,7 +5067,7 @@ export default function PayrollValidationDashboard() {
                     id="calendar-edit-reason"
                     value={calendarEditReason}
                     onChange={(event) => setCalendarEditReason(event.target.value)}
-                    className="min-h-24 w-full rounded-2xl border border-slate-300 p-3 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                    className="min-h-24 w-full rounded-sm border border-slate-300 p-3 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
                     placeholder="Contoh: Rektor menetapkan libur insidental pada 17 Agustus."
                   />
                   <p className="text-xs text-slate-500">
@@ -5084,7 +5084,7 @@ export default function PayrollValidationDashboard() {
                 type="button"
                 variant="outline"
                 onClick={() => setShowOpenPeriodModal(false)}
-                className="rounded-xl font-bold text-xs h-10 px-4 cursor-pointer"
+                className="rounded-sm font-bold text-xs h-10 px-4 cursor-pointer"
               >
                 Batal
               </Button>
@@ -5099,7 +5099,7 @@ export default function PayrollValidationDashboard() {
                   isSubmittingModal ||
                   (calendarEditMode && calendarEditReason.trim().length < 8)
                 }
-                className="rounded-xl font-bold text-xs h-10 px-5 bg-indigo-600 hover:bg-indigo-700 text-white gap-2 cursor-pointer shadow-md"
+                className="rounded-sm font-bold text-xs h-10 px-5 bg-indigo-600 hover:bg-indigo-700 text-white gap-2 cursor-pointer shadow-md"
               >
                 {isSubmittingModal ? (
                   <>

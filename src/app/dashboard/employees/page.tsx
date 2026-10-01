@@ -2176,7 +2176,7 @@ export default function EmployeesPage() {
       {/* Subtle decorative blobs */}
       <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
-      <div className="max-w-[1400px] mx-auto relative z-10">
+      <div className="relative z-10">
         <GlobalHeader />
 
         {/* Header */}
@@ -2193,14 +2193,14 @@ export default function EmployeesPage() {
 
           <div className="flex items-center gap-3">
             <FloatingSnackbar message={message} />
-            <Button onClick={handleExportExcel} variant="outline" className="rounded-xl border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm px-4 cursor-pointer">
+            <Button onClick={handleExportExcel} variant="outline" className="rounded-sm border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm px-4 cursor-pointer">
               <FileSpreadsheet className="w-4 h-4 mr-2 text-emerald-600" /> Export Excel
             </Button>
             {activeTab === 'blue' && (
               <Button
                 onClick={handleOpenNipyGenerator}
                 variant="outline"
-                className="rounded-xl border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 shadow-sm px-4 cursor-pointer"
+                className="rounded-sm border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 shadow-sm px-4 cursor-pointer"
               >
                 <Fingerprint className="w-4 h-4 mr-2" />
                 Buat NIPY Pekarya
@@ -2209,19 +2209,19 @@ export default function EmployeesPage() {
             {/* Loyalis Admin is confined to LOYALIS_ADMIN_PATHS, so the salary matrix is not theirs to open */}
             {!isLoyalisAdmin && (
               <Link href="/dashboard/payroll/master">
-                <Button variant="outline" className="rounded-xl border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm px-4 cursor-pointer">
+                <Button variant="outline" className="rounded-sm border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm px-4 cursor-pointer">
                   <FileText className="w-4 h-4 mr-2 text-indigo-600" /> Master Gaji Pokok
                 </Button>
               </Link>
             )}
-            <Button onClick={handleOpenAdd} className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-200 px-6 cursor-pointer">
+            <Button onClick={handleOpenAdd} className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-200 px-6 cursor-pointer">
               <UserPlus className="w-4 h-4 mr-2" /> Tambah Pegawai
             </Button>
             {isLoyalisAdmin && (
               <Button
                 variant="outline"
                 onClick={requestLogout}
-                className="rounded-xl text-rose-600 border-slate-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-100 transition-all cursor-pointer flex items-center gap-2"
+                className="rounded-sm text-rose-600 border-slate-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-100 transition-all cursor-pointer flex items-center gap-2"
               >
                 <LogOut className="w-4 h-4" />
                 Keluar
@@ -2246,7 +2246,7 @@ export default function EmployeesPage() {
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${activeTab === tab.key
+                className={`px-4 py-1.5 rounded-sm text-sm font-medium transition-all ${activeTab === tab.key
                   ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100'
                   : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
                   }`}
@@ -2260,7 +2260,7 @@ export default function EmployeesPage() {
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <Input
               placeholder="Cari nama, NIK/NIY, atau NIPY..."
-              className="pl-10 w-full bg-white border-slate-200 rounded-xl shadow-sm"
+              className="pl-10 w-full bg-white border-slate-200 rounded-sm shadow-sm"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
@@ -2272,7 +2272,7 @@ export default function EmployeesPage() {
           {statsCards.map((stat, i) => {
             const cardContent = (
               <>
-                <div className={`w-12 h-12 rounded-xl bg-${stat.color}-50 text-${stat.color}-500 flex items-center justify-center shrink-0`}>
+                <div className={`w-12 h-12 rounded-sm bg-${stat.color}-50 text-${stat.color}-500 flex items-center justify-center shrink-0`}>
                   {stat.icon}
                 </div>
                 <div className="min-w-0">
@@ -2292,7 +2292,7 @@ export default function EmployeesPage() {
               return (
                 <div
                   key={i}
-                  className="grid grid-cols-2 divide-x divide-slate-100 overflow-hidden rounded-2xl bg-white shadow-[0_8px_30px_rgb(0,0,0,0.02)]"
+                  className="grid grid-cols-2 divide-x divide-slate-100 overflow-hidden rounded-md bg-white shadow-[0_8px_30px_rgb(0,0,0,0.02)]"
                 >
                   <button
                     type="button"
@@ -2300,7 +2300,7 @@ export default function EmployeesPage() {
                     title="Klik untuk membuka daftar anak yang perlu ditinjau"
                     className="flex w-full cursor-pointer flex-col items-center justify-center gap-3 p-5 text-center transition-colors hover:bg-slate-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-indigo-600"
                   >
-                    <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-500">
+                    <span className="flex size-12 shrink-0 items-center justify-center rounded-sm bg-amber-50 text-amber-500">
                       {stat.icon}
                     </span>
                     <span className="min-w-0">
@@ -2324,7 +2324,7 @@ export default function EmployeesPage() {
                   type="button"
                   onClick={stat.onClick}
                   title="Klik untuk membuka daftar anak yang perlu ditinjau"
-                  className="p-5 bg-white border-none shadow-[0_8px_30px_rgb(0,0,0,0.02)] rounded-2xl flex items-center gap-4 text-left transition-all hover:bg-slate-50 hover:shadow-md cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                  className="p-5 bg-white border-none shadow-[0_8px_30px_rgb(0,0,0,0.02)] rounded-md flex items-center gap-4 text-left transition-all hover:bg-slate-50 hover:shadow-md cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
                 >
                   {cardContent}
                 </button>
@@ -2332,7 +2332,7 @@ export default function EmployeesPage() {
             }
 
             return (
-              <Card key={i} className="p-5 bg-white border-none shadow-[0_8px_30px_rgb(0,0,0,0.02)] rounded-2xl flex items-center gap-4">
+              <Card key={i} className="p-5 bg-white border-none shadow-[0_8px_30px_rgb(0,0,0,0.02)] rounded-md flex items-center gap-4">
                 {cardContent}
               </Card>
             );
@@ -2340,14 +2340,14 @@ export default function EmployeesPage() {
         </div>
 
         {/* Table View Mode Toggle */}
-        <div className="flex items-center justify-between mb-4 bg-slate-50/50 p-2 rounded-2xl border border-slate-100">
+        <div className="flex items-center justify-between mb-4 bg-slate-50/50 p-2 rounded-md border border-slate-100">
           <div className="flex items-center gap-2 pl-2">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Mode Tampilan Tabel</span>
           </div>
-          <div className="flex bg-white p-1 rounded-xl shadow-sm border border-slate-100 gap-1">
+          <div className="flex bg-white p-1 rounded-md shadow-sm border border-slate-100 gap-1">
             <button
               onClick={() => setTableViewMode('default')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${tableViewMode === 'default'
+              className={`px-3 py-1.5 rounded-sm text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${tableViewMode === 'default'
                 ? 'bg-slate-900 text-white shadow-sm'
                 : 'text-slate-600 hover:bg-slate-50'
                 }`}
@@ -2357,7 +2357,7 @@ export default function EmployeesPage() {
             </button>
             <button
               onClick={() => setTableViewMode('debug')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${tableViewMode === 'debug'
+              className={`px-3 py-1.5 rounded-sm text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${tableViewMode === 'debug'
                 ? 'bg-indigo-600 text-white shadow-sm'
                 : 'text-slate-600 hover:bg-slate-50'
                 }`}
@@ -2367,7 +2367,7 @@ export default function EmployeesPage() {
             </button>
             <button
               onClick={() => setTableViewMode('constant')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${tableViewMode === 'constant'
+              className={`px-3 py-1.5 rounded-sm text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${tableViewMode === 'constant'
                 ? 'bg-emerald-600 text-white shadow-sm'
                 : 'text-slate-600 hover:bg-slate-50'
                 }`}
@@ -2377,7 +2377,7 @@ export default function EmployeesPage() {
             </button>
             <button
               onClick={() => setTableViewMode('cuti')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${tableViewMode === 'cuti'
+              className={`px-3 py-1.5 rounded-sm text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${tableViewMode === 'cuti'
                 ? 'bg-sky-600 text-white shadow-sm'
                 : 'text-slate-600 hover:bg-slate-50'
                 }`}
@@ -2398,7 +2398,7 @@ export default function EmployeesPage() {
         )}
 
         {/* Table */}
-        <Card className="bg-white rounded-[24px] shadow-[0_8px_40px_-12px_rgba(0,0,0,0.06)] border-none overflow-hidden">
+        <Card className="bg-white rounded-md shadow-[0_8px_40px_-12px_rgba(0,0,0,0.06)] border-none overflow-hidden">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader className="bg-slate-50/50">
@@ -2590,7 +2590,7 @@ export default function EmployeesPage() {
                         </TableCell>
                       )}
                       <TableCell className="text-center">
-                        <Badge className={`rounded-full px-3 font-normal border-none ${getEmpIsActive(emp) ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'
+                        <Badge className={`rounded-sm px-3 font-normal border-none ${getEmpIsActive(emp) ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'
                           }`}>
                           {getEmpIsActive(emp) ? 'Aktif' : 'Non-Aktif'}
                         </Badge>
@@ -2616,7 +2616,7 @@ export default function EmployeesPage() {
                               size="icon"
                               title="Alihkan ke Loyalis"
                               onClick={() => setConversionTarget({ id: getEmpId(emp), name: getEmpName(emp) })}
-                              className="h-8 w-8 text-slate-400 hover:text-emerald-600 rounded-lg"
+                              className="h-8 w-8 text-slate-400 hover:text-emerald-600 rounded-sm"
                             >
                               <ArrowRightLeft className="w-4 h-4" />
                             </Button>
@@ -2626,11 +2626,11 @@ export default function EmployeesPage() {
                             size="icon"
                             onClick={() => handleOpenEdit(emp)}
                             disabled={activeTab === 'blue' && Boolean(readConversionToLink(emp))}
-                            className="h-8 w-8 text-slate-400 hover:text-indigo-600 rounded-lg"
+                            className="h-8 w-8 text-slate-400 hover:text-indigo-600 rounded-sm"
                           >
                             <Pencil className="w-4 h-4" />
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleDelete(getEmpId(emp))} className="h-8 w-8 text-slate-400 hover:text-red-600 rounded-lg">
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(getEmpId(emp))} className="h-8 w-8 text-slate-400 hover:text-red-600 rounded-sm">
                             <Trash2 className="w-4 h-4" />
                           </Button>
                         </div>
@@ -2703,7 +2703,7 @@ export default function EmployeesPage() {
                                   onChange={(event) =>
                                     setLeaveBalanceDrafts(prev => ({ ...prev, [empId]: event.target.value }))
                                   }
-                                  className={`h-8 w-16 rounded-lg text-right text-sm font-bold px-2 ${pending
+                                  className={`h-8 w-16 rounded-sm text-right text-sm font-bold px-2 ${pending
                                     ? pending.valid
                                       ? 'border-sky-400 ring-1 ring-sky-200 text-sky-700'
                                       : 'border-rose-400 ring-1 ring-rose-200 text-rose-700'
@@ -2743,10 +2743,10 @@ export default function EmployeesPage() {
                       )}
                       <TableCell className="text-right pr-8">
                         <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(empRow)} className="h-8 w-8 text-slate-400 hover:text-indigo-600 rounded-lg">
+                          <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(empRow)} className="h-8 w-8 text-slate-400 hover:text-indigo-600 rounded-sm">
                             <Pencil className="w-4 h-4" />
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleDelete(getEmpId(empRow))} className="h-8 w-8 text-slate-400 hover:text-red-600 rounded-lg">
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(getEmpId(empRow))} className="h-8 w-8 text-slate-400 hover:text-red-600 rounded-sm">
                             <Trash2 className="w-4 h-4" />
                           </Button>
                         </div>
@@ -2791,10 +2791,10 @@ export default function EmployeesPage() {
                       )}
                       <TableCell className="text-right pr-8">
                         <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(emp)} className="h-8 w-8 text-slate-400 hover:text-indigo-600 rounded-lg">
+                          <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(emp)} className="h-8 w-8 text-slate-400 hover:text-indigo-600 rounded-sm">
                             <Pencil className="w-4 h-4" />
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleDelete(getEmpId(emp))} className="h-8 w-8 text-slate-400 hover:text-red-600 rounded-lg">
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(getEmpId(emp))} className="h-8 w-8 text-slate-400 hover:text-red-600 rounded-sm">
                             <Trash2 className="w-4 h-4" />
                           </Button>
                         </div>
@@ -2817,7 +2817,7 @@ export default function EmployeesPage() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-lg rounded-[24px] border-none shadow-2xl">
+        <DialogContent className="sm:max-w-lg rounded-md border-none shadow-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Fingerprint className="w-5 h-5 text-amber-600" />
@@ -2833,7 +2833,7 @@ export default function EmployeesPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="rounded-2xl bg-slate-50 p-4">
+            <div className="rounded-md bg-slate-50 p-4">
               <p className="font-semibold text-slate-900">
                 {getEmpName(nipyCorrectionEmployee || {})}
               </p>
@@ -2843,7 +2843,7 @@ export default function EmployeesPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="nipy-correction-reason">Alasan koreksi</Label>
-              <Input
+              <Input className="rounded-sm"
                 id="nipy-correction-reason"
                 value={nipyCorrectionReason}
                 onChange={event => setNipyCorrectionReason(event.target.value)}
@@ -2855,12 +2855,12 @@ export default function EmployeesPage() {
               </p>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="rounded-b-md">
             <Button
               variant="ghost"
               onClick={() => setNipyCorrectionEmployee(null)}
               disabled={nipyCorrecting}
-              className="rounded-xl"
+              className="rounded-sm"
             >
               Batal
             </Button>
@@ -2869,7 +2869,7 @@ export default function EmployeesPage() {
               disabled={
                 nipyCorrecting || nipyCorrectionReason.trim().length < 8
               }
-              className="rounded-xl bg-amber-600 text-white hover:bg-amber-700"
+              className="rounded-sm bg-amber-600 text-white hover:bg-amber-700"
             >
               {nipyCorrecting && (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -2881,7 +2881,7 @@ export default function EmployeesPage() {
       </Dialog>
 
       <Dialog open={isNipyDialogOpen} onOpenChange={setIsNipyDialogOpen}>
-        <DialogContent className="!max-w-6xl w-[94vw] rounded-[28px] border-none shadow-2xl p-0 overflow-hidden bg-white">
+        <DialogContent className="!max-w-6xl w-[94vw] rounded-md border-none shadow-2xl p-0 overflow-hidden bg-white">
           <DialogHeader className="p-6 bg-indigo-50/70 border-b border-indigo-100">
             <DialogTitle className="text-xl font-bold flex items-center gap-2 text-indigo-950">
               <Fingerprint className="w-5 h-5 text-indigo-600" />
@@ -2912,7 +2912,7 @@ export default function EmployeesPage() {
                   ].map(([label, value, color]) => (
                     <div
                       key={String(label)}
-                      className="rounded-2xl border border-slate-100 bg-slate-50 p-3"
+                      className="rounded-md border border-slate-100 bg-slate-50 p-3"
                     >
                       <p className="text-[11px] uppercase tracking-wide text-slate-500">
                         {label}
@@ -2922,7 +2922,7 @@ export default function EmployeesPage() {
                   ))}
                 </div>
 
-                <div className="rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
+                <div className="rounded-md border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
                   <p className="font-semibold">
                     Urutan terakhir: Kebersihan{' '}
                     {String(nipyPreview.counters.KEBERSIHAN || 0).padStart(3, '0')}
@@ -2940,7 +2940,7 @@ export default function EmployeesPage() {
                   </p>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="rounded-md border border-slate-200 overflow-hidden">
                   <div className="max-h-[390px] overflow-auto">
                     <Table>
                       <TableHeader className="sticky top-0 z-10 bg-slate-50">
@@ -2996,12 +2996,12 @@ export default function EmployeesPage() {
                                 <Badge
                                   className={
                                     item.state === 'ready'
-                                      ? 'border-none bg-emerald-100 text-emerald-800'
+                                      ? 'rounded-sm border-none bg-emerald-100 text-emerald-800'
                                       : item.state === 'reserved'
-                                        ? 'border-none bg-amber-100 text-amber-800'
+                                        ? 'rounded-sm border-none bg-amber-100 text-amber-800'
                                         : item.state === 'existing'
-                                          ? 'border-none bg-indigo-100 text-indigo-800'
-                                          : 'border-none bg-rose-100 text-rose-800'
+                                          ? 'rounded-sm border-none bg-indigo-100 text-indigo-800'
+                                          : 'rounded-sm border-none bg-rose-100 text-rose-800'
                                   }
                                 >
                                   {item.state === 'ready'
@@ -3036,13 +3036,13 @@ export default function EmployeesPage() {
             )}
           </div>
 
-          <DialogFooter className="p-6 bg-slate-50 border-t border-slate-100 flex gap-2">
+          <DialogFooter className="rounded-b-md p-6 bg-slate-50 border-t border-slate-100 flex gap-2">
             <Button
               type="button"
               variant="outline"
               onClick={() => loadNipyPreview().catch(() => undefined)}
               disabled={nipyLoading || nipyApplying}
-              className="rounded-xl"
+              className="rounded-sm"
             >
               {nipyLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Muat Ulang
@@ -3057,7 +3057,7 @@ export default function EmployeesPage() {
                 nipyPreview.summary.blocked > 0 ||
                 nipyPreview.summary.conflicts > 0
               }
-              className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white"
+              className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white"
             >
               {nipyApplying ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -3097,7 +3097,7 @@ export default function EmployeesPage() {
       />
 
       <Dialog open={isGraduationDialogOpen} onOpenChange={setIsGraduationDialogOpen}>
-        <DialogContent className="w-[92vw] !max-w-3xl rounded-2xl bg-white p-6">
+        <DialogContent className="w-[92vw] !max-w-3xl rounded-md bg-white p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold">Anak Loyalis yang Sudah Lulus</DialogTitle>
             <DialogDescription>
@@ -3107,15 +3107,15 @@ export default function EmployeesPage() {
           </DialogHeader>
           <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
             {pendingGraduations.length === 0 ? (
-              <p className="rounded-xl border border-slate-200 p-5 text-center text-sm text-slate-500">Belum ada anak yang perlu ditinjau.</p>
+              <p className="rounded-md border border-slate-200 p-5 text-center text-sm text-slate-500">Belum ada anak yang perlu ditinjau.</p>
             ) : pendingGraduations.map(child => (
               <div key={`${getEmpId(child.employee)}-${child.id}`}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 p-4">
+                className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200 p-4">
                 <div className="min-w-0">
                   <p className="font-semibold text-slate-900">{getEmpName(child.employee)} · Anak {child.childNumber}</p>
                   <p className="text-xs text-slate-500">{getEmpId(child.employee)} · {child.latest.level} · {child.latest.birth_date ? `lahir ${child.latest.birth_date}` : `masuk ${child.latest.enrolled_at}`} · lulus {child.graduatedAt}</p>
                 </div>
-                <Button type="button" variant="outline" size="sm" onClick={() => {
+                <Button type="button" variant="outline" size="sm" className="rounded-sm" onClick={() => {
                   setIsGraduationDialogOpen(false);
                   window.setTimeout(() => handleOpenEdit(child.employee, child.id), 0);
                 }}>
@@ -3129,7 +3129,7 @@ export default function EmployeesPage() {
 
       {/* CRUD Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="!max-w-5xl w-[90vw] rounded-[28px] border-none shadow-2xl p-0 overflow-hidden bg-white">
+        <DialogContent className="!max-w-5xl w-[90vw] rounded-md border-none shadow-2xl p-0 overflow-hidden bg-white">
           <form onSubmit={handleSubmit}>
             <DialogHeader className="p-6 bg-slate-50/50 border-b border-slate-100">
               <DialogTitle className="text-xl font-bold flex items-center gap-2">
@@ -3146,7 +3146,7 @@ export default function EmployeesPage() {
                 <div className="grid grid-cols-3 gap-6">
                   <div className="space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Identitas</h3>
-                    <div className="space-y-2"><Label>Nama</Label><Input value={formData.personal_info?.name || ''} onChange={e => updateNestedField('personal_info', 'name', e.target.value)} className="rounded-xl border-slate-200" /></div>
+                    <div className="space-y-2"><Label>Nama</Label><Input value={formData.personal_info?.name || ''} onChange={e => updateNestedField('personal_info', 'name', e.target.value)} className="rounded-sm border-slate-200" /></div>
                     <div className="space-y-2">
                       <Label>NIPY / NIY Presensi</Label>
                       <Input
@@ -3159,7 +3159,7 @@ export default function EmployeesPage() {
                           )
                         }
                         disabled={!canEditNipy || saving}
-                        className="rounded-xl border-slate-200 font-mono"
+                        className="rounded-sm border-slate-200 font-mono"
                         placeholder="Harus sama persis dengan NIPY/PIN pada file presensi"
                       />
                     </div>
@@ -3168,13 +3168,13 @@ export default function EmployeesPage() {
                       <Input
                         value={formData.personal_info?.nik || ''}
                         onChange={e => updateNestedField('personal_info', 'nik', e.target.value)}
-                        className="rounded-xl border-slate-200"
+                        className="rounded-sm border-slate-200"
                         placeholder="Contoh: 351710..."
                       />
                     </div>
-                    <div className="space-y-2"><Label>NPWP</Label><Input value={formData.personal_info?.tax_id_npwp || ''} onChange={e => updateNestedField('personal_info', 'tax_id_npwp', e.target.value)} className="rounded-xl border-slate-200" /></div>
-                    <div className="space-y-2"><Label>Nomor WhatsApp/HP</Label><Input value={formData.personal_info?.phone || ''} onChange={e => updateNestedField('personal_info', 'phone', e.target.value)} className="rounded-xl border-slate-200" placeholder="Contoh: 08123456789" /></div>
-                    <div className="space-y-2"><Label>Alamat Email</Label><Input type="email" value={formData.personal_info?.email || ''} onChange={e => updateNestedField('personal_info', 'email', e.target.value)} className="rounded-xl border-slate-200" placeholder="Contoh: nama@domain.com" /></div>
+                    <div className="space-y-2"><Label>NPWP</Label><Input value={formData.personal_info?.tax_id_npwp || ''} onChange={e => updateNestedField('personal_info', 'tax_id_npwp', e.target.value)} className="rounded-sm border-slate-200" /></div>
+                    <div className="space-y-2"><Label>Nomor WhatsApp/HP</Label><Input value={formData.personal_info?.phone || ''} onChange={e => updateNestedField('personal_info', 'phone', e.target.value)} className="rounded-sm border-slate-200" placeholder="Contoh: 08123456789" /></div>
+                    <div className="space-y-2"><Label>Alamat Email</Label><Input type="email" value={formData.personal_info?.email || ''} onChange={e => updateNestedField('personal_info', 'email', e.target.value)} className="rounded-sm border-slate-200" placeholder="Contoh: nama@domain.com" /></div>
                   </div>
                   <div className="space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Pekerjaan</h3>
@@ -3185,7 +3185,7 @@ export default function EmployeesPage() {
                         value={formData.employment_profile?.job_role || ''}
                         readOnly
                         disabled
-                        className="rounded-xl border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed"
+                        className="rounded-sm border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed"
                       />
                     </div>
                     <div className="space-y-2">
@@ -3202,10 +3202,10 @@ export default function EmployeesPage() {
                             }
                           }}
                         >
-                          <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-10 w-full">
+                          <SelectTrigger className="rounded-sm border-slate-200 bg-white text-xs h-10 w-full">
                             <SelectValue placeholder="Pilih Departemen / Unit" />
                           </SelectTrigger>
-                          <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
+                          <SelectContent className="bg-white rounded-md border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
                             {(() => {
                               const listToUse = departmentOptions;
                               const currentVal = formData.employment_profile?.department_unit;
@@ -3234,7 +3234,7 @@ export default function EmployeesPage() {
                               placeholder="Ketik Departemen Baru (misal: REKTORAT)"
                               value={customDeptValue}
                               onChange={(e) => setCustomDeptValue(e.target.value)}
-                              className="rounded-xl border-slate-200 text-xs h-10 flex-1 bg-white"
+                              className="rounded-sm border-slate-200 text-xs h-10 flex-1 bg-white"
                             />
                             <Button
                               type="button"
@@ -3244,7 +3244,7 @@ export default function EmployeesPage() {
                                 setCustomDeptValue('');
                                 updateNestedField('employment_profile', 'department_unit', '');
                               }}
-                              className="rounded-xl border-slate-200 text-xs h-10 px-3 hover:bg-slate-50"
+                              className="rounded-sm border-slate-200 text-xs h-10 px-3 hover:bg-slate-50"
                             >
                               Batal
                             </Button>
@@ -3258,7 +3258,7 @@ export default function EmployeesPage() {
                         type="date"
                         value={formData.employment_profile?.date_of_hire || ''}
                         onChange={e => updateNestedField('employment_profile', 'date_of_hire', e.target.value)}
-                        className="rounded-xl border-slate-200"
+                        className="rounded-sm border-slate-200"
                       />
                       {formData.employment_profile?.date_of_hire && (
                         <p className="text-[11px] text-slate-500">
@@ -3272,7 +3272,7 @@ export default function EmployeesPage() {
                         type="date"
                         value={formData.employment_profile?.date_recognized || ''}
                         onChange={e => updateNestedField('employment_profile', 'date_recognized', e.target.value)}
-                        className="rounded-xl border-slate-200"
+                        className="rounded-sm border-slate-200"
                       />
                       {formData.employment_profile?.date_recognized && (
                         <p className="text-[11px] text-slate-500">
@@ -3290,10 +3290,10 @@ export default function EmployeesPage() {
                           value={formData.academic_and_tier?.education_level || ''}
                           onValueChange={(val) => updateNestedField('academic_and_tier', 'education_level', val)}
                         >
-                          <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-10 w-full">
+                          <SelectTrigger className="rounded-sm border-slate-200 bg-white text-xs h-10 w-full">
                             <SelectValue placeholder="Pilih Pendidikan" />
                           </SelectTrigger>
-                          <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
+                          <SelectContent className="bg-white rounded-md border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
                             {(() => {
                               const currentVal = formData.academic_and_tier?.education_level;
                               const options = currentVal && !eduLevels.includes(currentVal)
@@ -3308,7 +3308,7 @@ export default function EmployeesPage() {
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="col-span-2 rounded-2xl border border-indigo-100 bg-indigo-50/50 p-3 space-y-3">
+                      <div className="col-span-2 rounded-md border border-indigo-100 bg-indigo-50/50 p-3 space-y-3">
                         <div>
                           <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-900">Konfigurasi KJM</h4>
                           <p className="mt-1 text-[11px] leading-relaxed text-indigo-700">
@@ -3327,10 +3327,10 @@ export default function EmployeesPage() {
                                 }))
                               }
                             >
-                              <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-10 w-full">
+                              <SelectTrigger className="rounded-sm border-slate-200 bg-white text-xs h-10 w-full">
                                 <SelectValue placeholder="Pilih Tipe Loyalis" />
                               </SelectTrigger>
-                              <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl z-[9999]">
+                              <SelectContent className="bg-white rounded-md border-slate-100 shadow-xl z-[9999]">
                                 <SelectItem value="__UNSET__" className="text-xs">Belum ditentukan</SelectItem>
                                 {LOYALIS_TYPE_OPTIONS.map((type) => (
                                   <SelectItem key={type} value={type} className="text-xs">
@@ -3351,10 +3351,10 @@ export default function EmployeesPage() {
                                 }))
                               }
                             >
-                              <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-10 w-full">
+                              <SelectTrigger className="rounded-sm border-slate-200 bg-white text-xs h-10 w-full">
                                 <SelectValue placeholder="Pilih Status Dosen" />
                               </SelectTrigger>
-                              <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl z-[9999]">
+                              <SelectContent className="bg-white rounded-md border-slate-100 shadow-xl z-[9999]">
                                 <SelectItem value="__UNSET__" className="text-xs">Belum ditentukan</SelectItem>
                                 <SelectItem value="true" className="text-xs">Ya — Dosen</SelectItem>
                                 <SelectItem value="false" className="text-xs">Tidak</SelectItem>
@@ -3371,10 +3371,10 @@ export default function EmployeesPage() {
                             value={formData.academic_and_tier?.level_code || ''}
                             onValueChange={(val) => updateNestedField('academic_and_tier', 'level_code', val)}
                           >
-                            <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-10 w-full">
+                            <SelectTrigger className="rounded-sm border-slate-200 bg-white text-xs h-10 w-full">
                               <SelectValue placeholder="Pilih Golongan" />
                             </SelectTrigger>
-                            <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
+                            <SelectContent className="bg-white rounded-md border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
                               {(() => {
                                 const whiteGrades = loyalisGradeOptions;
                                 const currentVal = formData.academic_and_tier?.level_code;
@@ -3397,10 +3397,10 @@ export default function EmployeesPage() {
                           value={formData.academic_and_tier?.functional_tier !== undefined && formData.academic_and_tier?.functional_tier !== null && formData.academic_and_tier?.functional_tier !== '' ? String(formData.academic_and_tier.functional_tier) : ''}
                           onValueChange={(val) => updateNestedField('academic_and_tier', 'functional_tier', val !== undefined && val !== null && val !== '' ? Number(val) : null)}
                         >
-                          <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-10 w-full">
+                          <SelectTrigger className="rounded-sm border-slate-200 bg-white text-xs h-10 w-full">
                             <SelectValue placeholder="Pilih Beban Kerja" />
                           </SelectTrigger>
-                          <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
+                          <SelectContent className="bg-white rounded-md border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
                             {Array.from({ length: 17 }, (_, idx) => String(idx)).map((tierCode) => (
                               <SelectItem key={tierCode} value={tierCode} className="text-xs">
                                 Beban {tierCode}
@@ -3416,10 +3416,10 @@ export default function EmployeesPage() {
                         value={formData.kepangkatan?.cummulativeCredit !== undefined && formData.kepangkatan?.cummulativeCredit !== null ? String(formData.kepangkatan.cummulativeCredit) : '0'}
                         onValueChange={(val) => updateNestedField('kepangkatan', 'cummulativeCredit', Number(val) || 0)}
                       >
-                        <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-10 w-full">
+                        <SelectTrigger className="rounded-sm border-slate-200 bg-white text-xs h-10 w-full">
                           <SelectValue placeholder="Pilih Kredit Kumulatif" />
                         </SelectTrigger>
-                        <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
+                        <SelectContent className="bg-white rounded-md border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
                           {(() => {
                             const credits = [0, 100, 150, 200, 300, 400, 550, 700, 850, 1050];
                             const creditLabels: Record<number, string> = {
@@ -3447,8 +3447,8 @@ export default function EmployeesPage() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-2"><Label>Nama Bank</Label><Input value={formData.banking_info?.bank_name || ''} onChange={e => updateNestedField('banking_info', 'bank_name', e.target.value)} /></div>
-                    <div className="space-y-2"><Label>Nomor Rekening</Label><Input value={formData.banking_info?.account_number || ''} onChange={e => updateNestedField('banking_info', 'account_number', e.target.value)} /></div>
+                    <div className="space-y-2"><Label>Nama Bank</Label><Input className="rounded-sm" value={formData.banking_info?.bank_name || ''} onChange={e => updateNestedField('banking_info', 'bank_name', e.target.value)} /></div>
+                    <div className="space-y-2"><Label>Nomor Rekening</Label><Input className="rounded-sm" value={formData.banking_info?.account_number || ''} onChange={e => updateNestedField('banking_info', 'account_number', e.target.value)} /></div>
                   </div>
                   <div className="col-span-3 pt-2 border-t border-slate-100 space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Tanggungan Keluarga (Untuk Tunjangan)</h3>
@@ -3462,12 +3462,12 @@ export default function EmployeesPage() {
                     </h3>
 
                     {/* Tunjangan / Earnings */}
-                    <div className="p-4 bg-emerald-50/70 rounded-2xl border border-emerald-100 space-y-3">
+                    <div className="p-4 bg-emerald-50/70 rounded-md border border-emerald-100 space-y-3">
                       <h4 className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Tunjangan Tetap (Earning)</h4>
                       <div className="grid grid-cols-5 gap-3">
                         <div className="space-y-2">
                           <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">T. BPJS TK (Rp)</Label>
-                          <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-200 transition-all">
+                          <div className="flex items-center h-8 rounded-sm bg-white border border-slate-200 px-2.5 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-200 transition-all">
                             <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
                             <input
                               type="text"
@@ -3480,7 +3480,7 @@ export default function EmployeesPage() {
                         </div>
                         <div className="space-y-2">
                           <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">T. BPJS KES (Rp)</Label>
-                          <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-200 transition-all">
+                          <div className="flex items-center h-8 rounded-sm bg-white border border-slate-200 px-2.5 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-200 transition-all">
                             <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
                             <input
                               type="text"
@@ -3493,7 +3493,7 @@ export default function EmployeesPage() {
                         </div>
                         <div className="space-y-2">
                           <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">T. Beras (Rp)</Label>
-                          <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-200 transition-all">
+                          <div className="flex items-center h-8 rounded-sm bg-white border border-slate-200 px-2.5 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-200 transition-all">
                             <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
                             <input
                               type="text"
@@ -3507,7 +3507,7 @@ export default function EmployeesPage() {
 
                         <div className="space-y-2">
                           <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">T. Instruksional (Rp)</Label>
-                          <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-200 transition-all">
+                          <div className="flex items-center h-8 rounded-sm bg-white border border-slate-200 px-2.5 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-200 transition-all">
                             <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
                             <input
                               type="text"
@@ -3522,12 +3522,12 @@ export default function EmployeesPage() {
                     </div>
 
                     {/* Potongan / Deductions */}
-                    <div className="p-4 bg-rose-50/70 rounded-2xl border border-rose-100 space-y-3">
+                    <div className="p-4 bg-rose-50/70 rounded-md border border-rose-100 space-y-3">
                       <h4 className="text-xs font-bold text-rose-800 uppercase tracking-wider">Potongan Tetap (Deduction)</h4>
                       <div className="grid grid-cols-5 gap-3">
                         <div className="space-y-2">
                           <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Potongan BPJS (Rp)</Label>
-                          <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-red-400 focus-within:ring-1 focus-within:ring-red-200 transition-all">
+                          <div className="flex items-center h-8 rounded-sm bg-white border border-slate-200 px-2.5 focus-within:border-red-400 focus-within:ring-1 focus-within:ring-red-200 transition-all">
                             <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
                             <input
                               type="text"
@@ -3540,7 +3540,7 @@ export default function EmployeesPage() {
                         </div>
                         <div className="space-y-2">
                           <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Potongan Tabungan (Rp)</Label>
-                          <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-red-400 focus-within:ring-1 focus-within:ring-red-200 transition-all">
+                          <div className="flex items-center h-8 rounded-sm bg-white border border-slate-200 px-2.5 focus-within:border-red-400 focus-within:ring-1 focus-within:ring-red-200 transition-all">
                             <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
                             <input
                               type="text"
@@ -3553,7 +3553,7 @@ export default function EmployeesPage() {
                         </div>
                         <div className="space-y-2">
                           <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Potongan Zakat Infaq (Rp)</Label>
-                          <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-red-400 focus-within:ring-1 focus-within:ring-red-200 transition-all">
+                          <div className="flex items-center h-8 rounded-sm bg-white border border-slate-200 px-2.5 focus-within:border-red-400 focus-within:ring-1 focus-within:ring-red-200 transition-all">
                             <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
                             <input
                               type="text"
@@ -3566,7 +3566,7 @@ export default function EmployeesPage() {
                         </div>
                         <div className="space-y-2">
                           <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">BNI Simponi / THT (Rp)</Label>
-                          <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-red-400 focus-within:ring-1 focus-within:ring-red-200 transition-all">
+                          <div className="flex items-center h-8 rounded-sm bg-white border border-slate-200 px-2.5 focus-within:border-red-400 focus-within:ring-1 focus-within:ring-red-200 transition-all">
                             <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
                             <input
                               type="text"
@@ -3579,7 +3579,7 @@ export default function EmployeesPage() {
                         </div>
                         <div className="space-y-2">
                           <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Potongan Pinlu (Rp)</Label>
-                          <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-red-400 focus-within:ring-1 focus-within:ring-red-200 transition-all">
+                          <div className="flex items-center h-8 rounded-sm bg-white border border-slate-200 px-2.5 focus-within:border-red-400 focus-within:ring-1 focus-within:ring-red-200 transition-all">
                             <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
                             <input
                               type="text"
@@ -3594,9 +3594,9 @@ export default function EmployeesPage() {
                     </div>
                   </div>
                   <div className="col-span-3">
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
+                    <div className="p-4 bg-slate-50 rounded-md border border-slate-100 flex items-center justify-between">
                       <div><h4 className="font-semibold text-slate-800 text-sm">Status Kepegawaian</h4><p className="text-xs text-slate-500 mt-0.5">Aktif atau sudah keluar?</p></div>
-                      <Badge onClick={() => updateNestedField('personal_info', 'status', formData.personal_info?.status === 'AKTIF' ? 'KELUAR' : 'AKTIF')} className={`cursor-pointer px-4 py-1.5 rounded-xl border-none transition-all ${formData.personal_info?.status === 'AKTIF' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-slate-200 text-slate-600'}`}>
+                      <Badge onClick={() => updateNestedField('personal_info', 'status', formData.personal_info?.status === 'AKTIF' ? 'KELUAR' : 'AKTIF')} className={`cursor-pointer px-4 py-1.5 rounded-sm border-none transition-all ${formData.personal_info?.status === 'AKTIF' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-slate-200 text-slate-600'}`}>
                         {formData.personal_info?.status === 'AKTIF' ? 'Aktif' : 'Non-Aktif / Keluar'}
                       </Badge>
                     </div>
@@ -3622,7 +3622,7 @@ export default function EmployeesPage() {
                           const halvedAllowance = posIdx === 0 ? originalAllowance : Math.round(originalAllowance / 2);
 
                           return (
-                            <div key={pos.originalIndex} className="flex items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                            <div key={pos.originalIndex} className="flex items-center gap-3 bg-slate-50 p-3 rounded-md border border-slate-100">
                               <div className="flex-1 font-semibold text-slate-800 text-xs">
                                 {pos.name}
                               </div>
@@ -3635,7 +3635,7 @@ export default function EmployeesPage() {
                                   <span className="flex flex-col items-end">
                                     <span className="text-[10px] text-slate-400 font-normal line-through">Rp {originalAllowance.toLocaleString('id-ID')}</span>
                                     <span className="flex items-center gap-1.5 mt-0.5">
-                                      <span className="text-[10px] text-amber-600 font-medium bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-100">Dipotong 50%</span>
+                                      <span className="text-[10px] text-amber-600 font-medium bg-amber-50 px-1.5 py-0.5 rounded-sm border border-amber-100">Dipotong 50%</span>
                                       <span>Rp {halvedAllowance.toLocaleString('id-ID')}</span>
                                     </span>
                                   </span>
@@ -3649,7 +3649,7 @@ export default function EmployeesPage() {
                                 onClick={() => {
                                   updateStructuralPositions(positions.filter((_: any, idx: number) => idx !== pos.originalIndex));
                                 }}
-                                className="h-8 w-8 text-slate-400 hover:text-red-500 rounded-lg shrink-0"
+                                className="h-8 w-8 text-slate-400 hover:text-red-500 rounded-sm shrink-0"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </Button>
@@ -3678,7 +3678,7 @@ export default function EmployeesPage() {
                         }}
                       />
                     ) : (
-                    <div className="flex flex-wrap md:flex-nowrap gap-3 items-end bg-slate-50/50 p-4 rounded-[20px] border border-slate-100">
+                    <div className="flex flex-wrap md:flex-nowrap gap-3 items-end bg-slate-50/50 p-4 rounded-md border border-slate-100">
                       <div className="flex-1 space-y-1.5 min-w-[200px] relative" ref={suggestionRef}>
                         <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Nama Jabatan</Label>
                         <Input
@@ -3694,10 +3694,10 @@ export default function EmployeesPage() {
                               setShowSuggestions(false);
                             }
                           }}
-                          className="rounded-xl border-slate-200 text-sm h-8 bg-white"
+                          className="rounded-sm border-slate-200 text-sm h-8 bg-white"
                         />
                         {showSuggestions && dbPositions.filter(pos => pos.name.toLowerCase().includes(newPosName.toLowerCase())).length > 0 && (
-                          <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto z-[9999]">
+                          <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-md shadow-lg max-h-60 overflow-y-auto z-[9999]">
                             {dbPositions
                               .filter(pos => pos.name.toLowerCase().includes(newPosName.toLowerCase()))
                               .map((pos) => (
@@ -3713,7 +3713,7 @@ export default function EmployeesPage() {
                                   className="w-full text-left px-3 py-2.5 text-xs hover:bg-indigo-50/50 hover:text-indigo-600 border-b border-slate-50 last:border-0 flex justify-between items-center transition-colors"
                                 >
                                   <span className="font-semibold text-slate-700">{pos.name}</span>
-                                  <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 ml-2 shrink-0">
+                                  <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-sm border border-slate-200 ml-2 shrink-0">
                                     {pos.satker}
                                   </span>
                                 </button>
@@ -3727,10 +3727,10 @@ export default function EmployeesPage() {
                           value={newPosSatker}
                           onValueChange={(val) => setNewPosSatker(val || '')}
                         >
-                          <SelectTrigger className="rounded-xl border-slate-200 bg-white text-sm h-8 w-full">
+                          <SelectTrigger className="rounded-sm border-slate-200 bg-white text-sm h-8 w-full">
                             <SelectValue placeholder="Pilih Satker" />
                           </SelectTrigger>
-                          <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
+                          <SelectContent className="bg-white rounded-md border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
                             {(() => {
                               const listToUse = departmentOptions;
                               return listToUse.map(dept => (
@@ -3744,7 +3744,7 @@ export default function EmployeesPage() {
                       </div>
                       <div className="w-36 space-y-1.5">
                         <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Tunjangan (Rp)</Label>
-                        <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-200 transition-all">
+                        <div className="flex items-center h-8 rounded-sm bg-white border border-slate-200 px-2.5 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-200 transition-all">
                           <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
                           <input
                             type="text"
@@ -3775,7 +3775,7 @@ export default function EmployeesPage() {
                           setNewPosAllowance('');
                           setNewPosSatker('');
                         }}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold h-8 px-4 cursor-pointer shrink-0"
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-sm text-xs font-bold h-8 px-4 cursor-pointer shrink-0"
                       >
                         <Plus className="w-4 h-4 mr-1.5" /> Tambah
                       </Button>
@@ -3786,7 +3786,7 @@ export default function EmployeesPage() {
               ) : (
                 <div className="grid grid-cols-3 gap-6">
                   <div className="col-span-3 grid grid-cols-4 gap-4">
-                    <div className="space-y-2"><Label htmlFor="name">Nama Lengkap</Label><Input id="name" required value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} className="rounded-xl border-slate-200" /></div>
+                    <div className="space-y-2"><Label htmlFor="name">Nama Lengkap</Label><Input id="name" required value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} className="rounded-sm border-slate-200" /></div>
                     <div className="space-y-2">
                       <Label htmlFor="nipy">NIPY Presensi</Label>
                       <Input
@@ -3798,7 +3798,7 @@ export default function EmployeesPage() {
                             : 'Diterbitkan otomatis setelah data disimpan')
                         }
                         readOnly
-                        className="rounded-xl border-slate-200 bg-slate-50 font-mono text-slate-600"
+                        className="rounded-sm border-slate-200 bg-slate-50 font-mono text-slate-600"
                       />
                       <p className="text-[11px] leading-relaxed text-slate-500">
                         {formData.nipy
@@ -3815,7 +3815,7 @@ export default function EmployeesPage() {
                           getPekaryaNipyGroup(
                             formData.employment?.jobCategory,
                           )) && (
-                          <p className="rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] font-medium text-amber-800">
+                          <p className="rounded-md bg-amber-50 px-2.5 py-2 text-[11px] font-medium text-amber-800">
                             Kategori atau tanggal mulai telah berubah. NIPY tetap
                             permanen; koreksi penerbitan hanya dapat dilakukan
                             Superadmin dengan alasan audit.
@@ -3838,34 +3838,34 @@ export default function EmployeesPage() {
                               setNipyCorrectionReason('');
                               setIsDialogOpen(false);
                             }}
-                            className="h-9 w-full rounded-xl border-amber-200 bg-amber-50 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+                            className="h-9 w-full rounded-sm border-amber-200 bg-amber-50 text-xs font-semibold text-amber-800 hover:bg-amber-100"
                           >
                             Koreksi NIPY dari Data Tersimpan
                           </Button>
                         )}
                     </div>
-                    <div className="space-y-2"><Label htmlFor="nik">NIK (Nomor Induk Kependudukan)</Label><Input id="nik" value={formData.nik || ''} onChange={e => setFormData({ ...formData, nik: e.target.value })} className="rounded-xl border-slate-200" /></div>
-                    <div className="space-y-2"><Label htmlFor="phoneNumber">Nomor WhatsApp/HP</Label><Input id="phoneNumber" value={formData.phoneNumber || ''} onChange={e => setFormData({ ...formData, phoneNumber: e.target.value })} className="rounded-xl border-slate-200" placeholder="Contoh: 08123456789" /></div>
-                    <div className="space-y-2"><Label htmlFor="email">Alamat Email</Label><Input id="email" type="email" value={formData.email || ''} onChange={e => setFormData({ ...formData, email: e.target.value })} className="rounded-xl border-slate-200" placeholder="Contoh: nama@domain.com" /></div>
+                    <div className="space-y-2"><Label htmlFor="nik">NIK (Nomor Induk Kependudukan)</Label><Input id="nik" value={formData.nik || ''} onChange={e => setFormData({ ...formData, nik: e.target.value })} className="rounded-sm border-slate-200" /></div>
+                    <div className="space-y-2"><Label htmlFor="phoneNumber">Nomor WhatsApp/HP</Label><Input id="phoneNumber" value={formData.phoneNumber || ''} onChange={e => setFormData({ ...formData, phoneNumber: e.target.value })} className="rounded-sm border-slate-200" placeholder="Contoh: 08123456789" /></div>
+                    <div className="space-y-2"><Label htmlFor="email">Alamat Email</Label><Input id="email" type="email" value={formData.email || ''} onChange={e => setFormData({ ...formData, email: e.target.value })} className="rounded-sm border-slate-200" placeholder="Contoh: nama@domain.com" /></div>
                   </div>
                   <div className="space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Pekerjaan</h3>
                     <div className="space-y-2">
                       <Label>Kategori</Label>
                       <Select value={formData.employment?.jobCategory} onValueChange={val => setFormData((prev: any) => ({ ...prev, employment: { ...(prev.employment || { status: 'active', startDate: '', endDate: null }), jobCategory: val } as any }))}>
-                        <SelectTrigger className="rounded-xl border-slate-200">
+                        <SelectTrigger className="rounded-sm border-slate-200">
                           <SelectValue>
                             {formData.employment?.jobCategory || 'Pilih Kategori'}
                           </SelectValue>
                         </SelectTrigger>
-                        <SelectContent>{JOB_CATEGORIES.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}</SelectContent>
+                        <SelectContent className="rounded-md">{JOB_CATEGORIES.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
                     {editingEmployee &&
                       formData.employment?.jobCategory !== editingEmployee.employment?.jobCategory && (
-                        <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                        <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3">
                           <Label htmlFor="category-effective-from">Tanggal Efektif Kategori</Label>
-                          <Input
+                          <Input className="rounded-sm"
                             id="category-effective-from"
                             type="date"
                             value={categoryEffectiveFrom}
@@ -3880,10 +3880,10 @@ export default function EmployeesPage() {
                               <div className="space-y-2">
                                 <Label>Pengganti di {editingSatpamTeam.id}</Label>
                                 <Select value={replacementEmployeeId} onValueChange={(value) => setReplacementEmployeeId(value || '')}>
-                                  <SelectTrigger className="rounded-xl border-amber-200 bg-white">
+                                  <SelectTrigger className="rounded-sm border-amber-200 bg-white">
                                     <SelectValue placeholder="Pilih Satpam yang belum masuk regu" />
                                   </SelectTrigger>
-                                  <SelectContent>
+                                  <SelectContent className="rounded-md">
                                     {availableSatpamReplacements.map((employee) => (
                                       <SelectItem key={getEmpId(employee)} value={getEmpId(employee)}>
                                         {getEmpName(employee)} ({getEmpId(employee)})
@@ -3908,7 +3908,7 @@ export default function EmployeesPage() {
                             startDate: e.target.value
                           } as any
                         }))}
-                        className="rounded-xl border-slate-200"
+                        className="rounded-sm border-slate-200"
                       />
                       {formData.employment?.startDate && (
                         <p className="text-[11px] text-slate-500">
@@ -3928,7 +3928,7 @@ export default function EmployeesPage() {
                             dateRecognized: e.target.value
                           } as any
                         }))}
-                        className="rounded-xl border-slate-200"
+                        className="rounded-sm border-slate-200"
                       />
                       {formData.employment?.dateRecognized && (
                         <p className="text-[11px] text-slate-500">
@@ -3950,10 +3950,10 @@ export default function EmployeesPage() {
                             } as any
                           }))}
                         >
-                          <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-10 w-full">
+                          <SelectTrigger className="rounded-sm border-slate-200 bg-white text-xs h-10 w-full">
                             <SelectValue placeholder="Pilih Golongan" />
                           </SelectTrigger>
-                          <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
+                          <SelectContent className="bg-white rounded-md border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
                             {(() => {
                               const defaultBlueGrades = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R'];
                               const blueGrades = gradeCodesBlue && gradeCodesBlue.length > 0 ? gradeCodesBlue : defaultBlueGrades;
@@ -3974,18 +3974,18 @@ export default function EmployeesPage() {
                   </div>
                   <div className="space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Finansial</h3>
-                    <div className="space-y-2"><Label>Nama Bank</Label><Input value={formData.bankAccount?.bankName || ''} onChange={e => setFormData({ ...formData, bankAccount: { ...formData.bankAccount!, bankName: e.target.value } })} className="rounded-xl border-slate-200" /></div>
-                    <div className="space-y-2"><Label>Nomor Rekening</Label><Input value={formData.bankAccount?.accountNumber || ''} onChange={e => setFormData({ ...formData, bankAccount: { ...formData.bankAccount!, accountNumber: e.target.value } })} className="rounded-xl border-slate-200" /></div>
-                    <div className="space-y-2"><Label>Kode Koperasi Rochmad</Label><Input type="number" value={formData.deductions?.koperasiRochmad ?? 0} onChange={e => setFormData((prev: any) => ({ ...prev, deductions: { ...(prev.deductions || {}), koperasiRochmad: Number(e.target.value) } as any }))} className="rounded-xl border-slate-200" /></div>
-                    <div className="space-y-2"><Label>BPJS Pekarya (Rp)</Label><Input type="number" value={formData.bpjs?.allowanceAmount ?? 0} onChange={e => setFormData((prev: any) => ({ ...prev, bpjs: { ...(prev.bpjs || {}), allowanceAmount: e.target.value !== '' ? Number(e.target.value) : 0 } }))} className="rounded-xl border-slate-200" /></div>
-                    <div className="space-y-2"><Label>T. Beras (Rp)</Label><Input type="number" value={formData.salaryProfile?.tunjanganBeras ?? 0} onChange={e => setFormData((prev: any) => ({ ...prev, salaryProfile: { ...(prev.salaryProfile || {}), tunjanganBeras: e.target.value !== '' ? Number(e.target.value) : 0 } }))} className="rounded-xl border-slate-200" /></div>
-                    <div className="space-y-2"><Label>Potongan BPJS (Rp)</Label><Input type="number" value={formData.bpjs?.deductionAmount ?? 0} onChange={e => setFormData((prev: any) => ({ ...prev, bpjs: { ...(prev.bpjs || {}), deductionAmount: e.target.value !== '' ? Number(e.target.value) : 0 } }))} className="rounded-xl border-slate-200" /></div>
+                    <div className="space-y-2"><Label>Nama Bank</Label><Input value={formData.bankAccount?.bankName || ''} onChange={e => setFormData({ ...formData, bankAccount: { ...formData.bankAccount!, bankName: e.target.value } })} className="rounded-sm border-slate-200" /></div>
+                    <div className="space-y-2"><Label>Nomor Rekening</Label><Input value={formData.bankAccount?.accountNumber || ''} onChange={e => setFormData({ ...formData, bankAccount: { ...formData.bankAccount!, accountNumber: e.target.value } })} className="rounded-sm border-slate-200" /></div>
+                    <div className="space-y-2"><Label>Kode Koperasi Rochmad</Label><Input type="number" value={formData.deductions?.koperasiRochmad ?? 0} onChange={e => setFormData((prev: any) => ({ ...prev, deductions: { ...(prev.deductions || {}), koperasiRochmad: Number(e.target.value) } as any }))} className="rounded-sm border-slate-200" /></div>
+                    <div className="space-y-2"><Label>BPJS Pekarya (Rp)</Label><Input type="number" value={formData.bpjs?.allowanceAmount ?? 0} onChange={e => setFormData((prev: any) => ({ ...prev, bpjs: { ...(prev.bpjs || {}), allowanceAmount: e.target.value !== '' ? Number(e.target.value) : 0 } }))} className="rounded-sm border-slate-200" /></div>
+                    <div className="space-y-2"><Label>T. Beras (Rp)</Label><Input type="number" value={formData.salaryProfile?.tunjanganBeras ?? 0} onChange={e => setFormData((prev: any) => ({ ...prev, salaryProfile: { ...(prev.salaryProfile || {}), tunjanganBeras: e.target.value !== '' ? Number(e.target.value) : 0 } }))} className="rounded-sm border-slate-200" /></div>
+                    <div className="space-y-2"><Label>Potongan BPJS (Rp)</Label><Input type="number" value={formData.bpjs?.deductionAmount ?? 0} onChange={e => setFormData((prev: any) => ({ ...prev, bpjs: { ...(prev.bpjs || {}), deductionAmount: e.target.value !== '' ? Number(e.target.value) : 0 } }))} className="rounded-sm border-slate-200" /></div>
                   </div>
                   <div className="space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Status</h3>
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
+                    <div className="p-4 bg-slate-50 rounded-md border border-slate-100 flex items-center justify-between">
                       <div><h4 className="font-semibold text-slate-800 text-sm">Status Kepegawaian</h4><p className="text-xs text-slate-500 mt-0.5">Aktif atau sudah keluar?</p></div>
-                      <Badge onClick={() => setFormData((prev: any) => ({ ...prev, flags: { ...prev.flags!, isActive: !prev.flags?.isActive, isPayrollEligible: !prev.flags?.isActive } }))} className={`cursor-pointer px-4 py-1.5 rounded-xl border-none transition-all ${formData.flags?.isActive ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-slate-200 text-slate-600'}`}>
+                      <Badge onClick={() => setFormData((prev: any) => ({ ...prev, flags: { ...prev.flags!, isActive: !prev.flags?.isActive, isPayrollEligible: !prev.flags?.isActive } }))} className={`cursor-pointer px-4 py-1.5 rounded-sm border-none transition-all ${formData.flags?.isActive ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-slate-200 text-slate-600'}`}>
                         {formData.flags?.isActive ? 'Aktif' : 'Non-Aktif'}
                       </Badge>
                     </div>
@@ -3994,9 +3994,9 @@ export default function EmployeesPage() {
               )}
             </div>
 
-            <DialogFooter className="p-6 bg-slate-50/50 border-t border-slate-100">
-              <Button type="button" variant="ghost" onClick={() => setIsDialogOpen(false)} className="rounded-xl">Batal</Button>
-              <Button type="submit" disabled={saving} className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-8">
+            <DialogFooter className="rounded-b-md p-6 bg-slate-50/50 border-t border-slate-100">
+              <Button type="button" variant="ghost" onClick={() => setIsDialogOpen(false)} className="rounded-sm">Batal</Button>
+              <Button type="submit" disabled={saving} className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white px-8">
                 {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
                 Simpan Data
               </Button>
@@ -4007,9 +4007,9 @@ export default function EmployeesPage() {
 
       {/* Sticky floating change log banner */}
       {pendingEdits.length > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 text-white backdrop-blur-md rounded-2xl shadow-2xl border border-slate-800 px-6 py-4.5 flex items-center justify-between gap-8 max-w-xl w-[90vw] animate-in slide-in-from-bottom-5 duration-300">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 text-white backdrop-blur-md rounded-md shadow-2xl border border-slate-800 px-6 py-4.5 flex items-center justify-between gap-8 max-w-xl w-[90vw] animate-in slide-in-from-bottom-5 duration-300">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-sm bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
               <FileClock className="w-5 h-5" />
             </div>
             <div>
@@ -4022,14 +4022,14 @@ export default function EmployeesPage() {
             <Button
               variant="ghost"
               onClick={() => setIsLogOpen(true)}
-              className="text-xs font-bold text-slate-300 hover:text-white rounded-xl hover:bg-slate-800"
+              className="text-xs font-bold text-slate-300 hover:text-white rounded-sm hover:bg-slate-800"
             >
               Lihat Detail
             </Button>
             <Button
               onClick={handleConfirmChanges}
               disabled={confirming}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-500/10 flex items-center gap-1.5 px-4"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-sm shadow-lg shadow-indigo-500/10 flex items-center gap-1.5 px-4"
             >
               {confirming ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ClipboardCheck className="w-3.5 h-3.5" />}
               Konfirmasi
@@ -4040,7 +4040,7 @@ export default function EmployeesPage() {
 
       {/* Detailed log viewer dialog */}
       <Dialog open={isLogOpen} onOpenChange={setIsLogOpen}>
-        <DialogContent className="sm:max-w-2xl max-w-full rounded-[28px] border-none shadow-2xl p-0 overflow-hidden bg-white">
+        <DialogContent className="sm:max-w-2xl max-w-full rounded-md border-none shadow-2xl p-0 overflow-hidden bg-white">
           <DialogHeader className="p-6 bg-slate-50/50 border-b border-slate-100">
             <DialogTitle className="text-xl font-bold flex items-center gap-2 text-slate-900">
               <History className="w-5.5 h-5.5 text-indigo-500" />
@@ -4053,13 +4053,13 @@ export default function EmployeesPage() {
 
           <div className="p-6 max-h-[50vh] overflow-y-auto space-y-4">
             {pendingEdits.map((edit, idx) => (
-              <div key={idx} className="p-4 rounded-xl border border-slate-150 bg-slate-50/30 space-y-3">
+              <div key={idx} className="p-4 rounded-md border border-slate-150 bg-slate-50/30 space-y-3">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded">{edit.employeeId}</span>
+                    <span className="font-mono text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-sm">{edit.employeeId}</span>
                     <span className="font-bold text-slate-900 text-sm">{edit.name}</span>
                   </div>
-                  <Badge variant="outline" className="text-[10px] font-bold uppercase bg-white px-2 py-0.5 border-slate-200">
+                  <Badge variant="outline" className="rounded-sm text-[10px] font-bold uppercase bg-white px-2 py-0.5 border-slate-200">
                     {edit.tab === 'loyalis' ? 'Loyalis' : 'Pekarya'}
                   </Badge>
                 </div>
@@ -4070,9 +4070,9 @@ export default function EmployeesPage() {
                       <div className="grid grid-cols-3 gap-2 text-xs items-center leading-normal">
                         <span className="font-semibold text-slate-500 font-mono break-all">{c.field}</span>
                         <div className="col-span-2 flex items-center gap-1.5 flex-wrap">
-                          <span className="text-rose-600 bg-rose-50 px-2 py-0.5 rounded line-through max-w-[150px] truncate" title={String(c.oldValue)}>{String(c.oldValue) || 'empty'}</span>
+                          <span className="text-rose-600 bg-rose-50 px-2 py-0.5 rounded-sm line-through max-w-[150px] truncate" title={String(c.oldValue)}>{String(c.oldValue) || 'empty'}</span>
                           <span className="text-slate-400">➔</span>
-                          <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-semibold max-w-[150px] truncate" title={String(c.newValue)}>{String(c.newValue) || 'empty'}</span>
+                          <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-sm font-semibold max-w-[150px] truncate" title={String(c.newValue)}>{String(c.newValue) || 'empty'}</span>
                         </div>
                       </div>
                       {c.payImpactAmount && (
@@ -4099,23 +4099,23 @@ export default function EmployeesPage() {
             ))}
           </div>
 
-          <DialogFooter className="p-6 bg-slate-50/50 border-t border-slate-100 flex justify-between gap-4 w-full">
+          <DialogFooter className="rounded-b-md p-6 bg-slate-50/50 border-t border-slate-100 flex justify-between gap-4 w-full">
             <Button
               type="button"
               variant="ghost"
               onClick={handleClearChanges}
-              className="rounded-xl font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 flex items-center gap-1.5"
+              className="rounded-sm font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 flex items-center gap-1.5"
             >
               <Trash2 className="w-4 h-4" />
               Batal Simpan
             </Button>
 
             <div className="flex gap-2">
-              <Button type="button" variant="ghost" onClick={() => setIsLogOpen(false)} className="rounded-xl">Tutup</Button>
+              <Button type="button" variant="ghost" onClick={() => setIsLogOpen(false)} className="rounded-sm">Tutup</Button>
               <Button
                 onClick={handleConfirmChanges}
                 disabled={confirming}
-                className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 flex items-center gap-1.5"
+                className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 flex items-center gap-1.5"
               >
                 {confirming ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardCheck className="w-4 h-4" />}
                 Konfirmasi & Simpan Log
@@ -4129,9 +4129,9 @@ export default function EmployeesPage() {
           profile-edit log above: a profile edit is already written by the time
           it appears there, this one is not written until Konfirmasi below. */}
       {pendingLeaveChanges.length > 0 && (
-        <div className={`fixed left-1/2 -translate-x-1/2 z-40 bg-sky-950/95 text-white backdrop-blur-md rounded-2xl shadow-2xl border border-sky-900 px-6 py-4.5 flex items-center justify-between gap-8 max-w-xl w-[90vw] animate-in slide-in-from-bottom-5 duration-300 ${pendingEdits.length > 0 ? 'bottom-28' : 'bottom-6'}`}>
+        <div className={`fixed left-1/2 -translate-x-1/2 z-40 bg-sky-950/95 text-white backdrop-blur-md rounded-md shadow-2xl border border-sky-900 px-6 py-4.5 flex items-center justify-between gap-8 max-w-xl w-[90vw] animate-in slide-in-from-bottom-5 duration-300 ${pendingEdits.length > 0 ? 'bottom-28' : 'bottom-6'}`}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400 flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-sm bg-sky-500/10 border border-sky-500/20 text-sky-400 flex items-center justify-center shrink-0">
               <CalendarDays className="w-5 h-5" />
             </div>
             <div>
@@ -4144,13 +4144,13 @@ export default function EmployeesPage() {
             <Button
               variant="ghost"
               onClick={() => setIsLeaveLogOpen(true)}
-              className="text-xs font-bold text-slate-300 hover:text-white rounded-xl hover:bg-sky-900"
+              className="text-xs font-bold text-slate-300 hover:text-white rounded-sm hover:bg-sky-900"
             >
               Lihat Detail
             </Button>
             <Button
               onClick={() => setIsLeaveLogOpen(true)}
-              className="bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-sky-500/10 flex items-center gap-1.5 px-4"
+              className="bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-sm shadow-lg shadow-sky-500/10 flex items-center gap-1.5 px-4"
             >
               <ClipboardCheck className="w-3.5 h-3.5" />
               Konfirmasi
@@ -4162,7 +4162,7 @@ export default function EmployeesPage() {
       {/* Sisa Cuti confirmation dialog: nothing above was written to the
           balances API — this Konfirmasi button is what actually sends it. */}
       <Dialog open={isLeaveLogOpen} onOpenChange={setIsLeaveLogOpen}>
-        <DialogContent className="sm:max-w-lg max-w-full rounded-[28px] border-none shadow-2xl p-0 overflow-hidden bg-white">
+        <DialogContent className="sm:max-w-lg max-w-full rounded-md border-none shadow-2xl p-0 overflow-hidden bg-white">
           <DialogHeader className="p-6 bg-slate-50/50 border-b border-slate-100">
             <DialogTitle className="text-xl font-bold flex items-center gap-2 text-slate-900">
               <CalendarDays className="w-5.5 h-5.5 text-sky-500" />
@@ -4175,12 +4175,12 @@ export default function EmployeesPage() {
 
           <div className="p-6 max-h-[45vh] overflow-y-auto space-y-2">
             {pendingLeaveChanges.map((change) => (
-              <div key={change.employeeId} className="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-150 bg-slate-50/30 text-sm">
+              <div key={change.employeeId} className="flex items-center justify-between gap-3 p-3 rounded-md border border-slate-150 bg-slate-50/30 text-sm">
                 <span className="font-semibold text-slate-800 truncate">{change.employeeName}</span>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <span className="text-rose-600 bg-rose-50 px-2 py-0.5 rounded line-through">{change.oldValue} hari</span>
+                  <span className="text-rose-600 bg-rose-50 px-2 py-0.5 rounded-sm line-through">{change.oldValue} hari</span>
                   <span className="text-slate-400">➔</span>
-                  <span className={`px-2 py-0.5 rounded font-semibold ${change.valid ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50'}`}>
+                  <span className={`px-2 py-0.5 rounded-sm font-semibold ${change.valid ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50'}`}>
                     {change.newValue} hari
                   </span>
                   {!change.valid && (
@@ -4193,27 +4193,27 @@ export default function EmployeesPage() {
             ))}
 
             {leaveConfirmError && (
-              <p className="text-sm text-rose-600 bg-rose-50 border border-rose-100 rounded-xl p-3">{leaveConfirmError}</p>
+              <p className="text-sm text-rose-600 bg-rose-50 border border-rose-100 rounded-md p-3">{leaveConfirmError}</p>
             )}
           </div>
 
-          <DialogFooter className="p-6 bg-slate-50/50 border-t border-slate-100 flex justify-between gap-4 w-full">
+          <DialogFooter className="rounded-b-md p-6 bg-slate-50/50 border-t border-slate-100 flex justify-between gap-4 w-full">
             <Button
               type="button"
               variant="ghost"
               onClick={handleClearLeaveChanges}
-              className="rounded-xl font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 flex items-center gap-1.5"
+              className="rounded-sm font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 flex items-center gap-1.5"
             >
               <Trash2 className="w-4 h-4" />
               Buang Semua
             </Button>
 
             <div className="flex gap-2">
-              <Button type="button" variant="ghost" onClick={() => setIsLeaveLogOpen(false)} className="rounded-xl">Tutup</Button>
+              <Button type="button" variant="ghost" onClick={() => setIsLeaveLogOpen(false)} className="rounded-sm">Tutup</Button>
               <Button
                 onClick={handleConfirmLeaveChanges}
                 disabled={leaveConfirming}
-                className="rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold px-6 flex items-center gap-1.5"
+                className="rounded-sm bg-sky-600 hover:bg-sky-700 text-white font-bold px-6 flex items-center gap-1.5"
               >
                 {leaveConfirming ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardCheck className="w-4 h-4" />}
                 Konfirmasi & Simpan
