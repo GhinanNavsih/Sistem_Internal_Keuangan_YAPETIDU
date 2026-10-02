@@ -405,7 +405,7 @@ test('a SAKU booking is a plain approved SIMPEL booking with extra fields', () =
     createdAt: '2026-09-19T03:00:00.000Z',
   });
   assert.equal(Object.values(booking).some((value) => value === undefined), false, 'Firestore rejects undefined');
-  assert.equal(reservationPhase(booking), 'terjadwal');
+  assert.equal(reservationPhase(booking, NOW.date), 'terjadwal');
 });
 
 test('booking ids never follow SIMPEL count-based numbering', () => {
@@ -836,18 +836,19 @@ test('toReservationView manages ownership and permissions for owner, other user,
   });
 
   // 1. Owner viewing their own reservation
-  const ownerView = toReservationView(booking, 'satker_head_loyalis', 'owner-uid-1');
+  const today = NOW.date;
+  const ownerView = toReservationView(booking, 'satker_head_loyalis', 'owner-uid-1', today);
   assert.equal(ownerView.isOwner, true);
   assert.equal(ownerView.allowedActions.length > 0, true);
   assert.ok(ownerView.allowedActions.includes('cancel'));
 
   // 2. Another Kepala SatKer viewing someone else's reservation
-  const otherView = toReservationView(booking, 'satker_head_loyalis', 'other-uid-2');
+  const otherView = toReservationView(booking, 'satker_head_loyalis', 'other-uid-2', today);
   assert.equal(otherView.isOwner, false);
   assert.equal(otherView.allowedActions.length, 0); // Must NOT be able to cancel or mutate someone else's reservation
 
   // 3. Super admin viewing someone else's reservation
-  const adminView = toReservationView(booking, 'super_admin', 'admin-uid');
+  const adminView = toReservationView(booking, 'super_admin', 'admin-uid', today);
   assert.equal(adminView.isOwner, false);
   assert.equal(adminView.allowedActions.length > 0, true); // Admin retains ability to cancel
 });
@@ -941,4 +942,3 @@ test('venue reservation handles multiple uploaded confirmation/proof files (sura
   assert.equal(view.suratCount, 2);
   assert.equal(view.suratName, 'SK_Peminjaman.pdf');
 });
-
