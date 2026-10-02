@@ -75,7 +75,7 @@ function EvidenceLightboxContent({
 
   return (
     <div
-      className="relative flex h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-900/95 p-4 shadow-2xl"
+      className="relative flex h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-md border border-white/10 bg-slate-900/95 p-4 shadow-2xl"
       onClick={(event) => event.stopPropagation()}
     >
       {/* Header bar */}
@@ -97,7 +97,7 @@ function EvidenceLightboxContent({
                   setZoom((z) => Math.max(0.5, Number((z - 0.25).toFixed(2))))
                 }
                 disabled={zoom <= 0.5}
-                className="h-8 w-8 rounded-full text-slate-300 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-30"
+                className="h-8 w-8 rounded-sm text-slate-300 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-30"
                 title="Perkecil"
               >
                 <ZoomOut className="h-4 w-4" />
@@ -113,7 +113,7 @@ function EvidenceLightboxContent({
                   setZoom((z) => Math.min(4, Number((z + 0.25).toFixed(2))))
                 }
                 disabled={zoom >= 4}
-                className="h-8 w-8 rounded-full text-slate-300 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-30"
+                className="h-8 w-8 rounded-sm text-slate-300 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-30"
                 title="Perbesar"
               >
                 <ZoomIn className="h-4 w-4" />
@@ -123,7 +123,7 @@ function EvidenceLightboxContent({
                 variant="ghost"
                 size="icon"
                 onClick={() => setRotation((r) => (r + 90) % 360)}
-                className="h-8 w-8 rounded-full text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+                className="h-8 w-8 rounded-sm text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
                 title="Putar 90°"
               >
                 <RotateCw className="h-4 w-4" />
@@ -134,7 +134,7 @@ function EvidenceLightboxContent({
             href={imageUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="ml-1 inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-md transition-all hover:bg-indigo-500"
+            className="ml-1 inline-flex items-center gap-1.5 rounded-sm bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-md transition-all hover:bg-indigo-500"
           >
             <ExternalLink className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Buka di Tab Baru</span>
@@ -145,7 +145,7 @@ function EvidenceLightboxContent({
             variant="ghost"
             size="icon"
             onClick={onClose}
-            className="ml-1 h-8 w-8 rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+            className="ml-1 h-8 w-8 rounded-sm text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
             title="Tutup"
           >
             <X className="h-5 w-5" />
@@ -154,11 +154,11 @@ function EvidenceLightboxContent({
       </div>
 
       {/* Content area */}
-      <div className="flex w-full flex-1 items-center justify-center overflow-hidden rounded-2xl bg-slate-950/60">
+      <div className="flex w-full flex-1 items-center justify-center overflow-hidden rounded-md bg-slate-950/60">
         {isPdf ? (
           <iframe
             src={imageUrl}
-            className="h-full w-full rounded-2xl border-none bg-white"
+            className="h-full w-full rounded-sm border-none bg-white"
             title={title}
           />
         ) : (
@@ -170,7 +170,7 @@ function EvidenceLightboxContent({
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
-            className={`max-w-none select-none rounded-2xl object-contain shadow-2xl touch-none ${
+            className={`max-w-none select-none rounded-sm object-contain shadow-2xl touch-none ${
               isPanning ? '' : 'transition-transform duration-150'
             } ${
               zoom <= 1

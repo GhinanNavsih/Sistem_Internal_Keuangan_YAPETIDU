@@ -1549,7 +1549,7 @@ function DriverJourneysContent() {
         <SatkerPekaryaNavBar />
       )}
 
-      <div className="max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
@@ -1568,12 +1568,12 @@ function DriverJourneysContent() {
             params.set('month', v);
             router.push(`${pathname}?${params.toString()}`);
           }}>
-            <SelectTrigger className="w-44 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
+            <SelectTrigger className="w-44 bg-white shadow-sm border-slate-200 rounded-sm font-semibold hover:border-indigo-300 transition-all">
               <SelectValue>
                 {`${MONTHS_ID[month - 1]} (1 – ${new Date(year, month, 0).getDate()} ${MONTHS_ID[month - 1].slice(0, 3)})`}
               </SelectValue>
             </SelectTrigger>
-            <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+            <SelectContent className="rounded-md border-slate-100 shadow-xl bg-white">
               {MONTHS_ID.map((m, i) => {
                 const now = new Date();
                 const currentYear = now.getFullYear();
@@ -1595,10 +1595,10 @@ function DriverJourneysContent() {
             params.set('year', v);
             router.push(`${pathname}?${params.toString()}`);
           }}>
-            <SelectTrigger className="w-28 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
+            <SelectTrigger className="w-28 bg-white shadow-sm border-slate-200 rounded-sm font-semibold hover:border-indigo-300 transition-all">
               <SelectValue>{year}</SelectValue>
             </SelectTrigger>
-            <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+            <SelectContent className="rounded-md border-slate-100 shadow-xl bg-white">
               {YEARS.filter(y => {
                 const now = new Date();
                 const currentYear = now.getFullYear();
@@ -1614,7 +1614,7 @@ function DriverJourneysContent() {
           </Select>
           <Button
             onClick={openJourneyForm}
-            className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-md shadow-indigo-200 text-xs px-4 h-10 gap-1.5 cursor-pointer"
+            className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-md shadow-indigo-200 text-xs px-4 h-10 gap-1.5 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             Buat Perjalanan Baru
@@ -1627,21 +1627,21 @@ function DriverJourneysContent() {
 
       <FloatingSnackbar message={message} />
 
-      <Card className="border-slate-200/60 shadow-sm rounded-2xl bg-white">
+      <Card className="border-slate-200/60 shadow-sm rounded-md bg-white">
         <CardHeader className="p-4 pb-2">
           <CardTitle className="text-sm font-extrabold text-slate-800">Saldo BBM Armada</CardTitle>
           <CardDescription className="text-xs mt-0.5">Pool per model kendaraan. Ndalem tidak memakai saldo akumulasi.</CardDescription>
         </CardHeader>
         <CardContent className="p-4 pt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {fuelBalances.map((balance) => (
-            <div key={balance.vehicleName} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 space-y-2">
+            <div key={balance.vehicleName} className="rounded-md border border-slate-100 bg-slate-50/70 p-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-black text-slate-800">{balance.vehicleName}</span>
                 <Button
                   type="button"
                   variant="ghost"
                   onClick={() => openFuelLedger(balance.vehicleName)}
-                  className="h-7 px-2 text-[10px] font-bold text-indigo-700 hover:bg-indigo-50 rounded-lg"
+                  className="h-7 px-2 text-[10px] font-bold text-indigo-700 hover:bg-indigo-50 rounded-sm"
                 >
                   Riwayat
                 </Button>
@@ -1662,7 +1662,7 @@ function DriverJourneysContent() {
       <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
         <button
           onClick={() => setActiveTab('journeys')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${activeTab === 'journeys'
+          className={`flex items-center gap-2 px-4 py-2 rounded-sm text-xs font-extrabold transition-all cursor-pointer ${activeTab === 'journeys'
             ? 'bg-indigo-600 text-white shadow-sm'
             : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
             }`}
@@ -1673,7 +1673,7 @@ function DriverJourneysContent() {
 
         <button
           onClick={() => setActiveTab('piket')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${activeTab === 'piket'
+          className={`flex items-center gap-2 px-4 py-2 rounded-sm text-xs font-extrabold transition-all cursor-pointer ${activeTab === 'piket'
             ? 'bg-indigo-600 text-white shadow-sm'
             : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
             }`}
@@ -1685,7 +1685,7 @@ function DriverJourneysContent() {
 
       {activeTab === 'journeys' ? (
         /* List Table */
-        <Card className="border-slate-200/60 shadow-sm rounded-2xl overflow-hidden bg-white">
+        <Card className="border-slate-200/60 shadow-sm rounded-md overflow-hidden bg-white">
           <CardHeader className="border-b border-slate-100 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <CardTitle className="text-sm font-extrabold text-slate-800">Daftar Perjalanan</CardTitle>
@@ -1698,7 +1698,7 @@ function DriverJourneysContent() {
                 placeholder="Cari kegiatan/tujuan/driver..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 h-9 rounded-xl text-xs bg-slate-50 border-slate-200 focus:bg-white transition-all"
+                className="pl-9 h-9 rounded-sm text-xs bg-slate-50 border-slate-200 focus:bg-white transition-all"
               />
             </div>
           </CardHeader>
@@ -1833,13 +1833,13 @@ function DriverJourneysContent() {
                             </TableCell>
                             <TableCell className="min-w-0 max-w-0 overflow-hidden">
                               {j.status === 'unassigned' && (
-                                <Badge className="bg-slate-100 text-slate-500 border border-slate-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
+                                <Badge className="bg-slate-100 text-slate-500 border border-slate-200 text-[9px] font-bold rounded-sm px-2 py-0.5">
                                   Belum Ditugaskan
                                 </Badge>
                               )}
                               {j.status === 'assigned' && (
                                 <div className="space-y-1">
-                                  <Badge className="bg-purple-50 text-purple-700 border border-purple-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
+                                  <Badge className="bg-purple-50 text-purple-700 border border-purple-200 text-[9px] font-bold rounded-sm px-2 py-0.5">
                                     Ditugaskan
                                   </Badge>
                                   <div className="text-[10px] font-bold text-slate-600 block truncate">{j.assignedToName || 'Sopir'}</div>
@@ -1847,7 +1847,7 @@ function DriverJourneysContent() {
                               )}
                               {j.status === 'claimed' && (
                                 <div className="space-y-1">
-                                  <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
+                                  <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-bold rounded-sm px-2 py-0.5">
                                     Aktif Jalan
                                   </Badge>
                                   <div className="text-[10px] font-bold text-slate-600 block truncate">{j.employeeName}</div>
@@ -1855,7 +1855,7 @@ function DriverJourneysContent() {
                               )}
                               {j.status === 'submitted' && (
                                 <div className="space-y-1">
-                                  <Badge className="bg-sky-50 text-sky-700 border border-sky-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
+                                  <Badge className="bg-sky-50 text-sky-700 border border-sky-200 text-[9px] font-bold rounded-sm px-2 py-0.5">
                                     Menunggu Audit
                                   </Badge>
                                   <div className="text-[10px] font-bold text-slate-600 block truncate">{j.employeeName}</div>
@@ -1863,7 +1863,7 @@ function DriverJourneysContent() {
                               )}
                               {j.status === 'declined' && (
                                 <div className="space-y-1">
-                                  <Badge className="bg-rose-50 text-rose-700 border border-rose-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
+                                  <Badge className="bg-rose-50 text-rose-700 border border-rose-200 text-[9px] font-bold rounded-sm px-2 py-0.5">
                                     Ditolak
                                   </Badge>
                                   <div className="text-[10px] font-bold text-slate-600 block truncate">{j.employeeName}</div>
@@ -1871,7 +1871,7 @@ function DriverJourneysContent() {
                               )}
                               {j.status === 'completed' && (
                                 <div className="space-y-1">
-                                  <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
+                                  <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold rounded-sm px-2 py-0.5">
                                     Selesai
                                   </Badge>
                                   <div className="text-[10px] font-bold text-slate-600 block truncate">{j.employeeName}</div>
@@ -1889,7 +1889,7 @@ function DriverJourneysContent() {
                                       variant="ghost"
                                       size="sm"
                                       onClick={() => setAuditReport(report)}
-                                      className={`h-8 px-2.5 text-[10px] font-extrabold rounded-xl cursor-pointer border ${isPending
+                                      className={`h-8 px-2.5 text-[10px] font-extrabold rounded-sm cursor-pointer border ${isPending
                                         ? 'text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100'
                                         : 'text-slate-500 bg-slate-50 border-slate-200 hover:bg-slate-100'
                                         }`}
@@ -1950,7 +1950,7 @@ function DriverJourneysContent() {
                                       lastCalculatedRef.current = '';
                                       setShowAddForm(true);
                                     }}
-                                    className="h-8 w-8 p-0 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl cursor-pointer"
+                                    className="h-8 w-8 p-0 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-sm cursor-pointer"
                                     title="Edit Perjalanan"
                                   >
                                     <Pencil className="w-4 h-4" />
@@ -1961,13 +1961,13 @@ function DriverJourneysContent() {
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => handleDeleteJourney(j.id)}
-                                    className="h-8 w-8 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl cursor-pointer"
+                                    className="h-8 w-8 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer"
                                     title="Hapus Perjalanan"
                                   >
                                     <Trash2 className="w-4 h-4" />
                                   </Button>
                                 ) : j.status === 'claimed' ? (
-                                  <span className="text-[10px] font-semibold text-amber-600/70 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/60" title="Perjalanan aktif sedang berjalan">
+                                  <span className="text-[10px] font-semibold text-amber-600/70 bg-amber-50 px-2 py-0.5 rounded-sm border border-amber-200/60" title="Perjalanan aktif sedang berjalan">
                                     Sedang Jalan
                                   </span>
                                 ) : (
@@ -1987,7 +1987,7 @@ function DriverJourneysContent() {
         </Card>
       ) : (
         /* Piket Calendar Card */
-        <Card className="border-slate-200/60 shadow-sm rounded-2xl overflow-hidden bg-white">
+        <Card className="border-slate-200/60 shadow-sm rounded-md overflow-hidden bg-white">
           <CardHeader className="border-b border-slate-100 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <CardTitle className="text-sm font-extrabold text-slate-800 flex items-center gap-2">
@@ -2016,7 +2016,7 @@ function DriverJourneysContent() {
             <div className="grid grid-cols-7 gap-2">
               {/* Blank leading offset cells */}
               {Array.from({ length: firstDayOffset }).map((_, idx) => (
-                <div key={`offset-${idx}`} className="h-24 sm:h-28 rounded-xl bg-slate-50/50 border border-dashed border-slate-100" />
+                <div key={`offset-${idx}`} className="h-24 sm:h-28 rounded-sm bg-slate-50/50 border border-dashed border-slate-100" />
               ))}
 
               {/* Day cells */}
@@ -2034,7 +2034,7 @@ function DriverJourneysContent() {
                       setPendingExtraSlotKeys([]);
                       setShowPiketDialog(true);
                     }}
-                    className={`min-h-[145px] sm:min-h-[165px] rounded-xl border p-2 flex flex-col justify-between transition-all cursor-pointer group hover:border-indigo-400 hover:shadow-md ${isToday
+                    className={`min-h-[145px] sm:min-h-[165px] rounded-sm border p-2 flex flex-col justify-between transition-all cursor-pointer group hover:border-indigo-400 hover:shadow-md ${isToday
                       ? 'bg-indigo-50/50 border-indigo-300 ring-2 ring-indigo-500/20'
                       : assigned.length > 0
                         ? 'bg-white border-slate-200'
@@ -2046,7 +2046,7 @@ function DriverJourneysContent() {
                         {dayNum}
                       </span>
                       {assigned.length > 0 ? (
-                        <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-emerald-200 text-[9px] font-extrabold px-1.5 py-0">
+                        <Badge className="rounded-sm bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-emerald-200 text-[9px] font-extrabold px-1.5 py-0">
                           {assigned.length}/{Math.max(5, assigned.length)} Piket
                         </Badge>
                       ) : (
@@ -2060,7 +2060,7 @@ function DriverJourneysContent() {
                         return (
                           <div
                             key={station.key}
-                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border flex items-center justify-between gap-1 transition-all ${sched
+                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded-sm border flex items-center justify-between gap-1 transition-all ${sched
                               ? 'bg-emerald-50 text-emerald-900 border-emerald-200/80 shadow-xs'
                               : 'bg-slate-50/60 text-slate-400 border-slate-100 hover:bg-slate-100/80'
                               }`}
@@ -2086,7 +2086,7 @@ function DriverJourneysContent() {
                         .map((sched) => (
                           <div
                             key={sched.stationKey}
-                            className="text-[10px] font-bold px-1.5 py-0.5 rounded-md border flex items-center justify-between gap-1 bg-amber-50 text-amber-900 border-amber-200/80 shadow-xs"
+                            className="text-[10px] font-bold px-1.5 py-0.5 rounded-sm border flex items-center justify-between gap-1 bg-amber-50 text-amber-900 border-amber-200/80 shadow-xs"
                             title={`${sched.stationName || 'Piket Tambahan'}: ${sched.driverName}`}
                           >
                             <span className="truncate text-[9px] font-black text-amber-600 uppercase tracking-tight w-14 shrink-0">
@@ -2120,7 +2120,7 @@ function DriverJourneysContent() {
         if (!open) setPendingExtraSlotKeys([]);
         setShowPiketDialog(open);
       }}>
-        <DialogContent className="max-w-lg rounded-3xl p-6 sm:p-7">
+        <DialogContent className="max-w-lg rounded-md p-6 sm:p-7">
           <DialogHeader className="border-b border-slate-100 pb-3">
             <DialogTitle className="text-base font-black text-slate-800 flex items-center gap-2">
               <CalendarDays className="w-5 h-5 text-indigo-600" />
@@ -2150,10 +2150,10 @@ function DriverJourneysContent() {
               return (
                 <div
                   key={station.key}
-                  className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
+                  className="p-3 bg-slate-50 border border-slate-200/80 rounded-md flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
                 >
                   <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-xs shrink-0">
+                    <div className="w-8 h-8 rounded-sm bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-xs shrink-0">
                       <Compass className="w-4 h-4 text-indigo-600" />
                     </div>
                     <div>
@@ -2169,7 +2169,7 @@ function DriverJourneysContent() {
                       assignDriverToStation(station.key, station.name, val || 'unassigned');
                     }}
                   >
-                    <SelectTrigger className="w-full sm:w-[210px] h-9 text-xs font-bold bg-white rounded-xl border border-slate-200">
+                    <SelectTrigger className="w-full sm:w-[210px] h-9 text-xs font-bold bg-white rounded-sm border border-slate-200">
                       <SelectValue placeholder="-- Pilih Sopir --">
                         {(() => {
                           if (selectedDriverId === 'unassigned') return '-- Belum Ditugaskan --';
@@ -2178,7 +2178,7 @@ function DriverJourneysContent() {
                         })()}
                       </SelectValue>
                     </SelectTrigger>
-                    <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                    <SelectContent className="rounded-md border-slate-100 shadow-xl bg-white">
                       <SelectItem value="unassigned" className="text-xs text-slate-400 italic">
                         -- Belum Ditugaskan --
                       </SelectItem>
@@ -2216,10 +2216,10 @@ function DriverJourneysContent() {
               return (
                 <div
                   key={slotKey}
-                  className="p-3 bg-amber-50/60 border border-amber-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
+                  className="p-3 bg-amber-50/60 border border-amber-200/80 rounded-md flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
                 >
                   <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-black text-xs shrink-0">
+                    <div className="w-8 h-8 rounded-sm bg-amber-100 text-amber-700 flex items-center justify-center font-black text-xs shrink-0">
                       <Compass className="w-4 h-4 text-amber-600" />
                     </div>
                     <div>
@@ -2236,7 +2236,7 @@ function DriverJourneysContent() {
                         assignDriverToStation(slotKey, stationLabel, val || 'unassigned');
                       }}
                     >
-                      <SelectTrigger className="w-full sm:w-[190px] h-9 text-xs font-bold bg-white rounded-xl border border-slate-200">
+                      <SelectTrigger className="w-full sm:w-[190px] h-9 text-xs font-bold bg-white rounded-sm border border-slate-200">
                         <SelectValue placeholder="-- Pilih Sopir --">
                           {(() => {
                             if (selectedDriverId === 'unassigned') return '-- Belum Ditugaskan --';
@@ -2245,7 +2245,7 @@ function DriverJourneysContent() {
                           })()}
                         </SelectValue>
                       </SelectTrigger>
-                      <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                      <SelectContent className="rounded-md border-slate-100 shadow-xl bg-white">
                         <SelectItem value="unassigned" className="text-xs text-slate-400 italic">
                           -- Belum Ditugaskan --
                         </SelectItem>
@@ -2267,7 +2267,7 @@ function DriverJourneysContent() {
                       size="icon"
                       disabled={savingPiket}
                       onClick={() => removeExtraPiketSlot(slotKey)}
-                      className="h-9 w-9 rounded-xl border-rose-200 text-rose-500 hover:bg-rose-50 shrink-0 cursor-pointer"
+                      className="h-9 w-9 rounded-sm border-rose-200 text-rose-500 hover:bg-rose-50 shrink-0 cursor-pointer"
                       title="Hapus slot piket tambahan"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -2281,17 +2281,17 @@ function DriverJourneysContent() {
               type="button"
               variant="outline"
               onClick={addExtraPiketSlot}
-              className="w-full rounded-xl border-dashed border-slate-300 text-slate-500 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50/50 font-bold text-xs h-10 cursor-pointer"
+              className="w-full rounded-sm border-dashed border-slate-300 text-slate-500 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50/50 font-bold text-xs h-10 cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5 mr-1.5" />
               Tambah Slot Piket
             </Button>
           </div>
 
-          <DialogFooter className="pt-2 border-t border-slate-100">
+          <DialogFooter className="rounded-b-md pt-2 border-t border-slate-100">
             <Button
               onClick={() => setShowPiketDialog(false)}
-              className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs h-10 cursor-pointer"
+              className="w-full rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs h-10 cursor-pointer"
             >
               Selesai & Simpan
             </Button>
@@ -2307,7 +2307,7 @@ function DriverJourneysContent() {
           closeJourneyForm();
         }
       }}>
-        <DialogContent className="w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] sm:w-[calc(100vw-2rem)] sm:max-w-none h-[calc(100vh-2rem)] max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl bg-white border-slate-100 shadow-2xl p-6 lg:p-8">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] sm:w-[calc(100vw-2rem)] sm:max-w-none h-[calc(100vh-2rem)] max-h-[calc(100vh-2rem)] overflow-y-auto rounded-md bg-white border-slate-100 shadow-2xl p-6 lg:p-8">
           <DialogHeader>
             <DialogTitle className="text-base font-extrabold text-slate-800 flex items-center gap-2">
               <Compass className="w-5 h-5 text-indigo-600" />
@@ -2335,7 +2335,7 @@ function DriverJourneysContent() {
                     markJourneyDraftChanged();
                     setActivityName(e.target.value);
                   }}
-                  className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-sm h-10 px-3"
+                  className="rounded-sm border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-sm h-10 px-3"
                   required
                   autoComplete="off"
                 />
@@ -2352,7 +2352,7 @@ function DriverJourneysContent() {
                     markJourneyDraftChanged();
                     setActivityDate(e.target.value);
                   }}
-                  className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-sm h-10 px-3"
+                  className="rounded-sm border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-sm h-10 px-3"
                   required
                 />
               </div>
@@ -2370,7 +2370,7 @@ function DriverJourneysContent() {
                   setAssignedDriverId(!v || v === 'unassigned' ? '' : v);
                 }}
               >
-                <SelectTrigger id="driverAssignment" className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
+                <SelectTrigger id="driverAssignment" className="w-full text-sm font-bold text-slate-700 bg-white rounded-sm border border-slate-200 h-10 px-3">
                   <SelectValue>
                     {(() => {
                       if (!assignedDriverId || assignedDriverId === 'unassigned') {
@@ -2386,7 +2386,7 @@ function DriverJourneysContent() {
                     })()}
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="rounded-md">
                   <SelectItem value="unassigned">-- Buka Pool Umum (Belum Ditugaskan) --</SelectItem>
                   {drivers.map(driver => {
                     const { activeCount, assignedCount } = getDriverStatus(driver.id);
@@ -2406,7 +2406,7 @@ function DriverJourneysContent() {
                 const { activeCount, assignedCount } = getDriverStatus(assignedDriverId);
                 if (activeCount > 0 || assignedCount > 0) {
                   return (
-                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] font-semibold text-amber-800 flex items-center gap-2 mt-1 animate-in fade-in duration-200">
+                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-md text-[11px] font-semibold text-amber-800 flex items-center gap-2 mt-1 animate-in fade-in duration-200">
                       <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                       <span>Sopir ini memiliki {activeCount > 0 ? `${activeCount} tugas aktif sedang berjalan` : `${assignedCount} tugas terjadwal`}. Perjalanan ini akan masuk sebagai tugas mendatang bagi sopir tersebut.</span>
                     </div>
@@ -2430,7 +2430,7 @@ function DriverJourneysContent() {
                     if (val === 'Ndalem') setFuelProcurementMode(DEFAULT_FUEL_PROCUREMENT_MODE);
                   }}
                 >
-                  <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
+                  <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white rounded-sm border border-slate-200 h-10 px-3">
                     <SelectValue>
                       {selectedVehicle === 'Ndalem'
                         ? 'Ndalem — Tanpa Uang Jalan'
@@ -2439,7 +2439,7 @@ function DriverJourneysContent() {
                           : ''}
                     </SelectValue>
                   </SelectTrigger>
-                  <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                  <SelectContent className="rounded-md border-slate-100 shadow-xl bg-white">
                     {Object.keys(VEHICLE_RATES).map((name) => (
                       <SelectItem key={name} value={name}>
                         {name === 'Ndalem' ? 'Ndalem — Tanpa Uang Jalan' : `${name} — ${fmtRp(VEHICLE_RATES[name as keyof typeof VEHICLE_RATES])}/km`}
@@ -2465,7 +2465,7 @@ function DriverJourneysContent() {
                     const val = e.target.value;
                     setInputDuration(val === '' ? null : parseFloat(val));
                   }}
-                  className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3"
+                  className="w-full text-sm font-bold text-slate-700 bg-white rounded-sm border border-slate-200 h-10 px-3"
                 />
               </div>
 
@@ -2483,13 +2483,13 @@ function DriverJourneysContent() {
                     const val = e.target.value.replace(/\D/g, '');
                     setTollFee(val ? Number(val).toLocaleString('id-ID') : '');
                   }}
-                  className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3"
+                  className="w-full text-sm font-bold text-slate-700 bg-white rounded-sm border border-slate-200 h-10 px-3"
                 />
               </div>
             </div>
 
             {/* Mode Pengadaan BBM */}
-            <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 space-y-2 lg:col-start-2 lg:row-start-3">
+            <div className="rounded-md border border-indigo-100 bg-indigo-50/60 p-3 space-y-2 lg:col-start-2 lg:row-start-3">
               <div className="flex items-center justify-between gap-3">
                 <Label htmlFor="fuelModeSelect" className="text-xs font-bold text-indigo-900 uppercase tracking-wider">
                   Mode Pengadaan BBM
@@ -2511,7 +2511,7 @@ function DriverJourneysContent() {
                 }}
                 disabled={selectedVehicle === 'Ndalem'}
               >
-                <SelectTrigger id="fuelModeSelect" className="w-full text-xs font-bold text-slate-700 bg-white rounded-xl border border-indigo-100 h-10 px-3">
+                <SelectTrigger id="fuelModeSelect" className="w-full text-xs font-bold text-slate-700 bg-white rounded-sm border border-indigo-100 h-10 px-3">
                   <SelectValue>
                     {fuelProcurementModeLabel(
                       selectedVehicle === 'Ndalem'
@@ -2520,7 +2520,7 @@ function DriverJourneysContent() {
                     )}
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white text-xs">
+                <SelectContent className="rounded-md border-slate-100 shadow-xl bg-white text-xs">
                   <SelectItem value="standard_direct">Standard langsung</SelectItem>
                   <SelectItem value="hold_accumulate">Tahan & akumulasi</SelectItem>
                   <SelectItem value="procure_release">Cairkan saldo</SelectItem>
@@ -2556,13 +2556,13 @@ function DriverJourneysContent() {
                     cancelPlaceSearch();
                     setShowMapSelector(true);
                   }}
-                  className="w-full rounded-xl border border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/30 hover:bg-indigo-50/50 text-indigo-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all"
+                  className="w-full rounded-sm border border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/30 hover:bg-indigo-50/50 text-indigo-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all"
                 >
                   <MapPin className="w-4 h-4" />
                   Pilih Titik Awal di Peta
                 </Button>
               ) : (
-                <div className="p-3 bg-indigo-50/40 border border-indigo-100 rounded-xl flex items-center justify-between gap-3 animate-in fade-in duration-200">
+                <div className="p-3 bg-indigo-50/40 border border-indigo-100 rounded-md flex items-center justify-between gap-3 animate-in fade-in duration-200">
                   <div className="flex items-center gap-2 overflow-hidden text-xs text-indigo-900 font-semibold flex-1">
                     <MapPin className="w-4.5 h-4.5 text-indigo-600 shrink-0" />
                     <span className="truncate" title={startPoint}>{startPoint}</span>
@@ -2579,7 +2579,7 @@ function DriverJourneysContent() {
                       cancelPlaceSearch();
                       setShowMapSelector(true);
                     }}
-                    className="text-[10px] font-bold text-indigo-700 hover:text-indigo-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-lg shrink-0 cursor-pointer"
+                    className="text-[10px] font-bold text-indigo-700 hover:text-indigo-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-sm shrink-0 cursor-pointer"
                   >
                     Ubah
                   </Button>
@@ -2605,13 +2605,13 @@ function DriverJourneysContent() {
                     cancelPlaceSearch();
                     setShowMapSelector(true);
                   }}
-                  className="w-full rounded-xl border border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/30 hover:bg-indigo-50/50 text-indigo-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all"
+                  className="w-full rounded-sm border border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/30 hover:bg-indigo-50/50 text-indigo-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all"
                 >
                   <MapPin className="w-4 h-4" />
                   Pilih Lokasi Tujuan di Peta
                 </Button>
               ) : (
-                <div className="p-3 bg-indigo-50/40 border border-indigo-100 rounded-xl flex items-center justify-between gap-3 animate-in fade-in duration-200">
+                <div className="p-3 bg-indigo-50/40 border border-indigo-100 rounded-md flex items-center justify-between gap-3 animate-in fade-in duration-200">
                   <div className="flex items-center gap-2 overflow-hidden text-xs text-indigo-900 font-semibold flex-1">
                     <MapPin className="w-4.5 h-4.5 text-indigo-600 shrink-0" />
                     <span className="truncate" title={endPoint}>{endPoint}</span>
@@ -2628,7 +2628,7 @@ function DriverJourneysContent() {
                       cancelPlaceSearch();
                       setShowMapSelector(true);
                     }}
-                    className="text-[10px] font-bold text-indigo-700 hover:text-indigo-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-lg shrink-0 cursor-pointer"
+                    className="text-[10px] font-bold text-indigo-700 hover:text-indigo-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-sm shrink-0 cursor-pointer"
                   >
                     Ubah
                   </Button>
@@ -2645,7 +2645,7 @@ function DriverJourneysContent() {
                       type="button"
                       variant="ghost"
                       onClick={() => removeMainDestination(index)}
-                      className="h-7 w-7 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                      className="h-7 w-7 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer"
                       title="Hapus tujuan utama"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -2664,13 +2664,13 @@ function DriverJourneysContent() {
                         cancelPlaceSearch();
                         setShowMapSelector(true);
                       }}
-                      className="w-full rounded-xl border border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/30 hover:bg-indigo-50/50 text-indigo-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all"
+                      className="w-full rounded-sm border border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/30 hover:bg-indigo-50/50 text-indigo-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all"
                     >
                       <MapPin className="w-4 h-4" />
                       Pilih Lokasi Tujuan di Peta
                     </Button>
                   ) : (
-                    <div className="p-3 bg-indigo-50/40 border border-indigo-100 rounded-xl flex items-center justify-between gap-3 animate-in fade-in duration-200">
+                    <div className="p-3 bg-indigo-50/40 border border-indigo-100 rounded-md flex items-center justify-between gap-3 animate-in fade-in duration-200">
                       <div className="flex items-center gap-2 overflow-hidden text-xs text-indigo-900 font-semibold flex-1">
                         <MapPin className="w-4.5 h-4.5 text-indigo-600 shrink-0" />
                         <span className="truncate" title={destination}>{destination}</span>
@@ -2687,7 +2687,7 @@ function DriverJourneysContent() {
                           cancelPlaceSearch();
                           setShowMapSelector(true);
                         }}
-                        className="text-[10px] font-bold text-indigo-700 hover:text-indigo-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-lg shrink-0 cursor-pointer"
+                        className="text-[10px] font-bold text-indigo-700 hover:text-indigo-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-sm shrink-0 cursor-pointer"
                       >
                         Ubah
                       </Button>
@@ -2701,7 +2701,7 @@ function DriverJourneysContent() {
                   type="button"
                   variant="outline"
                   onClick={addMainDestination}
-                  className="w-full mt-3 rounded-xl border-dashed border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-bold text-xs h-9 cursor-pointer"
+                  className="w-full mt-3 rounded-sm border-dashed border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-bold text-xs h-9 cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5 mr-1.5" />
                   Tambah Tujuan Utama
@@ -2714,7 +2714,7 @@ function DriverJourneysContent() {
 
             {/* Calculation Loader */}
             {calculating && (
-              <div className="flex items-center justify-center p-3 text-xs text-indigo-600 font-bold bg-indigo-50/50 rounded-xl border border-indigo-100/50 animate-in fade-in duration-200">
+              <div className="flex items-center justify-center p-3 text-xs text-indigo-600 font-bold bg-indigo-50/50 rounded-md border border-indigo-100/50 animate-in fade-in duration-200">
                 <Loader2 className="w-4 h-4 animate-spin mr-2 text-indigo-600" />
                 Mengevaluasi rute & durasi Google Maps...
               </div>
@@ -2722,7 +2722,7 @@ function DriverJourneysContent() {
 
             {/* Calculation Errors */}
             {calcError && (
-              <div className="p-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-xl font-semibold flex items-center justify-between gap-2">
+              <div className="p-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-md font-semibold flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                   <span>{calcError}</span>
@@ -2734,7 +2734,7 @@ function DriverJourneysContent() {
                     lastCalculatedRef.current = '';
                     setCalcDistance(null);
                   }}
-                  className="text-[10px] font-bold bg-rose-600 hover:bg-rose-700 text-white h-7 px-2.5 rounded-lg shrink-0"
+                  className="text-[10px] font-bold bg-rose-600 hover:bg-rose-700 text-white h-7 px-2.5 rounded-sm shrink-0"
                 >
                   Coba Lagi
                 </Button>
@@ -2754,17 +2754,17 @@ function DriverJourneysContent() {
               return (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 {/* Rincian Estimasi Biaya Otorisasi */}
-                <div className="p-3.5 bg-indigo-50/70 border border-indigo-100 rounded-xl space-y-1.5 animate-in fade-in duration-200">
+                <div className="p-3.5 bg-indigo-50/70 border border-indigo-100 rounded-md space-y-1.5 animate-in fade-in duration-200">
                   <span className="text-[10px] font-bold text-indigo-800 uppercase tracking-wider block">
                     Rincian Estimasi Biaya Otorisasi
                   </span>
 
                   <div className="grid grid-cols-2 gap-2 text-slate-600 text-xs font-semibold">
-                    <div className="bg-white p-2 rounded-lg border border-slate-100">
+                    <div className="bg-white p-2 rounded-sm border border-slate-100">
                       <span className="block text-[8px] text-slate-400 font-bold uppercase">Jarak Pulang-Pergi</span>
                       <span className="text-xs font-extrabold text-slate-700">{(calcDistance * 2).toFixed(1)} km</span>
                     </div>
-                    <div className="bg-white p-2 rounded-lg border border-slate-100">
+                    <div className="bg-white p-2 rounded-sm border border-slate-100">
                       <span className="block text-[8px] text-slate-400 font-bold uppercase">Tarif Mobil</span>
                       <span className="text-xs font-extrabold text-slate-700">
                         {selectedVehicle === 'Ndalem' ? 'Tanpa Tarif' : `${fmtRp(VEHICLE_RATES[selectedVehicle])}/km`}
@@ -2818,17 +2818,17 @@ function DriverJourneysContent() {
                 </div>
 
                 {/* Kisaran Pendapatan Bersih Driver */}
-                <div className="p-3.5 bg-emerald-50/70 border border-emerald-100 rounded-xl space-y-1.5 animate-in fade-in duration-200">
+                <div className="p-3.5 bg-emerald-50/70 border border-emerald-100 rounded-md space-y-1.5 animate-in fade-in duration-200">
                   <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">
                     Kisaran Pendapatan Bersih Driver
                   </span>
 
                   <div className="grid grid-cols-2 gap-2 text-slate-600 text-xs font-semibold">
-                    <div className="bg-white p-2 rounded-lg border border-slate-100">
+                    <div className="bg-white p-2 rounded-sm border border-slate-100">
                       <span className="block text-[8px] text-slate-400 font-bold uppercase">Jarak Pulang-Pergi</span>
                       <span className="text-xs font-extrabold text-slate-700">{(calcDistance * 2).toFixed(1)} km</span>
                     </div>
-                    <div className="bg-white p-2 rounded-lg border border-slate-100">
+                    <div className="bg-white p-2 rounded-sm border border-slate-100">
                       <span className="block text-[8px] text-slate-400 font-bold uppercase">Estimasi Waktu PP</span>
                       <span className="text-xs font-extrabold text-slate-700">{(calcDuration ? calcDuration * 2 : 0).toFixed(1)} jam</span>
                     </div>
@@ -2876,19 +2876,19 @@ function DriverJourneysContent() {
               );
             })()}
 
-            <DialogFooter className="pt-2 border-t border-slate-100 gap-2">
+            <DialogFooter className="rounded-b-md pt-2 border-t border-slate-100 gap-2">
               <Button
                 type="button"
                 variant="ghost"
                 onClick={closeJourneyForm}
-                className="rounded-xl font-bold text-slate-500 hover:bg-slate-50 text-xs px-4"
+                className="rounded-sm font-bold text-slate-500 hover:bg-slate-50 text-xs px-4"
               >
                 Batal
               </Button>
               <Button
                 type="submit"
                 disabled={saving || calcDistance === null}
-                className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 h-10"
+                className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 h-10"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
                 Otorisasi & Publikasikan
@@ -2906,7 +2906,7 @@ function DriverJourneysContent() {
           setShowMapSelector(open);
         }}
       >
-        <DialogContent className="sm:max-w-[500px] rounded-2xl bg-white border-slate-100 shadow-2xl p-6">
+        <DialogContent className="sm:max-w-[500px] rounded-md bg-white border-slate-100 shadow-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-base font-extrabold text-slate-800 flex items-center gap-2">
               <MapPin className="w-5 h-5 text-indigo-600" />
@@ -2919,7 +2919,7 @@ function DriverJourneysContent() {
 
           <div className="space-y-4 pt-2">
             {/* Search Input inside Map (Google Maps Themed Style) */}
-            <div className="relative flex items-center bg-white border border-slate-200 rounded-2xl shadow-sm h-11 px-3.5 gap-2.5 focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-400 transition-all">
+            <div className="relative flex items-center bg-white border border-slate-200 rounded-sm shadow-sm h-11 px-3.5 gap-2.5 focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-400 transition-all">
               <div className="flex items-center justify-center w-5 text-indigo-500 shrink-0">
                 <Compass className="w-4.5 h-4.5 animate-pulse" />
               </div>
@@ -2939,7 +2939,7 @@ function DriverJourneysContent() {
                 }}
                 onBlur={() => window.setTimeout(cancelPlaceSearch, 150)}
                 autoComplete="off"
-                className="flex-1 border-none bg-transparent p-0 focus-visible:ring-0 text-xs font-bold text-slate-700 h-full placeholder:text-slate-400"
+                className="rounded-sm flex-1 border-none bg-transparent p-0 focus-visible:ring-0 text-xs font-bold text-slate-700 h-full placeholder:text-slate-400"
               />
               {mapSearchText && (
                 <button
@@ -2952,7 +2952,7 @@ function DriverJourneysContent() {
                     setMapSearchError('');
                     cancelPlaceSearch();
                   }}
-                  className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-slate-100 transition-all text-slate-400 hover:text-slate-600 shrink-0"
+                  className="w-6 h-6 rounded-sm flex items-center justify-center hover:bg-slate-100 transition-all text-slate-400 hover:text-slate-600 shrink-0"
                 >
                   <XCircle className="w-4 h-4" />
                 </button>
@@ -2961,14 +2961,14 @@ function DriverJourneysContent() {
               <button
                 type="button"
                 onClick={selectFirstSuggestion}
-                className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-indigo-50 transition-all text-indigo-500 hover:text-indigo-600 shrink-0 cursor-pointer"
+                className="w-6 h-6 rounded-sm flex items-center justify-center hover:bg-indigo-50 transition-all text-indigo-500 hover:text-indigo-600 shrink-0 cursor-pointer"
                 title="Pilih saran lokasi teratas"
               >
                 <Search className="w-4.5 h-4.5" />
               </button>
 
               {(isSearchingPlaces || placeSuggestions.length > 0) && (
-                <div className="absolute left-0 right-0 top-full z-[70] mt-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                <div className="absolute left-0 right-0 top-full z-[70] mt-1 overflow-hidden rounded-md border border-slate-200 bg-white shadow-xl">
                   {isSearchingPlaces && (
                     <div className="flex items-center gap-2 px-3 py-2 text-[10px] font-bold text-slate-500">
                       <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-600" />
@@ -3022,7 +3022,7 @@ function DriverJourneysContent() {
                   initMap(el);
                 }
               }}
-              className="w-full h-[280px] rounded-xl border border-slate-100 overflow-hidden bg-slate-50 relative flex items-center justify-center"
+              className="w-full h-[280px] rounded-md border border-slate-100 overflow-hidden bg-slate-50 relative flex items-center justify-center"
             >
               <div className="flex flex-col items-center gap-2 text-slate-400">
                 <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
@@ -3032,7 +3032,7 @@ function DriverJourneysContent() {
 
             {/* Selected Address Box */}
             {mapAddress && (
-              <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-600 leading-relaxed font-semibold">
+              <div className="p-3 bg-slate-50 border border-slate-100 rounded-md text-xs text-slate-600 leading-relaxed font-semibold">
                 <span className="text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">Alamat Terpilih:</span>
                 📍 {mapAddress}
                 {mapLocation && (
@@ -3043,7 +3043,7 @@ function DriverJourneysContent() {
               </div>
             )}
 
-            <DialogFooter className="pt-2 border-t border-slate-100 gap-2">
+            <DialogFooter className="rounded-b-md pt-2 border-t border-slate-100 gap-2">
               <Button
                 type="button"
                 variant="ghost"
@@ -3051,7 +3051,7 @@ function DriverJourneysContent() {
                   cancelPlaceSearch();
                   setShowMapSelector(false);
                 }}
-                className="rounded-xl font-bold text-slate-500 hover:bg-slate-50 text-xs px-4"
+                className="rounded-sm font-bold text-slate-500 hover:bg-slate-50 text-xs px-4"
               >
                 Batal
               </Button>
@@ -3079,7 +3079,7 @@ function DriverJourneysContent() {
                   cancelPlaceSearch();
                   setShowMapSelector(false);
                 }}
-                className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 h-10"
+                className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 h-10"
               >
                 Konfirmasi Lokasi
               </Button>
@@ -3089,13 +3089,13 @@ function DriverJourneysContent() {
       </Dialog>
 
       <Dialog open={showFuelLedger} onOpenChange={setShowFuelLedger}>
-        <DialogContent className="sm:max-w-2xl rounded-2xl bg-white p-6">
+        <DialogContent className="sm:max-w-2xl rounded-md bg-white p-6">
           <DialogHeader>
             <DialogTitle className="text-base font-extrabold text-slate-800">Riwayat Saldo BBM {fuelLedgerVehicle || ''}</DialogTitle>
             <DialogDescription className="text-xs text-slate-500">Riwayat append-only dan penetapan saldo BBM bertanda tangan.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 max-h-[60vh] overflow-y-auto">
-            <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 grid grid-cols-1 sm:grid-cols-[150px_1fr_auto] gap-2 items-end">
+            <div className="rounded-md border border-indigo-100 bg-indigo-50/60 p-3 grid grid-cols-1 sm:grid-cols-[150px_1fr_auto] gap-2 items-end">
               <div>
                 <Label htmlFor="fuel-balance-target" className="text-[10px] font-bold text-indigo-900">Set saldo BBM (Tersedia)</Label>
                 <div className="relative mt-1">
@@ -3108,21 +3108,21 @@ function DriverJourneysContent() {
                     value={fuelBalanceTarget}
                     onChange={(event) => setFuelBalanceTarget(formatRupiahInput(event.target.value))}
                     placeholder="500.000"
-                    className="h-9 bg-white pl-9 text-xs font-bold tabular-nums"
+                    className="rounded-sm h-9 bg-white pl-9 text-xs font-bold tabular-nums"
                   />
                 </div>
               </div>
               <div>
                 <Label className="text-[10px] font-bold text-indigo-900">Alasan wajib</Label>
-                <Input value={fuelAdjustmentReason} onChange={(event) => setFuelAdjustmentReason(event.target.value)} placeholder="Koreksi saldo berdasarkan dokumen..." className="mt-1 h-9 text-xs bg-white" />
+                <Input value={fuelAdjustmentReason} onChange={(event) => setFuelAdjustmentReason(event.target.value)} placeholder="Koreksi saldo berdasarkan dokumen..." className="rounded-sm mt-1 h-9 text-xs bg-white" />
               </div>
-              <Button type="button" onClick={submitFuelAdjustment} disabled={fuelAdjustmentSaving} className="h-9 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-xs font-bold">
+              <Button type="button" onClick={submitFuelAdjustment} disabled={fuelAdjustmentSaving} className="h-9 rounded-sm bg-indigo-600 hover:bg-indigo-700 text-xs font-bold">
                 {fuelAdjustmentSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Set saldo'}
               </Button>
             </div>
             <div className="space-y-2">
               {fuelLedgerEntries.map((entry) => (
-                <div key={String(entry.id)} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 text-[10px]">
+                <div key={String(entry.id)} className="rounded-md border border-slate-100 bg-slate-50/70 p-3 text-[10px]">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-black text-slate-800">{String(entry.eventType || 'event')}</span>
                     <div className="flex flex-wrap gap-2 font-bold text-slate-500">
@@ -3137,8 +3137,8 @@ function DriverJourneysContent() {
               {fuelLedgerEntries.length === 0 && <p className="text-xs text-slate-400 font-semibold">Belum ada riwayat.</p>}
             </div>
           </div>
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setShowFuelLedger(false)} className="text-xs font-bold">Tutup</Button>
+          <DialogFooter className="rounded-b-md">
+            <Button type="button" variant="ghost" onClick={() => setShowFuelLedger(false)} className="rounded-sm text-xs font-bold">Tutup</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3159,7 +3159,7 @@ function DriverJourneysContent() {
 
       {/* ── Decline SPJ Dialog ────────────────────────────────────────────── */}
       <Dialog open={declineTarget !== null} onOpenChange={(open) => { if (!open) setDeclineTarget(null); }}>
-        <DialogContent className="sm:max-w-md rounded-3xl border-none shadow-2xl bg-white p-6">
+        <DialogContent className="sm:max-w-md rounded-md border-none shadow-2xl bg-white p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
               <ThumbsDown className="w-5 h-5 text-rose-500" />
@@ -3172,7 +3172,7 @@ function DriverJourneysContent() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1 text-xs">
+            <div className="p-3 rounded-md bg-slate-50 border border-slate-100 space-y-1 text-xs">
               <div className="flex justify-between">
                 <span className="text-slate-400 font-semibold">Tanggal</span>
                 <span className="font-bold text-slate-700">{declineTarget?.activityDate}</span>
@@ -3191,19 +3191,19 @@ function DriverJourneysContent() {
                 placeholder="Contoh: Bukti BBM tidak sesuai nominal"
                 value={declineReason}
                 onChange={(e) => setDeclineReason(e.target.value)}
-                className="rounded-xl border-slate-200 focus:border-rose-400 focus:ring-rose-400/20 text-sm"
+                className="rounded-sm border-slate-200 focus:border-rose-400 focus:ring-rose-400/20 text-sm"
                 autoFocus
               />
             </div>
           </div>
-          <DialogFooter className="gap-3">
-            <Button variant="ghost" onClick={() => setDeclineTarget(null)} className="rounded-xl font-bold text-slate-500">
+          <DialogFooter className="rounded-b-md gap-3">
+            <Button variant="ghost" onClick={() => setDeclineTarget(null)} className="rounded-sm font-bold text-slate-500">
               Batal
             </Button>
             <Button
               onClick={handleDeclineSopirReport}
               disabled={actionLoading}
-              className="rounded-xl bg-rose-500 text-white font-bold hover:bg-rose-600 shadow-md shadow-rose-100"
+              className="rounded-sm bg-rose-500 text-white font-bold hover:bg-rose-600 shadow-md shadow-rose-100"
             >
               {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <XCircle className="w-4 h-4 mr-2" />}
               Konfirmasi Tolak

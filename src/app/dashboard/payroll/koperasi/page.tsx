@@ -55,15 +55,15 @@ function KoperasiPageContent() {
 
   const navigation = <div className="mb-6 space-y-3">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="inline-flex gap-1 rounded-xl border border-slate-200/70 bg-white p-1 shadow-sm" aria-label="Tampilan Koperasi">
-        {(['koperasi', 'simpan-pinjam'] as const).map(value => <Button key={value} variant={view === value ? 'default' : 'ghost'} className={view === value ? 'rounded-lg bg-indigo-600 text-white shadow-sm hover:bg-indigo-700' : 'rounded-lg text-slate-600 hover:bg-indigo-50 hover:text-indigo-700'} aria-pressed={view === value} onClick={() => {
+      <div className="inline-flex gap-1 rounded-md border border-slate-200/70 bg-white p-1 shadow-sm" aria-label="Tampilan Koperasi">
+        {(['koperasi', 'simpan-pinjam'] as const).map(value => <Button key={value} variant={view === value ? 'default' : 'ghost'} className={view === value ? 'rounded-sm bg-indigo-600 text-white shadow-sm hover:bg-indigo-700' : 'rounded-sm text-slate-600 hover:bg-indigo-50 hover:text-indigo-700'} aria-pressed={view === value} onClick={() => {
           const params = new URLSearchParams(searchParams.toString()); params.set('view', value);
           router.push(`/dashboard/payroll/koperasi?${params}`, { scroll: false });
         }}>{value === 'koperasi' ? 'Koperasi' : 'Simpan Pinjam'}</Button>)}
       </div>
-      <Button variant="outline" className="h-9 rounded-xl border-slate-200 bg-white px-4 text-xs font-semibold text-slate-700 shadow-sm hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700" disabled={loading} onClick={() => void reload()}><RefreshCw className={loading ? 'size-4 animate-spin text-indigo-600' : 'size-4 text-indigo-600'} />Muat ulang</Button>
+      <Button variant="outline" className="h-9 rounded-sm border-slate-200 bg-white px-4 text-xs font-semibold text-slate-700 shadow-sm hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700" disabled={loading} onClick={() => void reload()}><RefreshCw className={loading ? 'size-4 animate-spin text-indigo-600' : 'size-4 text-indigo-600'} />Muat ulang</Button>
     </div>
-    {error && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{error.message} Gunakan Muat ulang sebelum mengubah data.</p>}
+    {error && <p role="alert" className="rounded-md bg-rose-50 p-3 text-sm text-rose-700">{error.message} Gunakan Muat ulang sebelum mengubah data.</p>}
   </div>;
 
   if (data && view === 'simpan-pinjam') return <SimpanPinjamAuditView loans={data.loans} kopUsers={data.members.map(member => ({ ...member, uid: member.uid || undefined, nama: member.nama || '', nik: member.nik || '', email: member.email || '' }))} employees={data.employees.filter(employee => employee.name)} navigation={navigation} />;

@@ -121,10 +121,10 @@ export default function CetakKegiatanLoyalisDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md rounded-[28px] border-none shadow-2xl p-0 bg-white">
+      <DialogContent className="sm:max-w-md rounded-md border-none shadow-2xl p-0 bg-white">
         <DialogHeader className="p-6 pb-4 bg-gradient-to-r from-indigo-50/80 to-purple-50/60 border-b border-slate-100">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-400 flex items-center justify-center shadow-sm">
+            <div className="w-10 h-10 rounded-sm bg-gradient-to-tr from-indigo-500 to-purple-400 flex items-center justify-center shadow-sm">
               <FileText className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -147,7 +147,7 @@ export default function CetakKegiatanLoyalisDialog({
               <select
                 value={selectedDept}
                 onChange={(e) => setSelectedDept(e.target.value)}
-                className="w-full bg-white border border-slate-200 text-slate-600 text-sm font-semibold rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-sm"
+                className="w-full bg-white border border-slate-200 text-slate-600 text-sm font-semibold rounded-sm px-3 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-sm"
               >
                 <option value="Semua Departemen">Semua Departemen</option>
                 {activeDepartments.map(dept => (
@@ -161,19 +161,19 @@ export default function CetakKegiatanLoyalisDialog({
           </div>
         </div>
 
-        <DialogFooter className="p-6 pt-4 bg-slate-50/50 border-t border-slate-100">
+        <DialogFooter className="rounded-b-md p-6 pt-4 bg-slate-50/50 border-t border-slate-100">
           <Button
             type="button"
             variant="ghost"
             onClick={() => onOpenChange(false)}
-            className="rounded-xl text-slate-500"
+            className="rounded-sm text-slate-500"
           >
             Batal
           </Button>
           <Button
             type="button"
             onClick={handlePrint}
-            className="rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600 shadow-md shadow-indigo-200 px-6"
+            className="rounded-sm bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600 shadow-md shadow-indigo-200 px-6"
           >
             <Printer className="w-4 h-4 mr-2" />
             Cetak PDF

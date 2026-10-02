@@ -288,7 +288,7 @@ export default function SpjPekaryaPage() {
       <FloatingSnackbar message={message} />
 
       {!category ? (
-        <Card className="bg-white rounded-[20px] p-12 text-center flex flex-col items-center justify-center min-h-[400px] border-none shadow-sm">
+        <Card className="bg-white rounded-md p-12 text-center flex flex-col items-center justify-center min-h-[400px] border-none shadow-sm">
           <Building2 className="w-12 h-12 text-slate-300 mb-4 animate-pulse" />
           <h4 className="text-slate-700 font-bold text-sm">Pilih Unit/Kategori Terlebih Dahulu</h4>
           <p className="text-xs text-slate-400 mt-1.5 max-w-xs">Silakan pilih kategori satuan kerja di bar filter atas untuk melihat dan membuat kegiatan SPJ Pekarya.</p>
@@ -298,7 +298,7 @@ export default function SpjPekaryaPage() {
           
           {/* Left Side List */}
           <div className={`xl:col-span-4 space-y-6 ${mobileSpjView === 'list' ? 'block' : 'hidden xl:block'}`}>
-            <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6">
+            <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="font-bold text-slate-800 text-sm">Daftar Kegiatan SPJ</h3>
                 <Button
@@ -310,7 +310,7 @@ export default function SpjPekaryaPage() {
                     setMobileSpjView('form');
                   }}
                   size="sm"
-                  className="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl font-bold flex items-center gap-1.5"
+                  className="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-sm font-bold flex items-center gap-1.5"
                 >
                   <Plus className="w-4.5 h-4.5" /> Baru
                 </Button>
@@ -345,7 +345,7 @@ export default function SpjPekaryaPage() {
                           setSpjWorkerRows(rows.length > 0 ? rows : [{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
                           setMobileSpjView('form');
                         }}
-                        className={`p-4 rounded-xl border transition-all duration-200 cursor-pointer ${
+                        className={`p-4 rounded-md border transition-all duration-200 cursor-pointer ${
                           isActive
                             ? 'bg-indigo-50/50 border-indigo-300 shadow-sm'
                             : 'bg-white border-slate-100 hover:border-indigo-100'
@@ -354,13 +354,13 @@ export default function SpjPekaryaPage() {
                         <div className="flex items-center justify-between gap-2">
                           <div className="font-bold text-slate-800 text-xs line-clamp-1">{evt.eventName}</div>
                           {evt.sourceKind === VAKASI_PEKARYA_PROJECTION_SOURCE_KIND && (
-                            <span className="shrink-0 rounded-md bg-violet-100 px-2 py-0.5 text-[8px] font-black uppercase tracking-wide text-violet-700">
+                            <span className="shrink-0 rounded-sm bg-violet-100 px-2 py-0.5 text-[8px] font-black uppercase tracking-wide text-violet-700">
                               Vakasi Tambahan
                             </span>
                           )}
                         </div>
                         <div className="flex items-center justify-between mt-3 text-[10px] text-slate-400 font-medium">
-                          <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-600 font-bold uppercase tracking-wider">
+                          <span className="bg-slate-100 px-2 py-0.5 rounded-sm text-slate-600 font-bold uppercase tracking-wider">
                             {evt.variablePay ? 'Nominal per penerima' : `${fmtRp(evt.eventFee || 0)} / org`}
                           </span>
                           <span>{wCount} Pegawai · {fmtRp(evt.totalPayout || 0)}</span>
@@ -375,20 +375,20 @@ export default function SpjPekaryaPage() {
 
           {/* Right Side Form */}
           <div className={`xl:col-span-8 ${mobileSpjView === 'form' ? 'block' : 'hidden xl:block'}`}>
-            <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
+            <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
               <div className="flex justify-between items-center pb-4 border-b border-slate-100">
                 <h3 className="font-bold text-slate-800 text-sm">
                   {selectedSpjEventId ? 'Ubah Rincian Kegiatan SPJ' : 'Formulir Kegiatan SPJ Baru'}
                 </h3>
                 {selectedSpjEventId && (
-                  <Button variant="ghost" size="sm" onClick={() => setMobileSpjView('list')} className="xl:hidden text-slate-500 text-xs">
+                  <Button variant="ghost" size="sm" onClick={() => setMobileSpjView('list')} className="rounded-sm xl:hidden text-slate-500 text-xs">
                     Lihat Daftar
                   </Button>
                 )}
               </div>
 
               {isVakasiProjection && (
-                <div className="flex items-start gap-3 rounded-2xl border border-violet-200 bg-violet-50 p-4 text-xs text-violet-900">
+                <div className="flex items-start gap-3 rounded-md border border-violet-200 bg-violet-50 p-4 text-xs text-violet-900">
                   <Lock className="mt-0.5 h-4 w-4 shrink-0 text-violet-600" />
                   <div>
                     <p className="font-black">Proyeksi otomatis Vakasi Tambahan</p>
@@ -408,7 +408,7 @@ export default function SpjPekaryaPage() {
                     value={spjEventName}
                     disabled={isVakasiProjection}
                     onChange={(e) => setSpjEventName(e.target.value)}
-                    className="rounded-xl border-slate-200 font-semibold text-slate-800 text-sm focus:border-indigo-500 h-10"
+                    className="rounded-sm border-slate-200 font-semibold text-slate-800 text-sm focus:border-indigo-500 h-10"
                   />
                 </div>
 
@@ -426,7 +426,7 @@ export default function SpjPekaryaPage() {
                       setSpjEventFee(val);
                       setSpjWorkerRows(prev => prev.map(r => ({ ...r, payGiven: val })));
                     }}
-                    className="rounded-xl border-slate-200 font-bold text-slate-800 text-sm focus:border-indigo-500 text-right h-10"
+                    className="rounded-sm border-slate-200 font-bold text-slate-800 text-sm focus:border-indigo-500 text-right h-10"
                   />
                 </div>
               </div>
@@ -434,7 +434,7 @@ export default function SpjPekaryaPage() {
               {/* Workers Rows */}
               <div className="space-y-4 pt-2">
                 <h4 className="font-bold text-slate-700 text-xs uppercase tracking-wider">Daftar Penerima SPJ Pekarya</h4>
-                <div className="border border-slate-100 rounded-[20px] bg-slate-50/50 p-4 space-y-3">
+                <div className="border border-slate-100 rounded-md bg-slate-50/50 p-4 space-y-3">
                   {spjWorkerRows.map((row, idx) => (
                     <div key={idx} className="flex items-center gap-3">
                       <div className="flex-1 relative">
@@ -469,10 +469,10 @@ export default function SpjPekaryaPage() {
                               });
                             }, 200);
                           }}
-                          className={`rounded-xl border-slate-200 font-semibold text-slate-800 text-xs h-9 bg-white pr-8 ${row.isInvalid ? 'border-red-300 bg-red-50 text-red-800' : ''}`}
+                          className={`rounded-sm border-slate-200 font-semibold text-slate-800 text-xs h-9 bg-white pr-8 ${row.isInvalid ? 'border-red-300 bg-red-50 text-red-800' : ''}`}
                         />
                         {row.showDropdown && (
-                          <div className="absolute left-0 right-0 top-10 max-h-40 overflow-y-auto bg-white border border-slate-100 rounded-xl shadow-2xl z-50 divide-y divide-slate-50">
+                          <div className="absolute left-0 right-0 top-10 max-h-40 overflow-y-auto bg-white border border-slate-100 rounded-md shadow-2xl z-50 divide-y divide-slate-50">
                             {(() => {
                               const search = (row.searchText || '').toLowerCase();
                               const filtered = blueCollarEmployees.filter(emp =>
@@ -511,7 +511,7 @@ export default function SpjPekaryaPage() {
                           const nextRows = spjWorkerRows.filter((_, i) => i !== idx);
                           setSpjWorkerRows(nextRows.length > 0 ? nextRows : [{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
                         }}
-                        className="text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl h-9 w-9 p-0 flex items-center justify-center"
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50 rounded-sm h-9 w-9 p-0 flex items-center justify-center"
                       >
                         <Trash className="w-4 h-4" />
                       </Button>}
@@ -521,7 +521,7 @@ export default function SpjPekaryaPage() {
                     type="button"
                     onClick={handleSpjAddRow}
                     variant="outline"
-                    className="w-full rounded-xl border-slate-200 text-slate-500 hover:bg-slate-100 text-xs font-semibold h-9 flex items-center justify-center gap-1.5"
+                    className="w-full rounded-sm border-slate-200 text-slate-500 hover:bg-slate-100 text-xs font-semibold h-9 flex items-center justify-center gap-1.5"
                   >
                     <Plus className="w-4.5 h-4.5 text-indigo-500" /> Tambah Pegawai
                   </Button>}
@@ -534,7 +534,7 @@ export default function SpjPekaryaPage() {
                   <Button
                     onClick={() => handleDeleteSpjEvent(selectedSpjEventId)}
                     variant="ghost"
-                    className="rounded-xl text-rose-500 hover:text-rose-700 hover:bg-rose-50 font-bold px-5 text-xs h-10 flex items-center gap-1.5"
+                    className="rounded-sm text-rose-500 hover:text-rose-700 hover:bg-rose-50 font-bold px-5 text-xs h-10 flex items-center gap-1.5"
                   >
                     <Trash className="w-4 h-4" /> Hapus
                   </Button>
@@ -542,7 +542,7 @@ export default function SpjPekaryaPage() {
                 <Button
                   onClick={handleSaveSpjEvent}
                   disabled={saving || isVakasiProjection}
-                  className="rounded-xl px-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-lg shadow-indigo-100 transition-all flex items-center gap-2 h-10 text-xs cursor-pointer"
+                  className="rounded-sm px-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-lg shadow-indigo-100 transition-all flex items-center gap-2 h-10 text-xs cursor-pointer"
                 >
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
                   {isVakasiProjection ? 'Dikelola dari Vakasi' : 'Simpan SPJ'}

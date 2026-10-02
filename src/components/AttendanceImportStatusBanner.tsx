@@ -69,7 +69,7 @@ export function AttendanceImportStatusBanner({
 
   if (independent) {
     return (
-      <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+      <div className="rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
         <Info className="mr-1.5 inline h-4 w-4 align-text-bottom" />
         Izin jenis ini diputuskan langsung oleh Kepala SatKer lewat rencana
         dinas dan hak izin Anda — tidak menunggu presensi bulanan sama sekali.
@@ -80,7 +80,7 @@ export function AttendanceImportStatusBanner({
   if (!applicable || isLoading || isError || !data) return null;
 
   const isAdmin = variant === 'admin';
-  const shell = isAdmin ? 'rounded-2xl p-5' : 'rounded-xl p-4';
+  const shell = isAdmin ? 'rounded-md p-5' : 'rounded-md p-4';
 
   if (!data.imported) {
     return (

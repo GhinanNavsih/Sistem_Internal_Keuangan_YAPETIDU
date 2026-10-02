@@ -460,7 +460,7 @@ function InlinePhotoWithExif({
     : undefined;
 
   return (
-    <div className={`relative group rounded-xl overflow-hidden border border-slate-200 bg-slate-950 shadow-xs ${className || 'aspect-[4/3]'}`}>
+    <div className={`relative group rounded-sm overflow-hidden border border-slate-200 bg-slate-950 shadow-xs ${className || 'aspect-[4/3]'}`}>
       {/* Photo Image */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
@@ -478,7 +478,7 @@ function InlinePhotoWithExif({
             {/* Datetime Pill */}
             {capturedDate ? (
               <div
-                className={`flex items-center gap-1 text-[9.5px] px-2.5 py-0.5 rounded-full backdrop-blur-md border shadow-md ${
+                className={`flex items-center gap-1 text-[9.5px] px-2.5 py-0.5 rounded-sm backdrop-blur-md border shadow-md ${
                   dateMismatch
                     ? 'bg-amber-950/40 text-amber-200 border-amber-500/50 font-black'
                     : 'bg-black/40 text-white border-white/25 font-bold'
@@ -495,7 +495,7 @@ function InlinePhotoWithExif({
                 </span>
               </div>
             ) : (
-              <div className="flex items-center gap-1 text-[8.5px] font-bold text-slate-300 bg-black/35 backdrop-blur-md border border-white/15 px-2 py-0.5 rounded-full shadow-md">
+              <div className="flex items-center gap-1 text-[8.5px] font-bold text-slate-300 bg-black/35 backdrop-blur-md border border-white/15 px-2 py-0.5 rounded-sm shadow-md">
                 <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
                 <span>Tanpa Waktu Foto</span>
               </div>
@@ -508,21 +508,21 @@ function InlinePhotoWithExif({
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={(e) => e.stopPropagation()}
-                className="pointer-events-auto flex items-center gap-1 text-[9px] font-extrabold text-sky-300 hover:text-white bg-black/40 hover:bg-black/65 backdrop-blur-md border border-sky-400/35 px-2.5 py-0.5 rounded-full shadow-md transition-colors truncate max-w-full"
+                className="pointer-events-auto flex items-center gap-1 text-[9px] font-extrabold text-sky-300 hover:text-white bg-black/40 hover:bg-black/65 backdrop-blur-md border border-sky-400/35 px-2.5 py-0.5 rounded-sm shadow-md transition-colors truncate max-w-full"
                 title={auditMetadata.locationAddress || 'Buka lokasi di Google Maps'}
               >
                 <MapPin className="w-2.5 h-2.5 text-sky-400 shrink-0" />
                 <span className="truncate">{auditMetadata.locationName || `${auditMetadata.latitude!.toFixed(4)}, ${auditMetadata.longitude!.toFixed(4)}`} ↗</span>
               </a>
             ) : (
-              <div className="flex items-center gap-1 text-[8.5px] font-bold text-slate-300 bg-black/35 backdrop-blur-md border border-white/15 px-2 py-0.5 rounded-full shadow-md">
+              <div className="flex items-center gap-1 text-[8.5px] font-bold text-slate-300 bg-black/35 backdrop-blur-md border border-white/15 px-2 py-0.5 rounded-sm shadow-md">
                 <Compass className="w-2.5 h-2.5 text-slate-400 shrink-0" />
                 <span>Tanpa GPS</span>
               </div>
             )}
           </>
         ) : (
-          <div className="flex items-center gap-1 text-[8.5px] font-bold text-slate-300 bg-black/35 backdrop-blur-md border border-white/15 px-2 py-0.5 rounded-full shadow-md">
+          <div className="flex items-center gap-1 text-[8.5px] font-bold text-slate-300 bg-black/35 backdrop-blur-md border border-white/15 px-2 py-0.5 rounded-sm shadow-md">
             <Info className="w-2.5 h-2.5 text-slate-400 shrink-0" />
             <span>Metadata Belum Direkam</span>
           </div>
@@ -537,7 +537,7 @@ function InlinePhotoWithExif({
         <button
           type="button"
           onClick={onZoom}
-          className="px-2.5 py-1.5 bg-white/95 hover:bg-white text-slate-900 rounded-lg font-extrabold text-[10px] flex items-center gap-1 shadow-md transition-all backdrop-blur-xs cursor-pointer"
+          className="px-2.5 py-1.5 bg-white/95 hover:bg-white text-slate-900 rounded-sm font-extrabold text-[10px] flex items-center gap-1 shadow-md transition-all backdrop-blur-xs cursor-pointer"
         >
           <Eye className="w-3 h-3 text-indigo-600" /> Perbesar & Metadata
         </button>
@@ -547,7 +547,7 @@ function InlinePhotoWithExif({
       <button
         type="button"
         onClick={onZoom}
-        className="absolute bottom-1.5 right-1.5 bg-black/40 hover:bg-black/70 backdrop-blur-md text-white rounded-full text-[8.5px] font-extrabold px-2 py-0.5 flex items-center gap-1 cursor-pointer z-10 border border-white/20 shadow-xs transition-colors"
+        className="absolute bottom-1.5 right-1.5 bg-black/40 hover:bg-black/70 backdrop-blur-md text-white rounded-sm text-[8.5px] font-extrabold px-2 py-0.5 flex items-center gap-1 cursor-pointer z-10 border border-white/20 shadow-xs transition-colors"
       >
         <Maximize2 className="w-2.5 h-2.5 text-slate-300" /> Zoom
       </button>
@@ -2457,12 +2457,12 @@ function ActivityReviewPageContent() {
         </Suspense>
       ) : null}
 
-      <div className="max-w-[1600px] mx-auto p-6 lg:p-8 space-y-6 relative z-10">
+      <div className="p-6 lg:p-8 space-y-6 relative z-10">
 
         {/* ── Header ─────────────────────────────────────────────────── */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600 shadow-inner">
+            <div className="w-10 h-10 rounded-sm bg-teal-50 flex items-center justify-center text-teal-600 shadow-inner">
               <ClipboardCheck className="w-5 h-5" />
             </div>
             <div>
@@ -2472,12 +2472,12 @@ function ActivityReviewPageContent() {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v))}>
-              <SelectTrigger className="w-44 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
+              <SelectTrigger className="w-44 bg-white shadow-sm border-slate-200 rounded-sm font-semibold hover:border-indigo-300 transition-all">
                 <SelectValue>
                   {formatPayrollWindowLabel(periodToken)}
                 </SelectValue>
               </SelectTrigger>
-              <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+              <SelectContent className="rounded-md border-slate-100 shadow-xl bg-white">
                 {MONTHS_ID.map((_, i) => {
                   const now = new Date();
                   const currentYear = now.getFullYear();
@@ -2494,10 +2494,10 @@ function ActivityReviewPageContent() {
               </SelectContent>
             </Select>
             <Select value={String(year)} onValueChange={(v) => v && setYear(parseInt(v))}>
-              <SelectTrigger className="w-28 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
+              <SelectTrigger className="w-28 bg-white shadow-sm border-slate-200 rounded-sm font-semibold hover:border-indigo-300 transition-all">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+              <SelectContent className="rounded-md border-slate-100 shadow-xl bg-white">
                 {YEARS.map(y => {
                   const now = new Date();
                   const currentYear = now.getFullYear();
@@ -2515,7 +2515,7 @@ function ActivityReviewPageContent() {
               variant="outline"
               onClick={fetchActivities}
               disabled={loading || refreshing}
-              className="rounded-xl border-slate-200 bg-white text-slate-600 hover:bg-slate-50 shadow-sm"
+              className="rounded-sm border-slate-200 bg-white text-slate-600 hover:bg-slate-50 shadow-sm"
             >
               <RefreshCw className={`w-4 h-4 mr-2 ${loading || refreshing ? 'animate-spin' : ''}`} />
               Segarkan
@@ -2536,7 +2536,7 @@ function ActivityReviewPageContent() {
         />
 
         {/* ── Filters Row ────────────────────────────────────────────── */}
-        <Card className="bg-white rounded-2xl shadow-sm border-none">
+        <Card className="bg-white rounded-md shadow-sm border-none">
           <CardContent className="p-4">
             <div className="flex flex-col md:flex-row md:items-center gap-3">
               {profile?.role === 'satker_head' ? (
@@ -2546,14 +2546,14 @@ function ActivityReviewPageContent() {
                     value={categoryFilter}
                     onValueChange={(value) => value && setCategoryFilter(value)}
                   >
-                    <SelectTrigger className="h-12 w-full min-w-56 rounded-xl border-slate-200 bg-white text-base font-bold md:w-64">
+                    <SelectTrigger className="h-12 w-full min-w-56 rounded-sm border-slate-200 bg-white text-base font-bold md:w-64">
                       <SelectValue>
                         {categoryFilter === 'all'
                           ? 'Semua Kategori Pekarya'
                           : JOB_CATEGORY_LABELS[categoryFilter] || categoryFilter}
                       </SelectValue>
                     </SelectTrigger>
-                    <SelectContent className="rounded-xl bg-white">
+                    <SelectContent className="rounded-md bg-white">
                       <SelectItem value="all" className="min-h-11 text-base">Semua Kategori Pekarya</SelectItem>
                       {allowedCategories.map((category) => (
                         <SelectItem key={category} value={category} className="min-h-11 text-base">
@@ -2575,7 +2575,7 @@ function ActivityReviewPageContent() {
                       )
                     }
                   >
-                    <SelectTrigger className="h-12 w-full min-w-56 rounded-xl border-slate-200 bg-white text-base font-bold md:w-64">
+                    <SelectTrigger className="h-12 w-full min-w-56 rounded-sm border-slate-200 bg-white text-base font-bold md:w-64">
                       <SelectValue>
                         {reportTypeFilter === 'all' && 'Semua Jenis Laporan'}
                         {reportTypeFilter === 'activity' && 'SPJ / Kegiatan Pribadi'}
@@ -2584,7 +2584,7 @@ function ActivityReviewPageContent() {
                         {reportTypeFilter === 'shift' && 'Shift Regu Satpam'}
                       </SelectValue>
                     </SelectTrigger>
-                    <SelectContent className="rounded-xl bg-white">
+                    <SelectContent className="rounded-md bg-white">
                       <SelectItem value="all" className="min-h-11 text-base">Semua Jenis Laporan</SelectItem>
                       <SelectItem value="activity" className="min-h-11 text-base">SPJ / Kegiatan Pribadi</SelectItem>
                       <SelectItem value="found_item" className="min-h-11 text-base">Penemuan Barang</SelectItem>
@@ -2600,14 +2600,14 @@ function ActivityReviewPageContent() {
                     value={categoryFilter}
                     onValueChange={(value) => value && setCategoryFilter(value)}
                   >
-                    <SelectTrigger className="h-12 w-full min-w-56 rounded-xl border-slate-200 bg-white text-base font-bold md:w-56">
+                    <SelectTrigger className="h-12 w-full min-w-56 rounded-sm border-slate-200 bg-white text-base font-bold md:w-56">
                       <SelectValue>
                         {categoryFilter === 'all'
                           ? 'Semua Kategori'
                           : JOB_CATEGORY_LABELS[categoryFilter] || categoryFilter}
                       </SelectValue>
                     </SelectTrigger>
-                    <SelectContent className="rounded-xl bg-white">
+                    <SelectContent className="rounded-md bg-white">
                       <SelectItem value="all" className="min-h-11 text-base">Semua Kategori</SelectItem>
                       {existingCategories.map((category) => (
                         <SelectItem key={category} value={category} className="min-h-11 text-base">
@@ -2626,7 +2626,7 @@ function ActivityReviewPageContent() {
                   placeholder="Cari nama pegawai / kegiatan..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-sm bg-slate-50/50"
+                  className="pl-10 rounded-sm border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-sm bg-slate-50/50"
                 />
               </div>
             </div>
@@ -2638,7 +2638,7 @@ function ActivityReviewPageContent() {
           {/* Menunggu */}
           <button
             onClick={() => setStatusFilter(statusFilter === 'pending' ? 'all' : 'pending')}
-            className={`rounded-2xl shadow-sm text-center p-4 transition-all cursor-pointer ${statusFilter === 'pending'
+            className={`rounded-sm shadow-sm text-center p-4 transition-all cursor-pointer ${statusFilter === 'pending'
                 ? 'bg-amber-50 ring-2 ring-amber-400 shadow-amber-100'
                 : 'bg-white hover:bg-amber-50/40 hover:ring-1 hover:ring-amber-200'
               }`}
@@ -2650,7 +2650,7 @@ function ActivityReviewPageContent() {
           {/* Disetujui */}
           <button
             onClick={() => setStatusFilter(statusFilter === 'approved' ? 'all' : 'approved')}
-            className={`rounded-2xl shadow-sm text-center p-4 transition-all cursor-pointer ${statusFilter === 'approved'
+            className={`rounded-sm shadow-sm text-center p-4 transition-all cursor-pointer ${statusFilter === 'approved'
                 ? 'bg-emerald-50 ring-2 ring-emerald-400 shadow-emerald-100'
                 : 'bg-white hover:bg-emerald-50/40 hover:ring-1 hover:ring-emerald-200'
               }`}
@@ -2662,7 +2662,7 @@ function ActivityReviewPageContent() {
           {/* Ditolak */}
           <button
             onClick={() => setStatusFilter(statusFilter === 'declined' ? 'all' : 'declined')}
-            className={`rounded-2xl shadow-sm text-center p-4 transition-all cursor-pointer ${statusFilter === 'declined'
+            className={`rounded-sm shadow-sm text-center p-4 transition-all cursor-pointer ${statusFilter === 'declined'
                 ? 'bg-rose-50 ring-2 ring-rose-400 shadow-rose-100'
                 : 'bg-white hover:bg-rose-50/40 hover:ring-1 hover:ring-rose-200'
               }`}
@@ -2674,7 +2674,7 @@ function ActivityReviewPageContent() {
           {/* Total (show all) */}
           <button
             onClick={() => setStatusFilter('all')}
-            className={`rounded-2xl shadow-sm text-center p-4 transition-all cursor-pointer ${statusFilter === 'all'
+            className={`rounded-sm shadow-sm text-center p-4 transition-all cursor-pointer ${statusFilter === 'all'
                 ? 'bg-slate-100 ring-2 ring-slate-400'
                 : 'bg-white hover:bg-slate-50 hover:ring-1 hover:ring-slate-200'
               }`}
@@ -2684,7 +2684,7 @@ function ActivityReviewPageContent() {
           </button>
 
           {/* Total Fee (non-clickable) */}
-          <div className="bg-gradient-to-br from-teal-500 to-cyan-600 rounded-2xl shadow-lg shadow-teal-200/30 col-span-2 lg:col-span-1 p-4 text-center">
+          <div className="bg-gradient-to-br from-teal-500 to-cyan-600 rounded-md shadow-lg shadow-teal-200/30 col-span-2 lg:col-span-1 p-4 text-center">
             <div className="text-2xl font-extrabold text-white">{fmtRp(stats.totalFee)}</div>
             <div className="text-[11px] font-semibold text-teal-100 mt-0.5">Total Fee Disetujui</div>
           </div>
@@ -2692,9 +2692,9 @@ function ActivityReviewPageContent() {
 
         {/* ── Bulk Actions Bar ────────────────────────────────────────── */}
         {selectedIds.size > 0 && (
-          <Card className="bg-indigo-50 rounded-2xl border border-indigo-100 shadow-sm animate-in fade-in slide-in-from-top-2 duration-200">
+          <Card className="bg-indigo-50 rounded-md border border-indigo-100 shadow-sm animate-in fade-in slide-in-from-top-2 duration-200">
             <CardContent className="p-4 flex items-center gap-3 flex-wrap">
-              <Badge className="bg-indigo-100 text-indigo-700 border-none font-bold rounded-lg px-3 py-1">
+              <Badge className="bg-indigo-100 text-indigo-700 border-none font-bold rounded-sm px-3 py-1">
                 {selectedIds.size} kegiatan dipilih
               </Badge>
               <div className="flex items-center gap-2 ml-auto">
@@ -2702,7 +2702,7 @@ function ActivityReviewPageContent() {
                   onClick={handleBulkApproveIndividual}
                   size="sm"
                   disabled={actionLoading}
-                  className="rounded-xl bg-emerald-500 text-white font-bold hover:bg-emerald-600 shadow-sm animate-pulse"
+                  className="rounded-sm bg-emerald-500 text-white font-bold hover:bg-emerald-600 shadow-sm animate-pulse"
                 >
                   <ThumbsUp className="w-3.5 h-3.5 mr-1.5" />
                   Setujui Terpilih
@@ -2712,7 +2712,7 @@ function ActivityReviewPageContent() {
                   size="sm"
                   variant="outline"
                   disabled={actionLoading}
-                  className="rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 font-bold"
+                  className="rounded-sm border-rose-200 text-rose-600 hover:bg-rose-50 font-bold"
                 >
                   <ThumbsDown className="w-3.5 h-3.5 mr-1.5" />
                   Tolak Terpilih
@@ -2723,7 +2723,7 @@ function ActivityReviewPageContent() {
         )}
 
         {/* ── Activity Table ─────────────────────────────────────────── */}
-        <Card className="bg-white rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.02)] border-none overflow-hidden">
+        <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.02)] border-none overflow-hidden">
           <CardContent className="p-0">
             {loading ? (
               <div className="p-24 flex flex-col items-center text-slate-400">
@@ -2820,7 +2820,7 @@ function ActivityReviewPageContent() {
                               <div className="flex flex-wrap gap-1 mt-1">
                                 <Badge
                                   variant="outline"
-                                  className={`text-[9px] px-1.5 py-0 h-4 font-bold ${
+                                  className={`rounded-sm text-[9px] px-1.5 py-0 h-4 font-bold ${
                                     missingPhotos === 0
                                       ? 'border-emerald-200 text-emerald-700 bg-emerald-50'
                                       : 'border-amber-200 text-amber-700 bg-amber-50'
@@ -2829,12 +2829,12 @@ function ActivityReviewPageContent() {
                                   {group.photoCount}/{group.assignments.length} berfoto
                                 </Badge>
                                 {group.offDuty.length > 0 && (
-                                  <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-slate-200 text-slate-500 font-medium">
+                                  <Badge variant="outline" className="rounded-sm text-[9px] px-1.5 py-0 h-4 border-slate-200 text-slate-500 font-medium">
                                     {group.offDuty.length} libur
                                   </Badge>
                                 )}
                                 {group.anomalyCodes.length > 0 && (
-                                  <Badge className="text-[9px] px-1.5 py-0 h-4 border-none bg-rose-100 text-rose-800 font-bold">
+                                  <Badge className="rounded-sm text-[9px] px-1.5 py-0 h-4 border-none bg-rose-100 text-rose-800 font-bold">
                                     {group.anomalyCodes.length} pengecualian
                                   </Badge>
                                 )}
@@ -2845,15 +2845,15 @@ function ActivityReviewPageContent() {
                               {statusFilter === 'all' && (
                                 <div className="mt-0.5">
                                   {isPending ? (
-                                    <Badge className="bg-amber-100 text-amber-800 border-none font-bold text-[10px]">
+                                    <Badge className="rounded-sm bg-amber-100 text-amber-800 border-none font-bold text-[10px]">
                                       {group.pendingCount} Menunggu Audit
                                     </Badge>
                                   ) : group.declinedCount > 0 ? (
-                                    <Badge className="bg-rose-100 text-rose-800 border-none font-bold text-[10px]">
+                                    <Badge className="rounded-sm bg-rose-100 text-rose-800 border-none font-bold text-[10px]">
                                       {group.approvedCount} Disetujui · {group.declinedCount} Ditolak
                                     </Badge>
                                   ) : (
-                                    <Badge className="bg-emerald-100 text-emerald-800 border-none font-bold text-[10px]">
+                                    <Badge className="rounded-sm bg-emerald-100 text-emerald-800 border-none font-bold text-[10px]">
                                       Disetujui
                                     </Badge>
                                   )}
@@ -2892,14 +2892,14 @@ function ActivityReviewPageContent() {
                                         <button
                                           type="button"
                                           onClick={() => handleBulkSetShiftVerdict(group, 'approve')}
-                                          className="px-3 py-1.5 rounded-xl text-[10px] font-extrabold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                                          className="px-3 py-1.5 rounded-sm text-[10px] font-extrabold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
                                         >
                                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Setujui Semua Pos
                                         </button>
                                         <button
                                           type="button"
                                           onClick={() => handleBulkSetShiftVerdict(group, 'decline')}
-                                          className="px-3 py-1.5 rounded-xl text-[10px] font-extrabold bg-rose-100 hover:bg-rose-200 text-rose-800 transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                                          className="px-3 py-1.5 rounded-sm text-[10px] font-extrabold bg-rose-100 hover:bg-rose-200 text-rose-800 transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
                                         >
                                           <XCircle className="w-3.5 h-3.5 text-rose-600" /> Tolak Semua Pos
                                         </button>
@@ -2914,15 +2914,15 @@ function ActivityReviewPageContent() {
                                   </div>
 
                                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                    <div className="rounded-xl border border-slate-200 bg-white p-3">
+                                    <div className="rounded-md border border-slate-200 bg-white p-3">
                                       <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Nilai Dikirim</p>
                                       <p className="mt-1 text-sm font-bold text-slate-800">{group.submittedDutyDate} · Shift {group.submittedShiftName || '—'}</p>
                                     </div>
-                                    <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+                                    <div className="rounded-md border border-blue-200 bg-blue-50 p-3">
                                       <p className="text-[10px] font-black uppercase tracking-wider text-blue-500">Saran Sistem</p>
                                       <p className="mt-1 text-sm font-bold text-blue-900">{group.dutyDate} · Shift {group.suggestedShiftName || '—'}</p>
                                     </div>
-                                    <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3">
+                                    <div className="rounded-md border border-indigo-200 bg-indigo-50 p-3">
                                       <p className="text-[10px] font-black uppercase tracking-wider text-indigo-500">Nilai Auditor</p>
                                       <p className="mt-1 text-sm font-bold text-indigo-900">
                                         {group.dutyDate} · Shift {group.shiftName || '—'}
@@ -2932,11 +2932,11 @@ function ActivityReviewPageContent() {
                                   </div>
 
                                   {group.anomalyCodes.length > 0 && (
-                                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                                    <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
                                       <p className="text-xs font-bold text-amber-950">Pengecualian yang perlu diperiksa</p>
                                       <div className="mt-2 flex flex-wrap gap-1.5">
                                         {group.anomalyCodes.map((code) => (
-                                          <Badge key={code} variant="outline" className="border-amber-300 bg-white text-amber-900 text-[10px]">
+                                          <Badge key={code} variant="outline" className="rounded-sm border-amber-300 bg-white text-amber-900 text-[10px]">
                                             {SATPAM_ANOMALY_LABELS[code] || code}
                                           </Badge>
                                         ))}
@@ -2959,7 +2959,7 @@ function ActivityReviewPageContent() {
                                           data-focus-assignment={
                                             isFocusedAssignment ? 'true' : undefined
                                           }
-                                          className={`p-3 rounded-2xl border bg-white space-y-2.5 flex flex-col justify-between transition-all ${
+                                          className={`p-3 rounded-md border bg-white space-y-2.5 flex flex-col justify-between transition-all ${
                                             isFocusedAssignment
                                               ? 'satpam-assignment-focus-flash border-amber-400 bg-yellow-50 ring-2 ring-amber-300 shadow-lg shadow-amber-100'
                                               : rowPending && verdict === 'decline'
@@ -2984,7 +2984,7 @@ function ActivityReviewPageContent() {
                                                 </p>
                                                 {item.plannedEmployeeId &&
                                                   item.plannedEmployeeId !== item.employeeId && (
-                                                  <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-semibold text-amber-900">
+                                                  <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-semibold text-amber-900">
                                                     Rencana: {
                                                       // A stored plannedEmployeeName equal to the raw id means an
                                                       // older auditor edit couldn't resolve it at write time (see
@@ -3022,7 +3022,7 @@ function ActivityReviewPageContent() {
                                               {!rowPending && (
                                                 <div className="flex shrink-0 items-center gap-1">
                                                   <Badge
-                                                    className={`border-none font-bold text-[9px] ${
+                                                    className={`rounded-sm border-none font-bold text-[9px] ${
                                                       item.status === 'approved'
                                                         ? 'bg-emerald-100 text-emerald-800'
                                                         : 'bg-rose-100 text-rose-800'
@@ -3036,7 +3036,7 @@ function ActivityReviewPageContent() {
                                                       title="Ubah petugas / kategori upah"
                                                       disabled={savingPayType}
                                                       onClick={() => openPayTypeEditor(item)}
-                                                      className="flex h-5 w-5 items-center justify-center rounded-md text-indigo-600 transition-colors hover:bg-indigo-50 cursor-pointer"
+                                                      className="flex h-5 w-5 items-center justify-center rounded-sm text-indigo-600 transition-colors hover:bg-indigo-50 cursor-pointer"
                                                     >
                                                       <Edit2 className="h-3 w-3" />
                                                     </button>
@@ -3047,7 +3047,7 @@ function ActivityReviewPageContent() {
                                                       title="Hapus laporan ini"
                                                       disabled={deletingActivity}
                                                       onClick={() => { setDeleteTarget(item); setDeleteReason(''); }}
-                                                      className="flex h-5 w-5 items-center justify-center rounded-md text-rose-500 transition-colors hover:bg-rose-50 cursor-pointer"
+                                                      className="flex h-5 w-5 items-center justify-center rounded-sm text-rose-500 transition-colors hover:bg-rose-50 cursor-pointer"
                                                     >
                                                       <Trash2 className="h-3 w-3" />
                                                     </button>
@@ -3062,7 +3062,7 @@ function ActivityReviewPageContent() {
                                                     title="Ubah petugas / kategori upah sebelum diputuskan"
                                                     disabled={savingPayType}
                                                     onClick={() => openPayTypeEditor(item)}
-                                                    className="flex h-5 w-5 items-center justify-center rounded-md text-indigo-600 transition-colors hover:bg-indigo-50 cursor-pointer"
+                                                    className="flex h-5 w-5 items-center justify-center rounded-sm text-indigo-600 transition-colors hover:bg-indigo-50 cursor-pointer"
                                                   >
                                                     <Edit2 className="h-3 w-3" />
                                                   </button>
@@ -3092,7 +3092,7 @@ function ActivityReviewPageContent() {
                                                 }
                                               />
                                             ) : (
-                                              <div className="w-full flex-1 min-h-[160px] bg-amber-50 border border-amber-200 text-amber-800 rounded-xl font-bold text-[11px] flex flex-col items-center justify-center gap-1 p-3 text-center">
+                                              <div className="w-full flex-1 min-h-[160px] bg-amber-50 border border-amber-200 text-amber-800 rounded-md font-bold text-[11px] flex flex-col items-center justify-center gap-1 p-3 text-center">
                                                 <AlertTriangle className="w-5 h-5 text-amber-600" />
                                                 <span>Tanpa Bukti Foto</span>
                                               </div>
@@ -3106,7 +3106,7 @@ function ActivityReviewPageContent() {
                                                 <button
                                                   type="button"
                                                   onClick={() => setAssignmentVerdict(item.id, 'approve')}
-                                                  className={`px-2 py-1.5 rounded-lg text-[11px] font-extrabold border transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                                                  className={`px-2 py-1.5 rounded-sm text-[11px] font-extrabold border transition-all cursor-pointer flex items-center justify-center gap-1 ${
                                                     verdict === 'approve'
                                                       ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
                                                       : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
@@ -3117,7 +3117,7 @@ function ActivityReviewPageContent() {
                                                 <button
                                                   type="button"
                                                   onClick={() => setAssignmentVerdict(item.id, 'decline')}
-                                                  className={`px-2 py-1.5 rounded-lg text-[11px] font-extrabold border transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                                                  className={`px-2 py-1.5 rounded-sm text-[11px] font-extrabold border transition-all cursor-pointer flex items-center justify-center gap-1 ${
                                                     verdict === 'decline'
                                                       ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
                                                       : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
@@ -3136,13 +3136,13 @@ function ActivityReviewPageContent() {
                                                     }))
                                                   }
                                                   placeholder="Alasan penolakan"
-                                                  className="h-8 rounded-lg text-[11px] bg-rose-50/60 border-rose-200"
+                                                  className="h-8 rounded-sm text-[11px] bg-rose-50/60 border-rose-200"
                                                 />
                                               )}
                                             </div>
                                           )}
                                           {!rowPending && item.declineReason && (
-                                            <p className="text-[10px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1.5">
+                                            <p className="text-[10px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-md px-2 py-1.5">
                                               {item.declineReason}
                                             </p>
                                           )}
@@ -3153,7 +3153,7 @@ function ActivityReviewPageContent() {
                                       <div
                                         key={`empty-${postId}`}
                                         style={{ order: SATPAM_POSTS.findIndex((post) => post.id === postId) }}
-                                        className="flex min-h-[260px] flex-col rounded-2xl border border-dashed border-amber-300 bg-amber-50 p-3"
+                                        className="flex min-h-[260px] flex-col rounded-md border border-dashed border-amber-300 bg-amber-50 p-3"
                                       >
                                         <div className="flex items-start justify-between gap-2">
                                           <span className="text-[10px] font-black uppercase tracking-wider text-amber-700">{postId}</span>
@@ -3167,7 +3167,7 @@ function ActivityReviewPageContent() {
                                               aria-label={`Isi ${postId} dengan petugas`}
                                               disabled={savingPayType}
                                               onClick={() => openEmptyPostEditor(group, postId)}
-                                              className="flex h-5 w-5 items-center justify-center rounded-md text-indigo-600 transition-colors hover:bg-indigo-50"
+                                              className="flex h-5 w-5 items-center justify-center rounded-sm text-indigo-600 transition-colors hover:bg-indigo-50"
                                             >
                                               <Edit2 className="h-3 w-3" />
                                             </button>
@@ -3185,10 +3185,10 @@ function ActivityReviewPageContent() {
                                         style={{ order: SATPAM_POSTS.length }}
                                         onClick={() => void openAddSatpamDialog(group)}
                                         disabled={savingAddSatpam}
-                                        className="group min-h-[260px] rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/40 p-4 text-indigo-700 transition-all hover:border-indigo-400 hover:bg-indigo-50 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-60 flex flex-col items-center justify-center gap-2 cursor-pointer"
+                                        className="group min-h-[260px] rounded-sm border-2 border-dashed border-indigo-200 bg-indigo-50/40 p-4 text-indigo-700 transition-all hover:border-indigo-400 hover:bg-indigo-50 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-60 flex flex-col items-center justify-center gap-2 cursor-pointer"
                                         aria-label={`Tambah petugas pada shift ${group.shiftName} ${group.dutyDate}`}
                                       >
-                                        <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100 transition-transform group-hover:scale-105">
+                                        <span className="flex h-11 w-11 items-center justify-center rounded-sm bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100 transition-transform group-hover:scale-105">
                                           <Plus className="h-5 w-5" />
                                         </span>
                                         <span className="text-sm font-black">+ Tambah Petugas</span>
@@ -3208,7 +3208,7 @@ function ActivityReviewPageContent() {
                                         <Badge
                                           key={item.id}
                                           variant="outline"
-                                          className="text-[9px] px-1.5 py-0 h-4 border-slate-200 text-slate-500 font-medium"
+                                          className="rounded-sm text-[9px] px-1.5 py-0 h-4 border-slate-200 text-slate-500 font-medium"
                                         >
                                           {item.employeeName}
                                         </Badge>
@@ -3228,14 +3228,14 @@ function ActivityReviewPageContent() {
                                             }))
                                           }
                                           placeholder="Catatan audit shift (wajib jika menolak)"
-                                          className="h-10 rounded-xl text-xs bg-white border-slate-200 w-full"
+                                          className="h-10 rounded-sm text-xs bg-white border-slate-200 w-full"
                                         />
                                       </div>
                                       <Button
                                         type="button"
                                         disabled={isSubmitting}
                                         onClick={() => handleSubmitShiftReview(group)}
-                                        className="w-full sm:w-auto rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-9 px-5 gap-1.5 cursor-pointer"
+                                        className="w-full sm:w-auto rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-9 px-5 gap-1.5 cursor-pointer"
                                       >
                                         {isSubmitting ? (
                                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -3296,7 +3296,7 @@ function ActivityReviewPageContent() {
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <span>{activity.employeeName}</span>
                                 {statusFilter === 'all' && (
-                                  <Badge className={`${sc.bgClass} ${sc.textClass} border ${sc.borderClass} text-[9px] font-bold rounded-lg px-1.5 py-0`}>
+                                  <Badge className={`${sc.bgClass} ${sc.textClass} border ${sc.borderClass} text-[9px] font-bold rounded-sm px-1.5 py-0`}>
                                     {sc.label}
                                   </Badge>
                                 )}
@@ -3308,45 +3308,45 @@ function ActivityReviewPageContent() {
                                 {activity.photoUrl ? (
                                   <Badge
                                     variant="outline"
-                                    className="text-[9px] px-1.5 py-0 h-4 border-emerald-200 text-emerald-700 bg-emerald-50 font-bold inline-flex items-center gap-1"
+                                    className="rounded-sm text-[9px] px-1.5 py-0 h-4 border-emerald-200 text-emerald-700 bg-emerald-50 font-bold inline-flex items-center gap-1"
                                   >
                                     <Camera className="w-2.5 h-2.5" /> Berfoto
                                   </Badge>
                                 ) : (
                                   <Badge
                                     variant="outline"
-                                    className="text-[9px] px-1.5 py-0 h-4 border-slate-200 text-slate-400 font-medium inline-flex items-center gap-1"
+                                    className="rounded-sm text-[9px] px-1.5 py-0 h-4 border-slate-200 text-slate-400 font-medium inline-flex items-center gap-1"
                                   >
                                     Tanpa Bukti Foto
                                   </Badge>
                                 )}
                                 {activity.reportKind === 'satpam_spj' && (
-                                  <Badge className="text-[9px] px-1.5 py-0 h-4 border-none bg-teal-100 text-teal-800 font-bold">
+                                  <Badge className="rounded-sm text-[9px] px-1.5 py-0 h-4 border-none bg-teal-100 text-teal-800 font-bold">
                                     SPJ Pribadi Satpam
                                   </Badge>
                                 )}
                                 {activity.jobCategory === 'SOPIR' && activity.isSelfAuthorizedWithoutPiket && (
-                                  <Badge className="text-[9px] px-1.5 py-0 h-4 border-none bg-orange-100 text-orange-800 font-bold">
+                                  <Badge className="rounded-sm text-[9px] px-1.5 py-0 h-4 border-none bg-orange-100 text-orange-800 font-bold">
                                     SPJ Mandiri (Tanpa Piket)
                                   </Badge>
                                 )}
                                 {activity.reportKind === 'satpam_found_item' && (
-                                  <Badge className="inline-flex h-5 items-center gap-1 border-none bg-amber-100 px-2 py-0 text-[10px] font-bold text-amber-900">
+                                  <Badge className="rounded-sm inline-flex h-5 items-center gap-1 border-none bg-amber-100 px-2 py-0 text-[10px] font-bold text-amber-900">
                                     <PackageSearch className="h-3 w-3" /> Penemuan Barang
                                   </Badge>
                                 )}
                                 {activity.reportKind === 'satpam_reprimand' && (
-                                  <Badge className="inline-flex h-5 items-center gap-1 border-none bg-amber-100 px-2 py-0 text-[10px] font-bold text-amber-900">
+                                  <Badge className="rounded-sm inline-flex h-5 items-center gap-1 border-none bg-amber-100 px-2 py-0 text-[10px] font-bold text-amber-900">
                                     <PackageSearch className="h-3 w-3" /> Teguran Pengendara
                                   </Badge>
                                 )}
                                 {(activity.reportKind === 'satpam_found_item' || activity.reportKind === 'satpam_reprimand') && (
-                                  <Badge variant="outline" className="inline-flex h-5 items-center gap-1 border-amber-200 bg-white px-2 py-0 text-[10px] font-bold text-amber-800">
+                                  <Badge variant="outline" className="rounded-sm inline-flex h-5 items-center gap-1 border-amber-200 bg-white px-2 py-0 text-[10px] font-bold text-amber-800">
                                     <Images className="h-3 w-3" /> {activity.proofPhotos?.length || (activity.photoUrl ? 1 : 0)} foto
                                   </Badge>
                                 )}
                                 {(activity.identityAnomalies || []).length > 0 && (
-                                  <Badge className="text-[9px] px-1.5 py-0 h-4 border-none bg-rose-100 text-rose-800 font-bold">
+                                  <Badge className="rounded-sm text-[9px] px-1.5 py-0 h-4 border-none bg-rose-100 text-rose-800 font-bold">
                                     Identitas perlu diselesaikan
                                   </Badge>
                                 )}
@@ -3406,7 +3406,7 @@ function ActivityReviewPageContent() {
                                           handleApproveRow(activity, rowFees[activity.id] || '');
                                         }
                                       }}
-                                      className="w-32 h-8 text-center font-bold text-sm bg-slate-50 border-slate-200 focus:border-emerald-400 focus:ring-emerald-400/20 rounded-xl px-3"
+                                      className="w-32 h-8 text-center font-bold text-sm bg-slate-50 border-slate-200 focus:border-emerald-400 focus:ring-emerald-400/20 rounded-sm px-3"
                                       disabled={actionLoading}
                                     />
                                   </div>
@@ -3439,7 +3439,7 @@ function ActivityReviewPageContent() {
                                       type="button"
                                       disabled={actionLoading}
                                       onClick={() => handleToggleUangMakan(activity.id, activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName, activity.activityDate)}
-                                      className={`h-7 px-2.5 rounded-lg font-bold text-[10px] cursor-pointer transition-colors ${isAdded
+                                      className={`h-7 px-2.5 rounded-sm font-bold text-[10px] cursor-pointer transition-colors ${isAdded
                                           ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300'
                                           : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-300'
                                         }`}
@@ -3449,7 +3449,7 @@ function ActivityReviewPageContent() {
                                   );
                                 })()
                               ) : activity.status === 'approved' && activity.hasUangMakan ? (
-                                <Badge className="bg-amber-50 text-amber-800 hover:bg-amber-50 border border-amber-200 text-[10px] font-bold rounded-lg px-2 py-0.5 whitespace-nowrap">
+                                <Badge className="bg-amber-50 text-amber-800 hover:bg-amber-50 border border-amber-200 text-[10px] font-bold rounded-sm px-2 py-0.5 whitespace-nowrap">
                                   +Rp7.500
                                 </Badge>
                               ) : (
@@ -3478,7 +3478,7 @@ function ActivityReviewPageContent() {
                                         size="sm"
                                         disabled={actionLoading}
                                         onClick={() => handleOpenAuditSopir(activity)}
-                                        className="h-7 px-2.5 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold text-[11px] border border-indigo-200 cursor-pointer"
+                                        className="h-7 px-2.5 rounded-sm bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold text-[11px] border border-indigo-200 cursor-pointer"
                                       >
                                         <ClipboardCheck className="w-3 h-3 mr-1" />
                                         Audit & Edit
@@ -3488,7 +3488,7 @@ function ActivityReviewPageContent() {
                                         size="sm"
                                         disabled={actionLoading}
                                         onClick={() => handleApproveRow(activity, rowFees[activity.id] || '')}
-                                        className="h-7 px-2.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-[11px] border border-emerald-200 cursor-pointer"
+                                        className="h-7 px-2.5 rounded-sm bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-[11px] border border-emerald-200 cursor-pointer"
                                       >
                                         <ThumbsUp className="w-3 h-3 mr-1" />
                                         Setujui
@@ -3499,7 +3499,7 @@ function ActivityReviewPageContent() {
                                       variant="ghost"
                                       disabled={actionLoading}
                                       onClick={() => { setDeclineTarget(activity); setDeclineReason(''); }}
-                                      className="h-7 px-2.5 rounded-lg text-rose-500 hover:bg-rose-50 font-bold text-[11px] cursor-pointer"
+                                      className="h-7 px-2.5 rounded-sm text-rose-500 hover:bg-rose-50 font-bold text-[11px] cursor-pointer"
                                     >
                                       <ThumbsDown className="w-3 h-3 mr-1" />
                                       Tolak
@@ -3510,7 +3510,7 @@ function ActivityReviewPageContent() {
                                   <Button
                                     size="sm"
                                     onClick={() => handleOpenAuditSopir(activity)}
-                                    className="h-7 px-2.5 rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-100 font-bold text-[11px] border border-slate-200 cursor-pointer"
+                                    className="h-7 px-2.5 rounded-sm bg-slate-50 text-slate-600 hover:bg-slate-100 font-bold text-[11px] border border-slate-200 cursor-pointer"
                                   >
                                     Lihat Detail
                                   </Button>
@@ -3522,7 +3522,7 @@ function ActivityReviewPageContent() {
                                     variant="outline"
                                     disabled={deletingActivity}
                                     onClick={() => { setDeleteTarget(activity); setDeleteReason(''); }}
-                                    className="h-7 px-2.5 rounded-lg text-rose-600 hover:bg-rose-50 font-bold text-[11px] border-rose-200 cursor-pointer"
+                                    className="h-7 px-2.5 rounded-sm text-rose-600 hover:bg-rose-50 font-bold text-[11px] border-rose-200 cursor-pointer"
                                   >
                                     <Trash2 className="w-3 h-3 mr-1" />
                                     Hapus
@@ -3552,7 +3552,7 @@ function ActivityReviewPageContent() {
                                         — {activity.activityName} ({activity.employeeName})
                                       </span>
                                     </div>
-                                    <Badge className="w-fit border-none bg-indigo-100 text-[10px] font-bold text-indigo-800">
+                                    <Badge className="rounded-sm w-fit border-none bg-indigo-100 text-[10px] font-bold text-indigo-800">
                                       {activity.jobCategory || 'PEKARYA'} · Tanggal: {activity.activityDate}
                                       {!isPhotoOnlyReport &&
                                         ` (${activity.timeStart}${activity.timeEnd ? ` – ${activity.timeEnd}` : ''})`}
@@ -3583,7 +3583,7 @@ function ActivityReviewPageContent() {
                                                 title={`${activity.activityName} — Foto ${index + 1}`}
                                                 activityDate={activity.activityDate}
                                                 auditMetadata={photo.auditMetadata}
-                                                className="h-[280px] aspect-[4/3] max-w-full rounded-2xl"
+                                                className="h-[280px] aspect-[4/3] max-w-full rounded-sm"
                                                 onZoom={() =>
                                                   setSelectedExifImage({
                                                     url: photo.url,
@@ -3596,7 +3596,7 @@ function ActivityReviewPageContent() {
                                             </div>
                                           ))
                                         ) : (
-                                          <div className="h-[280px] aspect-[4/3] max-w-full bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl font-bold text-xs flex flex-col items-center justify-center gap-1.5 p-4 text-center">
+                                          <div className="h-[280px] aspect-[4/3] max-w-full bg-amber-50 border border-amber-200 text-amber-800 rounded-md font-bold text-xs flex flex-col items-center justify-center gap-1.5 p-4 text-center">
                                             <AlertTriangle className="w-6 h-6 text-amber-600 mb-0.5" />
                                             <span>Laporan kegiatan ini tidak melampirkan foto bukti.</span>
                                           </div>
@@ -3607,9 +3607,9 @@ function ActivityReviewPageContent() {
                                     {/* Right Column: Audit controls & history filling remaining width */}
                                     <div className="flex-1 min-w-0 space-y-3 w-full">
                                       {isPhotoOnlyReport ? (
-                                        <div className="rounded-2xl border border-amber-200 bg-white p-4 space-y-3.5 shadow-xs flex-1 flex flex-col justify-between h-[280px] overflow-hidden">
+                                        <div className="rounded-md border border-amber-200 bg-white p-4 space-y-3.5 shadow-xs flex-1 flex flex-col justify-between h-[280px] overflow-hidden">
                                           {/* Section 1: Nominal Audit */}
-                                          <div className="space-y-1.5 rounded-xl border border-amber-200/80 bg-amber-50/70 p-3">
+                                          <div className="space-y-1.5 rounded-md border border-amber-200/80 bg-amber-50/70 p-3">
                                             <p className="text-xs font-bold uppercase tracking-wider text-amber-700">Nominal Audit</p>
                                             <p className="text-xs sm:text-sm font-semibold text-amber-950">
                                               Rekomendasi sistem: <strong>{fmtRp(activity.submittedFeeRecommendation || (isReprimand ? 15_000 : 5_000))}</strong>
@@ -3624,7 +3624,7 @@ function ActivityReviewPageContent() {
                                                 <p className="text-xs font-black uppercase tracking-wider text-slate-700">Riwayat Pengajuan</p>
                                                 <p className="text-[10px] text-slate-500">Setiap versi disimpan terpisah dan tidak ditimpa.</p>
                                               </div>
-                                              <Badge variant="outline" className="border-slate-200 text-[10px] font-bold text-slate-600">
+                                              <Badge variant="outline" className="rounded-sm border-slate-200 text-[10px] font-bold text-slate-600">
                                                 Versi {activity.submissionRevision || 1}
                                               </Badge>
                                             </div>
@@ -3635,7 +3635,7 @@ function ActivityReviewPageContent() {
                                             ) : (activityRevisionHistory[activity.id] || []).length > 0 ? (
                                               <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
                                                 {activityRevisionHistory[activity.id].map((revision) => (
-                                                  <div key={revision.revision} className="flex flex-col gap-1 rounded-xl border border-slate-100 bg-slate-50 px-3 py-1.5 text-xs sm:flex-row sm:items-center sm:justify-between">
+                                                  <div key={revision.revision} className="flex flex-col gap-1 rounded-md border border-slate-100 bg-slate-50 px-3 py-1.5 text-xs sm:flex-row sm:items-center sm:justify-between">
                                                     <span className="font-bold text-slate-800">
                                                       Versi {revision.revision} · {revision.itemName}
                                                     </span>
@@ -3649,14 +3649,14 @@ function ActivityReviewPageContent() {
                                                 ))}
                                               </div>
                                             ) : (
-                                              <p className="rounded-xl bg-slate-50 p-2 text-[11px] text-slate-500">
+                                              <p className="rounded-md bg-slate-50 p-2 text-[11px] text-slate-500">
                                                 Riwayat versi lama belum tersedia untuk laporan ini.
                                               </p>
                                             )}
                                           </div>
                                         </div>
                                       ) : (
-                                        <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
+                                        <div className="space-y-3 rounded-md border border-slate-200 bg-white p-4">
                                           <p className="text-xs font-black uppercase tracking-wider text-slate-700">Detail Audit Kegiatan</p>
                                           <div className="space-y-2 text-xs text-slate-600">
                                             <div className="flex justify-between border-b border-slate-100 pb-1.5">
@@ -3702,7 +3702,7 @@ function ActivityReviewPageContent() {
 
         {/* ── Employee Summary ────────────────────────────────────────── */}
         {employeeSummary.length > 0 && (
-          <Card className="bg-white rounded-[24px] shadow-sm border-none">
+          <Card className="bg-white rounded-md shadow-sm border-none">
             <CardHeader className="p-6 pb-4">
               <CardTitle className="text-base font-bold flex items-center gap-2">
                 <Users className="w-4 h-4 text-teal-500" />
@@ -3713,7 +3713,7 @@ function ActivityReviewPageContent() {
             <CardContent className="px-6 pb-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {employeeSummary.map(([empId, data]) => (
-                  <div key={empId} className="flex items-center gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-100">
+                  <div key={empId} className="flex items-center gap-3 p-3.5 rounded-md bg-slate-50 border border-slate-100">
                     <div className="w-9 h-9 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-sm shrink-0">
                       {data.name.substring(0, 2).toUpperCase()}
                     </div>
@@ -3743,7 +3743,7 @@ function ActivityReviewPageContent() {
       >
         <DialogContent
           showCloseButton={false}
-          className="sm:max-w-md rounded-3xl border-none bg-white p-6 text-center shadow-2xl"
+          className="sm:max-w-md rounded-md border-none bg-white p-6 text-center shadow-2xl"
         >
           <DialogHeader className="items-center">
             {shiftReviewProgress?.status === 'processing' ? (
@@ -3770,11 +3770,11 @@ function ActivityReviewPageContent() {
               Mohon tunggu, data rekap sedang diperbarui.
             </p>
           ) : (
-            <DialogFooter className="pt-2 sm:justify-center">
+            <DialogFooter className="rounded-b-md pt-2 sm:justify-center">
               <Button
                 type="button"
                 onClick={() => setShiftReviewProgress(null)}
-                className="rounded-xl bg-emerald-600 px-6 font-bold text-white hover:bg-emerald-700"
+                className="rounded-sm bg-emerald-600 px-6 font-bold text-white hover:bg-emerald-700"
               >
                 Selesai
               </Button>
@@ -3790,7 +3790,7 @@ function ActivityReviewPageContent() {
           if (!open && !submittingShiftId) setPayClassificationConfirmation(null);
         }}
       >
-        <DialogContent className="sm:max-w-lg rounded-3xl border-none bg-white p-6 shadow-2xl">
+        <DialogContent className="sm:max-w-lg rounded-md border-none bg-white p-6 shadow-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg font-bold text-slate-900">
               <AlertTriangle className="h-5 w-5 text-amber-500" />
@@ -3806,7 +3806,7 @@ function ActivityReviewPageContent() {
             {payClassificationConfirmation?.warnings.map((warning) => (
               <div
                 key={`${warning.kind || 'calendar'}-${warning.reportId}`}
-                className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs"
+                className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -3826,23 +3826,23 @@ function ActivityReviewPageContent() {
               </div>
             ))}
             {payClassificationConfirmation?.warnings.length === 0 && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-semibold text-amber-900">
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-semibold text-amber-900">
                 Ada kategori upah yang perlu dikonfirmasi sebelum persetujuan.
               </div>
             )}
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[11px] font-semibold leading-relaxed text-slate-600">
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5 text-[11px] font-semibold leading-relaxed text-slate-600">
             Jika dilanjutkan, penugasan akan disetujui menggunakan kategori upah yang dipilih saat ini dan
             dicatat sebagai keputusan auditor.
           </div>
 
-          <DialogFooter className="gap-3 pt-4">
+          <DialogFooter className="rounded-b-md gap-3 pt-4">
             <Button
               variant="ghost"
               onClick={() => setPayClassificationConfirmation(null)}
               disabled={Boolean(submittingShiftId)}
-              className="rounded-xl font-bold text-slate-500"
+              className="rounded-sm font-bold text-slate-500"
             >
               Batal
             </Button>
@@ -3854,7 +3854,7 @@ function ActivityReviewPageContent() {
                 void handleSubmitShiftReview(pendingConfirmation.group, true);
               }}
               disabled={Boolean(submittingShiftId)}
-              className="rounded-xl bg-amber-500 font-bold text-white shadow-md shadow-amber-100 hover:bg-amber-600"
+              className="rounded-sm bg-amber-500 font-bold text-white shadow-md shadow-amber-100 hover:bg-amber-600"
             >
               Tetap Setujui
             </Button>
@@ -3864,7 +3864,7 @@ function ActivityReviewPageContent() {
 
       {/* ── Decline Modal ──────────────────────────────────────────────── */}
       <Dialog open={declineTarget !== null} onOpenChange={(open) => { if (!open) setDeclineTarget(null); }}>
-        <DialogContent className="sm:max-w-md rounded-3xl border-none shadow-2xl bg-white p-6">
+        <DialogContent className="sm:max-w-md rounded-md border-none shadow-2xl bg-white p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
               <ThumbsDown className="w-5 h-5 text-rose-500" />
@@ -3880,7 +3880,7 @@ function ActivityReviewPageContent() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1 text-xs">
+            <div className="p-3 rounded-md bg-slate-50 border border-slate-100 space-y-1 text-xs">
               <div className="flex justify-between">
                 <span className="text-slate-400 font-semibold">Tanggal</span>
                 <span className="font-bold text-slate-700">{declineTarget?.activityDate}</span>
@@ -3905,19 +3905,19 @@ function ActivityReviewPageContent() {
                 placeholder="Contoh: Kegiatan tidak sesuai jadwal kerja"
                 value={declineReason}
                 onChange={(e) => setDeclineReason(e.target.value)}
-                className="rounded-xl border-slate-200 focus:border-rose-400 focus:ring-rose-400/20 text-sm"
+                className="rounded-sm border-slate-200 focus:border-rose-400 focus:ring-rose-400/20 text-sm"
                 autoFocus
               />
             </div>
           </div>
-          <DialogFooter className="gap-3">
-            <Button variant="ghost" onClick={() => setDeclineTarget(null)} className="rounded-xl font-bold text-slate-500">
+          <DialogFooter className="rounded-b-md gap-3">
+            <Button variant="ghost" onClick={() => setDeclineTarget(null)} className="rounded-sm font-bold text-slate-500">
               Batal
             </Button>
             <Button
               onClick={handleDecline}
               disabled={actionLoading}
-              className="rounded-xl bg-rose-500 text-white font-bold hover:bg-rose-600 shadow-md shadow-rose-100"
+              className="rounded-sm bg-rose-500 text-white font-bold hover:bg-rose-600 shadow-md shadow-rose-100"
             >
               {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <XCircle className="w-4 h-4 mr-2" />}
               Konfirmasi Tolak
@@ -3928,7 +3928,7 @@ function ActivityReviewPageContent() {
 
       {/* ── Admin Delete Modal (super_admin only) ─────────────────────── */}
       <Dialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open && !deletingActivity) setDeleteTarget(null); }}>
-        <DialogContent className="sm:max-w-md rounded-3xl border-none shadow-2xl bg-white p-6">
+        <DialogContent className="sm:max-w-md rounded-md border-none shadow-2xl bg-white p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
               <Trash2 className="w-5 h-5 text-rose-600" />
@@ -3940,14 +3940,14 @@ function ActivityReviewPageContent() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="p-3 rounded-xl bg-rose-50 border border-rose-100 flex items-start gap-2">
+            <div className="p-3 rounded-md bg-rose-50 border border-rose-100 flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
               <p className="text-xs font-semibold text-rose-800">
                 Tindakan ini tidak dapat dibatalkan. Laporan yang sudah dibayarkan (slip terkunci) tidak dapat dihapus lewat sini.
               </p>
             </div>
             {deleteTarget?.jobCategory === 'SOPIR' && (
-              <div className="p-3 rounded-xl bg-amber-50 border border-amber-100 flex items-start gap-2">
+              <div className="p-3 rounded-md bg-amber-50 border border-amber-100 flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <p className="text-xs font-semibold text-amber-800">
                   Perjalanan Piket yang dibuat sendiri oleh Sopir ikut terhapus. Perjalanan yang diotorisasi Kepala SatKer
@@ -3956,7 +3956,7 @@ function ActivityReviewPageContent() {
                 </p>
               </div>
             )}
-            <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1 text-xs">
+            <div className="p-3 rounded-md bg-slate-50 border border-slate-100 space-y-1 text-xs">
               <div className="flex justify-between">
                 <span className="text-slate-400 font-semibold">Tanggal</span>
                 <span className="font-bold text-slate-700">{deleteTarget?.dutyDate || deleteTarget?.activityDate}</span>
@@ -3979,20 +3979,20 @@ function ActivityReviewPageContent() {
                 placeholder="Contoh: Laporan duplikat, salah input pos"
                 value={deleteReason}
                 onChange={(e) => setDeleteReason(e.target.value)}
-                className="rounded-xl border-slate-200 focus:border-rose-400 focus:ring-rose-400/20 text-sm"
+                className="rounded-sm border-slate-200 focus:border-rose-400 focus:ring-rose-400/20 text-sm"
                 autoFocus
               />
               <p className="text-[10px] font-semibold text-slate-400">Minimal 8 karakter. Dicatat pada log audit finansial.</p>
             </div>
           </div>
-          <DialogFooter className="gap-3">
-            <Button variant="ghost" onClick={() => setDeleteTarget(null)} disabled={deletingActivity} className="rounded-xl font-bold text-slate-500">
+          <DialogFooter className="rounded-b-md gap-3">
+            <Button variant="ghost" onClick={() => setDeleteTarget(null)} disabled={deletingActivity} className="rounded-sm font-bold text-slate-500">
               Batal
             </Button>
             <Button
               onClick={handleDeleteActivity}
               disabled={deletingActivity || deleteReason.trim().length < 8}
-              className="rounded-xl bg-rose-600 text-white font-bold hover:bg-rose-700 shadow-md shadow-rose-100"
+              className="rounded-sm bg-rose-600 text-white font-bold hover:bg-rose-700 shadow-md shadow-rose-100"
             >
               {deletingActivity ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
               Hapus Permanen
@@ -4003,7 +4003,7 @@ function ActivityReviewPageContent() {
 
       {/* ── Satpam Guard & Pay-Type Correction Modal (super_admin/satker_head) ── */}
       <Dialog open={payTypeTarget !== null} onOpenChange={(open) => { if (!open && !savingPayType) setPayTypeTarget(null); }}>
-        <DialogContent className="sm:max-w-md rounded-3xl border-none shadow-2xl bg-white p-6">
+        <DialogContent className="sm:max-w-md rounded-md border-none shadow-2xl bg-white p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
               <Edit2 className="w-5 h-5 text-indigo-600" />
@@ -4018,7 +4018,7 @@ function ActivityReviewPageContent() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1 text-xs">
+            <div className="p-3 rounded-md bg-slate-50 border border-slate-100 space-y-1 text-xs">
               <div className="flex justify-between">
                 <span className="text-slate-400 font-semibold">Tanggal Dinas</span>
                 <span className="font-bold text-slate-700">{payTypeTarget?.dutyDate || payTypeTarget?.activityDate}</span>
@@ -4037,14 +4037,14 @@ function ActivityReviewPageContent() {
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-slate-500 uppercase">Petugas</Label>
               <Select value={payTypeEmployeeId || 'none'} onValueChange={(v) => { if (v && v !== 'none') setPayTypeEmployeeId(v); }}>
-                <SelectTrigger className="h-11 w-full rounded-xl border-slate-200 bg-white text-sm font-bold">
+                <SelectTrigger className="h-11 w-full rounded-sm border-slate-200 bg-white text-sm font-bold">
                   <SelectValue>
                     {payTypeEmployeeId === NO_PETUGAS_VALUE
                       ? 'Pos Tidak Dijaga'
                       : satpamEmployeeDirectory.find((e) => e.id === payTypeEmployeeId)?.name || payTypeEmployeeId || '-- Pilih Petugas --'}
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent className="rounded-xl bg-white max-h-[280px] overflow-y-auto">
+                <SelectContent className="rounded-md bg-white max-h-[280px] overflow-y-auto">
                   <SelectItem value={NO_PETUGAS_VALUE} className="min-h-10 text-sm font-bold text-amber-800">
                     Pos Tidak Dijaga
                   </SelectItem>
@@ -4063,7 +4063,7 @@ function ActivityReviewPageContent() {
               </Select>
               {payTypeTarget && !payTypeTarget.isEmptyPost && payTypeEmployeeId &&
                 payTypeEmployeeId !== payTypeTarget.employeeId && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] font-semibold text-amber-900 space-y-1">
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] font-semibold text-amber-900 space-y-1">
                   <p>Diubah dari: {payTypeTarget.employeeName}</p>
                   {payTypeTarget.photoUrl && (
                     <p className="font-normal">
@@ -4077,12 +4077,12 @@ function ActivityReviewPageContent() {
             {payTypeEmployeeId !== NO_PETUGAS_VALUE && <div className="space-y-1.5">
               <Label className="text-xs font-bold text-slate-500 uppercase">Kategori Upah</Label>
               <Select value={payTypeValue} onValueChange={(v) => v && setPayTypeValue(v)}>
-                <SelectTrigger className="h-11 w-full rounded-xl border-slate-200 bg-white text-sm font-bold">
+                <SelectTrigger className="h-11 w-full rounded-sm border-slate-200 bg-white text-sm font-bold">
                   <SelectValue>
                     {payTypeValue} · {fmtRp(payTypeRates?.[payTypeValue as keyof typeof payTypeRates] || 0)}
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent className="rounded-xl bg-white">
+                <SelectContent className="rounded-md bg-white">
                   {payTypeOptions.map((type) => (
                     <SelectItem key={type} value={type} className="min-h-10 text-sm">
                       {type} · {fmtRp(payTypeRates?.[type as keyof typeof payTypeRates] || 0)}
@@ -4095,12 +4095,12 @@ function ActivityReviewPageContent() {
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-slate-500 uppercase">Petugas yang Digantikan</Label>
                 <Select value={payTypeCovered || 'none'} onValueChange={(v) => setPayTypeCovered(v === 'none' ? '' : (v || ''))}>
-                  <SelectTrigger className="h-11 w-full rounded-xl border-slate-200 bg-white text-sm font-bold">
+                  <SelectTrigger className="h-11 w-full rounded-sm border-slate-200 bg-white text-sm font-bold">
                     <SelectValue>
                       {satpamEmployeeDirectory.find((e) => e.id === payTypeCovered)?.name || '-- Pilih Petugas --'}
                     </SelectValue>
                   </SelectTrigger>
-                  <SelectContent className="rounded-xl bg-white max-h-[280px] overflow-y-auto">
+                  <SelectContent className="rounded-md bg-white max-h-[280px] overflow-y-auto">
                     <SelectItem value="none" className="min-h-10 text-sm italic text-slate-500">
                       -- Pilih Petugas --
                     </SelectItem>
@@ -4116,8 +4116,8 @@ function ActivityReviewPageContent() {
               </div>
             )}
           </div>
-          <DialogFooter className="gap-3">
-            <Button variant="ghost" onClick={() => setPayTypeTarget(null)} disabled={savingPayType} className="rounded-xl font-bold text-slate-500">
+          <DialogFooter className="rounded-b-md gap-3">
+            <Button variant="ghost" onClick={() => setPayTypeTarget(null)} disabled={savingPayType} className="rounded-sm font-bold text-slate-500">
               Batal
             </Button>
             <Button
@@ -4132,7 +4132,7 @@ function ActivityReviewPageContent() {
                 (payTypeEmployeeId !== NO_PETUGAS_VALUE && payTypeValue === 'Lembur Cover' &&
                   (!payTypeCovered.trim() || payTypeCovered.trim() === payTypeEmployeeId))
               }
-              className="rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-md shadow-indigo-100"
+              className="rounded-sm bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-md shadow-indigo-100"
             >
               {savingPayType ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
               {payTypeEmployeeId === NO_PETUGAS_VALUE ? 'Simpan Pos Tidak Dijaga' : 'Simpan Koreksi'}
@@ -4148,7 +4148,7 @@ function ActivityReviewPageContent() {
           if (!open) closeAddSatpamDialog();
         }}
       >
-        <DialogContent className="sm:max-w-lg rounded-3xl border-none bg-white p-6 shadow-2xl">
+        <DialogContent className="sm:max-w-lg rounded-md border-none bg-white p-6 shadow-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg font-bold text-slate-900">
               <Plus className="h-5 w-5 text-indigo-600" />
@@ -4162,7 +4162,7 @@ function ActivityReviewPageContent() {
           </DialogHeader>
 
           <div className="space-y-4 py-4">
-            <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 px-3 py-2.5 text-xs">
+            <div className="rounded-md border border-indigo-100 bg-indigo-50/70 px-3 py-2.5 text-xs">
               <div className="flex items-center justify-between gap-3">
                 <span className="font-semibold text-indigo-500">Shift</span>
                 <span className="font-black text-indigo-900">
@@ -4183,12 +4183,12 @@ function ActivityReviewPageContent() {
                   if (value) setAddSatpamPostId(value === 'none' ? '' : value);
                 }}
               >
-                <SelectTrigger className="h-11 w-full rounded-xl border-slate-200 bg-white text-sm font-bold">
+                <SelectTrigger className="h-11 w-full rounded-sm border-slate-200 bg-white text-sm font-bold">
                   <SelectValue>
                     {SATPAM_POSTS.find((post) => post.id === addSatpamPostId)?.name || '-- Pilih Pos --'}
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent className="max-h-[280px] rounded-xl bg-white">
+                <SelectContent className="max-h-[280px] rounded-md bg-white">
                   <SelectItem value="none" className="min-h-10 text-sm italic text-slate-500">
                     -- Pilih Pos --
                   </SelectItem>
@@ -4204,7 +4204,7 @@ function ActivityReviewPageContent() {
             <div className="space-y-1.5">
               <Label className="text-xs font-bold uppercase text-slate-500">Petugas Satpam</Label>
               {loadingAddSatpamOptions ? (
-                <div className="flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500">
+                <div className="flex h-11 items-center justify-center gap-2 rounded-sm border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500">
                   <Loader2 className="h-4 w-4 animate-spin text-indigo-600" /> Memuat petugas yang tersedia...
                 </div>
               ) : (
@@ -4214,12 +4214,12 @@ function ActivityReviewPageContent() {
                     if (value) setAddSatpamEmployeeId(value === 'none' ? '' : value);
                   }}
                 >
-                  <SelectTrigger className="h-11 w-full rounded-xl border-slate-200 bg-white text-sm font-bold">
+                  <SelectTrigger className="h-11 w-full rounded-sm border-slate-200 bg-white text-sm font-bold">
                     <SelectValue>
                       {addSatpamEmployeeOptions.find((employee) => employee.id === addSatpamEmployeeId)?.name || '-- Pilih Petugas --'}
                     </SelectValue>
                   </SelectTrigger>
-                  <SelectContent className="max-h-[280px] rounded-xl bg-white">
+                  <SelectContent className="max-h-[280px] rounded-md bg-white">
                     <SelectItem value="none" className="min-h-10 text-sm italic text-slate-500">
                       -- Pilih Petugas --
                     </SelectItem>
@@ -4232,7 +4232,7 @@ function ActivityReviewPageContent() {
                 </Select>
               )}
               {!loadingAddSatpamOptions && addSatpamEmployeeOptions.length === 0 && (
-                <p className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] font-semibold text-amber-900">
+                <p className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] font-semibold text-amber-900">
                   Tidak ada petugas Satpam aktif yang memenuhi roster shift ini untuk ditambahkan.
                 </p>
               )}
@@ -4248,7 +4248,7 @@ function ActivityReviewPageContent() {
                 value={addSatpamReason}
                 onChange={(event) => setAddSatpamReason(event.target.value)}
                 placeholder="Contoh: Penambahan petugas untuk kebutuhan pengamanan"
-                className="rounded-xl border-slate-200 text-sm focus:border-indigo-400 focus:ring-indigo-400/20"
+                className="rounded-sm border-slate-200 text-sm focus:border-indigo-400 focus:ring-indigo-400/20"
               />
               <p className="text-[10px] font-semibold text-slate-400">
                 Minimal 8 karakter. Dicatat pada log audit finansial.
@@ -4256,12 +4256,12 @@ function ActivityReviewPageContent() {
             </div>
           </div>
 
-          <DialogFooter className="gap-3">
+          <DialogFooter className="rounded-b-md gap-3">
             <Button
               variant="ghost"
               onClick={closeAddSatpamDialog}
               disabled={savingAddSatpam}
-              className="rounded-xl font-bold text-slate-500"
+              className="rounded-sm font-bold text-slate-500"
             >
               Batal
             </Button>
@@ -4274,7 +4274,7 @@ function ActivityReviewPageContent() {
                 !addSatpamEmployeeId ||
                 addSatpamReason.trim().length < 8
               }
-              className="rounded-xl bg-indigo-600 font-bold text-white shadow-md shadow-indigo-100 hover:bg-indigo-700"
+              className="rounded-sm bg-indigo-600 font-bold text-white shadow-md shadow-indigo-100 hover:bg-indigo-700"
             >
               {savingAddSatpam ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

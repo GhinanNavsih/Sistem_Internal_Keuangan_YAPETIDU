@@ -304,7 +304,7 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
         {/* Header navigation bar */}
         <div className="flex flex-wrap justify-between items-center gap-4 mb-8">
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 px-3 py-1 bg-indigo-50 border border-indigo-100 rounded-xl">
+            <div className="flex items-center gap-2 px-3 py-1 bg-indigo-50 border border-indigo-100 rounded-sm">
               <Banknote className="w-5 h-5 text-indigo-600" />
               <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wider">Audit Panel</span>
             </div>
@@ -317,86 +317,86 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
 
         {/* Stats Metrics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Card className="p-6 bg-white border-none rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-row items-center justify-between">
+          <Card className="p-6 bg-white border-none rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-row items-center justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Pinjaman Aktif</p>
               <p className="text-2xl font-bold text-slate-900">{stats.activeLoansCount}</p>
             </div>
-            <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
+            <div className="p-3 bg-blue-50 text-blue-600 rounded-sm">
               <Activity className="w-5 h-5" />
             </div>
           </Card>
 
-          <Card className="p-6 bg-white border-none rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-row items-center justify-between">
+          <Card className="p-6 bg-white border-none rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-row items-center justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Total Cicilan Bulanan</p>
               <p className="text-2xl font-bold text-slate-900">Rp {stats.totalDeductions.toLocaleString('id-ID')}</p>
             </div>
-            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-sm">
               <Banknote className="w-5 h-5" />
             </div>
           </Card>
 
-          <Card className="p-6 bg-white border-none rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-row items-center justify-between">
+          <Card className="p-6 bg-white border-none rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-row items-center justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Tautan Akurat (UID)</p>
               <p className="text-2xl font-bold text-slate-900">{stats.matchedLoansCount}</p>
             </div>
-            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
+            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-sm">
               <CheckCircle2 className="w-5 h-5" />
             </div>
           </Card>
 
-          <Card className={`p-6 bg-white border-none rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-row items-center justify-between ${stats.warningsCount > 0 ? 'bg-amber-50/20' : ''}`}>
+          <Card className={`p-6 bg-white border-none rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-row items-center justify-between ${stats.warningsCount > 0 ? 'bg-amber-50/20' : ''}`}>
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Warnings / Anomali</p>
               <p className={`text-2xl font-bold ${stats.warningsCount > 0 ? 'text-amber-600' : 'text-slate-900'}`}>{stats.warningsCount}</p>
             </div>
-            <div className={`p-3 rounded-xl ${stats.warningsCount > 0 ? 'bg-amber-100/50 text-amber-600' : 'bg-slate-50 text-slate-400'}`}>
+            <div className={`p-3 rounded-sm ${stats.warningsCount > 0 ? 'bg-amber-100/50 text-amber-600' : 'bg-slate-50 text-slate-400'}`}>
               <AlertCircle className="w-5 h-5" />
             </div>
           </Card>
         </div>
 
         {/* Main Section */}
-        <Card className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.03)] border-none overflow-hidden">
+        <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.03)] border-none overflow-hidden">
           
           {/* Filter Bar */}
           <div className="px-8 py-5 border-b border-slate-100 flex flex-wrap justify-between items-center gap-4 bg-slate-50/30">
             {/* Tabs */}
-            <div className="flex gap-1 bg-slate-100/60 p-1 rounded-xl">
+            <div className="flex gap-1 bg-slate-100/60 p-1 rounded-md">
               <button
                 type="button"
                 onClick={() => setActiveTab('active')}
-                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${activeTab === 'active' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                className={`px-4 py-2 text-xs font-bold rounded-sm transition-all cursor-pointer ${activeTab === 'active' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
               >
                 Aktif & Berjalan ({processedLoans.filter(l => l.status === 'Disetujui dan Aktif' && l.sisaHutang > 0).length})
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab('warnings')}
-                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${activeTab === 'warnings' ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                className={`px-4 py-2 text-xs font-bold rounded-sm transition-all cursor-pointer ${activeTab === 'warnings' ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
               >
                 Warnings / Anomali ({processedLoans.filter(l => l.warnings.length > 0).length})
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab('restructured')}
-                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${activeTab === 'restructured' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                className={`px-4 py-2 text-xs font-bold rounded-sm transition-all cursor-pointer ${activeTab === 'restructured' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
               >
                 Restrukturisasi ({processedLoans.filter(l => l.status === 'Direstrukturisasi' || l.status === 'Menunggu Persetujuan Restrukturisasi').length})
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab('completed')}
-                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${activeTab === 'completed' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                className={`px-4 py-2 text-xs font-bold rounded-sm transition-all cursor-pointer ${activeTab === 'completed' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
               >
                 Lunas / Selesai ({processedLoans.filter(l => l.status === 'Lunas').length})
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab('all')}
-                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${activeTab === 'all' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                className={`px-4 py-2 text-xs font-bold rounded-sm transition-all cursor-pointer ${activeTab === 'all' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
               >
                 Semua ({processedLoans.length})
               </button>
@@ -410,7 +410,7 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
                 placeholder="Cari peminjam, ID, unit..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2 text-xs rounded-xl border-slate-200 bg-white focus-visible:ring-indigo-500 shadow-sm"
+                className="pl-10 pr-4 py-2 text-xs rounded-sm border-slate-200 bg-white focus-visible:ring-indigo-500 shadow-sm"
               />
             </div>
           </div>
@@ -446,17 +446,17 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span>{loan.borrowerName}</span>
                             {loan.status === 'Direstrukturisasi' && (
-                              <Badge className="bg-blue-50 text-blue-700 border-blue-100 border text-[9px] font-bold px-1.5 py-0 rounded">
+                              <Badge className="bg-blue-50 text-blue-700 border-blue-100 border text-[9px] font-bold px-1.5 py-0 rounded-sm">
                                 Direstrukturisasi
                               </Badge>
                             )}
                             {loan.status === 'Menunggu Persetujuan Restrukturisasi' && (
-                              <Badge className="bg-purple-50 text-purple-700 border-purple-100 border text-[9px] font-bold px-1.5 py-0 rounded">
+                              <Badge className="bg-purple-50 text-purple-700 border-purple-100 border text-[9px] font-bold px-1.5 py-0 rounded-sm">
                                 Pending Restruktur
                               </Badge>
                             )}
                             {loan.status === 'Lunas' && (
-                              <Badge className="bg-slate-50 text-slate-500 border-slate-200 border text-[9px] font-bold px-1.5 py-0 rounded">
+                              <Badge className="bg-slate-50 text-slate-500 border-slate-200 border text-[9px] font-bold px-1.5 py-0 rounded-sm">
                                 Lunas
                               </Badge>
                             )}
@@ -464,7 +464,7 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
                           <div className="text-[10px] font-normal text-slate-400 font-mono mt-0.5 flex items-center gap-1.5">
                             <span>ID: {loan.id}</span>
                             {loan.tujuanPinjaman === 'Restrukturisasi pinjaman' && (
-                              <span className="text-[9px] text-indigo-500 font-semibold bg-indigo-50 px-1 rounded">
+                              <span className="text-[9px] text-indigo-500 font-semibold bg-indigo-50 px-1 rounded-sm">
                                 Hasil Restruktur
                               </span>
                             )}
@@ -494,7 +494,7 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
 
                       {/* Tenor count */}
                       <TableCell className="text-center font-medium text-slate-600">
-                        <Badge variant="secondary" className="bg-slate-100 text-slate-700 font-mono text-[10px] rounded-lg">
+                        <Badge variant="secondary" className="bg-slate-100 text-slate-700 font-mono text-[10px] rounded-sm">
                           {loan.jumlahMenyicil} / {loan.tenor} Bln
                         </Badge>
                       </TableCell>
@@ -507,20 +507,20 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
                               {loan.matchedEmployee.name}
                             </span>
                             <div className="flex gap-1.5 items-center">
-                              <Badge className={`text-[10px] px-1.5 py-0.5 rounded-lg border font-bold ${
+                              <Badge className={`text-[10px] px-1.5 py-0.5 rounded-sm border font-bold ${
                                 loan.matchType === 'direct' 
                                   ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
                                   : 'bg-amber-50 text-amber-700 border-amber-100'
                               }`}>
                                 {loan.matchType === 'direct' ? 'Direct ID Match' : 'Name Fallback'}
                               </Badge>
-                              <Badge className={`text-[9px] px-1.5 py-0 rounded bg-slate-100 text-slate-500 font-normal border-slate-200 border`}>
+                              <Badge className={`text-[9px] px-1.5 py-0 rounded-sm bg-slate-100 text-slate-500 font-normal border-slate-200 border`}>
                                 {loan.matchedEmployee.collection === 'Employees_Loyalis' ? 'Loyalis' : 'Pekarya'}
                               </Badge>
                             </div>
                           </div>
                         ) : (
-                          <Badge className="bg-rose-50 text-rose-700 border-rose-100 border text-[10px] font-bold rounded-lg">
+                          <Badge className="bg-rose-50 text-rose-700 border-rose-100 border text-[10px] font-bold rounded-sm">
                             Unmatched (Warning)
                           </Badge>
                         )}
@@ -532,7 +532,7 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
                           type="button"
                           variant="ghost"
                           onClick={() => setSelectedLoan(loan)}
-                          className="h-8 px-3 text-xs font-semibold border border-slate-200 text-slate-700 hover:text-indigo-600 hover:bg-slate-50 rounded-xl transition-all shadow-sm bg-white cursor-pointer"
+                          className="h-8 px-3 text-xs font-semibold border border-slate-200 text-slate-700 hover:text-indigo-600 hover:bg-slate-50 rounded-sm transition-all shadow-sm bg-white cursor-pointer"
                         >
                           Audit Details
                         </Button>
@@ -554,14 +554,14 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
         }
       }}>
         {selectedLoan && (
-          <DialogContent className="sm:max-w-5xl w-[95vw] p-8 rounded-2xl border-none shadow-2xl bg-white max-h-[90vh] overflow-y-auto">
+          <DialogContent className="sm:max-w-5xl w-[95vw] p-8 rounded-md border-none shadow-2xl bg-white max-h-[90vh] overflow-y-auto">
             <DialogHeader className="mb-6">
               <div className="flex items-center justify-between pr-4">
                 <DialogTitle className="text-xl font-bold text-slate-900 flex items-center gap-2">
                   <Banknote className="w-5 h-5 text-indigo-600 animate-pulse" />
                   Audit Simpan Pinjam #{selectedLoan.id}
                 </DialogTitle>
-                <Badge className={`font-bold rounded-lg text-xs ${
+                <Badge className={`font-bold rounded-sm text-xs ${
                   selectedLoan.status === 'Disetujui dan Aktif' 
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-100 border'
                     : selectedLoan.status === 'Lunas'
@@ -582,13 +582,13 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
 
             {/* Lineage / Restructuring Navigation Links */}
             {(selectedLoan.restructuredFromLoanId || selectedLoan.restructuredToLoanId) && (
-              <div className="flex gap-3 text-xs text-indigo-600 font-semibold mb-6 bg-indigo-50/50 px-4 py-2.5 rounded-xl border border-indigo-100/50 items-center">
+              <div className="flex gap-3 text-xs text-indigo-600 font-semibold mb-6 bg-indigo-50/50 px-4 py-2.5 rounded-md border border-indigo-100/50 items-center">
                 <span className="text-indigo-800 font-bold">Hubungan Restrukturisasi:</span>
                 {selectedLoan.restructuredFromLoanId && (
                   <button
                     type="button"
                     onClick={() => handleViewRelatedLoan(selectedLoan.restructuredFromLoanId!)}
-                    className="hover:underline cursor-pointer flex items-center gap-1 font-bold bg-white text-indigo-600 border border-indigo-200 rounded px-2 py-0.5"
+                    className="hover:underline cursor-pointer flex items-center gap-1 font-bold bg-white text-indigo-600 border border-indigo-200 rounded-sm px-2 py-0.5"
                   >
                     ← Pinjaman Sebelumnya (#{selectedLoan.restructuredFromLoanId.substring(0, 8)})
                   </button>
@@ -600,7 +600,7 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
                   <button
                     type="button"
                     onClick={() => handleViewRelatedLoan(selectedLoan.restructuredToLoanId!)}
-                    className="hover:underline cursor-pointer flex items-center gap-1 font-bold bg-white text-indigo-600 border border-indigo-200 rounded px-2 py-0.5"
+                    className="hover:underline cursor-pointer flex items-center gap-1 font-bold bg-white text-indigo-600 border border-indigo-200 rounded-sm px-2 py-0.5"
                   >
                     Pinjaman Baru (#{selectedLoan.restructuredToLoanId.substring(0, 8)}) →
                   </button>
@@ -610,7 +610,7 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
 
             {/* Warnings Alert Callout */}
             {selectedLoan.warnings.length > 0 && (
-              <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl mb-6 flex gap-3 items-start">
+              <div className="p-4 bg-amber-50 border border-amber-100 rounded-md mb-6 flex gap-3 items-start">
                 <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                 <div>
                   <h4 className="text-xs font-bold text-amber-800">Review Diperlukan (Warning Peringatan)</h4>
@@ -624,7 +624,7 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
             )}
 
             {/* Person Link Verification Banner */}
-            <div className={`p-4 rounded-xl mb-6 flex items-center justify-between border ${
+            <div className={`p-4 rounded-md mb-6 flex items-center justify-between border ${
               selectedLoan.matchedEmployee
                 ? 'bg-emerald-50/50 border-emerald-100 text-emerald-800'
                 : 'bg-rose-50/50 border-rose-100 text-rose-800'
@@ -652,7 +652,7 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
                 variant="ghost"
                 size="sm"
                 onClick={() => setShowDetailedMatch(!showDetailedMatch)}
-                className={`text-[11px] font-bold h-7 rounded-lg px-3 border cursor-pointer ${
+                className={`text-[11px] font-bold h-7 rounded-sm px-3 border cursor-pointer ${
                   selectedLoan.matchedEmployee
                     ? 'hover:bg-emerald-100/50 border-emerald-200 text-emerald-700'
                     : 'hover:bg-rose-100/50 border-rose-200 text-rose-700'
@@ -670,7 +670,7 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
                     <h3 className="text-xs font-bold text-indigo-600 uppercase tracking-wider mb-3 flex items-center gap-1.5">
                       <User className="w-4 h-4" /> Koperasi Borrower Info
                     </h3>
-                    <div className="bg-slate-50/70 p-4 rounded-xl space-y-2 border border-slate-100/50">
+                    <div className="bg-slate-50/70 p-4 rounded-md space-y-2 border border-slate-100/50">
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-slate-400">Nama Lengkap</span>
                         <span className="font-semibold text-slate-800">{selectedLoan.borrowerName}</span>
@@ -702,7 +702,7 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
                   
                   {/* Restructured Banner Explainer for Old Loans */}
                   {selectedLoan.status === 'Direstrukturisasi' && selectedLoan.restructuredToLoanId && (
-                    <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl mb-3 text-blue-800 text-[11px] font-medium leading-relaxed">
+                    <div className="p-3 bg-blue-50 border border-blue-100 rounded-md mb-3 text-blue-800 text-[11px] font-medium leading-relaxed">
                       <span className="font-bold block mb-1">Pinjaman Telah Direstrukturisasi</span>
                       Sisa hutang lama telah ditransfer to pinjaman baru{' '}
                       <button
@@ -719,7 +719,7 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
                   {/* Financial Parameters Box */}
                   {selectedLoan.restructuredFromLoanId ? (
                     /* Restructured New Loan Breakdown */
-                    <div className="bg-slate-50/70 p-4 rounded-xl space-y-2 border border-slate-100/50">
+                    <div className="bg-slate-50/70 p-4 rounded-md space-y-2 border border-slate-100/50">
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-slate-400">Sisa Hutang Lama (Dialihkan)</span>
                         <span className="font-semibold text-slate-800">Rp {(selectedLoan.sisaPinjamanSebelumnya || 0).toLocaleString('id-ID')}</span>
@@ -764,7 +764,7 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
                     </div>
                   ) : (
                     /* Regular / Non-Restructured Loan Display */
-                    <div className="bg-slate-50/70 p-4 rounded-xl space-y-2 border border-slate-100/50">
+                    <div className="bg-slate-50/70 p-4 rounded-md space-y-2 border border-slate-100/50">
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-slate-400 font-medium">Total Pinjaman</span>
                         <span className="font-bold text-slate-800">Rp {selectedLoan.jumlahPinjaman.toLocaleString('id-ID')}</span>
@@ -808,7 +808,7 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
                       <CheckCircle2 className="w-4 h-4" /> Internal Match Info (YAPETIDU)
                     </h3>
                     {selectedLoan.matchedEmployee ? (
-                      <div className="bg-indigo-50/30 p-4 rounded-xl border border-indigo-100/50 space-y-2">
+                      <div className="bg-indigo-50/30 p-4 rounded-md border border-indigo-100/50 space-y-2">
                         <div className="flex justify-between items-center text-xs">
                           <span className="text-slate-500">Nama Internal</span>
                           <span className="font-bold text-indigo-950">{selectedLoan.matchedEmployee.name}</span>
@@ -833,13 +833,13 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
                         </div>
                         <div className="pt-2 border-t border-indigo-200/20 flex justify-between items-center text-xs">
                           <span className="text-slate-500">Match Accuracy</span>
-                          <Badge className="bg-indigo-600 text-white font-bold text-[9px] px-2 py-0.5 rounded-lg">
+                          <Badge className="bg-indigo-600 text-white font-bold text-[9px] px-2 py-0.5 rounded-sm">
                             {selectedLoan.matchType === 'direct' ? 'Direct ID Reference Match' : 'Name String Match Fallback'}
                           </Badge>
                         </div>
                       </div>
                     ) : (
-                      <div className="bg-rose-50/30 p-4 rounded-xl border border-rose-100/40 text-center text-slate-500 text-xs">
+                      <div className="bg-rose-50/30 p-4 rounded-md border border-rose-100/40 text-center text-slate-500 text-xs">
                         <HelpCircle className="w-8 h-8 text-rose-500 mx-auto mb-2 opacity-50" />
                         Tidak ada record karyawan internal yang cocok dengan peminjam koperasi.
                       </div>
@@ -859,20 +859,20 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
 
                     if (totalEntries === 0) {
                       return (
-                        <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-100/50">
+                        <div className="bg-slate-50/70 p-4 rounded-md border border-slate-100/50">
                           <span className="text-xs text-slate-400 block text-center">Tidak ada riwayat history yang tercatat.</span>
                         </div>
                       );
                     }
 
                     return (
-                      <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-100/50 max-h-[320px] overflow-y-auto space-y-1.5">
+                      <div className="bg-slate-50/70 p-4 rounded-md border border-slate-100/50 max-h-[320px] overflow-y-auto space-y-1.5">
                         {segments.map((segment, segIdx) => (
                           <div key={segment.loanId}>
                             {/* Segment separator label */}
                             {hasAncestors && (
                               <div className={`flex items-center gap-2 ${segIdx > 0 ? 'mt-3 pt-3 border-t border-dashed border-slate-200' : ''}`}>
-                                <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                <div className={`text-[10px] font-bold px-2 py-0.5 rounded-sm ${
                                   segIdx === segments.length - 1
                                     ? 'bg-indigo-100 text-indigo-700'
                                     : 'bg-slate-200/70 text-slate-500'
@@ -917,7 +917,7 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
                 type="button"
                 variant="outline"
                 onClick={() => setSelectedLoan(null)}
-                className="rounded-xl px-5 border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer"
+                className="rounded-sm px-5 border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer"
               >
                 Close Audit
               </Button>

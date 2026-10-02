@@ -404,11 +404,12 @@ export function PaidLeavePanel() {
                   min={`${year}-01-01`}
                   max={`${year}-12-31`}
                   value={leaveDate}
+                  disabled={working}
                   onChange={(event) => {
                     setLeaveDate(event.target.value);
                     setError('');
                   }}
-                  className="min-h-14 rounded-sm text-base font-mono"
+                  className="rounded-sm border-slate-200"
                 />
               </div>
 

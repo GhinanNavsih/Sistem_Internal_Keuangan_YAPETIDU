@@ -108,7 +108,7 @@ const SCHEDULE_STATUS_LABELS: Record<string, string> = {
 const FIELD_LABEL = 'text-base font-bold text-slate-600';
 const SUBLABEL = 'text-sm font-bold text-slate-600';
 const INPUT_CLASS =
-  'h-12 rounded-xl border-slate-200 text-base focus:border-indigo-400 focus:ring-indigo-400/20';
+  'h-12 rounded-sm border-slate-200 text-base focus:border-indigo-400 focus:ring-indigo-400/20';
 
 interface EquipmentOption {
   name: string;
@@ -283,7 +283,7 @@ function EquipmentRow({
             aria-label={`Kurangi ${increment}`}
             disabled={value <= 0}
             onClick={() => onChange(Math.max(0, value - increment))}
-            className="h-9 w-9 rounded-full"
+            className="h-9 w-9 rounded-sm"
           >
             <Minus />
           </Button>
@@ -295,7 +295,7 @@ function EquipmentRow({
             placeholder="0"
             value={value === 0 ? '' : String(value)}
             onChange={(event) => onChange(clampQuantity(Number(event.target.value.replace(/\D/g, '')), max))}
-            className="h-9 w-14 rounded-lg px-1 text-center text-sm font-bold tabular-nums"
+            className="h-9 w-14 rounded-sm px-1 text-center text-sm font-bold tabular-nums"
           />
           <Button
             type="button"
@@ -305,7 +305,7 @@ function EquipmentRow({
             autoFocus={adding}
             disabled={value >= max}
             onClick={() => onChange(Math.min(max, value + increment))}
-            className="h-9 w-9 rounded-full"
+            className="h-9 w-9 rounded-sm"
           >
             <Plus />
           </Button>
@@ -321,7 +321,7 @@ function EquipmentRow({
             setAdding(true);
             onChange(1);
           }}
-          className="shrink-0 rounded-full"
+          className="shrink-0 rounded-sm"
         >
           <Plus /> Tambah
         </Button>
@@ -940,7 +940,7 @@ export default function VenueReservationDialog({
       <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen && !submitting) onOpenChange(false); }}>
       <DialogContent
         className={cn(
-          'flex max-h-[92vh] w-[95vw] flex-col gap-0 overflow-hidden rounded-2xl border-none bg-white p-0 shadow-2xl transition-[max-width] duration-300',
+          'flex max-h-[92vh] w-[95vw] flex-col gap-0 overflow-hidden rounded-md border-none bg-white p-0 shadow-2xl transition-[max-width] duration-300',
           // The venue step is two columns, so it gets nearly the whole screen; the other steps stay narrow.
           stepId === 'tempat' ? 'sm:max-w-[min(96vw,1440px)]' : 'sm:max-w-2xl',
         )}
@@ -965,7 +965,7 @@ export default function VenueReservationDialog({
               {RESERVATION_STEPS.map((item, index) => (
                 <span
                   key={item.id}
-                  className={cn('h-1.5 flex-1 rounded-full transition-colors', index <= step ? 'bg-indigo-500' : 'bg-slate-200')}
+                  className={cn('h-1.5 flex-1 rounded-sm transition-colors', index <= step ? 'bg-indigo-500' : 'bg-slate-200')}
                 />
               ))}
             </div>
@@ -983,7 +983,7 @@ export default function VenueReservationDialog({
         >
           <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto p-5 sm:p-6">
             {catalogError && (
-              <div role="alert" className="mb-5 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-medium text-rose-700">
+              <div role="alert" className="mb-5 flex items-start gap-2 rounded-md border border-rose-200 bg-rose-50 p-3 text-xs font-medium text-rose-700">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 <div className="space-y-2">
                   <p>{catalogError}</p>
@@ -992,7 +992,7 @@ export default function VenueReservationDialog({
                     variant="outline"
                     size="sm"
                     onClick={() => void loadCatalog(dates.length > 0 ? dates : (isValidDateString(waktu) ? [waktu] : []))}
-                    className="rounded-lg border-rose-200 text-rose-700 hover:bg-rose-100"
+                    className="rounded-sm border-rose-200 text-rose-700 hover:bg-rose-100"
                   >
                     Coba lagi
                   </Button>
@@ -1043,7 +1043,7 @@ export default function VenueReservationDialog({
                         onClick={() => skFileInputRef.current?.click()}
                         disabled={uploadingSk || skFiles.length >= MAX_SK_FILES}
                         className={cn(
-                          'h-12 shrink-0 rounded-xl px-3 sm:px-4 text-xs sm:text-sm font-bold border transition-all cursor-pointer flex items-center gap-1.5',
+                          'h-12 shrink-0 rounded-sm px-3 sm:px-4 text-xs sm:text-sm font-bold border transition-all cursor-pointer flex items-center gap-1.5',
                           skFiles.length > 0
                             ? 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
                             : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-sm'
@@ -1086,7 +1086,7 @@ export default function VenueReservationDialog({
                         {skFiles.map((file, idx) => (
                           <div
                             key={`${file.name}-${idx}`}
-                            className="flex items-center justify-between gap-2 rounded-xl border border-indigo-100 bg-indigo-50/70 p-2.5 text-xs text-indigo-950"
+                            className="flex items-center justify-between gap-2 rounded-md border border-indigo-100 bg-indigo-50/70 p-2.5 text-xs text-indigo-950"
                           >
                             <div className="flex min-w-0 items-center gap-2">
                               <FileText className="h-4 w-4 shrink-0 text-indigo-600" />
@@ -1097,7 +1097,7 @@ export default function VenueReservationDialog({
                               <button
                                 type="button"
                                 onClick={() => setPreviewSk({ name: file.name, base64: file.base64 })}
-                                className="rounded-lg px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 cursor-pointer"
+                                className="rounded-sm px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 cursor-pointer"
                               >
                                 Lihat
                               </button>
@@ -1106,7 +1106,7 @@ export default function VenueReservationDialog({
                                 onClick={() => {
                                   setSkFiles((prev) => prev.filter((_, i) => i !== idx));
                                 }}
-                                className="rounded-lg p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
+                                className="rounded-sm p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
                                 title={`Hapus ${file.name}`}
                               >
                                 <X className="h-4 w-4" />
@@ -1126,7 +1126,7 @@ export default function VenueReservationDialog({
                   <div className="space-y-3">
                     <div className="flex items-center justify-between gap-2">
                       <Label className={FIELD_LABEL}>Durasi Kegiatan</Label>
-                      <div className="inline-flex rounded-xl bg-slate-100 p-1">
+                      <div className="inline-flex rounded-md bg-slate-100 p-1">
                         <button
                           type="button"
                           onClick={() => {
@@ -1134,7 +1134,7 @@ export default function VenueReservationDialog({
                             setWaktuSelesai('');
                           }}
                           className={cn(
-                            'rounded-lg px-3 py-1 text-xs font-bold transition-all cursor-pointer',
+                            'rounded-sm px-3 py-1 text-xs font-bold transition-all cursor-pointer',
                             !isMultiDay ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800',
                           )}
                         >
@@ -1149,7 +1149,7 @@ export default function VenueReservationDialog({
                             }
                           }}
                           className={cn(
-                            'rounded-lg px-3 py-1 text-xs font-bold transition-all cursor-pointer',
+                            'rounded-sm px-3 py-1 text-xs font-bold transition-all cursor-pointer',
                             isMultiDay ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800',
                           )}
                         >
@@ -1239,7 +1239,7 @@ export default function VenueReservationDialog({
                           <InlineError id="reservasi-tanggal-selesai-message">{errorFor('waktuSelesai')}</InlineError>
                         )}
                         {dates.length > 1 && (
-                          <p className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">
+                          <p className="inline-flex items-center gap-1.5 rounded-sm bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">
                             <CalendarDays className="h-3.5 w-3.5" />
                             {formatReservationDateRange(waktu, waktuSelesai)} berturut-turut
                           </p>
@@ -1399,7 +1399,7 @@ export default function VenueReservationDialog({
                                     <li
                                       key={entry.id}
                                       className={cn(
-                                        'flex items-start justify-between gap-3 rounded-lg border p-2.5 text-xs',
+                                        'flex items-start justify-between gap-3 rounded-md border p-2.5 text-xs',
                                         clash ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-slate-200 bg-white text-slate-700',
                                       )}
                                     >
@@ -1427,7 +1427,7 @@ export default function VenueReservationDialog({
                                   : 'Jam yang dipilih bentrok dengan jadwal di atas. Ganti jam atau pilih ruangan lain.'}
                               </InlineError>
                             ) : (
-                              <p className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 text-xs font-semibold text-emerald-700">
+                              <p className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-2.5 text-xs font-semibold text-emerald-700">
                                 <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
                                 {roomSchedule.length === 0
                                   ? 'Belum ada jadwal lain di ruangan ini.'
@@ -1443,7 +1443,7 @@ export default function VenueReservationDialog({
 
                   <aside
                     aria-label="Peralatan tambahan"
-                    className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4 lg:sticky lg:top-6 lg:max-h-[calc(92vh-15rem)] lg:overflow-y-auto"
+                    className="space-y-3 rounded-md border border-slate-200 bg-slate-50/60 p-4 lg:sticky lg:top-6 lg:max-h-[calc(92vh-15rem)] lg:overflow-y-auto"
                   >
                     <div className="flex items-center justify-between gap-3">
                       <h4 className={cn(FIELD_LABEL, 'flex items-center gap-2')}>
@@ -1452,7 +1452,7 @@ export default function VenueReservationDialog({
                         <span className="text-xs font-medium text-slate-400">(opsional)</span>
                       </h4>
                       {selectedLines.length > 0 && (
-                        <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-bold text-indigo-700">
+                        <span className="rounded-sm bg-indigo-50 px-2 py-0.5 text-[11px] font-bold text-indigo-700">
                           {selectedLines.length} dipilih
                         </span>
                       )}
@@ -1471,7 +1471,7 @@ export default function VenueReservationDialog({
                             <p className={SUBLABEL}>
                               {group === 'building' ? `Inventaris ${building?.singkatan || building?.nama}` : 'Logistik umum kampus'}
                             </p>
-                            <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
+                            <ul className="divide-y divide-slate-100 rounded-md border border-slate-200 bg-white">
                               {options.map((option) => {
                                 const state = optionState(option);
                                 return (
@@ -1502,16 +1502,16 @@ export default function VenueReservationDialog({
               {stepId === 'konfirmasi' && (
                 <>
                   {submitError && (
-                    <div role="alert" className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-medium text-rose-700">
+                    <div role="alert" className="flex items-start gap-2 rounded-md border border-rose-200 bg-rose-50 p-3 text-xs font-medium text-rose-700">
                       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                       <div className="space-y-2">
                         <p>{submitError}</p>
                         {submitConflict && (
                           <div className="flex flex-wrap gap-2">
-                            <Button type="button" variant="outline" size="sm" onClick={() => goTo(stepIndex('acara'))} className="rounded-lg border-rose-200 text-rose-700 hover:bg-rose-100">
+                            <Button type="button" variant="outline" size="sm" onClick={() => goTo(stepIndex('acara'))} className="rounded-sm border-rose-200 text-rose-700 hover:bg-rose-100">
                               Ubah jam
                             </Button>
-                            <Button type="button" variant="outline" size="sm" onClick={() => goTo(stepIndex('tempat'))} className="rounded-lg border-rose-200 text-rose-700 hover:bg-rose-100">
+                            <Button type="button" variant="outline" size="sm" onClick={() => goTo(stepIndex('tempat'))} className="rounded-sm border-rose-200 text-rose-700 hover:bg-rose-100">
                               Ubah ruangan atau peralatan
                             </Button>
                           </div>
@@ -1520,7 +1520,7 @@ export default function VenueReservationDialog({
                     </div>
                   )}
 
-                  <dl className="divide-y divide-slate-100 rounded-xl border border-slate-200">
+                  <dl className="divide-y divide-slate-100 rounded-md border border-slate-200">
                     {summaryRows.map((row) => (
                       <div key={row.label} className="flex items-start justify-between gap-3 px-3.5 py-2.5">
                         <div className="min-w-0">
@@ -1540,7 +1540,7 @@ export default function VenueReservationDialog({
                   </dl>
 
                   {isMultiDay && dates.length > 1 && (
-                    <div className="flex items-start gap-2.5 rounded-xl border border-indigo-100 bg-indigo-50/70 p-3.5 text-xs text-indigo-800">
+                    <div className="flex items-start gap-2.5 rounded-md border border-indigo-100 bg-indigo-50/70 p-3.5 text-xs text-indigo-800">
                       <CalendarCheck className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
                       <div className="space-y-1">
                         <p className="font-semibold">Reservasi Multi-Hari ({dates.length} Hari Kegiatan)</p>
@@ -1574,7 +1574,7 @@ export default function VenueReservationDialog({
                       />
                     </Field>
                   ) : (
-                    <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5">
+                    <div className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50/70 px-3.5 py-2.5">
                       <div className="min-w-0">
                         <p className="text-[11px] font-bold uppercase text-slate-500">Atas nama</p>
                         <p className="truncate text-sm font-semibold text-slate-800">{pemohon}</p>
@@ -1592,7 +1592,7 @@ export default function VenueReservationDialog({
                   {/* A number filled in for the user is shown, not asked for; the input only
                       appears if there is none, or they want to change it. */}
                   {prefill !== null && kontak === prefill && !editKontak && !issueFor('kontak') ? (
-                    <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5">
+                    <div className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50/70 px-3.5 py-2.5">
                       <div className="min-w-0">
                         <p className="text-[11px] font-bold uppercase text-slate-500">Nomor WhatsApp</p>
                         <p className="text-sm font-semibold text-slate-800">{kontak}</p>
@@ -1644,7 +1644,7 @@ export default function VenueReservationDialog({
                   variant="ghost"
                   onClick={() => goTo(step - 1)}
                   disabled={submitting}
-                  className="h-12 rounded-xl px-4 text-base font-bold text-slate-600"
+                  className="h-12 rounded-sm px-4 text-base font-bold text-slate-600"
                 >
                   <ArrowLeft /> Kembali
                 </Button>
@@ -1658,7 +1658,7 @@ export default function VenueReservationDialog({
                     onRestart();
                   }}
                   disabled={submitting}
-                  className="h-12 rounded-xl px-4 text-base font-bold text-slate-500"
+                  className="h-12 rounded-sm px-4 text-base font-bold text-slate-500"
                 >
                   Mulai dari awal
                 </Button>
@@ -1668,7 +1668,7 @@ export default function VenueReservationDialog({
               <Button
                 type="submit"
                 disabled={submitting}
-                className="h-12 rounded-xl bg-indigo-600 px-6 text-base font-bold text-white hover:bg-indigo-700"
+                className="h-12 rounded-sm bg-indigo-600 px-6 text-base font-bold text-white hover:bg-indigo-700"
               >
                 {submitting && <Loader2 className="animate-spin" />}
                 {isLast ? 'Buat Reservasi' : 'Lanjut'}
@@ -1682,7 +1682,7 @@ export default function VenueReservationDialog({
 
     {/* Lightbox / Preview SK Dialog */}
     <Dialog open={previewSk !== null} onOpenChange={(open) => { if (!open) setPreviewSk(null); }}>
-      <DialogContent className="max-w-3xl w-[95vw] p-4 sm:p-6 rounded-2xl border-none shadow-2xl bg-white">
+      <DialogContent className="max-w-3xl w-[95vw] p-4 sm:p-6 rounded-md border-none shadow-2xl bg-white">
         {previewSk && (
           <div className="space-y-3">
             <DialogHeader>
@@ -1697,12 +1697,12 @@ export default function VenueReservationDialog({
                 </div>
               </div>
             </DialogHeader>
-            <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-center min-h-[300px]">
+            <div className="overflow-hidden rounded-md border border-slate-200 bg-slate-50 flex items-center justify-center min-h-[300px]">
               {previewSk.base64.startsWith('data:application/pdf') || /\.pdf$/i.test(previewSk.name) ? (
                 <iframe
                   src={previewSk.base64}
                   title={previewSk.name}
-                  className="h-[65vh] w-full rounded-xl border-none"
+                  className="h-[65vh] w-full rounded-sm border-none"
                 />
               ) : (
                 /* eslint-disable-next-line @next/next/no-img-element */

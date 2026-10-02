@@ -124,8 +124,8 @@ export default function FacilityReportRepairForm({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-600 shadow-sm">
+      <div className="flex items-start gap-3 rounded-md border border-emerald-100 bg-emerald-50/70 p-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-white text-emerald-600 shadow-sm">
           <Camera className="h-4 w-4" />
         </div>
         <div className="min-w-0">
@@ -141,7 +141,7 @@ export default function FacilityReportRepairForm({
           {photos.map((photo, index) => (
             <div
               key={photo.url}
-              className="relative aspect-square overflow-hidden rounded-xl border border-slate-200 bg-slate-100"
+              className="relative aspect-square overflow-hidden rounded-sm border border-slate-200 bg-slate-100"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -157,7 +157,7 @@ export default function FacilityReportRepairForm({
                 variant="ghost"
                 size="icon-xs"
                 onClick={() => setPhotos((previous) => previous.filter((item) => item.url !== photo.url))}
-                className="absolute right-1.5 top-1.5 rounded-lg bg-white/95 p-1 text-rose-600 shadow-sm hover:bg-white"
+                className="absolute right-1.5 top-1.5 rounded-sm bg-white/95 p-1 text-rose-600 shadow-sm hover:bg-white"
                 title="Hapus foto"
                 aria-label={`Hapus foto bukti perbaikan ${index + 1}`}
               >
@@ -169,7 +169,7 @@ export default function FacilityReportRepairForm({
       )}
 
       {photos.length < MAX_FACILITY_PHOTOS && (
-        <div className="relative flex min-h-28 w-full flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50/30 px-4 py-6 text-center text-slate-500 transition-colors hover:border-emerald-300 hover:bg-emerald-50/60">
+        <div className="relative flex min-h-28 w-full flex-col items-center justify-center gap-1.5 rounded-sm border-2 border-dashed border-emerald-200 bg-emerald-50/30 px-4 py-6 text-center text-slate-500 transition-colors hover:border-emerald-300 hover:bg-emerald-50/60">
           {/* The full card is tappable so Android can offer camera and gallery sources. */}
           <input
             type="file"
@@ -213,7 +213,7 @@ export default function FacilityReportRepairForm({
           variant="outline"
           onClick={onCancel}
           disabled={submitting || uploadingPhoto}
-          className="min-h-11 w-full rounded-xl border-slate-200 font-semibold sm:w-auto"
+          className="min-h-11 w-full rounded-sm border-slate-200 font-semibold sm:w-auto"
         >
           Batal
         </Button>
@@ -221,7 +221,7 @@ export default function FacilityReportRepairForm({
           type="button"
           onClick={() => void handleComplete()}
           disabled={submitting || uploadingPhoto}
-          className="min-h-11 w-full rounded-xl bg-emerald-600 font-bold text-white hover:bg-emerald-700 sm:w-auto"
+          className="min-h-11 w-full rounded-sm bg-emerald-600 font-bold text-white hover:bg-emerald-700 sm:w-auto"
         >
           {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           {submitting

@@ -363,7 +363,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
         </Suspense>
       ) : null}
 
-      <div className="max-w-[1600px] mx-auto p-6 lg:p-8 pb-24 lg:pb-32 space-y-8 relative z-10">
+      <div className="p-6 lg:p-8 pb-24 lg:pb-32 space-y-8 relative z-10">
 
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-1">
@@ -373,7 +373,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
                 onClick={() => {
                   window.history.back();
                 }}
-                className="group -ml-2 mb-2 text-slate-500 hover:text-indigo-700 hover:bg-indigo-50"
+                className="rounded-sm group -ml-2 mb-2 text-slate-500 hover:text-indigo-700 hover:bg-indigo-50"
               >
                 <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
                 Kembali
@@ -386,7 +386,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v, 10))}>
-              <SelectTrigger className="w-56 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
+              <SelectTrigger className="w-56 bg-white shadow-sm border-slate-200 rounded-sm font-semibold hover:border-indigo-300 transition-all">
                 <SelectValue>
                   {activeTab === 'kjm' || activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis_raw' || activeTab === 'pelaporan_kegiatan' ? (
                     `${MONTHS_ID[month - 1]} (1 – ${new Date(year, month, 0).getDate()} ${MONTHS_ID[month - 1].slice(0, 3)})`
@@ -401,7 +401,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
                   )}
                 </SelectValue>
               </SelectTrigger>
-              <SelectContent className="w-72">
+              <SelectContent className="rounded-md w-72">
                 {MONTHS_ID.map((m, i) => ({ name: m, index: i + 1 }))
                   .filter(item => {
                     const now = new Date();
@@ -442,10 +442,10 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
               </SelectContent>
             </Select>
             <Select value={String(year)} onValueChange={(v) => v && setYear(parseInt(v, 10))}>
-              <SelectTrigger className="w-28 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
+              <SelectTrigger className="w-28 bg-white shadow-sm border-slate-200 rounded-sm font-semibold hover:border-indigo-300 transition-all">
                 <SelectValue>{year}</SelectValue>
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="rounded-md">
                 {YEARS.filter(y => {
                   const now = new Date();
                   const currentYear = now.getFullYear();
@@ -461,14 +461,14 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
 
             {showCategorySelector && categoriesLoaded && category && (activeTab === 'presensi_pekarya' ? attendanceCategoryOptions : allowedCategories).length > 0 && (
               <Select value={category} onValueChange={(v) => v && setCategory(v)}>
-                <SelectTrigger className="w-48 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
+                <SelectTrigger className="w-48 bg-white shadow-sm border-slate-200 rounded-sm font-semibold hover:border-indigo-300 transition-all">
                   <SelectValue>
                     {category === ALL_BLUE_COLLAR_CATEGORY
                       ? 'SEMUA PEKARYA'
                       : category.replace('_', ' ').toUpperCase()}
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="rounded-md">
                   {(activeTab === 'presensi_pekarya'
                     ? attendanceCategoryOptions
                     : allowedCategories
@@ -487,7 +487,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
               <Button
                 variant="outline"
                 onClick={requestLogout}
-                className="rounded-xl text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 hover:border-rose-300 transition-all cursor-pointer flex items-center gap-2 shadow-sm"
+                className="rounded-sm text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 hover:border-rose-300 transition-all cursor-pointer flex items-center gap-2 shadow-sm"
               >
                 <LogOut className="w-4 h-4" />
                 Keluar

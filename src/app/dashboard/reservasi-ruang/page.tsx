@@ -312,14 +312,14 @@ function ReservationsContent() {
 
   if (!canReserveVenues(profile?.role)) {
     return (
-      <div className="mx-auto mt-16 max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 shadow-sm">
+      <div className="mx-auto mt-16 max-w-md rounded-md border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 shadow-sm">
         Halaman Reservasi Ruang hanya tersedia untuk Kepala SatKer Loyalis dan Super Admin.
       </div>
     );
   }
 
   const tabClass = (value: Tab) =>
-    `rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer ${
+    `rounded-sm px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer ${
       tab === value ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
     }`;
 
@@ -334,10 +334,10 @@ function ReservationsContent() {
         </Suspense>
       )}
 
-      <div className="relative z-10 mx-auto w-full max-w-5xl space-y-5 px-3 py-4 sm:space-y-6 sm:p-6 lg:p-8">
+      <div className="relative z-10 w-full space-y-5 px-3 py-4 sm:space-y-6 sm:p-6 lg:p-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex min-w-0 items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 shadow-inner sm:h-11 sm:w-11 sm:rounded-2xl">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm bg-indigo-50 text-indigo-600 shadow-inner sm:h-11 sm:w-11 sm:rounded-sm">
               <CalendarCheck className="h-5 w-5" />
             </div>
             <div className="min-w-0">
@@ -354,7 +354,7 @@ function ReservationsContent() {
               variant="outline"
               onClick={refresh}
               disabled={loading || refreshing}
-              className="rounded-xl"
+              className="rounded-sm"
               title="Muat ulang status dari SIMPEL"
             >
               <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
@@ -364,7 +364,7 @@ function ReservationsContent() {
               type="button"
               onClick={openForm}
               disabled={!!loadError}
-              className="rounded-xl bg-indigo-600 text-white hover:bg-indigo-700"
+              className="rounded-sm bg-indigo-600 text-white hover:bg-indigo-700"
             >
               <Plus className="h-4 w-4" />
               Reservasi Baru
@@ -373,7 +373,7 @@ function ReservationsContent() {
         </div>
 
         {loadError && (
-          <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+          <div className="flex items-start gap-3 rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
             <div className="space-y-1">
               <p className="font-semibold">{loadError}</p>
@@ -390,7 +390,7 @@ function ReservationsContent() {
         {!loadError && (
           <>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex gap-1 rounded-xl border border-slate-200/60 bg-slate-100/90 p-1">
+              <div className="flex gap-1 rounded-md border border-slate-200/60 bg-slate-100/90 p-1">
                 <button type="button" onClick={() => setTab('aktif')} className={tabClass('aktif')}>
                   Aktif ({active.length})
                 </button>
@@ -400,11 +400,11 @@ function ReservationsContent() {
               </div>
 
               {tab === 'aktif' && active.length > 0 && (
-                <div className="flex items-center gap-1 rounded-xl border border-slate-200/60 bg-slate-100/80 p-1">
+                <div className="flex items-center gap-1 rounded-md border border-slate-200/60 bg-slate-100/80 p-1">
                   <button
                     type="button"
                     onClick={() => setActiveScope('all')}
-                    className={`rounded-lg px-3 py-1 text-xs font-semibold transition-all cursor-pointer ${
+                    className={`rounded-sm px-3 py-1 text-xs font-semibold transition-all cursor-pointer ${
                       activeScope === 'all'
                         ? 'bg-white text-indigo-700 shadow-sm font-bold'
                         : 'text-slate-500 hover:text-slate-800'
@@ -415,7 +415,7 @@ function ReservationsContent() {
                   <button
                     type="button"
                     onClick={() => setActiveScope('mine')}
-                    className={`rounded-lg px-3 py-1 text-xs font-semibold transition-all cursor-pointer ${
+                    className={`rounded-sm px-3 py-1 text-xs font-semibold transition-all cursor-pointer ${
                       activeScope === 'mine'
                         ? 'bg-white text-indigo-700 shadow-sm font-bold'
                         : 'text-slate-500 hover:text-slate-800'
@@ -428,11 +428,11 @@ function ReservationsContent() {
             </div>
 
             {loading ? (
-              <div className="flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white p-10 text-sm text-slate-400">
+              <div className="flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white p-10 text-sm text-slate-400">
                 <Loader2 className="h-4 w-4 animate-spin" /> Memuat reservasi...
               </div>
             ) : shown.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-white/70 p-10 text-center text-sm text-slate-500">
+              <div className="rounded-md border border-dashed border-slate-300 bg-white/70 p-10 text-center text-sm text-slate-500">
                 {tab === 'aktif'
                   ? activeScope === 'mine' && active.length > 0
                     ? 'Anda belum memiliki reservasi aktif. Beralih ke "Semua" untuk melihat reservasi dari peminjam lain.'
@@ -449,11 +449,11 @@ function ReservationsContent() {
                   return (
                     <li
                       key={reservation.id}
-                      className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm transition-all hover:shadow-md sm:p-5"
+                      className="overflow-hidden rounded-md border border-slate-200/90 bg-white p-4 shadow-sm transition-all hover:shadow-md sm:p-5"
                     >
                       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
                         {/* Venue Image Thumbnail */}
-                        <div className="group/img relative aspect-[16/10] w-full shrink-0 overflow-hidden rounded-xl border border-slate-200/80 bg-slate-100 sm:w-44 md:w-48 sm:aspect-[4/3]">
+                        <div className="group/img relative aspect-[16/10] w-full shrink-0 overflow-hidden rounded-sm border border-slate-200/80 bg-slate-100 sm:w-44 md:w-48 sm:aspect-[4/3]">
                           {venuePhoto ? (
                             <>
                               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -470,7 +470,7 @@ function ReservationsContent() {
                                 className="absolute inset-0 flex items-center justify-center bg-black/35 opacity-0 transition-opacity duration-200 group-hover/img:opacity-100 focus-visible:opacity-100 cursor-zoom-in"
                                 title="Lihat foto ruangan"
                               >
-                                <span className="inline-flex items-center gap-1.5 rounded-lg bg-black/60 px-2.5 py-1 text-xs font-medium text-white shadow backdrop-blur-sm">
+                                <span className="inline-flex items-center gap-1.5 rounded-sm bg-black/60 px-2.5 py-1 text-xs font-medium text-white shadow backdrop-blur-sm">
                                   <ZoomIn className="h-3.5 w-3.5" />
                                   Perbesar
                                 </span>
@@ -496,21 +496,21 @@ function ReservationsContent() {
                             <div className="flex flex-wrap items-center gap-2">
                               <h2 className="text-sm font-bold text-slate-900 sm:text-base">{reservation.kegiatan}</h2>
                               <span
-                                className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${PHASE_TONES[reservation.phase]}`}
+                                className={`rounded-sm border px-2 py-0.5 text-[11px] font-semibold ${PHASE_TONES[reservation.phase]}`}
                               >
                                 {RESERVATION_PHASE_LABELS[reservation.phase]}
                               </span>
                               {Boolean(reservation.groupTotal && reservation.groupTotal > 1) && (
-                                <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
+                                <span className="rounded-sm border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
                                   Hari {reservation.groupIndex || 1} dari {reservation.groupTotal}
                                 </span>
                               )}
                               {reservation.isOwner ? (
-                                <span className="rounded-full border border-indigo-200 bg-indigo-50/90 px-2 py-0.5 text-[10px] font-bold text-indigo-700">
+                                <span className="rounded-sm border border-indigo-200 bg-indigo-50/90 px-2 py-0.5 text-[10px] font-bold text-indigo-700">
                                   Milik Saya
                                 </span>
                               ) : (
-                                <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                                <span className="rounded-sm border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
                                   Peminjam Lain
                                 </span>
                               )}
@@ -535,7 +535,7 @@ function ReservationsContent() {
                                 {reservation.fasilitasTambahan.map((line) => (
                                   <span
                                     key={line}
-                                    className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-600"
+                                    className="rounded-sm border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-600"
                                   >
                                     {line}
                                   </span>
@@ -564,7 +564,7 @@ function ReservationsContent() {
                                   type="button"
                                   onClick={() => handleViewSurat(reservation)}
                                   disabled={loadingSuratId === reservation.id}
-                                  className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50/80 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100 transition-colors cursor-pointer"
+                                  className="inline-flex items-center gap-1.5 rounded-sm border border-indigo-200 bg-indigo-50/80 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100 transition-colors cursor-pointer"
                                   title="Lihat Surat Konfirmasi Peminjaman / SK"
                                 >
                                   {loadingSuratId === reservation.id ? (
@@ -594,7 +594,7 @@ function ReservationsContent() {
                                   size="sm"
                                   variant={action === 'cancel' ? 'outline' : 'default'}
                                   onClick={() => openAction(reservation, action)}
-                                  className={`rounded-lg ${
+                                  className={`rounded-sm ${
                                     action === 'cancel'
                                       ? 'border-rose-200 text-rose-600 hover:bg-rose-50'
                                       : action === 'confirm-receipt'
@@ -630,7 +630,7 @@ function ReservationsContent() {
       />
 
       <Dialog open={pendingAction !== null} onOpenChange={(open) => { if (!open && !actionBusy) setPendingAction(null); }}>
-        <DialogContent className="sm:max-w-md w-[95vw] p-6 rounded-2xl border-none shadow-2xl bg-white">
+        <DialogContent className="sm:max-w-md w-[95vw] p-6 rounded-md border-none shadow-2xl bg-white">
           {pendingAction && (
             <>
               <DialogHeader>
@@ -646,7 +646,7 @@ function ReservationsContent() {
               {pendingAction.action === 'cancel' && (
                 <div className="space-y-3">
                   {Boolean(pendingAction.reservation.groupTotal && pendingAction.reservation.groupTotal > 1) && (
-                    <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-950 space-y-2">
+                    <div className="rounded-md border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-950 space-y-2">
                       <p className="font-semibold text-amber-900">Cakupan Pembatalan Rangkaian Kegiatan</p>
                       <div className="space-y-1.5">
                         <label className="flex items-center gap-2 cursor-pointer">
@@ -688,18 +688,18 @@ function ReservationsContent() {
                       value={cancelReason}
                       onChange={(event) => setCancelReason(event.target.value)}
                       placeholder="Misal: kegiatan diundur ke pekan depan"
-                      className="w-full rounded-xl border border-slate-200 p-3 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      className="w-full rounded-sm border border-slate-200 p-3 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   </div>
                 </div>
               )}
-              <DialogFooter className="gap-2 sm:gap-0">
+              <DialogFooter className="rounded-b-md gap-2 sm:gap-0">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => setPendingAction(null)}
                   disabled={actionBusy}
-                  className="rounded-xl"
+                  className="rounded-sm"
                 >
                   Batal
                 </Button>
@@ -707,7 +707,7 @@ function ReservationsContent() {
                   type="button"
                   onClick={confirmAction}
                   disabled={actionBusy}
-                  className={`rounded-xl text-white ${
+                  className={`rounded-sm text-white ${
                     pendingAction.action === 'cancel' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-indigo-600 hover:bg-indigo-700'
                   }`}
                 >
@@ -728,7 +728,7 @@ function ReservationsContent() {
 
       {/* Image Preview Lightbox */}
       <Dialog open={previewImage !== null} onOpenChange={(open) => { if (!open) setPreviewImage(null); }}>
-        <DialogContent className="max-w-2xl w-[95vw] p-4 sm:p-6 rounded-2xl border-none shadow-2xl bg-white">
+        <DialogContent className="max-w-2xl w-[95vw] p-4 sm:p-6 rounded-md border-none shadow-2xl bg-white">
           {previewImage && (
             <div className="space-y-3">
               <DialogHeader>
@@ -739,7 +739,7 @@ function ReservationsContent() {
                   Foto fasilitas dan ruangan dari SIMPEL UNIPDU
                 </DialogDescription>
               </DialogHeader>
-              <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+              <div className="overflow-hidden rounded-md border border-slate-200 bg-slate-50">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={previewImage.url}
@@ -754,7 +754,7 @@ function ReservationsContent() {
 
       {/* SK Document Preview Lightbox */}
       <Dialog open={previewSurat !== null} onOpenChange={(open) => { if (!open) setPreviewSurat(null); }}>
-        <DialogContent className="max-w-3xl w-[95vw] p-4 sm:p-6 rounded-2xl border-none shadow-2xl bg-white">
+        <DialogContent className="max-w-3xl w-[95vw] p-4 sm:p-6 rounded-md border-none shadow-2xl bg-white">
           {previewSurat && previewSurat.files.length > 0 && (() => {
             const currentFile = previewSurat.files[previewSurat.activeIndex] || previewSurat.files[0];
             return (
@@ -783,7 +783,7 @@ function ReservationsContent() {
                         type="button"
                         onClick={() => setPreviewSurat((prev) => (prev ? { ...prev, activeIndex: idx } : null))}
                         className={cn(
-                          'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 cursor-pointer',
+                          'flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-semibold transition-all shrink-0 cursor-pointer',
                           idx === previewSurat.activeIndex
                             ? 'bg-indigo-600 text-white shadow-xs'
                             : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
@@ -796,12 +796,12 @@ function ReservationsContent() {
                   </div>
                 )}
 
-                <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-center min-h-[300px]">
+                <div className="overflow-hidden rounded-md border border-slate-200 bg-slate-50 flex items-center justify-center min-h-[300px]">
                   {currentFile.base64.startsWith('data:application/pdf') || /\.pdf$/i.test(currentFile.name) ? (
                     <iframe
                       src={currentFile.base64}
                       title={currentFile.name}
-                      className="h-[65vh] w-full rounded-xl border-none"
+                      className="h-[65vh] w-full rounded-sm border-none"
                     />
                   ) : (
                     /* eslint-disable-next-line @next/next/no-img-element */

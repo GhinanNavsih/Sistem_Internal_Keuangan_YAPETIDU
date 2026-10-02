@@ -21,7 +21,7 @@ const KJM_SECTION_OPTIONS: Array<{ key: KjmSection; label: string }> = [
   { key: 'calculation', label: '3. Periksa perhitungan & setujui' },
 ];
 const rupiah = (n: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n);
-const inputClass = 'border border-slate-200 rounded-lg px-3 py-2 bg-white text-sm disabled:bg-slate-100 w-full';
+const inputClass = 'border border-slate-200 rounded-sm px-3 py-2 bg-white text-sm disabled:bg-slate-100 w-full';
 
 function EmployeeSearchSelect({ employees, value, onChange, disabled, ariaLabel }: {
   employees: KjmEmployee[]; value: string; onChange: (id: string) => void; disabled?: boolean; ariaLabel: string;
@@ -48,7 +48,7 @@ function EmployeeSearchSelect({ employees, value, onChange, disabled, ariaLabel 
         if (e.key === 'Escape') setOpen(false);
         if (e.key === 'Enter' && matches.length) { e.preventDefault(); onChange(matches[0].id); setQuery(''); setOpen(false); }
       }} />
-    {open && <ul className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-lg border bg-white text-sm shadow-lg">
+    {open && <ul className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-md border bg-white text-sm shadow-lg">
       {!matches.length && <li className="p-2 text-slate-400">Tidak ditemukan.</li>}
       {matches.map(e => <li key={e.id}>
         <button type="button" className="w-full px-3 py-2 text-left hover:bg-indigo-50" onClick={() => { onChange(e.id); setQuery(''); setOpen(false); }}>{e.nipy} — {e.name}</button>
@@ -199,7 +199,7 @@ function SemesterSearchSelect({ value, onChange, disabled, period }: {
       {open && (
         <ul
           role="listbox"
-          className="absolute left-0 right-0 z-30 mt-1 max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white py-1 text-sm shadow-lg"
+          className="absolute left-0 right-0 z-30 mt-1 max-h-56 overflow-auto rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg"
         >
           {!matches.length && (
             <li className="px-3 py-2 text-slate-400 text-xs">Semester tidak ditemukan.</li>
@@ -217,7 +217,7 @@ function SemesterSearchSelect({ value, onChange, disabled, period }: {
                 }}
               >
                 <span className="font-medium">{opt.value}</span>
-                <span className={`text-xs px-2 py-0.5 rounded font-normal ${
+                <span className={`text-xs px-2 py-0.5 rounded-sm font-normal ${
                   value === opt.value ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'
                 }`}>
                   {opt.term}
@@ -257,7 +257,7 @@ function KjmFileInput({ file, onChange, disabled }: {
         }}
       />
       {file ? (
-        <div className="flex h-10 items-center justify-between gap-2 rounded-lg border border-emerald-300 bg-emerald-50/70 px-3 py-1.5 transition-colors">
+        <div className="flex h-10 items-center justify-between gap-2 rounded-sm border border-emerald-300 bg-emerald-50/70 px-3 py-1.5 transition-colors">
           <div
             className="flex min-w-0 flex-1 cursor-pointer items-center gap-2"
             onClick={() => !disabled && fileInputRef.current?.click()}
@@ -272,7 +272,7 @@ function KjmFileInput({ file, onChange, disabled }: {
           {!disabled && (
             <button
               type="button"
-              className="shrink-0 rounded p-1 text-slate-400 hover:bg-emerald-100 hover:text-red-600 transition-colors"
+              className="shrink-0 rounded-sm p-1 text-slate-400 hover:bg-emerald-100 hover:text-red-600 transition-colors"
               onClick={() => onChange(null)}
               title="Hapus berkas"
               aria-label="Hapus berkas"
@@ -286,7 +286,7 @@ function KjmFileInput({ file, onChange, disabled }: {
           type="button"
           disabled={disabled}
           onClick={() => fileInputRef.current?.click()}
-          className="flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50/60 px-3 text-sm text-slate-600 hover:border-indigo-400 hover:bg-indigo-50/30 hover:text-indigo-600 transition-all disabled:pointer-events-none disabled:opacity-50"
+          className="flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-sm border border-dashed border-slate-300 bg-slate-50/60 px-3 text-sm text-slate-600 hover:border-indigo-400 hover:bg-indigo-50/30 hover:text-indigo-600 transition-all disabled:pointer-events-none disabled:opacity-50"
         >
           <Upload className="h-4 w-4 text-slate-400" />
           <span className="truncate text-xs font-medium">Pilih berkas Excel (.xlsx)</span>
@@ -300,7 +300,7 @@ function KjmMetricGroup({ title, items }: {
   title: string;
   items: Array<{ label: string; value: string | number; emphasize?: boolean }>;
 }) {
-  return <div className="min-w-0 rounded-xl border border-slate-100 bg-slate-50/80 p-3">
+  return <div className="min-w-0 rounded-md border border-slate-100 bg-slate-50/80 p-3">
     <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">{title}</h3>
     <dl className="mt-2 space-y-1.5">
       {items.map(item => <div key={item.label} className="flex min-w-0 items-baseline justify-between gap-2">
@@ -597,7 +597,7 @@ function KjmContent() {
   if (!profile) return <p className="p-6">Memuat sesi…</p>;
   if (profile.role !== 'super_admin') return <p className="p-6">Halaman KJM hanya tersedia untuk admin.</p>;
   return <div className="space-y-6 p-4 md:p-6">
-    <section className="rounded-2xl border bg-white p-5 space-y-4">
+    <section className="rounded-md border bg-white p-5 space-y-4">
       <h2 className="font-bold text-lg">Upload data mentah KJM</h2>
       <p className="text-sm text-slate-600">Periode pembayaran: <strong>{period}</strong>. Hanya sheet Kontrak Asli dan Tetap Asli yang dibaca. Data tersimpan sebagai draft, bukan penghasilan.</p>
       <div className="flex flex-wrap items-end gap-4">
@@ -619,7 +619,7 @@ function KjmContent() {
           />
         </div>
         <Button
-          className="h-10 px-5 font-semibold"
+          className="rounded-sm h-10 px-5 font-semibold"
           disabled={!!busy || closed || autosaveState === 'saving' || !file || !/^(20\d{2}\/[12]|20\d{2}[12])$/.test(semester)}
           onClick={() => void run('Mengunggah dan menghitung draft…', upload)}
         >
@@ -629,32 +629,32 @@ function KjmContent() {
       {closed && <p className="text-amber-700">Periode sudah ditutup. Data hanya dapat dilihat.</p>}
       <p className="text-xs text-slate-500">Masa kerja Admin dinilai pada akhir bulan payroll. Non-Aktif diabaikan. Satu pegawai hanya boleh memperoleh KJM sekali untuk semester sumber yang sama.</p>
     </section>
-    {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-red-700">{error}</p>}
-    {message && <p role="status" className="rounded-xl bg-emerald-50 p-4 text-emerald-800">{message}</p>}
-    <section className="rounded-2xl border bg-white p-5 space-y-3">
+    {error && <p role="alert" className="rounded-md bg-red-50 p-4 text-red-700">{error}</p>}
+    {message && <p role="status" className="rounded-md bg-emerald-50 p-4 text-emerald-800">{message}</p>}
+    <section className="rounded-md border bg-white p-5 space-y-3">
       <h2 className="font-bold">Impor pada payroll {period}</h2>
       {!imports.length && <p className="text-sm text-slate-500">Belum ada impor.</p>}
-      {imports.map(item => <div key={item.id} className={`w-full flex flex-wrap items-center gap-3 border rounded-xl p-3 ${draft?.id === item.id ? 'border-indigo-400 bg-indigo-50' : ''}`}>
+      {imports.map(item => <div key={item.id} className={`w-full flex flex-wrap items-center gap-3 border rounded-md p-3 ${draft?.id === item.id ? 'border-indigo-400 bg-indigo-50' : ''}`}>
         <button type="button" disabled={!!busy || autosaveState === 'saving'} onClick={() => {
           if (dirty && !window.confirm('Ada koreksi yang belum disimpan. Buka impor lain dan abaikan koreksi?')) return;
           void run('Memuat impor…', () => openDraft(item.id));
         }} className="flex min-w-0 flex-1 flex-wrap justify-between gap-2 text-left">
           <span className="truncate">{item.fileName} · Semester {item.semester}</span><span className="whitespace-nowrap">{item.status === 'approved' ? 'Disetujui' : 'Draft belum dibayar'} · {rupiah(item.total)}</span>
         </button>
-        {item.status === 'draft' ? <button type="button" aria-label={`Hapus impor ${item.fileName}`} disabled={!!busy || closed || autosaveState === 'saving'} onClick={() => void deleteImport(item)} className="shrink-0 rounded-lg px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50">Hapus</button> : <span className="shrink-0 text-xs text-slate-500">Batalkan persetujuan dulu</span>}
+        {item.status === 'draft' ? <button type="button" aria-label={`Hapus impor ${item.fileName}`} disabled={!!busy || closed || autosaveState === 'saving'} onClick={() => void deleteImport(item)} className="shrink-0 rounded-sm px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50">Hapus</button> : <span className="shrink-0 text-xs text-slate-500">Batalkan persetujuan dulu</span>}
       </div>)}
     </section>
     {draft && review && <>
-      <div className="rounded-2xl border border-indigo-100 bg-white p-2 shadow-sm" role="tablist" aria-label="Tahapan KJM">
+      <div className="rounded-md border border-indigo-100 bg-white p-2 shadow-sm" role="tablist" aria-label="Tahapan KJM">
         <div className="flex flex-wrap gap-2">
-          {KJM_SECTION_OPTIONS.map(section => <button key={section.key} id={`kjm-tab-${section.key}`} type="button" role="tab" aria-selected={activeKjmSection === section.key} aria-controls={`kjm-panel-${section.key}`} onClick={() => setActiveKjmSection(section.key)} className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${activeKjmSection === section.key ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-indigo-50 hover:text-indigo-700'}`}>
-            <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs ${activeKjmSection === section.key ? 'bg-white/20' : 'bg-slate-100 text-slate-500'}`}>{section.label.slice(0, 1)}</span>
+          {KJM_SECTION_OPTIONS.map(section => <button key={section.key} id={`kjm-tab-${section.key}`} type="button" role="tab" aria-selected={activeKjmSection === section.key} aria-controls={`kjm-panel-${section.key}`} onClick={() => setActiveKjmSection(section.key)} className={`flex items-center gap-2 rounded-sm px-3 py-2 text-sm font-semibold transition-colors ${activeKjmSection === section.key ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-indigo-50 hover:text-indigo-700'}`}>
+            <span className={`flex h-6 w-6 items-center justify-center rounded-sm text-xs ${activeKjmSection === section.key ? 'bg-white/20' : 'bg-slate-100 text-slate-500'}`}>{section.label.slice(0, 1)}</span>
             {section.label}
-            {section.key === 'lecturers' && review.issues.length > 0 && <span className={`rounded-full px-1.5 py-0.5 text-xs ${activeKjmSection === section.key ? 'bg-white/20' : 'bg-amber-100 text-amber-700'}`}>{review.issues.length}</span>}
+            {section.key === 'lecturers' && review.issues.length > 0 && <span className={`rounded-sm px-1.5 py-0.5 text-xs ${activeKjmSection === section.key ? 'bg-white/20' : 'bg-amber-100 text-amber-700'}`}>{review.issues.length}</span>}
           </button>)}
         </div>
       </div>
-      {activeKjmSection === 'classification' && <section id="kjm-panel-classification" role="tabpanel" aria-labelledby="kjm-tab-classification" className="rounded-2xl border bg-white p-5 space-y-4">
+      {activeKjmSection === 'classification' && <section id="kjm-panel-classification" role="tabpanel" aria-labelledby="kjm-tab-classification" className="rounded-md border bg-white p-5 space-y-4">
         <h2 className="font-bold text-lg">1. Bedakan Mata Kuliah</h2>
         <p className="text-sm text-slate-600">Semua Mata Kuliah yang masuk rekap otomatis dianggap Reguler. Centang hanya Mata Kuliah Konsorsium; pilihan akan diterapkan ke seluruh kelas dan baris sumber dengan Kode MK yang sama dalam program studi tersebut.</p>
         <div className="max-h-[85vh] overflow-auto"><table className="w-full text-sm text-left"><thead className="sticky top-0 z-10 bg-indigo-50"><tr>{['Program studi', 'Kode MK', 'Nama Mata Kuliah', 'Kelas', 'SKS', 'Baris sumber', 'Konsorsium?', 'Kecualikan?'].map(h => <th key={h} className="p-3 whitespace-nowrap">{h}</th>)}</tr></thead><tbody>
@@ -662,11 +662,11 @@ function KjmContent() {
         </tbody></table></div>
         <label className="flex gap-2 text-sm"><input id="consortium-reviewed-checkbox" type="checkbox" checked={edits.consortiumReviewed} disabled={!editable} onChange={e => setEdits(old => ({ ...old, consortiumReviewed: e.target.checked }))} /> Saya telah memeriksa semua Mata Kuliah dan pembedaan Reguler/Konsorsium.</label>
       </section>}
-      {activeKjmSection === 'lecturers' && <section id="kjm-panel-lecturers" role="tabpanel" aria-labelledby="kjm-tab-lecturers" className="rounded-2xl border bg-white p-5 space-y-4">
+      {activeKjmSection === 'lecturers' && <section id="kjm-panel-lecturers" role="tabpanel" aria-labelledby="kjm-tab-lecturers" className="rounded-md border bg-white p-5 space-y-4">
         <h2 className="font-bold text-lg">2. Periksa dosen dan rincian mata kuliah</h2>
         <p className="text-sm text-slate-600">{visibleCourses.length} baris · {lecturers.length} identitas sumber{excludedCourseCount > 0 ? ` · ${excludedCourseCount} baris dikecualikan otomatis dari Tetap Asli` : ''}. Jenis Mata Kuliah mengikuti pembedaan di bagian 1. Hadir dikoreksi otomatis diisi maksimal 14, lalu dikalikan SKS untuk memperoleh Hadir diakui.</p>
-        {review.issues.length > 0 && <details open className="bg-amber-50 p-4 rounded-xl text-amber-900 text-sm"><summary>{review.issues.length} masalah harus diselesaikan</summary><ul className="list-disc pl-5 mt-2 space-y-1">{review.issues.map((s,i) => <li key={i}><button type="button" className="text-left underline decoration-dotted underline-offset-2 hover:text-amber-950" onClick={() => jumpToIssue(s)}>{s}</button></li>)}</ul></details>}
-        {unmatchedLecturers.length > 0 && <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 space-y-4">
+        {review.issues.length > 0 && <details open className="bg-amber-50 p-4 rounded-md text-amber-900 text-sm"><summary>{review.issues.length} masalah harus diselesaikan</summary><ul className="list-disc pl-5 mt-2 space-y-1">{review.issues.map((s,i) => <li key={i}><button type="button" className="text-left underline decoration-dotted underline-offset-2 hover:text-amber-950" onClick={() => jumpToIssue(s)}>{s}</button></li>)}</ul></details>}
+        {unmatchedLecturers.length > 0 && <div className="rounded-md border border-amber-300 bg-amber-50 p-4 space-y-4">
           <p className="font-semibold text-amber-900">{unmatchedLecturers.length} nama dari berkas belum cocok otomatis dengan pegawai (NIPY tidak ditemukan atau tidak unik). Hubungkan ke pegawai aktif atau kecualikan di bawah ini.</p>
           {unmatchedLecturers.map(lecturer => {
             const assignment = edits.lecturers[lecturer] || {};
@@ -687,7 +687,7 @@ function KjmContent() {
             const employeeId = review.assignments[lecturer] || '';
             const employee = master.employees.find(e => e.id === employeeId);
             const inactive = ignored?.endsWith(': Non-Aktif');
-            return <details key={lecturer} id={`lecturer-${encodeURIComponent(lecturer)}`} className="rounded-xl border p-3">
+            return <details key={lecturer} id={`lecturer-${encodeURIComponent(lecturer)}`} className="rounded-md border p-3">
               <summary className="cursor-pointer font-medium text-sm">{lecturer} <span className="font-normal text-slate-500">· {rows.length} MK · {ignored ? `Diabaikan: ${ignored.split(': ').slice(1).join(': ')}` : employee?.name || 'Perlu pemetaan'}</span></summary>
               <div className="grid md:grid-cols-3 gap-3 py-4">
                 <label className="text-xs">Pegawai aktif (pencocokan NIPY; nama tidak otomatis)<select aria-label={`Pegawai ${lecturer}`} className={inputClass} value={assignment.employeeId || employeeId} disabled={!editable || !!inactive} onChange={e => setAssignment(lecturer, { employeeId: e.target.value })}>
@@ -717,20 +717,20 @@ function KjmContent() {
           })}
         </div>
       </section>}
-      {activeKjmSection === 'calculation' && <section id="kjm-panel-calculation" role="tabpanel" aria-labelledby="kjm-tab-calculation" className="rounded-2xl border bg-white p-5 space-y-4">
+      {activeKjmSection === 'calculation' && <section id="kjm-panel-calculation" role="tabpanel" aria-labelledby="kjm-tab-calculation" className="rounded-md border bg-white p-5 space-y-4">
         <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
           <div><h2 className="font-bold text-lg">3. Periksa perhitungan dan setujui</h2><p className="text-xs text-slate-500">{review.results.length} pegawai dalam hasil perhitungan</p></div>
-          <div className="rounded-xl bg-indigo-50 px-3 py-2 text-right"><p className="text-xs font-semibold uppercase tracking-wide text-indigo-500">Total KJM</p><p className="text-lg font-bold text-indigo-700">{rupiah(review.total)}</p></div>
+          <div className="rounded-md bg-indigo-50 px-3 py-2 text-right"><p className="text-xs font-semibold uppercase tracking-wide text-indigo-500">Total KJM</p><p className="text-lg font-bold text-indigo-700">{rupiah(review.total)}</p></div>
         </div>
         <p className="text-sm text-slate-600">Tanggal penilaian masa kerja: {review.assessmentDate} · Matrix {draft.status === 'approved' ? draft.rateVersion : master.version}. Angka jam adalah unit SKS × hadir diakui. Konsorsium diprioritaskan dalam batas kelebihan.</p>
         {review.ignored.length > 0 && <details className="text-sm text-slate-500"><summary>{review.ignored.length} identitas diabaikan</summary><ul className="list-disc pl-5">{review.ignored.map(s => <li key={s}>{s}</li>)}</ul></details>}
         <div className="grid gap-3 lg:grid-cols-2">
           {review.results.map(r => {
             const totalTeaching = r.regular + r.consortium;
-            return <article key={r.employee.id} className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            return <article key={r.employee.id} className="min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
               <header className="flex min-w-0 items-start justify-between gap-3 p-4">
                 <div className="min-w-0"><h3 className="break-words font-semibold text-slate-900">{r.employee.name}</h3><p className="mt-1 break-words text-xs text-slate-500">{r.employee.nipy} · {r.employee.education}</p></div>
-                <div className="shrink-0 rounded-xl bg-indigo-50 px-3 py-2 text-right"><p className="text-[10px] font-bold uppercase tracking-wide text-indigo-500">Total KJM</p><p className="font-bold text-indigo-700">{rupiah(r.total)}</p><p className="text-xs text-slate-500">{r.employee.type}</p></div>
+                <div className="shrink-0 rounded-md bg-indigo-50 px-3 py-2 text-right"><p className="text-[10px] font-bold uppercase tracking-wide text-indigo-500">Total KJM</p><p className="font-bold text-indigo-700">{rupiah(r.total)}</p><p className="text-xs text-slate-500">{r.employee.type}</p></div>
               </header>
               <div className="grid gap-2 border-t border-slate-100 bg-slate-50/40 p-3 sm:grid-cols-2">
                 <KjmMetricGroup title="Jam mengajar diakui" items={[{ label: 'Reguler', value: r.regular }, { label: 'Konsorsium', value: r.consortium }, { label: 'Total dihitung', value: totalTeaching, emphasize: true }]} />
@@ -743,22 +743,22 @@ function KjmContent() {
         </div>
         <div className="flex flex-wrap items-center justify-between gap-4"><p className="font-bold text-lg">Total {rupiah(review.total)} <span className="text-sm font-normal">· {review.results.length} pegawai {review.issues.length ? '(belum lengkap)' : ''}</span></p>
           <div className="flex flex-wrap gap-3">{draft.status === 'draft' ? <>
-            <Button variant="outline" disabled={!editable || autosaveState === 'saving'} onClick={() => void run('Menyimpan koreksi dan menghitung ulang…', () => command('save'))}>Simpan draft & hitung ulang</Button>
-            <Button disabled={!editable || dirty || review.issues.length > 0} onClick={() => setConfirm('approve')}>Setujui ke payroll {draft.period}</Button>
-          </> : <Button variant="outline" disabled={!!busy || closed} onClick={() => setConfirm('revoke')}>Batalkan persetujuan</Button>}</div>
+            <Button className="rounded-sm" variant="outline" disabled={!editable || autosaveState === 'saving'} onClick={() => void run('Menyimpan koreksi dan menghitung ulang…', () => command('save'))}>Simpan draft & hitung ulang</Button>
+            <Button className="rounded-sm" disabled={!editable || dirty || review.issues.length > 0} onClick={() => setConfirm('approve')}>Setujui ke payroll {draft.period}</Button>
+          </> : <Button className="rounded-sm" variant="outline" disabled={!!busy || closed} onClick={() => setConfirm('revoke')}>Batalkan persetujuan</Button>}</div>
         </div>
         {dirty && draft.status === 'draft' && <p className="text-sm text-amber-700">Koreksi/master berubah. Perubahan draft akan disimpan otomatis sebelum dapat disetujui.</p>}
       </section>}
     </>}
-    {confirm && draft && review && <div role="dialog" aria-modal="true" aria-label="Konfirmasi KJM" className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-5"><div className="bg-white rounded-2xl p-6 max-w-lg space-y-4">
+    {confirm && draft && review && <div role="dialog" aria-modal="true" aria-label="Konfirmasi KJM" className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-5"><div className="bg-white rounded-md p-6 max-w-lg space-y-4">
       <h3 className="font-bold text-lg">{confirm === 'approve' ? 'Setujui KJM ke payroll?' : 'Batalkan persetujuan KJM?'}</h3>
       <p>{confirm === 'approve' ? `Saya telah memeriksa perhitungan ${review.results.length} pegawai, total ${rupiah(review.total)}, untuk payroll ${draft.period} dan semester ${draft.semester}.` : 'Penghasilan dari impor ini akan dikeluarkan dari payroll. Slip yang dikunci/dibayar tidak dapat diubah.'}</p>
-      <div className="flex justify-end gap-3"><Button variant="outline" disabled={!!busy || autosaveState === 'saving'} onClick={() => setConfirm(null)}>Kembali</Button><Button disabled={!!busy || autosaveState === 'saving'} onClick={() => void run('Memproses persetujuan dan sinkronisasi payroll…', () => command(confirm))}>Konfirmasi</Button></div>
+      <div className="flex justify-end gap-3"><Button className="rounded-sm" variant="outline" disabled={!!busy || autosaveState === 'saving'} onClick={() => setConfirm(null)}>Kembali</Button><Button className="rounded-sm" disabled={!!busy || autosaveState === 'saving'} onClick={() => void run('Memproses persetujuan dan sinkronisasi payroll…', () => command(confirm))}>Konfirmasi</Button></div>
     </div></div>}
-    {autosaveState !== 'idle' && <div role="status" aria-live="polite" className={`pointer-events-none fixed right-4 top-4 z-[70] max-w-sm rounded-xl border px-4 py-3 text-sm shadow-lg ${autosaveState === 'error' ? 'border-red-200 bg-red-50 text-red-800' : autosaveState === 'saved' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-indigo-200 bg-indigo-50 text-indigo-800'}`}>
+    {autosaveState !== 'idle' && <div role="status" aria-live="polite" className={`pointer-events-none fixed right-4 top-4 z-[70] max-w-sm rounded-md border px-4 py-3 text-sm shadow-lg ${autosaveState === 'error' ? 'border-red-200 bg-red-50 text-red-800' : autosaveState === 'saved' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-indigo-200 bg-indigo-50 text-indigo-800'}`}>
       {autosaveState === 'scheduled' ? 'Perubahan dijadwalkan untuk disimpan…' : autosaveState === 'saving' ? 'Menyimpan draft di latar belakang…' : autosaveState === 'saved' ? 'Draft berhasil disimpan.' : 'Draft belum tersimpan. Ubah data untuk mencoba lagi.'}
     </div>}
-    {busy && <div role="status" aria-live="polite" className="fixed inset-0 z-[60] bg-white/75 backdrop-blur-sm flex items-center justify-center"><p className="rounded-xl border bg-white p-6 shadow-lg">{busy}</p></div>}
+    {busy && <div role="status" aria-live="polite" className="fixed inset-0 z-[60] bg-white/75 backdrop-blur-sm flex items-center justify-center"><p className="rounded-md border bg-white p-6 shadow-lg">{busy}</p></div>}
   </div>;
 }
 export default function KjmPage() { return <Suspense fallback={<p className="p-6">Memuat KJM…</p>}><KjmContent /></Suspense>; }

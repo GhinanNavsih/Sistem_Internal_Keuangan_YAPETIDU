@@ -75,7 +75,7 @@ export default function SatkerPekaryaNavBar() {
   const canSeeJourneys = permittedCategories.includes('SOPIR');
 
   const navBtnClass = (active: boolean) =>
-    `px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 sm:gap-2 cursor-pointer whitespace-nowrap ${
+    `px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-sm text-xs font-bold transition-all flex items-center gap-1.5 sm:gap-2 cursor-pointer whitespace-nowrap ${
       active
         ? 'bg-indigo-600 text-white shadow-sm'
         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
@@ -110,7 +110,7 @@ export default function SatkerPekaryaNavBar() {
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex items-center bg-slate-100/90 p-1 rounded-xl gap-1 shadow-inner border border-slate-200/50 overflow-x-auto max-w-full scrollbar-none">
+        <div className="flex items-center bg-slate-100/90 p-1 rounded-md gap-1 shadow-inner border border-slate-200/50 overflow-x-auto max-w-full scrollbar-none">
           {profile?.role === 'satker_head_loyalis' ? (
             <>
               <button
@@ -202,7 +202,7 @@ export default function SatkerPekaryaNavBar() {
             <p className="text-xs font-bold text-slate-700 leading-tight truncate max-w-[150px]">
               {profile?.displayName || (profile?.role === 'satker_head_loyalis' ? 'SatKer Loyalis' : 'SatKer Pekarya')}
             </p>
-            <p className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md w-fit mt-0.5 ml-auto border border-indigo-100">
+            <p className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-sm w-fit mt-0.5 ml-auto border border-indigo-100">
               {profile?.role === 'satker_head_loyalis' ? 'Kepala SatKer Loyalis' : 'Kepala SatKer Pekarya'}
             </p>
           </div>
@@ -210,7 +210,7 @@ export default function SatkerPekaryaNavBar() {
             variant="outline"
             size="sm"
             onClick={requestLogout}
-            className="rounded-xl text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 hover:border-rose-300 transition-all cursor-pointer flex items-center gap-1.5 shadow-sm font-semibold"
+            className="rounded-sm text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 hover:border-rose-300 transition-all cursor-pointer flex items-center gap-1.5 shadow-sm font-semibold"
           >
             <LogOut className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Keluar</span>

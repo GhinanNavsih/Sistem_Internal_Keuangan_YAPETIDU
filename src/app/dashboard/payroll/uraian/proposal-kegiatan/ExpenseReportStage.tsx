@@ -209,7 +209,7 @@ function ReportModeCard({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`rounded-2xl border p-4 text-left transition-all ${selected
+      className={`rounded-sm border p-4 text-left transition-all ${selected
         ? 'border-indigo-300 bg-indigo-50 ring-2 ring-indigo-100'
         : 'border-slate-200 bg-white hover:border-indigo-200 hover:bg-indigo-50/40'} ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
     >
@@ -298,7 +298,7 @@ function EmployeeSearch({
           placeholder="Cari pegawai aktif..."
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={handleInputKeyDown}
-          className={`h-8 w-full rounded-lg text-xs transition-all ${
+          className={`h-8 w-full rounded-sm text-xs transition-all ${
             isConnected
               ? 'border-emerald-300 bg-emerald-50/90 font-bold text-emerald-950 pl-3 pr-8 shadow-2xs focus:bg-white focus:text-slate-900 focus:border-indigo-400'
               : 'border-slate-200 bg-white font-semibold text-slate-900 pl-3 pr-3 focus:border-indigo-400'
@@ -310,7 +310,7 @@ function EmployeeSearch({
         )}
 
         {!disabled && matches.length > 0 && (
-          <div className="absolute left-0 right-0 top-9 z-[80] max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+          <div className="absolute left-0 right-0 top-9 z-[80] max-h-48 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-xl">
             {matches.map((employee, index) => (
               <button
                 key={employee.id}
@@ -326,7 +326,7 @@ function EmployeeSearch({
                   <span className="block truncate text-xs font-bold text-slate-900">{employee.name}</span>
                   <span className="mt-0.5 block truncate text-[9px] text-slate-400">{employee.role || 'Pegawai'} · {employee.id}</span>
                 </span>
-                <span className="shrink-0 rounded-lg bg-indigo-100 px-2 py-1 text-[9px] font-black text-indigo-700">Hubungkan</span>
+                <span className="shrink-0 rounded-sm bg-indigo-100 px-2 py-1 text-[9px] font-black text-indigo-700">Hubungkan</span>
               </button>
             ))}
           </div>
@@ -595,7 +595,7 @@ export default function ExpenseReportStage({
   };
 
   return (
-    <section className="space-y-4 rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/50 via-white to-slate-50/80 p-4 md:p-5">
+    <section className="space-y-4 rounded-md border border-indigo-100 bg-gradient-to-br from-indigo-50/50 via-white to-slate-50/80 p-4 md:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
@@ -606,17 +606,17 @@ export default function ExpenseReportStage({
             Hubungkan setiap header grup LPJ ke laporan custom. Format laporan dapat disesuaikan per kebutuhan dan tidak mengubah PDF anggaran maupun PDF realisasi.
           </p>
         </div>
-        <div className="rounded-xl border border-indigo-100 bg-white px-3 py-2 text-[10px] font-bold text-slate-500">
+        <div className="rounded-md border border-indigo-100 bg-white px-3 py-2 text-[10px] font-bold text-slate-500">
           {groupRows.filter(({ row }) => row.reportId).length}/{groupRows.length} header terhubung
         </div>
       </div>
 
       {!unlocked ? (
-        <div className="rounded-2xl border border-dashed border-amber-200 bg-amber-50/60 p-5 text-center">
+        <div className="rounded-md border border-dashed border-amber-200 bg-amber-50/60 p-5 text-center">
           <p className="text-xs font-bold text-amber-800">Hubungan laporan tersedia setelah proposal anggaran disetujui.</p>
         </div>
       ) : groupRows.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-indigo-200 bg-white p-7 text-center">
+        <div className="rounded-md border border-dashed border-indigo-200 bg-white p-7 text-center">
           <Link2 className="mx-auto h-8 w-8 text-indigo-300" />
           <p className="mt-3 text-sm font-bold text-slate-800">Belum ada header grup pengeluaran</p>
           <p className="mx-auto mt-1 max-w-lg text-xs leading-relaxed text-slate-500">Tambahkan header grup pada tabel Realisasi Keuangan terlebih dahulu. Hanya header grup yang dapat dihubungkan ke laporan.</p>
@@ -630,7 +630,7 @@ export default function ExpenseReportStage({
             const budget = getGroupBudget(expenseRows, index, parseQty);
             const actual = getGroupActual(expenseRows, index);
             return (
-              <Card key={row.rowId || `${row.uraian}-${index}`} className="border-slate-200 bg-white p-4 shadow-sm">
+              <Card key={row.rowId || `${row.uraian}-${index}`} className="rounded-md border-slate-200 bg-white p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-[10px] font-black uppercase tracking-wider text-indigo-500">Header grup LPJ</p>
@@ -638,26 +638,26 @@ export default function ExpenseReportStage({
                     <p className="mt-1 text-[10px] text-slate-400">{getExpenseGroupRows(expenseRows, index).length} rincian anak · Anggaran {fmtRp(budget)} · Realisasi {fmtRp(actual)}</p>
                   </div>
                   {linked ? (
-                    <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Terhubung</span>
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Terhubung</span>
                   ) : (
-                    <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700">Belum terhubung</span>
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700">Belum terhubung</span>
                   )}
                 </div>
                 {linked && (
-                  <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2.5">
+                  <div className="mt-3 rounded-md border border-slate-100 bg-slate-50/70 px-3 py-2.5">
                     <div className="flex items-center justify-between gap-2">
                       <p className="truncate text-xs font-bold text-slate-800">{linked.title || 'Tanpa judul'}</p>
-                      <span className="shrink-0 rounded-md bg-indigo-100 px-2 py-0.5 text-[9px] font-black text-indigo-700">{modeLabel(linked.mode)}</span>
+                      <span className="shrink-0 rounded-sm bg-indigo-100 px-2 py-0.5 text-[9px] font-black text-indigo-700">{modeLabel(linked.mode)}</span>
                     </div>
                     <p className="mt-1 text-[10px] text-slate-500">Anggaran {fmtRp(getExpenseReportBudgetTotal(linked, parseQty))} · Realisasi {fmtRp(getExpenseReportActualTotal(linked))}</p>
                   </div>
                 )}
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <Button type="button" disabled={readOnly && !linked} onClick={() => openReport(row, index)} className="h-8 rounded-lg bg-indigo-600 px-3 text-[10px] font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
+                  <Button type="button" disabled={readOnly && !linked} onClick={() => openReport(row, index)} className="h-8 rounded-sm bg-indigo-600 px-3 text-[10px] font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
                     {linked ? <><FileDown className="mr-1.5 h-3.5 w-3.5" /> Buka / Edit Laporan</> : <><Link2 className="mr-1.5 h-3.5 w-3.5" /> Hubungkan Header Grup ke Laporan</>}
                   </Button>
                   {linked && !readOnly && (
-                    <Button type="button" variant="ghost" onClick={() => onUnlinkReport(linked.id)} className="h-8 rounded-lg px-3 text-[10px] font-bold text-rose-600 hover:bg-rose-50">
+                    <Button type="button" variant="ghost" onClick={() => onUnlinkReport(linked.id)} className="h-8 rounded-sm px-3 text-[10px] font-bold text-rose-600 hover:bg-rose-50">
                       <X className="mr-1 h-3.5 w-3.5" /> Lepas
                     </Button>
                   )}
@@ -669,7 +669,7 @@ export default function ExpenseReportStage({
       )}
 
       <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) closeDialog(); }}>
-        <DialogContent className="flex h-[92vh] max-h-[95vh] w-[96vw] max-w-[96vw] sm:max-w-[96vw] flex-col overflow-hidden rounded-3xl border-none bg-white p-0 shadow-2xl">
+        <DialogContent className="flex h-[92vh] max-h-[95vh] w-[96vw] max-w-[96vw] sm:max-w-[96vw] flex-col overflow-hidden rounded-md border-none bg-white p-0 shadow-2xl">
           <DialogHeader className="shrink-0 border-b border-slate-100 bg-gradient-to-r from-indigo-50 to-slate-50 p-5 md:p-6">
             <DialogTitle className="flex items-center gap-2.5 text-lg font-bold text-slate-800">
               <Link2 className="h-5 w-5 text-indigo-600" /> Hubungkan Header Grup ke Laporan
@@ -682,15 +682,15 @@ export default function ExpenseReportStage({
               <div className="grid h-full min-h-0 grid-cols-1 gap-6 lg:grid-cols-12">
                 {/* Left Side: Meta, Title, Notes & Mode Selection */}
                 <div className="flex flex-col space-y-4 overflow-y-auto pr-0 xl:col-span-3 lg:col-span-4 lg:border-r lg:border-slate-100 lg:pr-5">
-                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-4 shadow-2xs">
+                  <div className="rounded-md border border-indigo-100 bg-indigo-50/50 p-4 shadow-2xs">
                     <span className="block text-[10px] font-black uppercase tracking-wider text-indigo-500">Header grup yang dipilih</span>
                     <span className="mt-1 block text-sm font-black text-slate-900">{draftReport.expenseLabel}</span>
                   </div>
 
-                  <div className="space-y-3 bg-slate-50/50 p-4 rounded-2xl border border-slate-150">
+                  <div className="space-y-3 bg-slate-50/50 p-4 rounded-md border border-slate-150">
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-black uppercase tracking-wider text-slate-600">Judul laporan custom</label>
-                      <Input value={draftReport.title} disabled={readOnly} onChange={(event) => updateDraft((report) => ({ ...report, title: event.target.value }))} placeholder="Contoh: Laporan Pembayaran Tim Pelaksana" className="h-10 rounded-xl bg-white border-slate-200 text-sm font-bold text-slate-900" />
+                      <Input value={draftReport.title} disabled={readOnly} onChange={(event) => updateDraft((report) => ({ ...report, title: event.target.value }))} placeholder="Contoh: Laporan Pembayaran Tim Pelaksana" className="h-10 rounded-sm bg-white border-slate-200 text-sm font-bold text-slate-900" />
                     </div>
                   </div>
 
@@ -703,7 +703,7 @@ export default function ExpenseReportStage({
                   </div>
 
                   {formErrors.length > 0 && (
-                    <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-800 shadow-2xs">
+                    <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-xs text-rose-800 shadow-2xs">
                       <p className="font-black">Periksa laporan sebelum disimpan:</p>
                       <ul className="mt-1 list-disc space-y-0.5 pl-4">{formErrors.map((error) => <li key={error}>{error}</li>)}</ul>
                     </div>
@@ -727,7 +727,7 @@ export default function ExpenseReportStage({
                             addStandaloneReportRow();
                             focusLastReportRow();
                           }}
-                          className="h-8.5 rounded-xl border-indigo-200 bg-indigo-50/50 text-xs font-bold text-indigo-700 hover:bg-indigo-100"
+                          className="h-8.5 rounded-sm border-indigo-200 bg-indigo-50/50 text-xs font-bold text-indigo-700 hover:bg-indigo-100"
                         >
                           <Plus className="mr-1.5 h-3.5 w-3.5" /> Tambah Baris
                         </Button>
@@ -735,7 +735,7 @@ export default function ExpenseReportStage({
                     </div>
                   </div>
 
-                  <div className="relative min-h-0 flex-1 overflow-auto rounded-2xl border border-slate-200 bg-white">
+                  <div className="relative min-h-0 flex-1 overflow-auto rounded-md border border-slate-200 bg-white">
                     <table ref={reportTableRef} className="w-full min-w-[1000px] border-collapse text-left">
                       <thead>
                         <tr className="sticky top-0 z-20 border-b border-slate-200 bg-slate-100 shadow-2xs">
@@ -761,7 +761,7 @@ export default function ExpenseReportStage({
                                   <td className="px-3 py-3 text-center text-xs font-bold text-slate-400">{index + 1}</td>
                                   <td className="px-3 py-3">
                                     <div className="space-y-2">
-                                      <Input value={row.uraian} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, uraian: event.target.value }))} onKeyDown={(event) => handleReportRowCellKeyDown(event, !readOnly ? () => addStandaloneReportRow(row.id) : undefined)} placeholder="Uraian rincian..." className="h-8 rounded-lg border-slate-200 text-xs font-semibold" />
+                                      <Input value={row.uraian} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, uraian: event.target.value }))} onKeyDown={(event) => handleReportRowCellKeyDown(event, !readOnly ? () => addStandaloneReportRow(row.id) : undefined)} placeholder="Uraian rincian..." className="h-8 rounded-sm border-slate-200 text-xs font-semibold" />
                                       {draftReport.mode === 'employee' && (
                                         <EmployeeSearch
                                           row={row}
@@ -775,10 +775,10 @@ export default function ExpenseReportStage({
                                       )}
                                     </div>
                                   </td>
-                                  <td className="px-3 py-3"><Input value={row.rincianQty} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, rincianQty: event.target.value }))} onKeyDown={(event) => handleReportRowCellKeyDown(event, !readOnly ? () => addStandaloneReportRow(row.id) : undefined)} placeholder="10 / 20%" className="h-8 rounded-lg border-slate-200 text-center text-xs font-bold" /></td>
-                                  <td className="px-3 py-3"><Input type="text" inputMode="numeric" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, rincianRate: parseMoney(event.target.value) }))} onKeyDown={(event) => handleReportRowCellKeyDown(event, !readOnly ? () => addStandaloneReportRow(row.id) : undefined)} placeholder="Rp 0" className="h-8 rounded-lg border-slate-200 text-right text-xs font-bold" /></td>
-                                  <td className="px-3 py-3"><Input type="text" inputMode="numeric" value={row.realisasi > 0 ? fmtRp(row.realisasi) : ''} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, realisasi: parseMoney(event.target.value) }))} onKeyDown={(event) => handleReportRowCellKeyDown(event, !readOnly ? () => addStandaloneReportRow(row.id) : undefined)} placeholder="Rp 0" className="h-8 rounded-lg border-slate-200 text-right text-xs font-bold" /></td>
-                                  <td className="px-3 py-3 text-right"><Button type="button" variant="ghost" size="icon-xs" disabled={readOnly || draftReport.rows.length <= 1} onClick={() => updateDraft((report) => ({ ...report, rows: report.rows.filter((item) => item.id !== row.id) }))} className="text-rose-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30"><Trash2 /></Button></td>
+                                  <td className="px-3 py-3"><Input value={row.rincianQty} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, rincianQty: event.target.value }))} onKeyDown={(event) => handleReportRowCellKeyDown(event, !readOnly ? () => addStandaloneReportRow(row.id) : undefined)} placeholder="10 / 20%" className="h-8 rounded-sm border-slate-200 text-center text-xs font-bold" /></td>
+                                  <td className="px-3 py-3"><Input type="text" inputMode="numeric" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, rincianRate: parseMoney(event.target.value) }))} onKeyDown={(event) => handleReportRowCellKeyDown(event, !readOnly ? () => addStandaloneReportRow(row.id) : undefined)} placeholder="Rp 0" className="h-8 rounded-sm border-slate-200 text-right text-xs font-bold" /></td>
+                                  <td className="px-3 py-3"><Input type="text" inputMode="numeric" value={row.realisasi > 0 ? fmtRp(row.realisasi) : ''} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, realisasi: parseMoney(event.target.value) }))} onKeyDown={(event) => handleReportRowCellKeyDown(event, !readOnly ? () => addStandaloneReportRow(row.id) : undefined)} placeholder="Rp 0" className="h-8 rounded-sm border-slate-200 text-right text-xs font-bold" /></td>
+                                  <td className="px-3 py-3 text-right"><Button type="button" variant="ghost" size="icon-xs" disabled={readOnly || draftReport.rows.length <= 1} onClick={() => updateDraft((report) => ({ ...report, rows: report.rows.filter((item) => item.id !== row.id) }))} className="rounded-sm text-rose-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30"><Trash2 /></Button></td>
                                 </tr>
                               );
                             });
@@ -853,7 +853,7 @@ export default function ExpenseReportStage({
                                     <div className="flex items-center justify-end gap-2">
                                       {childRows.length > 0 ? (
                                         hasWarning ? (
-                                          <div className="inline-flex items-center gap-1.5 text-left text-amber-900 bg-amber-100/90 px-2.5 py-1 rounded-lg shrink-0">
+                                          <div className="inline-flex items-center gap-1.5 text-left text-amber-900 bg-amber-100/90 px-2.5 py-1 rounded-sm shrink-0">
                                             <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
                                             <div className="flex flex-col leading-tight">
                                               {!isQtyBalanced && (
@@ -872,7 +872,7 @@ export default function ExpenseReportStage({
                                             </div>
                                           </div>
                                         ) : (
-                                          <div className="inline-flex items-center gap-1.5 text-left text-emerald-800 bg-emerald-100/90 px-2.5 py-1 rounded-lg shrink-0">
+                                          <div className="inline-flex items-center gap-1.5 text-left text-emerald-800 bg-emerald-100/90 px-2.5 py-1 rounded-sm shrink-0">
                                             <Check className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
                                             <div className="flex flex-col leading-tight">
                                               <span className="text-[9px] font-extrabold uppercase tracking-wider text-emerald-800">Total Sesuai</span>
@@ -896,7 +896,7 @@ export default function ExpenseReportStage({
                                             const trigger = event.currentTarget.closest('tr') || event.currentTarget;
                                             addPenerima(undefined, trigger);
                                           }}
-                                          className="h-7 px-2 rounded-lg text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs shrink-0"
+                                          className="h-7 px-2 rounded-sm text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs shrink-0"
                                         >
                                           <Plus className="w-3 h-3 mr-0.5" /> {addRowLabel}
                                         </Button>
@@ -908,7 +908,7 @@ export default function ExpenseReportStage({
                                             <Loader2 className="h-3.5 w-3.5 animate-spin" /> Mengunggah...
                                           </span>
                                         ) : receipt ? (
-                                          <span className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-1.5 py-1">
+                                          <span className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-slate-200 bg-white px-1.5 py-1">
                                             <FileText className="h-3 w-3 shrink-0 text-indigo-500" />
                                             <span className="max-w-[70px] truncate text-[9px] font-semibold text-slate-600" title={receipt.fileName}>{receipt.fileName}</span>
                                             <button type="button" title="Lihat bukti" onClick={() => window.open(receipt.url, '_blank', 'noopener,noreferrer')} className="text-slate-400 hover:text-indigo-600"><Eye className="h-3 w-3" /></button>
@@ -921,7 +921,7 @@ export default function ExpenseReportStage({
                                             <label
                                               htmlFor={receiptUploadId}
                                               title="Unggah bukti"
-                                              className="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-dashed border-slate-300 text-slate-400 hover:border-indigo-300 hover:text-indigo-600"
+                                              className="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-sm border border-dashed border-slate-300 text-slate-400 hover:border-indigo-300 hover:text-indigo-600"
                                             >
                                               <Upload className="h-3.5 w-3.5" />
                                             </label>
@@ -972,7 +972,7 @@ export default function ExpenseReportStage({
                                             onChange={(event) => updateDraftRow(cRow.id, (current) => ({ ...current, uraian: event.target.value }))}
                                             onKeyDown={(event) => handleReportRowCellKeyDown(event, !readOnly ? () => addPenerima(cRow.id) : undefined)}
                                             placeholder="Uraian rincian..."
-                                            className="h-7.5 rounded-lg border-slate-200 text-xs font-semibold"
+                                            className="h-7.5 rounded-sm border-slate-200 text-xs font-semibold"
                                           />
                                         )}
                                       </td>
@@ -991,7 +991,7 @@ export default function ExpenseReportStage({
                                           }}
                                           onKeyDown={(event) => handleReportRowCellKeyDown(event, !readOnly ? () => addPenerima(cRow.id) : undefined)}
                                           placeholder="1"
-                                          className="h-7.5 rounded-lg border-slate-200 text-center text-xs font-bold"
+                                          className="h-7.5 rounded-sm border-slate-200 text-center text-xs font-bold"
                                         />
                                       </td>
                                       <td className="px-3 py-2.5">
@@ -1011,7 +1011,7 @@ export default function ExpenseReportStage({
                                           }}
                                           onKeyDown={(event) => handleReportRowCellKeyDown(event, !readOnly ? () => addPenerima(cRow.id) : undefined)}
                                           placeholder="Rp 0"
-                                          className="h-7.5 rounded-lg border-slate-200 text-right text-xs font-bold"
+                                          className="h-7.5 rounded-sm border-slate-200 text-right text-xs font-bold"
                                         />
                                       </td>
                                       <td className="px-3 py-2.5">
@@ -1029,7 +1029,7 @@ export default function ExpenseReportStage({
                                           }}
                                           onKeyDown={(event) => handleReportRowCellKeyDown(event, !readOnly ? () => addPenerima(cRow.id) : undefined)}
                                           placeholder="Rp 0"
-                                          className="h-7.5 rounded-lg border-slate-200 text-right text-xs font-black text-indigo-700"
+                                          className="h-7.5 rounded-sm border-slate-200 text-right text-xs font-black text-indigo-700"
                                         />
                                       </td>
                                       <td className="px-3 py-2.5 text-right">
@@ -1044,7 +1044,7 @@ export default function ExpenseReportStage({
                                                 const trigger = event.currentTarget.closest('tr') || event.currentTarget;
                                                 addPenerima(undefined, trigger);
                                               }}
-                                              className="h-7 px-2 rounded-lg text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs shrink-0"
+                                              className="h-7 px-2 rounded-sm text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs shrink-0"
                                             >
                                               <Plus className="w-3 h-3 mr-0.5" /> {addRowLabel}
                                             </Button>
@@ -1055,7 +1055,7 @@ export default function ExpenseReportStage({
                                             size="icon-xs"
                                             disabled={readOnly}
                                             onClick={() => updateDraft((report) => ({ ...report, rows: report.rows.filter((item) => item.id !== cRow.id) }))}
-                                            className="text-rose-400 hover:bg-rose-50 hover:text-rose-600"
+                                            className="rounded-sm text-rose-400 hover:bg-rose-50 hover:text-rose-600"
                                           >
                                             <Trash2 className="w-3.5 h-3.5" />
                                           </Button>
@@ -1086,10 +1086,10 @@ export default function ExpenseReportStage({
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-100 bg-slate-50 p-4">
             <div className="flex items-center gap-2">
               {draftReport && !readOnly && expenseReports.some((report) => report.id === draftReport.id) && (
-                <Button type="button" variant="ghost" onClick={() => { onUnlinkReport(draftReport.id); closeDialog(); }} className="rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50">Lepas Hubungan</Button>
+                <Button type="button" variant="ghost" onClick={() => { onUnlinkReport(draftReport.id); closeDialog(); }} className="rounded-sm text-xs font-bold text-rose-600 hover:bg-rose-50">Lepas Hubungan</Button>
               )}
               {draftReport && (
-                <Button type="button" variant="ghost" disabled={printingReport} onClick={() => onPrintReport(draftReport)} className="rounded-xl text-xs font-bold text-indigo-700 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60">
+                <Button type="button" variant="ghost" disabled={printingReport} onClick={() => onPrintReport(draftReport)} className="rounded-sm text-xs font-bold text-indigo-700 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60">
                   {printingReport ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <FileDown className="mr-1.5 h-3.5 w-3.5" />} {printingReport ? 'Membuat PDF...' : 'Cetak PDF'}
                 </Button>
               )}
@@ -1097,17 +1097,17 @@ export default function ExpenseReportStage({
             <div className="flex items-center gap-3">
               {!readOnly && (
                 autosaveStatus === 'saving' ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700">
+                  <span className="inline-flex items-center gap-1.5 rounded-sm border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700">
                     <Loader2 className="h-3 w-3 animate-spin text-amber-600" /> Menyimpan...
                   </span>
                 ) : autosaveStatus === 'saved' ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
+                  <span className="inline-flex items-center gap-1.5 rounded-sm border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
                     <CheckCircle2 className="h-3 w-3 text-emerald-600" /> Tersimpan otomatis
                   </span>
                 ) : null
               )}
-              <Button type="button" variant="ghost" onClick={closeDialog} className="rounded-xl text-xs font-bold text-slate-500">Tutup</Button>
-              {!readOnly && <Button type="button" onClick={saveDraft} className="rounded-xl bg-indigo-600 px-5 text-xs font-bold text-white hover:bg-indigo-700"><Check className="mr-1.5 h-3.5 w-3.5" /> Simpan & Selesai</Button>}
+              <Button type="button" variant="ghost" onClick={closeDialog} className="rounded-sm text-xs font-bold text-slate-500">Tutup</Button>
+              {!readOnly && <Button type="button" onClick={saveDraft} className="rounded-sm bg-indigo-600 px-5 text-xs font-bold text-white hover:bg-indigo-700"><Check className="mr-1.5 h-3.5 w-3.5" /> Simpan & Selesai</Button>}
             </div>
           </div>
         </DialogContent>
@@ -1119,7 +1119,7 @@ export default function ExpenseReportStage({
           if (!open) setPendingSave(null);
         }}
       >
-        <DialogContent className="max-w-xl overflow-hidden rounded-3xl border-none bg-white p-0 shadow-2xl">
+        <DialogContent className="max-w-xl overflow-hidden rounded-md border-none bg-white p-0 shadow-2xl">
           <DialogHeader className="border-b border-amber-100 bg-gradient-to-r from-amber-50 to-orange-50 p-5">
             <DialogTitle className="flex items-center gap-2.5 text-lg font-bold text-amber-950">
               <AlertCircle className="h-5 w-5 text-amber-600" /> Konfirmasi Perubahan Nilai SPJ
@@ -1133,7 +1133,7 @@ export default function ExpenseReportStage({
 
             <div className="space-y-3">
               {pendingSave?.changes.map((change, index) => (
-                <div key={`${change.headerLabel}-${index}`} className="rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
+                <div key={`${change.headerLabel}-${index}`} className="rounded-md border border-amber-100 bg-amber-50/60 p-4">
                   <p className="text-sm font-black text-slate-800">{change.headerLabel}</p>
                   <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
                     {change.qtyChanged && (
@@ -1155,8 +1155,8 @@ export default function ExpenseReportStage({
           </div>
 
           <div className="flex justify-end gap-2.5 border-t border-slate-100 bg-slate-50 p-4">
-            <Button type="button" variant="ghost" onClick={() => setPendingSave(null)} className="rounded-xl text-xs font-bold text-slate-500 hover:bg-white">Batal</Button>
-            <Button type="button" onClick={confirmPendingSave} className="rounded-xl bg-indigo-600 text-xs font-bold text-white hover:bg-indigo-700">Konfirmasi & Simpan</Button>
+            <Button type="button" variant="ghost" onClick={() => setPendingSave(null)} className="rounded-sm text-xs font-bold text-slate-500 hover:bg-white">Batal</Button>
+            <Button type="button" onClick={confirmPendingSave} className="rounded-sm bg-indigo-600 text-xs font-bold text-white hover:bg-indigo-700">Konfirmasi & Simpan</Button>
           </div>
         </DialogContent>
       </Dialog>

@@ -1561,12 +1561,12 @@ export default function RekapPekaryaPage() {
   return (
     <div className="space-y-6">
       {/* Global Action Bar */}
-      <div className="flex flex-wrap items-center gap-3 bg-white p-4 rounded-[20px] border border-slate-200/60 shadow-sm">
+      <div className="flex flex-wrap items-center gap-3 bg-white p-4 rounded-md border border-slate-200/60 shadow-sm">
         <Button
           variant="outline"
           onClick={() => setIsCustomColDialogOpen(true)}
           disabled={isLocked || !category || employees.length === 0}
-          className="rounded-xl border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 flex items-center gap-2 font-semibold transition-all shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          className="rounded-sm border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 flex items-center gap-2 font-semibold transition-all shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Plus className="w-4 h-4 text-indigo-500" />
           Tambah Kolom
@@ -1574,7 +1574,7 @@ export default function RekapPekaryaPage() {
         <Button
           onClick={handleSave}
           disabled={saving || isLocked || !category || employees.length === 0 || attendanceMoneyLoadFailed}
-          className="rounded-xl px-6 bg-indigo-600 shadow-lg shadow-indigo-200 text-white font-bold transition-all hover:bg-indigo-700 hover:shadow-indigo-300 flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          className="rounded-sm px-6 bg-indigo-600 shadow-lg shadow-indigo-200 text-white font-bold transition-all hover:bg-indigo-700 hover:shadow-indigo-300 flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
           Simpan rekap
@@ -1585,7 +1585,7 @@ export default function RekapPekaryaPage() {
               onClick={() => setHistoricalSpjCorrectionMode((previous) => !previous)}
               disabled={historicalSpjCorrectionSaving}
               variant="outline"
-              className="rounded-xl border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 hover:border-amber-400 font-bold transition-all flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="rounded-sm border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 hover:border-amber-400 font-bold transition-all flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {historicalSpjCorrectionMode ? <X className="w-4 h-4 text-amber-600" /> : <Unlock className="w-4 h-4 text-amber-600" />}
               {historicalSpjCorrectionMode ? 'Batal Koreksi SPJ' : 'Koreksi SPJ Khoirul & Pribadi'}
@@ -1594,7 +1594,7 @@ export default function RekapPekaryaPage() {
               <Button
                 onClick={handleHistoricalSpjCorrection}
                 disabled={historicalSpjCorrectionSaving}
-                className="rounded-xl px-6 bg-amber-600 shadow-lg shadow-amber-200 text-white font-bold transition-all hover:bg-amber-700 flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="rounded-sm px-6 bg-amber-600 shadow-lg shadow-amber-200 text-white font-bold transition-all hover:bg-amber-700 flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {historicalSpjCorrectionSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                 Simpan Koreksi SPJ
@@ -1605,7 +1605,7 @@ export default function RekapPekaryaPage() {
           <Button
             onClick={() => setIsLocked(false)}
             variant="outline"
-            className="rounded-xl border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 hover:border-amber-400 font-bold transition-all flex items-center gap-2 shadow-sm cursor-pointer"
+            className="rounded-sm border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 hover:border-amber-400 font-bold transition-all flex items-center gap-2 shadow-sm cursor-pointer"
           >
             <Unlock className="w-4 h-4 text-amber-600" />
             Buka Kunci
@@ -1615,7 +1615,7 @@ export default function RekapPekaryaPage() {
             onClick={() => setIsLocked(true)}
             disabled={!category || employees.length === 0}
             variant="outline"
-            className="rounded-xl border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 font-semibold transition-all flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="rounded-sm border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 font-semibold transition-all flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Lock className="w-4 h-4 text-slate-500" />
             Kunci
@@ -1632,7 +1632,7 @@ export default function RekapPekaryaPage() {
             onTouchEnd={endPress}
             onClick={handlePdfClick}
             variant="outline"
-            className="rounded-xl border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer select-none"
+            className="rounded-sm border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer select-none"
           >
             <FileDown className="w-4 h-4" />
             Ekspor Laporan PDF
@@ -1649,7 +1649,7 @@ export default function RekapPekaryaPage() {
             onTouchEnd={endPress}
             onClick={handleEmptyPdfClick}
             variant="outline"
-            className="rounded-xl border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 hover:border-amber-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer select-none"
+            className="rounded-sm border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 hover:border-amber-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer select-none"
           >
             <FileText className="w-4 h-4" />
             Ekspor Templat Kosong
@@ -1659,7 +1659,7 @@ export default function RekapPekaryaPage() {
           variant="outline"
           onClick={() => setShowScanPanel(!showScanPanel)}
           disabled={isLocked || !category || employees.length === 0}
-          className="rounded-xl border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer ml-auto disabled:opacity-50 disabled:cursor-not-allowed"
+          className="rounded-sm border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer ml-auto disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Sparkles className="w-4 h-4 text-indigo-600" />
           {showScanPanel ? 'Sembunyikan Panel Scan' : 'Buka Panel Scan'}
@@ -1671,20 +1671,20 @@ export default function RekapPekaryaPage() {
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
         {showScanPanel && (
           <div className="xl:col-span-4 space-y-6">
-            <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6">
-              <div className={`relative p-4 border-2 border-dashed rounded-[20px] transition-all duration-300 ${file ? 'border-indigo-100 bg-indigo-50/20' : 'border-slate-200 hover:border-indigo-300'}`} onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
+            <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6">
+              <div className={`relative p-4 border-2 border-dashed rounded-md transition-all duration-300 ${file ? 'border-indigo-100 bg-indigo-50/20' : 'border-slate-200 hover:border-indigo-300'}`} onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
                 {file ? (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-xs text-slate-600"><FileText className="w-3.5 h-3.5 text-indigo-500" /><span className="truncate max-w-[120px] font-medium">{file.name}</span></div>
                       <div className="flex gap-1">
-                        {lastScanResult && <Button variant="ghost" size="icon" onClick={() => setShowDebugModal(true)} className="h-7 w-7 rounded-lg text-indigo-500"><Code2 className="w-3.5 h-3.5" /></Button>}
-                        <Button variant={isCropping ? "secondary" : "ghost"} size="icon" onClick={() => setIsCropping(!isCropping)} className="h-7 w-7 rounded-lg"><Crop className={`w-3.5 h-3.5 ${isCropping ? 'text-indigo-600' : 'text-slate-400'}`} /></Button>
-                        <Button variant="ghost" size="icon" onClick={handleRotate} className="h-7 w-7 rounded-lg"><RotateCw className="w-3.5 h-3.5" /></Button>
-                        <Button variant="ghost" size="icon" onClick={handleClearFile} className="h-7 w-7 rounded-lg text-red-500"><Trash2 className="w-3.5 h-3.5" /></Button>
+                        {lastScanResult && <Button variant="ghost" size="icon" onClick={() => setShowDebugModal(true)} className="h-7 w-7 rounded-sm text-indigo-500"><Code2 className="w-3.5 h-3.5" /></Button>}
+                        <Button variant={isCropping ? "secondary" : "ghost"} size="icon" onClick={() => setIsCropping(!isCropping)} className="h-7 w-7 rounded-sm"><Crop className={`w-3.5 h-3.5 ${isCropping ? 'text-indigo-600' : 'text-slate-400'}`} /></Button>
+                        <Button variant="ghost" size="icon" onClick={handleRotate} className="h-7 w-7 rounded-sm"><RotateCw className="w-3.5 h-3.5" /></Button>
+                        <Button variant="ghost" size="icon" onClick={handleClearFile} className="h-7 w-7 rounded-sm text-red-500"><Trash2 className="w-3.5 h-3.5" /></Button>
                       </div>
                     </div>
-                    <div ref={containerRef} onMouseMove={onMouseMove} onMouseUp={() => setDragMode('none')} onMouseLeave={() => setDragMode('none')} className="relative aspect-[3/4] w-full bg-white rounded-xl border border-slate-200 overflow-hidden select-none cursor-crosshair">
+                    <div ref={containerRef} onMouseMove={onMouseMove} onMouseUp={() => setDragMode('none')} onMouseLeave={() => setDragMode('none')} className="relative aspect-[3/4] w-full bg-white rounded-md border border-slate-200 overflow-hidden select-none cursor-crosshair">
                       {previewUrl ? (
                         <>
                           <img src={isCropping ? previewUrl : (croppedPreviewUrl || previewUrl)} alt="Preview" className="w-full h-full object-contain pointer-events-none" />
@@ -1706,21 +1706,21 @@ export default function RekapPekaryaPage() {
                               </div>
                             </div>
                           )}
-                          {isCropping && (<div className="absolute bottom-4 left-4 right-4 bg-white/95 backdrop-blur-md p-2 rounded-xl border border-indigo-100 shadow-2xl z-50 animate-in fade-in slide-in-from-bottom-2"><Button size="sm" className="w-full h-8 text-xs bg-indigo-600 text-white font-bold" onClick={handleDoneCropping}>Confirm Crop</Button></div>)}
+                          {isCropping && (<div className="absolute bottom-4 left-4 right-4 bg-white/95 backdrop-blur-md p-2 rounded-md border border-indigo-100 shadow-2xl z-50 animate-in fade-in slide-in-from-bottom-2"><Button size="sm" className="rounded-sm w-full h-8 text-xs bg-indigo-600 text-white font-bold" onClick={handleDoneCropping}>Confirm Crop</Button></div>)}
                         </>
-                      ) : <div className="aspect-[3/4] w-full flex items-center justify-center bg-slate-50 rounded-xl animate-pulse"><Loader2 className="w-6 h-6 animate-spin text-slate-200" /></div>}
+                      ) : <div className="aspect-[3/4] w-full flex items-center justify-center bg-slate-50 rounded-md animate-pulse"><Loader2 className="w-6 h-6 animate-spin text-slate-200" /></div>}
                     </div>
                     <div className="pt-2">
-                      <Button onClick={handleAiScan} disabled={scanning || !file || !category} className="w-full rounded-xl bg-indigo-600 text-white font-semibold shadow-md shadow-indigo-100 hover:bg-indigo-700 transition-all"><Sparkles className="w-4 h-4 mr-2" /> Scan AI</Button>
+                      <Button onClick={handleAiScan} disabled={scanning || !file || !category} className="w-full rounded-sm bg-indigo-600 text-white font-semibold shadow-md shadow-indigo-100 hover:bg-indigo-700 transition-all"><Sparkles className="w-4 h-4 mr-2" /> Scan AI</Button>
                     </div>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-12 text-center cursor-pointer group" onClick={() => fileInputRef.current?.click()}>
-                    <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300"><Upload className="w-8 h-8" /></div>
+                    <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-sm flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300"><Upload className="w-8 h-8" /></div>
                     <h3 className="text-slate-900 font-semibold mb-1 text-sm">Upload Rekap</h3>
                     <p className="text-slate-500 text-xs mb-6 px-4">Tempel gambar atau tarik file rekap (PDF/PNG/JPG) ke sini.</p>
                     <input type="file" className="hidden" ref={fileInputRef} onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0])} accept=".pdf,image/*" />
-                    <Button variant="outline" className="rounded-xl border-slate-200 text-xs font-semibold group-hover:border-indigo-300 group-hover:text-indigo-600 transition-colors">Pilih File</Button>
+                    <Button variant="outline" className="rounded-sm border-slate-200 text-xs font-semibold group-hover:border-indigo-300 group-hover:text-indigo-600 transition-colors">Pilih File</Button>
                   </div>
                 )}
               </div>
@@ -1728,23 +1728,23 @@ export default function RekapPekaryaPage() {
           </div>
         )}
 
-        <Card className={`${showScanPanel ? 'xl:col-span-8' : 'xl:col-span-12'} bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none overflow-hidden min-h-[500px] flex flex-col transition-all`}>
+        <Card className={`${showScanPanel ? 'xl:col-span-8' : 'xl:col-span-12'} bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none overflow-hidden min-h-[500px] flex flex-col transition-all`}>
           <div className="p-5 flex items-center justify-between border-b border-slate-100 bg-white/50 backdrop-blur-sm z-10">
             <div className="flex items-center gap-3">
               <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2"><ImageIcon className="w-4 h-4 text-indigo-500" /> Preview Uraian Gaji — {MONTHS_ID[month - 1]} {year}</h2>
               {isLocked && (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200/80 shadow-2xs">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-sm text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200/80 shadow-2xs">
                   <Lock className="w-3 h-3 text-amber-600" />
                   Terkunci
                 </span>
               )}
             </div>
-            {category && <span className="text-xs text-slate-400 font-medium bg-slate-50 px-2 py-1 rounded-lg border border-slate-100">{employees.length} Karyawan</span>}
+            {category && <span className="text-xs text-slate-400 font-medium bg-slate-50 px-2 py-1 rounded-sm border border-slate-100">{employees.length} Karyawan</span>}
           </div>
 
           {!category ? (
             <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-6">
-              <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600 shadow-inner">
+              <div className="w-20 h-20 bg-indigo-50 rounded-sm flex items-center justify-center text-indigo-600 shadow-inner">
                 <Building2 className="w-10 h-10" />
               </div>
               <div className="space-y-2 max-w-xs">
@@ -1757,7 +1757,7 @@ export default function RekapPekaryaPage() {
           ) : (
             <>
             {manualSpjEnabled && !isLocked && (
-              <div className="mx-5 mt-4 p-3 bg-indigo-50/70 border border-indigo-100 rounded-xl text-indigo-900 text-xs flex gap-2 font-medium">
+              <div className="mx-5 mt-4 p-3 bg-indigo-50/70 border border-indigo-100 rounded-md text-indigo-900 text-xs flex gap-2 font-medium">
                 <AlertCircle className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
                 <span>
                   Periode <strong>Juli 2026 (26 Juni – 31 Juli)</strong> mendahului pelaporan kegiatan digital untuk {manualSpjCategoryLabel}.
@@ -1766,7 +1766,7 @@ export default function RekapPekaryaPage() {
               </div>
             )}
             {canEditSatpamMonthlyBonus && !isLocked && (
-              <div className="mx-5 mt-4 p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-amber-950 text-xs flex gap-2 font-medium">
+              <div className="mx-5 mt-4 p-3 bg-amber-50/80 border border-amber-200 rounded-md text-amber-950 text-xs flex gap-2 font-medium">
                 <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <span>
                   <strong>Bonus Presensi Bulanan Satpam — Juli 2026:</strong>{' '}
@@ -1795,7 +1795,7 @@ export default function RekapPekaryaPage() {
                               {isCustom && !isLocked && (
                                 <button
                                   onClick={() => handleRemoveCustomColumn(col.key)}
-                                  className="text-slate-400 hover:text-red-500 rounded-full hover:bg-slate-100 p-0.5 transition-colors opacity-0 group-hover/header:opacity-100 cursor-pointer flex-shrink-0"
+                                  className="text-slate-400 hover:text-red-500 rounded-sm hover:bg-slate-100 p-0.5 transition-colors opacity-0 group-hover/header:opacity-100 cursor-pointer flex-shrink-0"
                                   title="Hapus kolom kustom"
                                 >
                                   <X className="w-3 h-3" />
@@ -1825,10 +1825,10 @@ export default function RekapPekaryaPage() {
                       {hasScanData && bounds && (croppedPreviewUrl || previewUrl) && scanImgDims && (
                         <tr className="animate-in fade-in slide-in-from-top-4 duration-500">
                           <td colSpan={columns.length + 2} className="p-0">
-                            <div className="mx-2 border-x-2 border-t-2 border-slate-400 rounded-t-2xl overflow-hidden bg-white shadow-sm ring-1 ring-black/15">
+                            <div className="mx-2 border-x-2 border-t-2 border-slate-400 rounded-t-md overflow-hidden bg-white shadow-sm ring-1 ring-black/15">
                               <div className="px-4 py-1.5 bg-slate-50 flex items-center justify-between border-b border-slate-300">
                                 <div className="flex items-center gap-2">
-                                  <div className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] flex items-center justify-center font-bold shadow-sm">{empIdx + 1}</div>
+                                  <div className="w-5 h-5 rounded-sm bg-indigo-600 text-white text-[10px] flex items-center justify-center font-bold shadow-sm">{empIdx + 1}</div>
                                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Source Image Row</span>
                                 </div>
                                 <div className="text-[10px] text-indigo-600 font-bold opacity-70 flex items-center gap-1"><Eye className="w-3 h-3" /> REF: {emp.name}</div>
@@ -1842,7 +1842,7 @@ export default function RekapPekaryaPage() {
                       )}
                       <tr className={`group ${hasScanData ? 'group-hover/row:bg-indigo-50/30' : 'hover:bg-slate-50'} transition-all duration-200`}>
                         <td
-                          className={`px-6 py-5 sticky left-0 z-10 ${hasScanData ? `mx-2 border-l-2 border-y-2 border-slate-400 ${!bounds ? 'rounded-l-2xl' : ''} bg-white shadow-sm ring-1 ring-black/15 group-hover/row:bg-indigo-50/30` : 'border-b border-r border-slate-300 bg-white group-hover:bg-slate-50'}`}
+                          className={`px-6 py-5 sticky left-0 z-10 ${hasScanData ? `mx-2 border-l-2 border-y-2 border-slate-400 ${!bounds ? 'rounded-l-sm' : ''} bg-white shadow-sm ring-1 ring-black/15 group-hover/row:bg-indigo-50/30` : 'border-b border-r border-slate-300 bg-white group-hover:bg-slate-50'}`}
                           style={{ width: '220px', minWidth: '220px' }}
                         >
                           <div className="text-sm font-bold text-slate-800 leading-none">{emp.name}</div>
@@ -1968,7 +1968,7 @@ export default function RekapPekaryaPage() {
                                   : isManualSatpamBonus || (isSpj && canEditThisHistoricalSpj) || isSatpamShift || (isTunjanganJabatan && ketuaShiftIds.has(emp.employeeId))
                                     ? 'bg-indigo-50/30 border-indigo-200 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'
                                     : hasScanData
-                                      ? 'rounded-xl border-slate-400 bg-slate-50/50 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'
+                                      ? 'rounded-sm border-slate-400 bg-slate-50/50 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'
                                       : 'bg-white border-slate-400 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10'
                                   }`}
                                 onKeyDown={(e) => {
@@ -1987,7 +1987,7 @@ export default function RekapPekaryaPage() {
                             </td>
                           );
                         })}
-                        {hasScanData && <td className="p-0 border-r-2 border-y-2 border-slate-400 rounded-r-2xl bg-white shadow-sm ring-1 ring-black/15" />}
+                        {hasScanData && <td className="p-0 border-r-2 border-y-2 border-slate-400 rounded-r-sm bg-white shadow-sm ring-1 ring-black/15" />}
                       </tr>
                     </>
                   );
@@ -2002,7 +2002,7 @@ export default function RekapPekaryaPage() {
 
       {/* Custom Column Dialog */}
       <Dialog open={isCustomColDialogOpen} onOpenChange={setIsCustomColDialogOpen}>
-        <DialogContent className="sm:max-w-md max-w-full overflow-hidden flex flex-col p-0 border-none bg-white shadow-2xl rounded-3xl animate-in fade-in duration-300">
+        <DialogContent className="sm:max-w-md max-w-full overflow-hidden flex flex-col p-0 border-none bg-white shadow-2xl rounded-md animate-in fade-in duration-300">
           <DialogHeader className="p-6 pb-4 bg-gradient-to-r from-indigo-50/80 to-purple-50/60 border-b border-slate-100 shrink-0">
             <DialogTitle className="text-slate-800 flex items-center gap-3 font-bold text-lg">
               <Plus className="w-5 h-5 text-indigo-500" />
@@ -2013,25 +2013,25 @@ export default function RekapPekaryaPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Nama Kolom (Tabel)</label>
-                <Input type="text" placeholder="Contoh: Rapat Wali murid" value={newColLabel} onChange={(e) => setNewColLabel(e.target.value)} className="rounded-xl border-slate-200 font-semibold text-slate-800 text-sm focus:border-indigo-500" />
+                <Input type="text" placeholder="Contoh: Rapat Wali murid" value={newColLabel} onChange={(e) => setNewColLabel(e.target.value)} className="rounded-sm border-slate-200 font-semibold text-slate-800 text-sm focus:border-indigo-500" />
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Label Slip Gaji (Cetak)</label>
-                <Input type="text" placeholder="Kosongkan jika sama dengan tabel" value={newColSlipLabel} onChange={(e) => setNewColSlipLabel(e.target.value)} className="rounded-xl border-slate-200 font-semibold text-slate-800 text-sm focus:border-indigo-500" />
+                <Input type="text" placeholder="Kosongkan jika sama dengan tabel" value={newColSlipLabel} onChange={(e) => setNewColSlipLabel(e.target.value)} className="rounded-sm border-slate-200 font-semibold text-slate-800 text-sm focus:border-indigo-500" />
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Tipe Input data</label>
                 <Select value={newColType} onValueChange={(v: any) => setNewColType(v)}>
-                  <SelectTrigger className="w-full bg-white border-slate-200 rounded-xl font-semibold">
+                  <SelectTrigger className="w-full bg-white border-slate-200 rounded-sm font-semibold">
                     <SelectValue>
                       {newColType === 'currency'
                         ? 'Mata Uang (Rupiah Langsung)'
                         : 'Frekuensi (Jumlah x Rate Pengali)'}
                     </SelectValue>
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="rounded-md">
                     <SelectItem value="currency">Mata Uang (Rupiah Langsung)</SelectItem>
                     <SelectItem value="count">Frekuensi (Jumlah x Rate Pengali)</SelectItem>
                   </SelectContent>
@@ -2040,21 +2040,21 @@ export default function RekapPekaryaPage() {
               {newColType === 'count' && (
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Rate/Multiplier (Rp per Unit)</label>
-                  <Input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="Contoh: 20000" value={newColMultiplier} onChange={(e) => setNewColMultiplier(parseInt(e.target.value.replace(/\D/g, ''), 10) || '')} className="rounded-xl border-slate-200 font-semibold text-slate-800 text-sm focus:border-indigo-500 text-right" />
+                  <Input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="Contoh: 20000" value={newColMultiplier} onChange={(e) => setNewColMultiplier(parseInt(e.target.value.replace(/\D/g, ''), 10) || '')} className="rounded-sm border-slate-200 font-semibold text-slate-800 text-sm focus:border-indigo-500 text-right" />
                 </div>
               )}
             </div>
           </div>
-          <div className="p-5 bg-slate-50 border-t border-slate-100 flex justify-end gap-2.5 shrink-0 rounded-b-3xl">
-            <Button variant="ghost" onClick={() => setIsCustomColDialogOpen(false)} className="rounded-xl text-slate-500 hover:bg-slate-100">Batal</Button>
-            <Button onClick={handleAddCustomColumn} className="rounded-xl px-6 bg-indigo-600 text-white font-bold shadow-lg hover:bg-indigo-700">Tambah Kolom</Button>
+          <div className="p-5 bg-slate-50 border-t border-slate-100 flex justify-end gap-2.5 shrink-0 rounded-b-md">
+            <Button variant="ghost" onClick={() => setIsCustomColDialogOpen(false)} className="rounded-sm text-slate-500 hover:bg-slate-100">Batal</Button>
+            <Button onClick={handleAddCustomColumn} className="rounded-sm px-6 bg-indigo-600 text-white font-bold shadow-lg hover:bg-indigo-700">Tambah Kolom</Button>
           </div>
         </DialogContent>
       </Dialog>
 
       {/* Signature Dialog */}
       <Dialog open={showSignatureModal} onOpenChange={setShowSignatureModal}>
-        <DialogContent className="sm:max-w-2xl max-w-full overflow-hidden flex flex-col p-0 border-none bg-white shadow-2xl rounded-3xl animate-in fade-in duration-300">
+        <DialogContent className="sm:max-w-2xl max-w-full overflow-hidden flex flex-col p-0 border-none bg-white shadow-2xl rounded-md animate-in fade-in duration-300">
           <DialogHeader className="p-6 pb-4 bg-gradient-to-r from-indigo-50/80 to-purple-50/60 border-b border-slate-100 shrink-0">
             <DialogTitle className="text-slate-800 flex items-center gap-3 font-bold text-lg"><FileText className="w-5 h-5 text-indigo-500" />Tanda Tangan Laporan PDF</DialogTitle>
             <p className="text-slate-500 text-xs mt-1">Pilih hingga 3 pegawai dan jabatan yang akan menandatangani laporan PDF untuk Kategori: <span className="font-bold text-indigo-600">{category}</span>.</p>
@@ -2073,7 +2073,7 @@ export default function RekapPekaryaPage() {
                   ? employeesForSignature.filter(emp => emp.name.toLowerCase().includes(slot.searchText.toLowerCase()))
                   : [];
                 return (
-                  <div key={sIdx} className="p-4 rounded-2xl border border-slate-150 bg-slate-50/30 space-y-2.5">
+                  <div key={sIdx} className="p-4 rounded-md border border-slate-150 bg-slate-50/30 space-y-2.5">
                     <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">Penandatangan {sIdx + 1}{sIdx === 0 ? '' : ' (opsional)'}</span>
                     <div className="space-y-1.5 relative">
                       <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Cari Pegawai</label>
@@ -2105,10 +2105,10 @@ export default function RekapPekaryaPage() {
                             });
                           }, 200);
                         }}
-                        className="rounded-xl border-slate-200 font-semibold text-slate-800 text-sm"
+                        className="rounded-sm border-slate-200 font-semibold text-slate-800 text-sm"
                       />
                       {slot.showDropdown && slot.searchText.trim().length > 0 && (
-                        <div className="absolute left-0 right-0 mt-1 border border-slate-100 rounded-xl overflow-hidden shadow-2xl max-h-40 overflow-y-auto divide-y divide-slate-100 bg-white z-[999]">
+                        <div className="absolute left-0 right-0 mt-1 border border-slate-100 rounded-md overflow-hidden shadow-2xl max-h-40 overflow-y-auto divide-y divide-slate-100 bg-white z-[999]">
                           {loadingSigEmployees ? (
                             <div className="p-4 text-xs text-slate-500 text-center flex items-center justify-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Memuat data...</div>
                           ) : filtered.length === 0 ? (
@@ -2136,38 +2136,38 @@ export default function RekapPekaryaPage() {
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Nama Penandatangan</label>
-                      <Input type="text" placeholder="Nama Lengkap beserta gelar..." value={slot.name} onChange={(e) => updateSlot('name', e.target.value)} className="rounded-xl font-semibold text-slate-800 text-sm border-slate-200" />
+                      <Input type="text" placeholder="Nama Lengkap beserta gelar..." value={slot.name} onChange={(e) => updateSlot('name', e.target.value)} className="rounded-sm font-semibold text-slate-800 text-sm border-slate-200" />
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Jabatan Penandatangan</label>
-                      <Input type="text" placeholder="Jabatan..." value={slot.title} onChange={(e) => updateSlot('title', e.target.value)} className="rounded-xl font-semibold text-slate-800 text-sm border-slate-200" />
+                      <Input type="text" placeholder="Jabatan..." value={slot.title} onChange={(e) => updateSlot('title', e.target.value)} className="rounded-sm font-semibold text-slate-800 text-sm border-slate-200" />
                     </div>
                   </div>
                 );
               })}
             </div>
           </div>
-          <div className="p-5 bg-slate-50 border-t border-slate-100 flex justify-end gap-2.5 shrink-0 rounded-b-3xl">
-            <Button variant="ghost" onClick={() => setShowSignatureModal(false)} className="rounded-xl text-slate-500 hover:bg-slate-100">Batal</Button>
-            <Button onClick={handleSaveSignature} disabled={!sigModalSlots[0]?.name.trim() || !sigModalSlots[0]?.title.trim()} className="rounded-xl px-6 bg-indigo-600 text-white font-bold shadow-lg hover:bg-indigo-700">Simpan</Button>
+          <div className="p-5 bg-slate-50 border-t border-slate-100 flex justify-end gap-2.5 shrink-0 rounded-b-md">
+            <Button variant="ghost" onClick={() => setShowSignatureModal(false)} className="rounded-sm text-slate-500 hover:bg-slate-100">Batal</Button>
+            <Button onClick={handleSaveSignature} disabled={!sigModalSlots[0]?.name.trim() || !sigModalSlots[0]?.title.trim()} className="rounded-sm px-6 bg-indigo-600 text-white font-bold shadow-lg hover:bg-indigo-700">Simpan</Button>
           </div>
         </DialogContent>
       </Dialog>
 
       {/* Save Confirm Dialog */}
       <Dialog open={showSaveConfirm} onOpenChange={setShowSaveConfirm}>
-        <DialogContent className="sm:max-w-lg max-w-full overflow-hidden flex flex-col p-0 border-none bg-white shadow-2xl rounded-3xl animate-in fade-in duration-300">
+        <DialogContent className="sm:max-w-lg max-w-full overflow-hidden flex flex-col p-0 border-none bg-white shadow-2xl rounded-md animate-in fade-in duration-300">
           <DialogHeader className="p-6 pb-4 bg-gradient-to-r from-indigo-50/80 to-purple-50/60 border-b border-slate-100 shrink-0">
             <DialogTitle className="text-slate-800 flex items-center gap-3 font-bold text-lg">Konfirmasi & Simpan Rekap</DialogTitle>
           </DialogHeader>
           <div className="p-6 max-h-[50vh] overflow-y-auto space-y-4">
-            <div className="p-3 bg-indigo-50/70 border border-indigo-100 rounded-xl text-indigo-900 text-xs flex items-center gap-2 font-medium">
+            <div className="p-3 bg-indigo-50/70 border border-indigo-100 rounded-md text-indigo-900 text-xs flex items-center gap-2 font-medium">
               <Lock className="w-4 h-4 text-indigo-600 shrink-0" />
               <span>Setelah Anda mengonfirmasi <strong>Simpan rekap</strong>, tabel presensi akan otomatis dikunci untuk mencegah perubahan yang tidak disengaja.</span>
             </div>
             <p className="text-xs text-slate-500">Anda akan menyimpan data rekapitulasi presensi berikut ke database. Harap periksa rincian sebelum konfirmasi:</p>
             {spjDiscrepancies.length > 0 && (
-              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex gap-3 text-amber-900 text-xs">
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-md flex gap-3 text-amber-900 text-xs">
                 <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
                 <div>
                   <p className="font-bold text-amber-800 text-sm mb-1">Peringatan: Terdapat Perbedaan Nilai SPJ</p>
@@ -2185,12 +2185,12 @@ export default function RekapPekaryaPage() {
                 <div className="text-center py-6 text-slate-400 text-xs">Tidak ada data untuk disimpan.</div>
               ) : (
                 buildConfirmRows().map(({ emp, fields }) => (
-                  <div key={emp.employeeId} className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                  <div key={emp.employeeId} className="bg-slate-50 p-4 rounded-md border border-slate-100">
                     <div className="font-bold text-slate-700 text-sm">{emp.name}</div>
                     <div className="text-[10px] text-slate-400 font-mono mt-0.5">{emp.employeeId}</div>
                     <div className="mt-2.5 grid grid-cols-2 md:grid-cols-3 gap-2">
                       {fields.map(f => (
-                        <div key={f.col.key} className="bg-white p-2 rounded-xl border border-slate-100 flex flex-col">
+                        <div key={f.col.key} className="bg-white p-2 rounded-md border border-slate-100 flex flex-col">
                           <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider truncate">{f.col.label}</span>
                           <span className="text-slate-700 font-bold text-xs mt-0.5">
                             {f.isDual ? `${f.count} Unit (${fmtRp(f.value)})` : f.col.type === 'count' ? `${f.value / (f.col.multiplier || 1)} Unit` : fmtRp(f.value)}
@@ -2203,9 +2203,9 @@ export default function RekapPekaryaPage() {
               )}
             </div>
           </div>
-          <div className="p-5 bg-slate-50 border-t border-slate-100 flex justify-end gap-2.5 shrink-0 rounded-b-3xl">
-            <Button variant="ghost" onClick={() => setShowSaveConfirm(false)} className="rounded-xl text-slate-500 hover:bg-slate-100">Batal</Button>
-            <Button onClick={handleConfirmSave} disabled={saving} className="rounded-xl px-6 bg-indigo-600 text-white font-bold shadow-lg hover:bg-indigo-700 flex items-center gap-2">
+          <div className="p-5 bg-slate-50 border-t border-slate-100 flex justify-end gap-2.5 shrink-0 rounded-b-md">
+            <Button variant="ghost" onClick={() => setShowSaveConfirm(false)} className="rounded-sm text-slate-500 hover:bg-slate-100">Batal</Button>
+            <Button onClick={handleConfirmSave} disabled={saving} className="rounded-sm px-6 bg-indigo-600 text-white font-bold shadow-lg hover:bg-indigo-700 flex items-center gap-2">
               {saving && <Loader2 className="w-4 h-4 animate-spin" />}
               Konfirmasi & Simpan
             </Button>

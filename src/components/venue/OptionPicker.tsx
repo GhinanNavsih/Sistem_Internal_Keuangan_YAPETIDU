@@ -59,11 +59,11 @@ export default function OptionPicker({
         <SelectTrigger
           aria-labelledby={labelledBy}
           aria-invalid={invalid || undefined}
-          className="h-12 w-full rounded-xl border-slate-200 bg-white text-base font-semibold"
+          className="h-12 w-full rounded-sm border-slate-200 bg-white text-base font-semibold"
         >
           <SelectValue placeholder={placeholder}>{selected?.label || placeholder}</SelectValue>
         </SelectTrigger>
-        <SelectContent className="bg-white rounded-xl border border-slate-100 shadow-xl">
+        <SelectContent className="bg-white rounded-md border border-slate-100 shadow-xl">
           {options.map((option) => (
             <SelectItem key={option.value} value={option.value} disabled={option.disabled}>
               {option.label}
@@ -86,7 +86,7 @@ export default function OptionPicker({
         <label
           key={option.value}
           className={cn(
-            'group relative block cursor-pointer select-none overflow-hidden rounded-xl border bg-white transition-colors',
+            'group relative block cursor-pointer select-none overflow-hidden rounded-md border bg-white transition-colors',
             'has-[:checked]:border-indigo-500 has-[:checked]:ring-2 has-[:checked]:ring-indigo-500',
             'has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-indigo-400',
             'has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50',

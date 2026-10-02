@@ -92,7 +92,7 @@ export default function UraianNavToggles() {
   }
 
   const btnCls = (isActive: boolean) =>
-    `px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+    `px-4 py-2 rounded-sm text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
       isActive
         ? 'bg-indigo-600 text-white shadow-sm'
         : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
@@ -102,10 +102,10 @@ export default function UraianNavToggles() {
     <div className="flex flex-col gap-2.5 w-full">
       {/* Row 1: Loyalis Pay Navigation */}
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-500 px-1 shrink-0 bg-indigo-50/80 border border-indigo-100 py-1 rounded-md">
+        <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-500 px-1 shrink-0 bg-indigo-50/80 border border-indigo-100 py-1 rounded-sm">
           Loyalis
         </span>
-        <div className="flex bg-white p-1 rounded-xl w-fit shadow-sm border border-slate-200/60 overflow-x-auto max-w-full">
+        <div className="flex bg-white p-1 rounded-md w-fit shadow-sm border border-slate-200/60 overflow-x-auto max-w-full">
           {profile.role === 'loyalis_admin' && (
             <button
               onClick={() => router.push('/dashboard/employees')}
@@ -164,10 +164,10 @@ export default function UraianNavToggles() {
       {(profile.role === 'super_admin' ||
         profile.role === 'finance_verifier') && (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 px-1 shrink-0 bg-emerald-50/80 border border-emerald-100 py-1 rounded-md">
+          <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 px-1 shrink-0 bg-emerald-50/80 border border-emerald-100 py-1 rounded-sm">
             Pekarya
           </span>
-          <div className="flex bg-white p-1 rounded-xl w-fit shadow-sm border border-slate-200/60 overflow-x-auto max-w-full">
+          <div className="flex bg-white p-1 rounded-md w-fit shadow-sm border border-slate-200/60 overflow-x-auto max-w-full">
             {profile.role === 'super_admin' && (
               <button
                 onClick={() => router.push(`/dashboard/payroll/activity-review?month=${month}&year=${year}`)}

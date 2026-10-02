@@ -35,7 +35,7 @@ export function LeaveRangeDisclosure({
         disabled={disabled}
         aria-expanded={false}
         onClick={() => setOpen(true)}
-        className="h-auto min-h-12 w-full justify-between gap-3 whitespace-normal rounded-xl border-dashed py-2.5 text-left border-indigo-300 bg-indigo-50/60 px-4 text-sm font-bold text-indigo-800 hover:bg-indigo-50 hover:text-indigo-900"
+        className="h-auto min-h-12 w-full justify-between gap-3 whitespace-normal rounded-sm border-dashed py-2.5 text-left border-indigo-300 bg-indigo-50/60 px-4 text-sm font-bold text-indigo-800 hover:bg-indigo-50 hover:text-indigo-900"
       >
         <span className="flex min-w-0 items-center gap-2">
           <CalendarRange className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -57,7 +57,7 @@ export function LeaveRangeDisclosure({
           onClose();
           setOpen(false);
         }}
-        className="flex min-h-11 items-center gap-1 rounded-lg px-1 text-sm font-semibold text-slate-600 hover:text-slate-900 disabled:opacity-50"
+        className="flex min-h-11 items-center gap-1 rounded-sm px-1 text-sm font-semibold text-slate-600 hover:text-slate-900 disabled:opacity-50"
       >
         <X className="h-4 w-4" aria-hidden="true" />
         Hanya satu hari
@@ -109,7 +109,7 @@ export function LeaveDateRangeEndField({
           value={value}
           disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
-          className="min-h-14 rounded-xl text-base font-mono"
+          className="rounded-sm border-slate-200"
         />
         {error && value ? (
           <p className="text-sm font-semibold text-rose-700">{leaveRangeErrorMessage(error)}</p>

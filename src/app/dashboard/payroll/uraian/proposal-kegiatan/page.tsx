@@ -1142,39 +1142,39 @@ export default function ProposalKegiatanPage() {
     switch (st) {
       case 'proposal_draft':
       case 'draft':
-        return <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-slate-50 text-slate-600 border-slate-200">1. Draft Proposal</span>;
+        return <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm border bg-slate-50 text-slate-600 border-slate-200">1. Draft Proposal</span>;
       case 'proposal_submitted':
         return (
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-indigo-50 text-indigo-700 border-indigo-200 animate-pulse flex items-center gap-1">
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm border bg-indigo-50 text-indigo-700 border-indigo-200 animate-pulse flex items-center gap-1">
             <Clock className="w-3 h-3 text-indigo-500" /> Antrean Proposal {qNo ? `#${qNo}` : ''}
           </span>
         );
       case 'proposal_revision':
-        return <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-orange-50 text-orange-700 border-orange-200">Revisi Proposal</span>;
+        return <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm border bg-orange-50 text-orange-700 border-orange-200">Revisi Proposal</span>;
       case 'proposal_approved':
         return (
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-teal-50 text-teal-700 border-teal-200 flex items-center gap-1">
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm border bg-teal-50 text-teal-700 border-teal-200 flex items-center gap-1">
             <CheckCircle2 className="w-3 h-3 text-teal-600" /> Proposal Disetujui (LPJ Open)
           </span>
         );
       case 'lpj_draft':
-        return <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200">2. Draft LPJ</span>;
+        return <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm border bg-blue-50 text-blue-700 border-blue-200">2. Draft LPJ</span>;
       case 'lpj_submitted':
         return (
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-purple-50 text-purple-700 border-purple-200 animate-pulse flex items-center gap-1">
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm border bg-purple-50 text-purple-700 border-purple-200 animate-pulse flex items-center gap-1">
             <Clock className="w-3 h-3 text-purple-500" /> Antrean LPJ
           </span>
         );
       case 'lpj_revision':
-        return <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200">Revisi LPJ</span>;
+        return <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm border bg-amber-50 text-amber-700 border-amber-200">Revisi LPJ</span>;
       case 'lpj_approved':
         return (
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200 flex items-center gap-1">
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm border bg-emerald-50 text-emerald-700 border-emerald-200 flex items-center gap-1">
             <Sparkles className="w-3 h-3 text-emerald-600" /> LPJ Disetujui (Sandbox)
           </span>
         );
       case 'declined':
-        return <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-rose-50 text-rose-700 border-rose-200">Ditolak</span>;
+        return <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm border bg-rose-50 text-rose-700 border-rose-200">Ditolak</span>;
       default:
         return null;
     }
@@ -1186,7 +1186,7 @@ export default function ProposalKegiatanPage() {
     <div className="space-y-6">
       <FloatingSnackbar message={message} />
 
-      <div role="status" className="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900 shadow-sm">
+      <div role="status" className="flex gap-3 rounded-md border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900 shadow-sm">
         <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
         <div>
           <p className="font-black">Mode Sandbox — tidak terhubung ke payroll</p>
@@ -1195,7 +1195,7 @@ export default function ProposalKegiatanPage() {
       </div>
 
       {/* ── TOP SECTION: Dedicated Event List Carousel / Cards Grid ── */}
-      <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-4 md:p-6 space-y-4">
+      <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-4 md:p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div>
             <h3 className="font-bold text-slate-800 text-sm md:text-base flex items-center gap-2">
@@ -1209,7 +1209,7 @@ export default function ProposalKegiatanPage() {
             <Button
               onClick={handleOpenCloneModal}
               variant="outline"
-              className="rounded-xl border-purple-200 text-purple-700 bg-purple-50 hover:bg-purple-100 transition-all font-semibold flex items-center gap-2 text-xs h-9 cursor-pointer"
+              className="rounded-sm border-purple-200 text-purple-700 bg-purple-50 hover:bg-purple-100 transition-all font-semibold flex items-center gap-2 text-xs h-9 cursor-pointer"
             >
               <Copy className="w-4 h-4 text-purple-600" /> Kloning Anggaran Event Lalu
             </Button>
@@ -1217,7 +1217,7 @@ export default function ProposalKegiatanPage() {
               onClick={handlePrintPdf}
               disabled={printingPdf}
               variant="outline"
-              className="rounded-xl border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 font-semibold flex items-center gap-2 text-xs h-9 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-sm border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 font-semibold flex items-center gap-2 text-xs h-9 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {printingPdf ? <Loader2 className="w-4 h-4 animate-spin text-indigo-600" /> : <FileDown className="w-4 h-4 text-indigo-600" />} Cetak {activeStage === 'proposal' ? 'Proposal' : 'LPJ'} (PDF)
               </Button>
@@ -1232,7 +1232,7 @@ export default function ProposalKegiatanPage() {
             {/* Buat Proposal Baru Card */}
             <div
               onClick={() => resetForm()}
-              className="p-4 rounded-2xl border-2 border-dashed border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/10 transition-all cursor-pointer flex flex-col items-center justify-center min-h-[110px] gap-2 text-center group"
+              className="p-4 rounded-md border-2 border-dashed border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/10 transition-all cursor-pointer flex flex-col items-center justify-center min-h-[110px] gap-2 text-center group"
             >
               <Plus className="w-6 h-6 text-slate-400 group-hover:text-indigo-600 group-hover:scale-110 transition-all" />
               <span className="text-xs font-bold text-slate-600 group-hover:text-indigo-600">Buat Proposal Event Baru</span>
@@ -1240,7 +1240,7 @@ export default function ProposalKegiatanPage() {
 
             {/* Current Draft Card (If not selected from list) */}
             {!selectedProposalId && (
-              <div className="p-4 rounded-2xl border bg-indigo-50/40 border-indigo-200 shadow-sm flex flex-col justify-between min-h-[110px] scale-[1.02]">
+              <div className="p-4 rounded-md border bg-indigo-50/40 border-indigo-200 shadow-sm flex flex-col justify-between min-h-[110px] scale-[1.02]">
                 <div>
                   <p className="font-bold text-indigo-700 text-sm line-clamp-1 italic">
                     {reportName.trim() !== '' ? reportName : 'Proposal Baru (Tanpa Judul)'}
@@ -1248,7 +1248,7 @@ export default function ProposalKegiatanPage() {
                   <p className="text-[10px] text-indigo-500 font-bold mt-1 uppercase tracking-wider">{departmentUnit || 'Belum Pilih Unit'}</p>
                 </div>
                 <div className="flex items-center justify-between mt-3">
-                  <span className="text-[10px] font-bold text-indigo-600 bg-indigo-100/60 px-2 py-0.5 rounded">
+                  <span className="text-[10px] font-bold text-indigo-600 bg-indigo-100/60 px-2 py-0.5 rounded-sm">
                     1. Form Proposal Anggaran
                   </span>
                 </div>
@@ -1262,7 +1262,7 @@ export default function ProposalKegiatanPage() {
                 <div
                   key={item.id}
                   onClick={() => handleSelectProposal(item)}
-                  className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between min-h-[110px] ${isActive
+                  className={`p-4 rounded-md border transition-all cursor-pointer flex flex-col justify-between min-h-[110px] ${isActive
                     ? 'bg-indigo-50/60 border-indigo-300 shadow-md ring-1 ring-indigo-300/30 scale-[1.02]'
                     : 'bg-white border-slate-100 hover:border-indigo-150 hover:shadow-sm'
                     }`}
@@ -1285,7 +1285,7 @@ export default function ProposalKegiatanPage() {
       </Card>
 
       {/* ── MAIN SECTION: Full-Width Sequential Creation Card ── */}
-      <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-4 md:p-6 space-y-6">
+      <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-4 md:p-6 space-y-6">
         {/* Header & Stage Selector Tabs */}
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div className="flex items-center gap-3">
@@ -1295,7 +1295,7 @@ export default function ProposalKegiatanPage() {
                   {reportName.trim() !== '' ? reportName : 'Form Event & Realisasi Kegiatan'}
                 </h2>
                 {isProposalReadOnly && activeStage === 'proposal' && (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200/80 shadow-2xs">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-sm text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200/80 shadow-2xs">
                     <Lock className="w-3 h-3 text-amber-600" />
                     Terkunci
                   </span>
@@ -1310,27 +1310,27 @@ export default function ProposalKegiatanPage() {
 
             {/* Real-time Auto-save Indicator Badge */}
             {autoSaveStatus === 'saving' && (
-              <span className="flex items-center gap-1.5 text-xs text-indigo-600 font-bold bg-indigo-50 px-3 py-1 rounded-xl animate-pulse border border-indigo-100 shrink-0">
+              <span className="flex items-center gap-1.5 text-xs text-indigo-600 font-bold bg-indigo-50 px-3 py-1 rounded-sm animate-pulse border border-indigo-100 shrink-0">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" /> Menyimpan progress...
               </span>
             )}
             {autoSaveStatus === 'saved' && (
-              <span className="flex items-center gap-1.5 text-xs text-emerald-700 font-bold bg-emerald-50 px-3 py-1 rounded-xl border border-emerald-100 shrink-0">
+              <span className="flex items-center gap-1.5 text-xs text-emerald-700 font-bold bg-emerald-50 px-3 py-1 rounded-sm border border-emerald-100 shrink-0">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Progress tersimpan otomatis
               </span>
             )}
             {autoSaveStatus === 'error' && (
-              <span className="flex items-center gap-1.5 text-xs text-rose-700 font-bold bg-rose-50 px-3 py-1 rounded-xl border border-rose-100 shrink-0">
+              <span className="flex items-center gap-1.5 text-xs text-rose-700 font-bold bg-rose-50 px-3 py-1 rounded-sm border border-rose-100 shrink-0">
                 <AlertCircle className="w-3.5 h-3.5 text-rose-600" /> Gagal simpan otomatis
               </span>
             )}
           </div>
 
           {/* Sequential Stage Switcher Tabs */}
-          <div className="flex items-center bg-slate-100 p-1 rounded-2xl gap-1">
+          <div className="flex items-center bg-slate-100 p-1 rounded-md gap-1">
             <button
               onClick={() => setActiveStage('proposal')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeStage === 'proposal'
+              className={`px-4 py-2 rounded-sm text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeStage === 'proposal'
                 ? 'bg-white text-indigo-600 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
                 }`}
@@ -1354,7 +1354,7 @@ export default function ProposalKegiatanPage() {
                   }
                 }
               }}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeStage === 'lpj'
+              className={`px-4 py-2 rounded-sm text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeStage === 'lpj'
                 ? 'bg-white text-indigo-600 shadow-sm'
                 : 'text-slate-500 hover:text-slate-800'
                 }`}
@@ -1371,7 +1371,7 @@ export default function ProposalKegiatanPage() {
         </div>
 
         {/* Letterhead Banner */}
-        <div className="border border-slate-200/80 rounded-2xl p-4 bg-slate-50/40 relative overflow-hidden flex items-center gap-4">
+        <div className="border border-slate-200/80 rounded-md p-4 bg-slate-50/40 relative overflow-hidden flex items-center gap-4">
           <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50/30 rounded-full blur-2xl pointer-events-none" />
           <Image src="/Logo UNIPDU.png" alt="UNIPDU" width={300} height={304} className="w-12 h-12 shrink-0 object-contain" />
           <div className="space-y-0.5">
@@ -1390,7 +1390,7 @@ export default function ProposalKegiatanPage() {
               value={reportName}
               disabled={isProposalReadOnly}
               onChange={(e) => setReportName(e.target.value)}
-              className={`rounded-xl font-bold text-xs h-11 w-full transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
+              className={`rounded-sm font-bold text-xs h-11 w-full transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
             />
           </div>
 
@@ -1401,15 +1401,15 @@ export default function ProposalKegiatanPage() {
               disabled={isProposalReadOnly}
               onValueChange={(v) => setDepartmentUnit(v || '')}
             >
-              <SelectTrigger className={`rounded-xl text-sm font-bold h-11 border focus:ring-4 focus:ring-indigo-100 transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : departmentUnit ? 'bg-indigo-50/60 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-400'}`}>
+              <SelectTrigger className={`rounded-sm text-sm font-bold h-11 border focus:ring-4 focus:ring-indigo-100 transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : departmentUnit ? 'bg-indigo-50/60 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-400'}`}>
                 <div className="flex items-center gap-2 min-w-0">
                   <Building2 className="w-4 h-4 shrink-0" />
                   <SelectValue placeholder="Pilih Unit Kerja..." />
                 </div>
               </SelectTrigger>
-              <SelectContent className="rounded-2xl border border-slate-100 shadow-2xl bg-white p-1.5 max-h-64 overflow-y-auto w-max min-w-[var(--radix-select-trigger-width)]">
+              <SelectContent className="rounded-md border border-slate-100 shadow-2xl bg-white p-1.5 max-h-64 overflow-y-auto w-max min-w-[var(--radix-select-trigger-width)]">
                 {departments.map(d => (
-                  <SelectItem key={d} value={d} className="rounded-xl text-xs font-bold uppercase text-slate-900 data-[highlighted]:bg-indigo-50 data-[highlighted]:text-indigo-700 cursor-pointer">{d}</SelectItem>
+                  <SelectItem key={d} value={d} className="rounded-sm text-xs font-bold uppercase text-slate-900 data-[highlighted]:bg-indigo-50 data-[highlighted]:text-indigo-700 cursor-pointer">{d}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -1421,7 +1421,7 @@ export default function ProposalKegiatanPage() {
           <div className="space-y-6 animate-in fade-in duration-300">
             {/* Revision Note Banner */}
             {currentProposalStatus === 'proposal_revision' && currentReviewNote && (
-              <div className="p-4 bg-orange-50 border border-orange-200 rounded-2xl flex gap-3 text-orange-900 text-xs shadow-sm">
+              <div className="p-4 bg-orange-50 border border-orange-200 rounded-md flex gap-3 text-orange-900 text-xs shadow-sm">
                 <AlertTriangle className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
                 <div>
                   <p className="font-bold text-orange-800 text-sm mb-1">Catatan Revisi Proposal dari Super Admin</p>
@@ -1432,7 +1432,7 @@ export default function ProposalKegiatanPage() {
 
             {/* Direct LPJ access for the Loyalis sandbox */}
             {isLoyalisSandbox && (
-              <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-2xl flex items-center justify-between gap-3 text-indigo-900 text-xs shadow-sm">
+              <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-md flex items-center justify-between gap-3 text-indigo-900 text-xs shadow-sm">
                 <div className="flex items-center gap-3">
                   <Unlock className="w-6 h-6 text-indigo-600 shrink-0" />
                   <div>
@@ -1442,7 +1442,7 @@ export default function ProposalKegiatanPage() {
                 </div>
                 <Button
                   onClick={() => setActiveStage('lpj')}
-                  className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-9 px-4 shrink-0 shadow"
+                  className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-9 px-4 shrink-0 shadow"
                 >
                   Buka Form LPJ <Unlock className="w-3.5 h-3.5 ml-1.5" />
                 </Button>
@@ -1451,7 +1451,7 @@ export default function ProposalKegiatanPage() {
 
             {/* Proposal Approved Banner */}
             {hasLpjAccess && !isLoyalisSandbox && (
-              <div className="p-4 bg-teal-50 border border-teal-200 rounded-2xl flex items-center justify-between gap-3 text-teal-900 text-xs shadow-sm">
+              <div className="p-4 bg-teal-50 border border-teal-200 rounded-md flex items-center justify-between gap-3 text-teal-900 text-xs shadow-sm">
                 <div className="flex items-center gap-3">
                   <CheckCircle2 className="w-6 h-6 text-teal-600 shrink-0" />
                   <div>
@@ -1461,7 +1461,7 @@ export default function ProposalKegiatanPage() {
                 </div>
                 <Button
                   onClick={() => setActiveStage('lpj')}
-                  className="rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs h-9 px-4 shrink-0 shadow"
+                  className="rounded-sm bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs h-9 px-4 shrink-0 shadow"
                 >
                   Buka Form LPJ <Unlock className="w-3.5 h-3.5 ml-1.5" />
                 </Button>
@@ -1469,7 +1469,7 @@ export default function ProposalKegiatanPage() {
             )}
 
             {/* Section Header */}
-            <div className="border border-slate-150 rounded-2xl overflow-hidden bg-white shadow-sm p-4 md:p-5 space-y-6">
+            <div className="border border-slate-150 rounded-md overflow-hidden bg-white shadow-sm p-4 md:p-5 space-y-6">
               <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
                 <Receipt className="w-4 h-4 text-indigo-600" />
                 <span className="font-bold text-indigo-900 text-xs uppercase tracking-wider">Proposal Rencana Anggaran Keuangan</span>
@@ -1478,9 +1478,9 @@ export default function ProposalKegiatanPage() {
               {/* PART 1: PEMASUKAN */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100 font-sans">1. Pemasukan (Rencana Pendapatan Kegiatan)</span>
+                  <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider bg-emerald-50 px-2.5 py-1 rounded-sm border border-emerald-100 font-sans">1. Pemasukan (Rencana Pendapatan Kegiatan)</span>
                 </div>
-                <div className="border border-slate-150 rounded-2xl shadow-sm overflow-x-auto bg-white">
+                <div className="border border-slate-150 rounded-md shadow-sm overflow-x-auto bg-white">
                   <table className="w-full text-left border-collapse min-w-[600px]">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-100">
@@ -1523,7 +1523,7 @@ export default function ProposalKegiatanPage() {
                                   });
                                 }}
                                 onKeyDown={(e) => handleRowCellKeyDown(e, isProposalReadOnly ? undefined : insertPemasukanBelow)}
-                                className={`rounded-lg font-medium text-xs h-8 w-full transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 font-bold disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
+                                className={`rounded-sm font-medium text-xs h-8 w-full transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 font-bold disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
                               />
                             </td>
                             <td className="px-3 py-2">
@@ -1541,7 +1541,7 @@ export default function ProposalKegiatanPage() {
                                   });
                                 }}
                                 onKeyDown={(e) => handleRowCellKeyDown(e, isProposalReadOnly ? undefined : insertPemasukanBelow)}
-                                className={`rounded-lg font-bold text-xs h-8 w-full text-center transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
+                                className={`rounded-sm font-bold text-xs h-8 w-full text-center transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
                               />
                             </td>
                             <td className="px-3 py-2">
@@ -1560,7 +1560,7 @@ export default function ProposalKegiatanPage() {
                                   });
                                 }}
                                 onKeyDown={(e) => handleRowCellKeyDown(e, isProposalReadOnly ? undefined : insertPemasukanBelow)}
-                                className={`rounded-lg font-bold text-xs h-8 w-full text-right transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
+                                className={`rounded-sm font-bold text-xs h-8 w-full text-right transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
                               />
                             </td>
                             <td className="px-3 py-2 text-xs font-bold text-slate-700 text-right font-mono">{fmtRp(anggaran)}</td>
@@ -1573,7 +1573,7 @@ export default function ProposalKegiatanPage() {
                                     size="icon"
                                     title="Sisipkan baris di bawah"
                                     onClick={(event) => insertPemasukanBelow(event.currentTarget)}
-                                    className="h-7 w-7 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg cursor-pointer"
+                                    className="h-7 w-7 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-sm cursor-pointer"
                                   >
                                     <Plus className="w-3.5 h-3.5" />
                                   </Button>
@@ -1583,7 +1583,7 @@ export default function ProposalKegiatanPage() {
                                     size="icon"
                                     title="Hapus baris"
                                     onClick={() => setPemasukanRows(prev => prev.filter((_, i) => i !== idx))}
-                                    className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                                    className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </Button>
@@ -1605,7 +1605,7 @@ export default function ProposalKegiatanPage() {
                                 setPemasukanRows(prev => [...prev, { uraian: '', rincianQty: '', rincianRate: 0 }]);
                                 window.setTimeout(() => focusFirstCellInAdjacentRow(trigger, 'up'), 0);
                               }}
-                              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer"
+                              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer"
                             >
                               <Plus className="w-3.5 h-3.5" /> Tambah Pemasukan
                             </Button>
@@ -1623,11 +1623,11 @@ export default function ProposalKegiatanPage() {
               </div>
 
               {/* PART 2: DANA PENGEMBANGAN & DANA OPERASIONAL */}
-              <div className="bg-slate-50/55 border border-slate-150 rounded-2xl p-4 md:p-5 space-y-4">
-                <span className="text-xs font-bold text-slate-850 uppercase tracking-wider bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs block w-fit font-sans">2. Alokasi Dana Pengembangan & Operasional</span>
+              <div className="bg-slate-50/55 border border-slate-150 rounded-md p-4 md:p-5 space-y-4">
+                <span className="text-xs font-bold text-slate-850 uppercase tracking-wider bg-white px-2.5 py-1 rounded-sm border border-slate-200 shadow-2xs block w-fit font-sans">2. Alokasi Dana Pengembangan & Operasional</span>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1.5 bg-white p-3.5 rounded-xl border border-slate-200/60">
+                  <div className="space-y-1.5 bg-white p-3.5 rounded-md border border-slate-200/60">
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 font-sans">Dana Pengembangan Yayasan (%)</label>
                     <div className="flex items-center gap-2">
                       <Input
@@ -1637,7 +1637,7 @@ export default function ProposalKegiatanPage() {
                         value={yayasanPercentage}
                         disabled={isProposalReadOnly}
                         onChange={(e) => setYayasanPercentage(parseFloat(e.target.value) || 0)}
-                        className={`rounded-lg font-bold text-xs h-8 w-20 text-center transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
+                        className={`rounded-sm font-bold text-xs h-8 w-20 text-center transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
                       />
                       <span className="text-xs font-bold text-slate-500">%</span>
                       <div className="text-right ml-auto text-xs font-semibold text-slate-600">
@@ -1646,7 +1646,7 @@ export default function ProposalKegiatanPage() {
                     </div>
                   </div>
 
-                  <div className="space-y-1.5 bg-white p-3.5 rounded-xl border border-slate-200/60">
+                  <div className="space-y-1.5 bg-white p-3.5 rounded-md border border-slate-200/60">
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 font-sans">Dana Pengembangan UNIPDU (%)</label>
                     <div className="flex items-center gap-2">
                       <Input
@@ -1656,7 +1656,7 @@ export default function ProposalKegiatanPage() {
                         value={unipduPercentage}
                         disabled={isProposalReadOnly}
                         onChange={(e) => setUnipduPercentage(parseFloat(e.target.value) || 0)}
-                        className={`rounded-lg font-bold text-xs h-8 w-20 text-center transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
+                        className={`rounded-sm font-bold text-xs h-8 w-20 text-center transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
                       />
                       <span className="text-xs font-bold text-slate-500">%</span>
                       <div className="text-right ml-auto text-xs font-semibold text-slate-600">
@@ -1666,7 +1666,7 @@ export default function ProposalKegiatanPage() {
                   </div>
                 </div>
 
-                <div className="bg-indigo-900/95 text-white p-4 rounded-xl border border-indigo-950 flex flex-col md:flex-row items-center justify-between gap-4 shadow-md">
+                <div className="bg-indigo-900/95 text-white p-4 rounded-md border border-indigo-950 flex flex-col md:flex-row items-center justify-between gap-4 shadow-md">
                   <div>
                     <h4 className="text-sm font-bold uppercase tracking-wider text-indigo-200 font-sans">Dana Operasional (Batas Pengeluaran)</h4>
                     <p className="text-[11px] text-indigo-300 mt-0.5 font-sans">Rumus: Pemasukan - (Dana Pengembangan Yayasan + UNIPDU)</p>
@@ -1681,9 +1681,9 @@ export default function ProposalKegiatanPage() {
               {/* PART 3: PENGELUARAN */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-indigo-850 uppercase tracking-wider bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100 font-sans">3. Rencana Pengeluaran (Biaya Operasional Kegiatan)</span>
+                  <span className="text-xs font-bold text-indigo-850 uppercase tracking-wider bg-indigo-50 px-2.5 py-1 rounded-sm border border-indigo-100 font-sans">3. Rencana Pengeluaran (Biaya Operasional Kegiatan)</span>
                 </div>
-                <div className="border border-slate-150 rounded-2xl shadow-sm overflow-x-auto bg-white">
+                <div className="border border-slate-150 rounded-md shadow-sm overflow-x-auto bg-white">
                   <table className="w-full text-left border-collapse min-w-[600px]">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-100">
@@ -1740,7 +1740,7 @@ export default function ProposalKegiatanPage() {
                                     });
                                   }}
                                   onKeyDown={(e) => handleRowCellKeyDown(e, isProposalReadOnly ? undefined : insertPengeluaranItemBelow)}
-                                  className={`rounded-lg font-bold text-slate-800 text-xs h-7.5 w-full transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'bg-transparent border-none focus:ring-0'}`}
+                                  className={`rounded-sm font-bold text-slate-800 text-xs h-7.5 w-full transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'bg-transparent border-none focus:ring-0'}`}
                                 />
                               </td>
                               <td className="px-2.5 py-1.5 text-center">
@@ -1750,7 +1750,7 @@ export default function ProposalKegiatanPage() {
                                       title="Sisipkan baris di bawah (tahan untuk tambah header grup)"
                                       onPress={(button) => insertPengeluaranItemBelow(button)}
                                       onLongPress={(button) => insertPengeluaranHeaderBelow(button)}
-                                      className="h-7 w-7 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg cursor-pointer"
+                                      className="h-7 w-7 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-sm cursor-pointer"
                                     />
                                     <Button
                                       type="button"
@@ -1760,7 +1760,7 @@ export default function ProposalKegiatanPage() {
                                       onClick={() => {
                                         setPengeluaranRows(prev => prev.filter((_, i) => i !== idx));
                                       }}
-                                      className="h-7 w-7 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                                      className="h-7 w-7 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
                                     </Button>
@@ -1789,7 +1789,7 @@ export default function ProposalKegiatanPage() {
                                   });
                                 }}
                                 onKeyDown={(e) => handleRowCellKeyDown(e, isProposalReadOnly ? undefined : insertPengeluaranItemBelow)}
-                                className={`rounded-lg font-medium text-xs h-7.5 w-full transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 font-bold disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
+                                className={`rounded-sm font-medium text-xs h-7.5 w-full transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 font-bold disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
                               />
                             </td>
                             <td className="px-2.5 py-1">
@@ -1807,7 +1807,7 @@ export default function ProposalKegiatanPage() {
                                   });
                                 }}
                                 onKeyDown={(e) => handleRowCellKeyDown(e, isProposalReadOnly ? undefined : insertPengeluaranItemBelow)}
-                                className={`rounded-lg font-bold text-xs h-7.5 w-full text-center transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
+                                className={`rounded-sm font-bold text-xs h-7.5 w-full text-center transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
                               />
                             </td>
                             <td className="px-2.5 py-1">
@@ -1826,7 +1826,7 @@ export default function ProposalKegiatanPage() {
                                   });
                                 }}
                                 onKeyDown={(e) => handleRowCellKeyDown(e, isProposalReadOnly ? undefined : insertPengeluaranItemBelow)}
-                                className={`rounded-lg font-bold text-xs h-7.5 w-full text-right transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
+                                className={`rounded-sm font-bold text-xs h-7.5 w-full text-right transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
                               />
                             </td>
                             <td className="px-2.5 py-1 text-xs font-bold text-slate-700 text-right font-mono">{fmtRp(anggaran)}</td>
@@ -1841,10 +1841,10 @@ export default function ProposalKegiatanPage() {
                                         setActiveInsertMenuIdx(null);
                                         insertPengeluaranHeaderBelow(button);
                                       }}
-                                      className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer"
+                                      className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-sm cursor-pointer"
                                     />
                                     {activeInsertMenuIdx === idx && (
-                                      <div className="absolute right-0 top-8 z-30 bg-white rounded-xl shadow-xl border border-slate-150 p-1 min-w-[170px] animate-in fade-in zoom-in-95 duration-150">
+                                      <div className="absolute right-0 top-8 z-30 bg-white rounded-md shadow-xl border border-slate-150 p-1 min-w-[170px] animate-in fade-in zoom-in-95 duration-150">
                                         <button
                                           type="button"
                                           onClick={(event) => {
@@ -1852,7 +1852,7 @@ export default function ProposalKegiatanPage() {
                                             insertPengeluaranItemBelow(trigger);
                                             setActiveInsertMenuIdx(null);
                                           }}
-                                          className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2 cursor-pointer"
+                                          className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-sm flex items-center gap-2 cursor-pointer"
                                         >
                                           <Plus className="w-3.5 h-3.5 text-indigo-500" /> Baris Pengeluaran
                                         </button>
@@ -1863,7 +1863,7 @@ export default function ProposalKegiatanPage() {
                                             insertPengeluaranHeaderBelow(trigger);
                                             setActiveInsertMenuIdx(null);
                                           }}
-                                          className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-purple-50 hover:text-purple-700 rounded-lg flex items-center gap-2 cursor-pointer"
+                                          className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-purple-50 hover:text-purple-700 rounded-sm flex items-center gap-2 cursor-pointer"
                                         >
                                           <Plus className="w-3.5 h-3.5 text-purple-500" /> Header Grup Baru
                                         </button>
@@ -1878,7 +1878,7 @@ export default function ProposalKegiatanPage() {
                                     onClick={() => {
                                       setPengeluaranRows(prev => prev.filter((_, i) => i !== idx));
                                     }}
-                                    className="h-7 w-7 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                                    className="h-7 w-7 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </Button>
@@ -1901,7 +1901,7 @@ export default function ProposalKegiatanPage() {
                                   setPengeluaranRows(prev => [...prev, { type: 'item', uraian: '', rincianQty: '', rincianRate: 0 }]);
                                   window.setTimeout(() => focusFirstCellInAdjacentRow(trigger, 'up'), 0);
                                 }}
-                                className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer"
+                                className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer"
                               >
                                 <Plus className="w-3.5 h-3.5" /> Tambah Baris
                               </Button>
@@ -1914,7 +1914,7 @@ export default function ProposalKegiatanPage() {
                                   window.setTimeout(() => focusFirstCellInAdjacentRow(trigger, 'up'), 0);
                                 }}
                                 variant="outline"
-                                className="border-indigo-200 text-indigo-600 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer"
+                                className="border-indigo-200 text-indigo-600 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer"
                               >
                                 <Layers className="w-3.5 h-3.5" /> Tambah Header Grup
                               </Button>
@@ -1936,7 +1936,7 @@ export default function ProposalKegiatanPage() {
                               value={kepanitiaaanPercentage}
                               disabled={isProposalReadOnly}
                               onChange={(e) => setKepanitiaaanPercentage(parseFloat(e.target.value) || 0)}
-                              className={`rounded-lg font-bold text-xs h-7 w-16 text-center transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
+                              className={`rounded-sm font-bold text-xs h-7 w-16 text-center transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
                             />
                             <span className="text-xs font-bold text-slate-550">%</span>
                           </div>
@@ -1968,7 +1968,7 @@ export default function ProposalKegiatanPage() {
                     type="button"
                     variant="outline"
                     onClick={() => handleDeleteProposal(selectedProposalId)}
-                    className="rounded-xl border-rose-200 text-rose-600 bg-rose-50/50 hover:bg-rose-50 text-xs font-bold flex items-center gap-1.5 h-10 cursor-pointer"
+                    className="rounded-sm border-rose-200 text-rose-600 bg-rose-50/50 hover:bg-rose-50 text-xs font-bold flex items-center gap-1.5 h-10 cursor-pointer"
                   >
                     <Trash2 className="w-4 h-4" /> Hapus Laporan
                   </Button>
@@ -2000,7 +2000,7 @@ export default function ProposalKegiatanPage() {
                     type="button"
                     onClick={handleSaveProposalDraft}
                     disabled={saving}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-sm px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer"
                   >
                     {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                     Simpan Laporan
@@ -2011,7 +2011,7 @@ export default function ProposalKegiatanPage() {
                   type="button"
                   onClick={handlePrintPdf}
                   disabled={printingPdf}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-sm px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {printingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />} {printingPdf ? 'Membuat PDF...' : 'Cetak PDF'}
                 </Button>
@@ -2020,7 +2020,7 @@ export default function ProposalKegiatanPage() {
                   <Button
                     onClick={handleSubmitProposalToQueue}
                     disabled={saving}
-                    className="rounded-xl px-6 bg-slate-900 hover:bg-black text-white font-bold text-xs h-10 flex items-center gap-2 shadow-md cursor-pointer"
+                    className="rounded-sm px-6 bg-slate-900 hover:bg-black text-white font-bold text-xs h-10 flex items-center gap-2 shadow-md cursor-pointer"
                   >
                     {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                     Submit Proposal ke Admin
@@ -2034,7 +2034,7 @@ export default function ProposalKegiatanPage() {
                       <Button
                         onClick={() => { setReviewTarget('proposal'); setReviewAction('proposal_approved'); handleReviewDecision('proposal', 'proposal_approved', ''); }}
                         disabled={saving}
-                        className="rounded-xl px-5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs h-10 flex items-center gap-1.5 shadow-md cursor-pointer"
+                        className="rounded-sm px-5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs h-10 flex items-center gap-1.5 shadow-md cursor-pointer"
                       >
                         <CheckCircle className="w-4 h-4" /> Setujui Proposal
                       </Button>
@@ -2042,7 +2042,7 @@ export default function ProposalKegiatanPage() {
                     <Button
                       onClick={() => { setReviewTarget('proposal'); setReviewAction('proposal_revision'); setReviewNoteInput(''); setShowReviewDialog(true); }}
                       disabled={saving}
-                      className="rounded-xl px-5 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs h-10 flex items-center gap-1.5 shadow-md cursor-pointer"
+                      className="rounded-sm px-5 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs h-10 flex items-center gap-1.5 shadow-md cursor-pointer"
                     >
                       <RotateCcw className="w-4 h-4" /> {currentProposalStatus === 'proposal_approved' || currentProposalStatus?.startsWith('lpj_') ? 'Batalkan Persetujuan (Minta Revisi)' : 'Minta Revisi Proposal'}
                     </Button>
@@ -2058,8 +2058,8 @@ export default function ProposalKegiatanPage() {
           <div className="space-y-6 animate-in fade-in duration-300">
             {/* Locked Warning Banner */}
             {!hasLpjAccess ? (
-              <div className="p-6 bg-amber-50/60 border border-amber-200/80 rounded-2xl text-center space-y-3">
-                <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-sm">
+              <div className="p-6 bg-amber-50/60 border border-amber-200/80 rounded-md text-center space-y-3">
+                <div className="w-12 h-12 rounded-sm bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-sm">
                   <Lock className="w-6 h-6" />
                 </div>
                 <div>
@@ -2072,7 +2072,7 @@ export default function ProposalKegiatanPage() {
                   <Button
                     onClick={() => setActiveStage('proposal')}
                     variant="outline"
-                    className="rounded-xl border-amber-300 text-amber-800 hover:bg-amber-100 font-bold text-xs h-9 px-4"
+                    className="rounded-sm border-amber-300 text-amber-800 hover:bg-amber-100 font-bold text-xs h-9 px-4"
                   >
                     <ArrowLeft className="w-4 h-4 mr-1.5" /> Kembali ke Proposal Anggaran
                   </Button>
@@ -2082,7 +2082,7 @@ export default function ProposalKegiatanPage() {
               <div className="space-y-6">
                 {/* LPJ Revision Banner */}
                 {currentProposalStatus === 'lpj_revision' && currentReviewNote && (
-                  <div className="p-4 bg-orange-50 border border-orange-200 rounded-2xl flex gap-3 text-orange-900 text-xs shadow-sm">
+                  <div className="p-4 bg-orange-50 border border-orange-200 rounded-md flex gap-3 text-orange-900 text-xs shadow-sm">
                     <AlertTriangle className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
                     <div>
                       <p className="font-bold text-orange-800 text-sm mb-1">Catatan Revisi LPJ dari Super Admin</p>
@@ -2093,7 +2093,7 @@ export default function ProposalKegiatanPage() {
 
                 {/* LPJ Approved Banner */}
                 {currentProposalStatus === 'lpj_approved' && (
-                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex gap-3 text-emerald-900 text-xs shadow-sm">
+                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-md flex gap-3 text-emerald-900 text-xs shadow-sm">
                     <Sparkles className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                     <div>
                       <p className="font-bold text-emerald-800 text-sm mb-0.5">LPJ Sandbox Disetujui</p>
@@ -2111,7 +2111,7 @@ export default function ProposalKegiatanPage() {
                       key={s.key}
                       type="button"
                       onClick={() => s.toggle(!s.enabled)}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${s.enabled
+                      className={`flex items-center gap-2 px-3 py-2 rounded-sm text-xs font-bold transition-all cursor-pointer border ${s.enabled
                         ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
                         : 'bg-slate-50 border-slate-150 text-slate-400'
                         }`}
@@ -2152,7 +2152,7 @@ export default function ProposalKegiatanPage() {
                   const sisaRealisasiLPJ = danaOperasionalRealisasiLPJ - totalPengeluaranRealisasiLPJ;
 
                   return (
-                    <div className="border border-slate-150 rounded-2xl overflow-hidden">
+                    <div className="border border-slate-150 rounded-md overflow-hidden">
                       <button
                         type="button"
                         onClick={() => toggleSection('realisasi')}
@@ -2174,16 +2174,16 @@ export default function ProposalKegiatanPage() {
                               placeholder="REALISASI..."
                               value={realisasiTitle}
                               onChange={(e) => setRealisasiTitle(e.target.value)}
-                              className="rounded-xl border-slate-200 font-bold text-slate-900 text-xs h-10 w-full uppercase"
+                              className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-10 w-full uppercase"
                             />
                           </div>
 
                           {/* PART A: PEMASUKAN */}
                           <div className="space-y-2">
                             <div className="flex items-center justify-between">
-                              <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100 font-sans">1. Pemasukan (Pendapatan Kegiatan)</span>
+                              <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider bg-emerald-50 px-2.5 py-1 rounded-sm border border-emerald-100 font-sans">1. Pemasukan (Pendapatan Kegiatan)</span>
                             </div>
-                            <div className="border border-slate-150 rounded-2xl shadow-sm overflow-x-auto bg-white">
+                            <div className="border border-slate-150 rounded-md shadow-sm overflow-x-auto bg-white">
                               <table className="w-full text-left border-collapse min-w-[700px]">
                                 <thead>
                                   <tr className="bg-slate-50 border-b border-slate-100">
@@ -2205,17 +2205,17 @@ export default function ProposalKegiatanPage() {
                                     return (
                                       <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
                                         <td className="px-3 py-2 text-xs font-bold text-slate-400 text-center">{idx + 1}</td>
-                                        <td className="px-3 py-2"><Input type="text" placeholder="Biaya Test, Kontribusi, dll..." value={row.uraian} onChange={(e) => { const val = e.target.value; setLpjPemasukanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPemasukanBelow)} className="rounded-lg border-slate-200 font-medium text-slate-900 text-xs h-8 w-full" /></td>
-                                        <td className="px-3 py-2"><Input type="text" placeholder="250 Siswa" value={row.rincianQty} onChange={(e) => { const val = e.target.value; setLpjPemasukanRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianQty: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(val) * c[idx].rincianRate; } return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPemasukanBelow)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-center" /></td>
-                                        <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPemasukanRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianRate: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(c[idx].rincianQty) * val; } return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPemasukanBelow)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
+                                        <td className="px-3 py-2"><Input type="text" placeholder="Biaya Test, Kontribusi, dll..." value={row.uraian} onChange={(e) => { const val = e.target.value; setLpjPemasukanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPemasukanBelow)} className="rounded-sm border-slate-200 font-medium text-slate-900 text-xs h-8 w-full" /></td>
+                                        <td className="px-3 py-2"><Input type="text" placeholder="250 Siswa" value={row.rincianQty} onChange={(e) => { const val = e.target.value; setLpjPemasukanRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianQty: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(val) * c[idx].rincianRate; } return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPemasukanBelow)} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-center" /></td>
+                                        <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPemasukanRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianRate: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(c[idx].rincianQty) * val; } return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPemasukanBelow)} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
                                         <td className="px-3 py-2 text-xs font-bold text-slate-600 text-right font-mono">{fmtRp(anggaran)}</td>
-                                        <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.realisasi > 0 ? fmtRp(row.realisasi) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPemasukanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], realisasi: val }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPemasukanBelow)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
+                                        <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.realisasi > 0 ? fmtRp(row.realisasi) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPemasukanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], realisasi: val }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPemasukanBelow)} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
                                         <td className="px-3 py-2 text-center">
                                           <div className="flex items-center justify-center gap-1">
-                                            <Button type="button" variant="ghost" size="icon" title="Sisipkan baris di bawah" onClick={() => { setLpjPemasukanRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }); return c; }); }} className="h-7 w-7 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg cursor-pointer">
+                                            <Button type="button" variant="ghost" size="icon" title="Sisipkan baris di bawah" onClick={() => { setLpjPemasukanRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }); return c; }); }} className="h-7 w-7 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-sm cursor-pointer">
                                               <Plus className="w-3.5 h-3.5" />
                                             </Button>
-                                            <Button type="button" variant="ghost" size="icon" title="Hapus baris" onClick={() => setLpjPemasukanRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer">
+                                            <Button type="button" variant="ghost" size="icon" title="Hapus baris" onClick={() => setLpjPemasukanRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer">
                                               <Trash2 className="w-3.5 h-3.5" />
                                             </Button>
                                           </div>
@@ -2226,7 +2226,7 @@ export default function ProposalKegiatanPage() {
                                   <tr className="border-b border-slate-100 hover:bg-slate-50/10 transition-colors">
                                     <td></td>
                                     <td colSpan={6} className="px-3 py-2">
-                                      <Button type="button" size="sm" onClick={() => setLpjPemasukanRows(prev => [...prev, { uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }])} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer">
+                                      <Button type="button" size="sm" onClick={() => setLpjPemasukanRows(prev => [...prev, { uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }])} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer">
                                         <Plus className="w-3.5 h-3.5" /> Tambah Pemasukan
                                       </Button>
                                     </td>
@@ -2243,14 +2243,14 @@ export default function ProposalKegiatanPage() {
                           </div>
 
                           {/* PART B: DANA PENGEMBANGAN & DANA OPERASIONAL */}
-                          <div className="bg-slate-50/55 border border-slate-150 rounded-2xl p-4 md:p-5 space-y-4">
-                            <span className="text-xs font-bold text-slate-850 uppercase tracking-wider bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs block w-fit font-sans">2. Alokasi Dana Pengembangan & Operasional</span>
+                          <div className="bg-slate-50/55 border border-slate-150 rounded-md p-4 md:p-5 space-y-4">
+                            <span className="text-xs font-bold text-slate-850 uppercase tracking-wider bg-white px-2.5 py-1 rounded-sm border border-slate-200 shadow-2xs block w-fit font-sans">2. Alokasi Dana Pengembangan & Operasional</span>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div className="space-y-1.5 bg-white p-3.5 rounded-xl border border-slate-200/60">
+                              <div className="space-y-1.5 bg-white p-3.5 rounded-md border border-slate-200/60">
                                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 font-sans">Dana Pengembangan Yayasan (%)</label>
                                 <div className="flex items-center gap-2">
-                                  <Input type="number" min={0} max={100} value={yayasanPercentage} onChange={(e) => setYayasanPercentage(parseFloat(e.target.value) || 0)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-20 text-center" />
+                                  <Input type="number" min={0} max={100} value={yayasanPercentage} onChange={(e) => setYayasanPercentage(parseFloat(e.target.value) || 0)} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-20 text-center" />
                                   <span className="text-xs font-bold text-slate-500">%</span>
                                   <div className="text-right ml-auto text-xs font-semibold text-slate-600">
                                     Anggaran: <span className="font-bold text-slate-900 font-mono">{fmtRp(yayasanAnggaranLPJ)}</span>
@@ -2260,10 +2260,10 @@ export default function ProposalKegiatanPage() {
                                 </div>
                               </div>
 
-                              <div className="space-y-1.5 bg-white p-3.5 rounded-xl border border-slate-200/60">
+                              <div className="space-y-1.5 bg-white p-3.5 rounded-md border border-slate-200/60">
                                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 font-sans">Dana Pengembangan UNIPDU (%)</label>
                                 <div className="flex items-center gap-2">
-                                  <Input type="number" min={0} max={100} value={unipduPercentage} onChange={(e) => setUnipduPercentage(parseFloat(e.target.value) || 0)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-20 text-center" />
+                                  <Input type="number" min={0} max={100} value={unipduPercentage} onChange={(e) => setUnipduPercentage(parseFloat(e.target.value) || 0)} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-20 text-center" />
                                   <span className="text-xs font-bold text-slate-500">%</span>
                                   <div className="text-right ml-auto text-xs font-semibold text-slate-600">
                                     Anggaran: <span className="font-bold text-slate-900 font-mono">{fmtRp(unipduAnggaranLPJ)}</span>
@@ -2274,7 +2274,7 @@ export default function ProposalKegiatanPage() {
                               </div>
                             </div>
 
-                            <div className="bg-indigo-900/95 text-white p-4 rounded-xl border border-indigo-950 flex flex-col md:flex-row items-center justify-between gap-4 shadow-md">
+                            <div className="bg-indigo-900/95 text-white p-4 rounded-md border border-indigo-950 flex flex-col md:flex-row items-center justify-between gap-4 shadow-md">
                               <div>
                                 <h4 className="text-sm font-bold uppercase tracking-wider text-indigo-200 font-sans">Dana Operasional (Sisa untuk Pengeluaran)</h4>
                                 <p className="text-[11px] text-indigo-300 mt-0.5 font-sans">Rumus: Pemasukan - (Dana Pengembangan Yayasan + UNIPDU)</p>
@@ -2296,9 +2296,9 @@ export default function ProposalKegiatanPage() {
                           {/* PART C: PENGELUARAN */}
                           <div className="space-y-2">
                             <div className="flex items-center justify-between">
-                              <span className="text-xs font-bold text-indigo-850 uppercase tracking-wider bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100 font-sans">3. Pengeluaran (Biaya Operasional Kegiatan)</span>
+                              <span className="text-xs font-bold text-indigo-850 uppercase tracking-wider bg-indigo-50 px-2.5 py-1 rounded-sm border border-indigo-100 font-sans">3. Pengeluaran (Biaya Operasional Kegiatan)</span>
                             </div>
-                            <div className="border border-slate-150 rounded-2xl shadow-sm overflow-x-auto bg-white">
+                            <div className="border border-slate-150 rounded-md shadow-sm overflow-x-auto bg-white">
                               <table className="w-full text-left border-collapse min-w-[700px]">
                                 <thead>
                                   <tr className="bg-slate-50 border-b border-slate-100">
@@ -2346,7 +2346,7 @@ export default function ProposalKegiatanPage() {
                                       return (
                                         <tr key={idx} className="bg-slate-50/60 border-b border-slate-100">
                                           <td className="px-3 py-2.5 text-xs font-bold text-slate-400 text-center"></td>
-                                          <td colSpan={3} className="px-3 py-2.5"><Input type="text" placeholder="Nama grup (e.g., A. Pengeluaran Panitia)..." value={row.uraian} onChange={(e) => { const val = e.target.value; setLpjPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-lg border-slate-200 font-bold text-slate-800 text-xs h-8 w-full bg-transparent border-none focus:ring-0" /></td>
+                                          <td colSpan={3} className="px-3 py-2.5"><Input type="text" placeholder="Nama grup (e.g., A. Pengeluaran Panitia)..." value={row.uraian} onChange={(e) => { const val = e.target.value; setLpjPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-sm border-slate-200 font-bold text-slate-800 text-xs h-8 w-full bg-transparent border-none focus:ring-0" /></td>
                                           <td className="px-3 py-2.5 text-xs font-black text-slate-700 text-right font-mono">{fmtRp(groupAnggaran)}</td>
                                           <td className="px-3 py-2.5 text-xs font-black text-indigo-700 text-right font-mono">{fmtRp(groupRealisasi)}</td>
                                           <td className="px-3 py-2.5 text-center">
@@ -2357,7 +2357,7 @@ export default function ProposalKegiatanPage() {
                                                 size="sm"
                                                 disabled={(!linkedGroupReport && isLpjReadOnly) || !row.rowId}
                                                 onClick={() => setReportEditorGroupId(row.rowId || null)}
-                                                className={`h-7 rounded-lg px-2 text-[10px] font-bold ${linkedGroupReport
+                                                className={`h-7 rounded-sm px-2 text-[10px] font-bold ${linkedGroupReport
                                                   ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                                                   : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
                                               >
@@ -2367,9 +2367,9 @@ export default function ProposalKegiatanPage() {
                                                 title="Sisipkan baris di bawah (tahan untuk tambah header grup)"
                                                 onPress={insertLpjPengeluaranItemBelow}
                                                 onLongPress={insertLpjPengeluaranHeaderBelow}
-                                                className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer"
+                                                className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-sm cursor-pointer"
                                               />
-                                              <Button type="button" variant="ghost" size="icon" title="Hapus grup" onClick={() => { if (row.reportId) setExpenseReports(prev => prev.filter((report) => report.id !== row.reportId)); setLpjPengeluaranRows(prev => prev.filter((_, i) => i !== idx)); }} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer">
+                                              <Button type="button" variant="ghost" size="icon" title="Hapus grup" onClick={() => { if (row.reportId) setExpenseReports(prev => prev.filter((report) => report.id !== row.reportId)); setLpjPengeluaranRows(prev => prev.filter((_, i) => i !== idx)); }} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer">
                                                 <Trash2 className="w-3.5 h-3.5" />
                                               </Button>
                                             </div>
@@ -2382,11 +2382,11 @@ export default function ProposalKegiatanPage() {
                                       <React.Fragment key={idx}>
                                         <tr className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
                                           <td className="px-3 py-2 text-xs font-bold text-slate-400 text-center">{itemNum}</td>
-                                          <td className="px-3 py-2"><Input type="text" placeholder="Uraian pengeluaran..." value={row.uraian} onChange={(e) => { const val = e.target.value; setLpjPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-lg border-slate-200 font-medium text-slate-900 text-xs h-8 w-full" /></td>
-                                          <td className="px-3 py-2"><Input type="text" placeholder="10 / 20%" value={row.rincianQty} onChange={(e) => { const val = e.target.value; setLpjPengeluaranRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianQty: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(val) * c[idx].rincianRate; } return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-center" /></td>
-                                          <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPengeluaranRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianRate: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(c[idx].rincianQty) * val; } return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
+                                          <td className="px-3 py-2"><Input type="text" placeholder="Uraian pengeluaran..." value={row.uraian} onChange={(e) => { const val = e.target.value; setLpjPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-sm border-slate-200 font-medium text-slate-900 text-xs h-8 w-full" /></td>
+                                          <td className="px-3 py-2"><Input type="text" placeholder="10 / 20%" value={row.rincianQty} onChange={(e) => { const val = e.target.value; setLpjPengeluaranRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianQty: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(val) * c[idx].rincianRate; } return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-center" /></td>
+                                          <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPengeluaranRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianRate: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(c[idx].rincianQty) * val; } return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
                                           <td className="px-3 py-2 text-xs font-bold text-slate-600 text-right font-mono">{fmtRp(anggaran)}</td>
-                                          <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={(row.realisasi || 0) > 0 ? fmtRp(row.realisasi || 0) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], realisasi: val }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
+                                          <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={(row.realisasi || 0) > 0 ? fmtRp(row.realisasi || 0) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], realisasi: val }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
                                           <td className="px-3 py-2 text-center">
                                             <div className="flex items-center justify-center gap-1">
                                               <div className="relative">
@@ -2397,19 +2397,19 @@ export default function ProposalKegiatanPage() {
                                                     setActiveInsertMenuIdx(null);
                                                     insertLpjPengeluaranHeaderBelow();
                                                   }}
-                                                  className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer"
+                                                  className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-sm cursor-pointer"
                                                 />
                                                 {activeInsertMenuIdx === idx && (
                                                   <>
                                                     <div className="fixed inset-0 z-40" onClick={() => setActiveInsertMenuIdx(null)} />
-                                                    <div className="absolute right-0 bottom-8 z-50 w-44 bg-white border border-slate-150 rounded-xl shadow-xl py-1.5 text-left">
+                                                    <div className="absolute right-0 bottom-8 z-50 w-44 bg-white border border-slate-150 rounded-md shadow-xl py-1.5 text-left">
                                                       <button type="button" onClick={() => { setLpjPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { ...createProposalExpenseRow('item'), realisasi: 0 }); return c; }); setActiveInsertMenuIdx(null); }} className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 transition-colors cursor-pointer"><FileText className="w-3.5 h-3.5 text-indigo-500" /><span>Baris Biasa</span></button>
                                                       <button type="button" onClick={() => { setLpjPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { ...createProposalExpenseRow('group_header'), realisasi: 0 }); return c; }); setActiveInsertMenuIdx(null); }} className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 transition-colors cursor-pointer"><Layers className="w-3.5 h-3.5 text-indigo-500" /><span>Header Grup</span></button>
                                                     </div>
                                                   </>
                                                 )}
                                               </div>
-                                              <Button type="button" variant="ghost" size="icon" title="Hapus baris" onClick={() => setLpjPengeluaranRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer">
+                                              <Button type="button" variant="ghost" size="icon" title="Hapus baris" onClick={() => setLpjPengeluaranRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer">
                                                 <Trash2 className="w-3.5 h-3.5" />
                                               </Button>
                                             </div>
@@ -2443,10 +2443,10 @@ export default function ProposalKegiatanPage() {
                                     <td></td>
                                     <td colSpan={6} className="px-3 py-3">
                                       <div className="flex items-center gap-2">
-                                        <Button type="button" size="sm" onClick={() => setLpjPengeluaranRows(prev => [...prev, { ...createProposalExpenseRow('item'), realisasi: 0 }])} className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer">
+                                        <Button type="button" size="sm" onClick={() => setLpjPengeluaranRows(prev => [...prev, { ...createProposalExpenseRow('item'), realisasi: 0 }])} className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer">
                                           <Plus className="w-3.5 h-3.5" /> Tambah Baris
                                         </Button>
-                                        <Button type="button" size="sm" onClick={() => setLpjPengeluaranRows(prev => [...prev, { ...createProposalExpenseRow('group_header'), realisasi: 0 }])} variant="outline" className="border-indigo-200 text-indigo-600 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer">
+                                        <Button type="button" size="sm" onClick={() => setLpjPengeluaranRows(prev => [...prev, { ...createProposalExpenseRow('group_header'), realisasi: 0 }])} variant="outline" className="border-indigo-200 text-indigo-600 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer">
                                           <Layers className="w-3.5 h-3.5" /> Tambah Header Grup
                                         </Button>
                                       </div>
@@ -2460,7 +2460,7 @@ export default function ProposalKegiatanPage() {
                                   </tr>
                                   <tr className="bg-slate-50/50">
                                     <td colSpan={3} className="px-3 py-2 text-xs font-bold text-slate-650 text-right">Kepanitiaan</td>
-                                    <td className="px-3 py-2"><div className="flex items-center gap-1 justify-end"><Input type="number" value={kepanitiaaanPercentage} onChange={(e) => setKepanitiaaanPercentage(parseFloat(e.target.value) || 0)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-7 w-16 text-center" /><span className="text-xs font-bold text-slate-550">%</span></div></td>
+                                    <td className="px-3 py-2"><div className="flex items-center gap-1 justify-end"><Input type="number" value={kepanitiaaanPercentage} onChange={(e) => setKepanitiaaanPercentage(parseFloat(e.target.value) || 0)} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-7 w-16 text-center" /><span className="text-xs font-bold text-slate-550">%</span></div></td>
                                     <td className="px-3 py-2 text-xs font-bold text-slate-600 text-right font-mono">{fmtRp(kepanitiaaanAnggaranLPJ)}</td>
                                     <td className="px-3 py-2 text-xs font-bold text-slate-600 text-right font-mono">{fmtRp(kepanitiaaanRealisasiLPJ)}</td>
                                     <td></td>
@@ -2510,7 +2510,7 @@ export default function ProposalKegiatanPage() {
                     longer separate user-facing report sections. */}
                 {/* SEKSI 3: VAKASI KEPANITIAAN */}
                 {false && kepanitiaaanEnabled && (
-                  <div className="border border-slate-150 rounded-2xl overflow-hidden">
+                  <div className="border border-slate-150 rounded-md overflow-hidden">
                     <button type="button" onClick={() => toggleSection('kepanitiaan')} className="w-full flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-violet-50 to-violet-50/40 hover:from-violet-100/60 transition-all cursor-pointer">
                       <div className="flex items-center gap-2.5">
                         <Layers className="w-4 h-4 text-violet-600" />
@@ -2523,18 +2523,18 @@ export default function ProposalKegiatanPage() {
                       <div className="p-4 md:p-5 space-y-4 bg-white">
                         <div className="space-y-2">
                           <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Judul Seksi (di PDF)</label>
-                          <Input type="text" placeholder="VAKASI KEPANITIAAN..." value={kepanitiaaanTitle} onChange={(e) => setKepanitiaaanTitle(e.target.value)} className="rounded-xl border-slate-200 font-bold text-slate-900 text-xs h-10 w-full uppercase" />
+                          <Input type="text" placeholder="VAKASI KEPANITIAAN..." value={kepanitiaaanTitle} onChange={(e) => setKepanitiaaanTitle(e.target.value)} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-10 w-full uppercase" />
                         </div>
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tahap / Fase</span>
-                            <Button type="button" size="sm" onClick={() => setKepanitiaaanPhases(prev => [...prev, { name: '' }])} className="bg-violet-50 hover:bg-violet-100 text-violet-600 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer"><Plus className="w-3.5 h-3.5" /> Tambah Fase</Button>
+                            <Button type="button" size="sm" onClick={() => setKepanitiaaanPhases(prev => [...prev, { name: '' }])} className="bg-violet-50 hover:bg-violet-100 text-violet-600 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer"><Plus className="w-3.5 h-3.5" /> Tambah Fase</Button>
                           </div>
                           <div className="flex flex-wrap gap-3">
                             {kepanitiaaanPhases.map((phase, pIdx) => (
-                              <div key={pIdx} className="flex items-center gap-2 p-2.5 rounded-xl border border-violet-100 bg-violet-50/20">
-                                <Input type="text" placeholder="Nama Fase" value={phase.name} onChange={(e) => { const val = e.target.value; setKepanitiaaanPhases(prev => { const c = [...prev]; c[pIdx] = { ...c[pIdx], name: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-32" />
-                                {kepanitiaaanPhases.length > 1 && <Button type="button" variant="ghost" size="icon" onClick={() => setKepanitiaaanPhases(prev => prev.filter((_, i) => i !== pIdx))} className="h-7 w-7 text-rose-450 hover:text-rose-650 hover:bg-rose-50 rounded-lg cursor-pointer"><X className="w-3.5 h-3.5" /></Button>}
+                              <div key={pIdx} className="flex items-center gap-2 p-2.5 rounded-md border border-violet-100 bg-violet-50/20">
+                                <Input type="text" placeholder="Nama Fase" value={phase.name} onChange={(e) => { const val = e.target.value; setKepanitiaaanPhases(prev => { const c = [...prev]; c[pIdx] = { ...c[pIdx], name: val }; return c; }); }} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-32" />
+                                {kepanitiaaanPhases.length > 1 && <Button type="button" variant="ghost" size="icon" onClick={() => setKepanitiaaanPhases(prev => prev.filter((_, i) => i !== pIdx))} className="h-7 w-7 text-rose-450 hover:text-rose-650 hover:bg-rose-50 rounded-sm cursor-pointer"><X className="w-3.5 h-3.5" /></Button>}
                               </div>
                             ))}
                           </div>
@@ -2542,7 +2542,7 @@ export default function ProposalKegiatanPage() {
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tabel Anggota</span>
                         </div>
-                        <div className="border border-slate-150 rounded-2xl shadow-sm overflow-x-auto bg-white">
+                        <div className="border border-slate-150 rounded-md shadow-sm overflow-x-auto bg-white">
                           <table className="w-full text-left border-collapse min-w-[700px]">
                             <thead>
                               <tr className="bg-slate-50 border-b border-slate-100">
@@ -2582,9 +2582,9 @@ export default function ProposalKegiatanPage() {
                                             }
                                             handleRowCellKeyDown(e, addKepanitiaanRow);
                                           }}
-                                          className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full" />
+                                          className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-full" />
                                         {kepanitiaanMatches.length > 0 && (
-                                          <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50">
+                                          <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50">
                                             {kepanitiaanMatches.map((emp, empIdx) => (
                                               <div key={emp.id} onClick={() => selectKepanitiaanEmployee(emp)}
                                                 onMouseEnter={() => setActivePelaporanSuggestionIndex(empIdx)}
@@ -2598,18 +2598,18 @@ export default function ProposalKegiatanPage() {
                                     </td>
                                     {kepanitiaaanPhases.map((phase, pIdx) => (
                                       <td key={pIdx} className="px-3 py-2 text-center">
-                                        <Input type="text" inputMode="numeric" placeholder="0" value={(row.phaseAmounts[phase.name] || 0) > 0 ? fmtRp(row.phaseAmounts[phase.name] || 0) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setKepanitiaaanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], phaseAmounts: { ...c[idx].phaseAmounts, [phase.name]: val } }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, addKepanitiaanRow)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-24 text-right mx-auto" />
+                                        <Input type="text" inputMode="numeric" placeholder="0" value={(row.phaseAmounts[phase.name] || 0) > 0 ? fmtRp(row.phaseAmounts[phase.name] || 0) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setKepanitiaaanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], phaseAmounts: { ...c[idx].phaseAmounts, [phase.name]: val } }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, addKepanitiaanRow)} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-24 text-right mx-auto" />
                                       </td>
                                     ))}
                                     <td className="px-3 py-2 text-xs font-black text-slate-900 text-right font-mono">{fmtRp(rowTotal)}</td>
-                                    <td className="px-3 py-2 text-center"><Button type="button" variant="ghost" size="icon" onClick={() => setKepanitiaaanRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></Button></td>
+                                    <td className="px-3 py-2 text-center"><Button type="button" variant="ghost" size="icon" onClick={() => setKepanitiaaanRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></Button></td>
                                   </tr>
                                 );
                               })}
                               <tr className="border-b border-slate-100 hover:bg-slate-50/10 transition-colors">
                                 <td></td>
                                 <td colSpan={1 + kepanitiaaanPhases.length} className="px-3 py-2.5">
-                                  <Button type="button" size="sm" onClick={() => setKepanitiaaanRows(prev => [...prev, { name: '', phaseAmounts: {}, searchText: '', showDropdown: false }])} className="bg-violet-50 hover:bg-violet-100 text-violet-600 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer">
+                                  <Button type="button" size="sm" onClick={() => setKepanitiaaanRows(prev => [...prev, { name: '', phaseAmounts: {}, searchText: '', showDropdown: false }])} className="bg-violet-50 hover:bg-violet-100 text-violet-600 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer">
                                     <Plus className="w-3.5 h-3.5" /> Tambah Anggota
                                   </Button>
                                 </td>
@@ -2630,7 +2630,7 @@ export default function ProposalKegiatanPage() {
 
                 {/* SEKSI 4: KWITANSI / PEMBELIAN */}
                 {false && receiptEnabled && (
-                  <div className="border border-slate-150 rounded-2xl overflow-hidden">
+                  <div className="border border-slate-150 rounded-md overflow-hidden">
                     <button type="button" onClick={() => toggleSection('kwitansi')} className="w-full flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-amber-50 to-amber-50/40 hover:from-amber-100/60 transition-all cursor-pointer">
                       <div className="flex items-center gap-2.5">
                         <Receipt className="w-4 h-4 text-amber-600" />
@@ -2643,12 +2643,12 @@ export default function ProposalKegiatanPage() {
                       <div className="p-4 md:p-5 space-y-4 bg-white">
                         <div className="space-y-2">
                           <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Judul Seksi (di PDF)</label>
-                          <Input type="text" placeholder="KWITANSI..." value={receiptTitle} onChange={(e) => setReceiptTitle(e.target.value)} className="rounded-xl border-slate-200 font-bold text-slate-900 text-xs h-10 w-full uppercase" />
+                          <Input type="text" placeholder="KWITANSI..." value={receiptTitle} onChange={(e) => setReceiptTitle(e.target.value)} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-10 w-full uppercase" />
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Daftar Pembelian</span>
                         </div>
-                        <div className="border border-slate-150 rounded-2xl shadow-sm overflow-x-auto bg-white">
+                        <div className="border border-slate-150 rounded-md shadow-sm overflow-x-auto bg-white">
                           <table className="w-full text-left border-collapse min-w-[700px]">
                             <thead>
                               <tr className="bg-slate-50 border-b border-slate-100">
@@ -2664,17 +2664,17 @@ export default function ProposalKegiatanPage() {
                               {receiptRows.map((row, idx) => (
                                 <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
                                   <td className="px-3 py-2 text-xs font-bold text-slate-400 text-center">{idx + 1}</td>
-                                  <td className="px-3 py-2"><Input type="text" placeholder="Nama barang..." value={row.itemName} onChange={(e) => { const val = e.target.value; setReceiptRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], itemName: val }; return c; }); }} className="rounded-lg border-slate-200 font-medium text-slate-900 text-xs h-8 w-full" /></td>
-                                  <td className="px-3 py-2"><Input type="number" min={1} value={row.qty} onChange={(e) => { const val = parseInt(e.target.value) || 1; setReceiptRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], qty: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-center" /></td>
-                                  <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.unitPrice > 0 ? fmtRp(row.unitPrice) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setReceiptRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], unitPrice: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
+                                  <td className="px-3 py-2"><Input type="text" placeholder="Nama barang..." value={row.itemName} onChange={(e) => { const val = e.target.value; setReceiptRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], itemName: val }; return c; }); }} className="rounded-sm border-slate-200 font-medium text-slate-900 text-xs h-8 w-full" /></td>
+                                  <td className="px-3 py-2"><Input type="number" min={1} value={row.qty} onChange={(e) => { const val = parseInt(e.target.value) || 1; setReceiptRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], qty: val }; return c; }); }} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-center" /></td>
+                                  <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.unitPrice > 0 ? fmtRp(row.unitPrice) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setReceiptRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], unitPrice: val }; return c; }); }} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
                                   <td className="px-3 py-2 text-xs font-black text-slate-900 text-right font-mono">{fmtRp(row.qty * row.unitPrice)}</td>
-                                  <td className="px-3 py-2 text-center"><Button type="button" variant="ghost" size="icon" onClick={() => setReceiptRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-450 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></Button></td>
+                                  <td className="px-3 py-2 text-center"><Button type="button" variant="ghost" size="icon" onClick={() => setReceiptRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-450 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></Button></td>
                                 </tr>
                               ))}
                               <tr className="border-b border-slate-100 hover:bg-slate-50/10 transition-colors">
                                 <td></td>
                                 <td colSpan={4} className="px-3 py-2.5">
-                                  <Button type="button" size="sm" onClick={() => setReceiptRows(prev => [...prev, { itemName: '', qty: 1, unitPrice: 0 }])} className="bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer">
+                                  <Button type="button" size="sm" onClick={() => setReceiptRows(prev => [...prev, { itemName: '', qty: 1, unitPrice: 0 }])} className="bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer">
                                     <Plus className="w-3.5 h-3.5" /> Tambah Item
                                   </Button>
                                 </td>
@@ -2699,7 +2699,7 @@ export default function ProposalKegiatanPage() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {lpjSignatures.map((sig, sIdx) => {
                       return (
-                        <div key={sIdx} className="p-4 rounded-2xl border border-slate-150 bg-slate-50/30 space-y-3">
+                        <div key={sIdx} className="p-4 rounded-md border border-slate-150 bg-slate-50/30 space-y-3">
                           <span className="text-[10px] font-bold text-indigo-500 uppercase">Posisi {sIdx + 1}</span>
                           <div className="space-y-2">
                             <div className="relative">
@@ -2733,7 +2733,7 @@ export default function ProposalKegiatanPage() {
                                     });
                                   }, 200);
                                 }}
-                                className={`rounded-lg text-xs h-8 w-full pr-8 font-bold transition-all ${sig.name
+                                className={`rounded-sm text-xs h-8 w-full pr-8 font-bold transition-all ${sig.name
                                   ? 'bg-emerald-50/40 border-emerald-300 text-emerald-900 placeholder-emerald-400'
                                   : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'
                                   }`}
@@ -2742,7 +2742,7 @@ export default function ProposalKegiatanPage() {
                                 <CheckCircle2 className="w-4 h-4 text-emerald-600 absolute right-2.5 top-2" />
                               )}
                               {sig.showDropdown && (
-                                <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50">
+                                <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50">
                                   {(() => {
                                     const queryText = (sig.searchText ?? sig.name ?? '').toLowerCase();
                                     const filtered = loyalisEmployees.filter(emp =>
@@ -2792,7 +2792,7 @@ export default function ProposalKegiatanPage() {
                                   return c;
                                 });
                               }}
-                              className="rounded-lg border-slate-200 text-xs h-8 font-medium"
+                              className="rounded-sm border-slate-200 text-xs h-8 font-medium"
                             />
                           </div>
                         </div>
@@ -2809,7 +2809,7 @@ export default function ProposalKegiatanPage() {
                         type="button"
                         variant="outline"
                         onClick={() => handleDeleteProposal(selectedProposalId)}
-                        className="rounded-xl border-rose-200 text-rose-600 bg-rose-50/50 hover:bg-rose-50 text-xs font-bold flex items-center gap-1.5 h-10 cursor-pointer"
+                        className="rounded-sm border-rose-200 text-rose-600 bg-rose-50/50 hover:bg-rose-50 text-xs font-bold flex items-center gap-1.5 h-10 cursor-pointer"
                       >
                         <Trash2 className="w-4 h-4" /> Hapus Laporan
                       </Button>
@@ -2840,7 +2840,7 @@ export default function ProposalKegiatanPage() {
                       type="button"
                       onClick={handleSaveLpjDraft}
                       disabled={saving || !canManageProposal || periodClosed}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-sm px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer"
                     >
                       {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                       Simpan Laporan
@@ -2850,7 +2850,7 @@ export default function ProposalKegiatanPage() {
                       type="button"
                       onClick={handlePrintPdf}
                       disabled={printingPdf}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-sm px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {printingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />} {printingPdf ? 'Membuat PDF...' : 'Cetak PDF'}
                     </Button>
@@ -2859,7 +2859,7 @@ export default function ProposalKegiatanPage() {
                       <Button
                         onClick={handleSubmitLpjToQueue}
                         disabled={saving || !canManageProposal || periodClosed}
-                        className="rounded-xl px-6 bg-slate-900 hover:bg-black text-white font-bold text-xs h-10 flex items-center gap-2 shadow-md cursor-pointer"
+                        className="rounded-sm px-6 bg-slate-900 hover:bg-black text-white font-bold text-xs h-10 flex items-center gap-2 shadow-md cursor-pointer"
                       >
                         {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                         Submit LPJ Pertanggungjawaban
@@ -2872,14 +2872,14 @@ export default function ProposalKegiatanPage() {
                         <Button
                           onClick={() => { setReviewTarget('lpj'); setReviewAction('lpj_approved'); handleReviewDecision('lpj', 'lpj_approved', ''); }}
                           disabled={saving}
-                          className="rounded-xl px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-10 flex items-center gap-1.5 shadow-md cursor-pointer"
+                          className="rounded-sm px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-10 flex items-center gap-1.5 shadow-md cursor-pointer"
                         >
                           <Sparkles className="w-4 h-4" /> Setujui LPJ Sandbox
                         </Button>
                         <Button
                           onClick={() => { setReviewTarget('lpj'); setReviewAction('lpj_revision'); setReviewNoteInput(''); setShowReviewDialog(true); }}
                           disabled={saving}
-                          className="rounded-xl px-5 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs h-10 flex items-center gap-1.5 shadow-md cursor-pointer"
+                          className="rounded-sm px-5 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs h-10 flex items-center gap-1.5 shadow-md cursor-pointer"
                         >
                           <RotateCcw className="w-4 h-4" /> Minta Revisi LPJ
                         </Button>
@@ -2896,7 +2896,7 @@ export default function ProposalKegiatanPage() {
 
       {/* Historical Baseline Clone Dialog */}
       <Dialog open={showCloneModal} onOpenChange={setShowCloneModal}>
-        <DialogContent className="sm:max-w-4xl max-w-full overflow-hidden flex flex-col p-0 border-none bg-white shadow-2xl rounded-3xl">
+        <DialogContent className="sm:max-w-4xl max-w-full overflow-hidden flex flex-col p-0 border-none bg-white shadow-2xl rounded-md">
           <DialogHeader className="p-6 pb-4 bg-gradient-to-r from-purple-50 to-indigo-50 border-b border-slate-100">
             <DialogTitle className="text-slate-800 flex items-center gap-2.5 font-bold text-lg">
               <Copy className="w-5 h-5 text-purple-600" /> Kloning Anggaran dari Event Lalu
@@ -2911,7 +2911,7 @@ export default function ProposalKegiatanPage() {
                 placeholder="Cari event historis (contoh: Reuni SainTek 2025)..."
                 value={cloneSearchQuery}
                 onChange={(e) => setCloneSearchQuery(e.target.value)}
-                className="pl-10 rounded-xl border-slate-200 font-semibold text-xs h-10"
+                className="pl-10 rounded-sm border-slate-200 font-semibold text-xs h-10"
               />
             </div>
 
@@ -2937,11 +2937,11 @@ export default function ProposalKegiatanPage() {
                     return (
                       <div
                         key={hItem.id}
-                        className="p-4 rounded-2xl border border-slate-150 bg-slate-50/50 hover:bg-purple-50/40 hover:border-purple-200 transition-all flex items-center justify-between gap-4"
+                        className="p-4 rounded-md border border-slate-150 bg-slate-50/50 hover:bg-purple-50/40 hover:border-purple-200 transition-all flex items-center justify-between gap-4"
                       >
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-700 uppercase">{hItem.sourceType}</span>
+                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-sm bg-purple-100 text-purple-700 uppercase">{hItem.sourceType}</span>
                             <h4 className="font-bold text-slate-800 text-xs">{name}</h4>
                           </div>
                           <p className="text-[10px] text-slate-400 font-medium mt-1">
@@ -2950,7 +2950,7 @@ export default function ProposalKegiatanPage() {
                         </div>
                         <Button
                           onClick={() => handleCloneTemplate(hItem)}
-                          className="rounded-xl px-4 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs h-9 flex items-center gap-1.5 shadow-sm shrink-0"
+                          className="rounded-sm px-4 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs h-9 flex items-center gap-1.5 shadow-sm shrink-0"
                         >
                           <Sparkles className="w-3.5 h-3.5" /> Gunakan Baseline Ini
                         </Button>
@@ -2961,15 +2961,15 @@ export default function ProposalKegiatanPage() {
               );
             })()}
           </div>
-          <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0 rounded-b-3xl">
-            <Button variant="ghost" onClick={() => setShowCloneModal(false)} className="rounded-xl text-slate-500">Tutup</Button>
+          <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0 rounded-b-md">
+            <Button variant="ghost" onClick={() => setShowCloneModal(false)} className="rounded-sm text-slate-500">Tutup</Button>
           </div>
         </DialogContent>
       </Dialog>
 
       {/* Review Dialog */}
       <Dialog open={showReviewDialog} onOpenChange={setShowReviewDialog}>
-        <DialogContent className="sm:max-w-md max-w-full p-0 border-none bg-white shadow-2xl rounded-3xl overflow-hidden">
+        <DialogContent className="sm:max-w-md max-w-full p-0 border-none bg-white shadow-2xl rounded-md overflow-hidden">
           <DialogHeader className="p-6 pb-4 bg-gradient-to-r from-orange-50 to-rose-50 border-b border-slate-100">
             <DialogTitle className="text-slate-800 flex items-center gap-2.5 font-bold text-lg">
               <AlertCircle className="w-5 h-5 text-orange-500" /> Minta Revisi {reviewTarget === 'proposal' ? 'Proposal Anggaran' : 'LPJ Pertanggungjawaban'}
@@ -2981,17 +2981,17 @@ export default function ProposalKegiatanPage() {
               placeholder={`Catatan revisi ${reviewTarget === 'proposal' ? 'proposal' : 'LPJ'} (contoh: Rincian biaya konsumsi tidak melampirkan perkiraan harga)...`}
               value={reviewNoteInput}
               onChange={(e) => setReviewNoteInput(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 p-3 text-xs font-semibold h-28 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              className="w-full rounded-sm border border-slate-200 p-3 text-xs font-semibold h-28 focus:outline-none focus:ring-2 focus:ring-indigo-100"
             />
           </div>
-          <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2 rounded-b-3xl">
-            <Button variant="ghost" onClick={() => setShowReviewDialog(false)} className="rounded-xl text-slate-500">Batal</Button>
+          <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2 rounded-b-md">
+            <Button variant="ghost" onClick={() => setShowReviewDialog(false)} className="rounded-sm text-slate-500">Batal</Button>
             <Button
               onClick={() => {
                 handleReviewDecision(reviewTarget, reviewAction, reviewNoteInput);
               }}
               disabled={saving || !reviewNoteInput.trim()}
-              className="rounded-xl px-5 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs h-9 flex items-center gap-1.5"
+              className="rounded-sm px-5 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs h-9 flex items-center gap-1.5"
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />} Konfirmasi & Send Email
             </Button>

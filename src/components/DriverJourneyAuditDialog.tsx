@@ -1312,7 +1312,7 @@ export function DriverJourneyAuditDialog({
   return (
     <>
       <Dialog open={report !== null} onOpenChange={onOpenChange}>
-        <DialogContent className="w-[96vw] max-w-[96vw] sm:max-w-[96vw] h-[92vh] max-h-[92vh] rounded-[28px] border-none shadow-2xl bg-white p-5 sm:p-7 flex flex-col justify-between overflow-hidden">
+        <DialogContent className="w-[96vw] max-w-[96vw] sm:max-w-[96vw] h-[92vh] max-h-[92vh] rounded-md border-none shadow-2xl bg-white p-5 sm:p-7 flex flex-col justify-between overflow-hidden">
           <DialogHeader className="pb-2.5 border-b border-slate-100 shrink-0">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pr-8 sm:pr-10">
               <div>
@@ -1339,7 +1339,7 @@ export function DriverJourneyAuditDialog({
                     variant="outline"
                     size="sm"
                     onClick={() => setShowAiAuditCard(true)}
-                    className="h-8 px-2.5 text-[10px] font-bold border-purple-200 text-purple-700 bg-purple-50/70 hover:bg-purple-100 rounded-xl cursor-pointer"
+                    className="h-8 px-2.5 text-[10px] font-bold border-purple-200 text-purple-700 bg-purple-50/70 hover:bg-purple-100 rounded-sm cursor-pointer"
                   >
                     Buka Hasil AI ({aiAuditResult.riskScore}%)
                   </Button>
@@ -1347,7 +1347,7 @@ export function DriverJourneyAuditDialog({
                 {aiAuditResult && (
                   <Badge
                     variant="outline"
-                    className={`text-[10px] font-extrabold px-2.5 py-1 rounded-lg ${
+                    className={`text-[10px] font-extrabold px-2.5 py-1 rounded-sm ${
                       aiAuditResult.verdict === 'ANOMALI_KRITIS'
                         ? 'bg-rose-50 text-rose-700 border-rose-200'
                         : aiAuditResult.verdict === 'PERLU_DITINJAU'
@@ -1368,7 +1368,7 @@ export function DriverJourneyAuditDialog({
                   size="sm"
                   disabled={isAuditingAi || !report || !auditPoints || auditPoints.length < 2}
                   onClick={handleRunAiAudit}
-                  className="h-8 px-3 text-xs font-black bg-gradient-to-r from-purple-600 via-indigo-600 to-indigo-700 hover:from-purple-700 hover:to-indigo-800 text-white rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  className="h-8 px-3 text-xs font-black bg-gradient-to-r from-purple-600 via-indigo-600 to-indigo-700 hover:from-purple-700 hover:to-indigo-800 text-white rounded-sm shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                   title="Jalankan Audit AI dengan Gemini 3.7 Flash Lite"
                 >
                   {isAuditingAi ? (
@@ -1389,7 +1389,7 @@ export function DriverJourneyAuditDialog({
 
           {report?.status === 'approved' && (
             <div
-              className={`shrink-0 mt-2.5 rounded-xl px-3.5 py-2 text-[11px] font-bold ${
+              className={`shrink-0 mt-2.5 rounded-md px-3.5 py-2 text-[11px] font-bold ${
                 canReEditConfirmed
                   ? 'bg-amber-50 border border-amber-200 text-amber-800'
                   : 'bg-slate-100 border border-slate-200 text-slate-500'
@@ -1411,7 +1411,7 @@ export function DriverJourneyAuditDialog({
               <div className="flex flex-col gap-4 overflow-y-auto pr-1">
                 {/* AI AUDIT ERROR BANNER */}
                 {aiAuditError && (
-                  <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs space-y-1 shadow-xs">
+                  <div className="p-3.5 rounded-md bg-rose-50 border border-rose-200 text-rose-800 text-xs space-y-1 shadow-xs">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5 font-extrabold text-rose-900">
                         <AlertCircle className="w-4 h-4 text-rose-600" />
@@ -1422,7 +1422,7 @@ export function DriverJourneyAuditDialog({
                         variant="ghost"
                         size="sm"
                         onClick={() => setAiAuditError('')}
-                        className="h-6 w-6 p-0 text-rose-600 hover:bg-rose-100 rounded-md cursor-pointer"
+                        className="h-6 w-6 p-0 text-rose-600 hover:bg-rose-100 rounded-sm cursor-pointer"
                       >
                         <X className="w-3.5 h-3.5" />
                       </Button>
@@ -1434,7 +1434,7 @@ export function DriverJourneyAuditDialog({
                 {/* AI AUDIT FINDINGS CARD */}
                 {aiAuditResult && showAiAuditCard && (
                   <div
-                    className={`p-4 rounded-2xl border space-y-3 text-xs shadow-xs transition-all ${
+                    className={`p-4 rounded-md border space-y-3 text-xs shadow-xs transition-all ${
                       aiAuditResult.verdict === 'ANOMALI_KRITIS'
                         ? 'bg-rose-50/70 border-rose-200'
                         : aiAuditResult.verdict === 'PERLU_DITINJAU'
@@ -1444,7 +1444,7 @@ export function DriverJourneyAuditDialog({
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-xl bg-purple-100 flex items-center justify-center text-purple-700 shrink-0 shadow-2xs">
+                        <div className="w-7 h-7 rounded-sm bg-purple-100 flex items-center justify-center text-purple-700 shrink-0 shadow-2xs">
                           <Sparkles className="w-4 h-4 text-purple-600" />
                         </div>
                         <div>
@@ -1463,7 +1463,7 @@ export function DriverJourneyAuditDialog({
                       <div className="flex items-center gap-1.5">
                         <Badge
                           variant="outline"
-                          className={`text-[9.5px] font-extrabold ${
+                          className={`rounded-sm text-[9.5px] font-extrabold ${
                             aiAuditResult.riskScore >= 70
                               ? 'bg-rose-100 text-rose-800 border-rose-300'
                               : aiAuditResult.riskScore >= 30
@@ -1478,7 +1478,7 @@ export function DriverJourneyAuditDialog({
                           variant="ghost"
                           size="sm"
                           onClick={() => setShowAiAuditCard(false)}
-                          className="h-6 w-6 p-0 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md cursor-pointer"
+                          className="h-6 w-6 p-0 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-sm cursor-pointer"
                           title="Tutup banner"
                         >
                           <X className="w-3.5 h-3.5" />
@@ -1486,7 +1486,7 @@ export function DriverJourneyAuditDialog({
                       </div>
                     </div>
 
-                    <p className="text-[11.5px] font-semibold text-slate-700 bg-white/90 p-2.5 rounded-xl border border-slate-150 leading-relaxed">
+                    <p className="text-[11.5px] font-semibold text-slate-700 bg-white/90 p-2.5 rounded-md border border-slate-150 leading-relaxed">
                       {aiAuditResult.summary}
                     </p>
 
@@ -1499,11 +1499,11 @@ export function DriverJourneyAuditDialog({
                           {aiAuditResult.anomalies.map((anom, aIdx) => (
                             <div
                               key={aIdx}
-                              className="p-2.5 rounded-xl bg-white border border-slate-200 space-y-1.5 shadow-2xs"
+                              className="p-2.5 rounded-md bg-white border border-slate-200 space-y-1.5 shadow-2xs"
                             >
                               <div className="flex items-center justify-between gap-1">
                                 <span
-                                  className={`text-[9px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wider ${
+                                  className={`text-[9px] font-black px-1.5 py-0.5 rounded-sm uppercase tracking-wider ${
                                     anom.type === 'GEO_OUTLIER' || anom.type === 'SUSPICIOUS_DETOUR'
                                       ? 'bg-rose-100 text-rose-800'
                                       : anom.type === 'TIMELINE_IMPOSSIBLE'
@@ -1535,7 +1535,7 @@ export function DriverJourneyAuditDialog({
                               <p className="text-[11px] text-slate-700 font-medium leading-relaxed">
                                 {anom.finding}
                               </p>
-                              <div className="p-2 rounded-lg bg-indigo-50/70 border border-indigo-100 text-[10.5px] font-bold text-indigo-900 flex items-start gap-1">
+                              <div className="p-2 rounded-md bg-indigo-50/70 border border-indigo-100 text-[10.5px] font-bold text-indigo-900 flex items-start gap-1">
                                 <span className="shrink-0 text-indigo-600">💡</span>
                                 <span>{anom.recommendedFix}</span>
                               </div>
@@ -1548,10 +1548,10 @@ export function DriverJourneyAuditDialog({
                 )}
 
                 {/* CARD 1: Journey Overview Card */}
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-3 text-xs text-slate-600 shadow-xs">
+                <div className="p-4 rounded-md bg-slate-50 border border-slate-100 space-y-3 text-xs text-slate-600 shadow-xs">
                   <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Ringkasan Perjalanan</span>
 
-                  <div className="grid grid-cols-2 gap-3 bg-white p-3 rounded-xl border border-slate-100">
+                  <div className="grid grid-cols-2 gap-3 bg-white p-3 rounded-md border border-slate-100">
                     <div>
                       <span className="font-semibold text-slate-400 text-[11px] block">Nama Sopir:</span>
                       <span className="font-extrabold text-slate-800 text-sm">{report.employeeName}</span>
@@ -1562,10 +1562,10 @@ export function DriverJourneyAuditDialog({
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-3 text-[10px] font-bold text-indigo-900">
+                  <div className="rounded-md border border-indigo-100 bg-indigo-50/70 p-3 text-[10px] font-bold text-indigo-900">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span>Mode BBM: <strong>{auditCalc.fuelProcurementMode === 'hold_accumulate' ? 'Tahan & akumulasi' : auditCalc.fuelProcurementMode === 'procure_release' ? 'Cairkan saldo' : 'Standard langsung'}</strong></span>
-                      <Badge variant="outline" className="border-indigo-200 bg-white text-indigo-700 text-[9px]">Mode terkunci setelah klaim</Badge>
+                      <Badge variant="outline" className="rounded-sm border-indigo-200 bg-white text-indigo-700 text-[9px]">Mode terkunci setelah klaim</Badge>
                     </div>
                     <div className="mt-1 grid grid-cols-2 gap-2 text-slate-600">
                       <span>Hold perjalanan: <strong className="text-amber-700">{fmtRp(auditCalc.heldFuelAmount)}</strong></span>
@@ -1581,7 +1581,7 @@ export function DriverJourneyAuditDialog({
                   </div>
 
                   {report.fuelReservationBalanceFlagged && (
-                    <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-[10px] font-bold text-red-900 flex items-start gap-2">
+                    <div className="rounded-md border border-red-200 bg-red-50 p-3 text-[10px] font-bold text-red-900 flex items-start gap-2">
                       <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-red-600" />
                       <div>
                         <p>Saldo BBM kendaraan tidak mencukupi saat hold direservasi (kekurangan {fmtRp(report.fuelReservationBalanceShortfall || 0)}).</p>
@@ -1596,7 +1596,7 @@ export function DriverJourneyAuditDialog({
                     const vehicleChanges = driverVehicleChangesFrom(report.driverVehicleChanges);
                     if (vehicleChanges.length === 0) return null;
                     return (
-                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[10px] font-bold text-amber-900 flex items-start gap-2">
+                      <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-[10px] font-bold text-amber-900 flex items-start gap-2">
                         <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-600" />
                         <div className="space-y-1">
                           <p>Sopir mengganti kendaraan sebelum mengirim laporan:</p>
@@ -1639,7 +1639,7 @@ export function DriverJourneyAuditDialog({
                             size="sm"
                             variant="outline"
                             onClick={() => window.open(mapsRouteUrl, '_blank', 'noopener,noreferrer')}
-                            className="h-6 px-2 text-[9px] font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50 rounded-md cursor-pointer whitespace-nowrap"
+                            className="h-6 px-2 text-[9px] font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50 rounded-sm cursor-pointer whitespace-nowrap"
                           >
                             <ExternalLink className="w-3 h-3 mr-1" />
                             Buka di Google Maps
@@ -1667,7 +1667,7 @@ export function DriverJourneyAuditDialog({
                                 setAuditPointLocations([...auditPointLocations, null]);
                                 handleOpenMapForIndex(newPts.length - 1);
                               }}
-                              className="h-6 px-2 text-[9px] font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-md cursor-pointer whitespace-nowrap"
+                              className="h-6 px-2 text-[9px] font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-sm cursor-pointer whitespace-nowrap"
                             >
                               <Plus className="w-3 h-3 mr-0.5" />
                               Tambah Lokasi
@@ -1678,7 +1678,7 @@ export function DriverJourneyAuditDialog({
                               variant="outline"
                               disabled={isCalculatingRoute || actionLoading}
                               onClick={() => recalculateRouteFromPoints(auditPoints)}
-                              className="h-6 px-2 text-[9px] font-bold text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 rounded-md cursor-pointer whitespace-nowrap"
+                              className="h-6 px-2 text-[9px] font-bold text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 rounded-sm cursor-pointer whitespace-nowrap"
                             >
                               {isCalculatingRoute ? (
                                 <Loader2 className="w-3 h-3 animate-spin mr-1" />
@@ -1740,7 +1740,7 @@ export function DriverJourneyAuditDialog({
                                   size="sm"
                                   variant="outline"
                                   onClick={() => handleOpenMapForIndex(idx)}
-                                  className="h-7 px-2.5 text-[10px] font-bold text-indigo-700 hover:text-indigo-800 bg-white border border-slate-200 rounded-lg cursor-pointer"
+                                  className="h-7 px-2.5 text-[10px] font-bold text-indigo-700 hover:text-indigo-800 bg-white border border-slate-200 rounded-sm cursor-pointer"
                                 >
                                   {pt ? 'Ubah' : 'Pilih'}
                                 </Button>
@@ -1756,7 +1756,7 @@ export function DriverJourneyAuditDialog({
                                       setAuditPointLocations(newLocations);
                                       recalculateRouteFromPoints(newPts, { pointLocations: newLocations });
                                     }}
-                                    className="h-7 w-7 p-0 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                                    className="h-7 w-7 p-0 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </Button>
@@ -1782,7 +1782,7 @@ export function DriverJourneyAuditDialog({
                               title: 'Bukti Foto Otorisasi SPJ',
                               auditMetadata: report.authorizationProofPhotoAuditMetadata,
                             })}
-                            className="text-[10px] font-extrabold text-amber-800 hover:bg-amber-100 bg-amber-50 border border-amber-300 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                            className="text-[10px] font-extrabold text-amber-800 hover:bg-amber-100 bg-amber-50 border border-amber-300 px-3 py-1.5 rounded-sm transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
                           >
                             🔍 Audit Metadata & Foto Keberangkatan
                           </button>
@@ -1800,7 +1800,7 @@ export function DriverJourneyAuditDialog({
                                 title: `Bukti BBM ${arr.length > 1 ? `#${idx + 1}` : ''}`,
                                 auditMetadata: report.fuelReceiptEvidence?.find((item) => item.url === url)?.auditMetadata,
                               })}
-                              className="text-[10px] font-extrabold text-emerald-800 hover:bg-emerald-100 bg-emerald-50 border border-emerald-300 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                              className="text-[10px] font-extrabold text-emerald-800 hover:bg-emerald-100 bg-emerald-50 border border-emerald-300 px-3 py-1.5 rounded-sm transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
                             >
                               🔍 Audit Metadata & Foto BBM {arr.length > 1 ? `#${idx + 1}` : ''}
                             </button>
@@ -1819,7 +1819,7 @@ export function DriverJourneyAuditDialog({
                                 title: `Bukti Tol & Parkir ${arr.length > 1 ? `#${idx + 1}` : ''}`,
                                 auditMetadata: report.tollReceiptEvidence?.find((item) => item.url === url)?.auditMetadata,
                               })}
-                              className="text-[10px] font-extrabold text-indigo-800 hover:bg-indigo-100 bg-indigo-50 border border-indigo-300 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                              className="text-[10px] font-extrabold text-indigo-800 hover:bg-indigo-100 bg-indigo-50 border border-indigo-300 px-3 py-1.5 rounded-sm transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
                             >
                               🔍 Audit Metadata & Foto Tol {arr.length > 1 ? `#${idx + 1}` : ''}
                             </button>
@@ -1831,7 +1831,7 @@ export function DriverJourneyAuditDialog({
                 </div>
 
                 {/* CARD 2: Parameter Audit Perjalanan Card */}
-                <div className="p-4 rounded-2xl bg-white border border-slate-200/80 space-y-3.5 shadow-xs">
+                <div className="p-4 rounded-md bg-white border border-slate-200/80 space-y-3.5 shadow-xs">
                   <div className="flex justify-between items-center">
                     <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest block">
                       Parameter Audit Perjalanan
@@ -1859,7 +1859,7 @@ export function DriverJourneyAuditDialog({
                         value={auditDateStart}
                         onChange={(event) => handleAuditDateChange('start', event.target.value)}
                         disabled={!isEditable || actionLoading}
-                        className="h-9 rounded-xl border-slate-200 bg-white text-xs font-bold text-slate-800 focus:border-indigo-400"
+                        className="h-9 rounded-sm border-slate-200 bg-white text-xs font-bold text-slate-800 focus:border-indigo-400"
                       />
                     </div>
                     <div className="space-y-1">
@@ -1872,7 +1872,7 @@ export function DriverJourneyAuditDialog({
                         value={auditTimeStart}
                         onChange={(event) => handleAuditTimeChange('start', event.target.value)}
                         disabled={!isEditable || actionLoading}
-                        className="h-9 rounded-xl border-slate-200 bg-white text-xs font-bold text-slate-800 focus:border-indigo-400"
+                        className="h-9 rounded-sm border-slate-200 bg-white text-xs font-bold text-slate-800 focus:border-indigo-400"
                       />
                     </div>
                     <div className="space-y-1">
@@ -1886,7 +1886,7 @@ export function DriverJourneyAuditDialog({
                         min={auditDateStart || undefined}
                         onChange={(event) => handleAuditDateChange('end', event.target.value)}
                         disabled={!isEditable || actionLoading}
-                        className="h-9 rounded-xl border-slate-200 bg-white text-xs font-bold text-slate-800 focus:border-indigo-400"
+                        className="h-9 rounded-sm border-slate-200 bg-white text-xs font-bold text-slate-800 focus:border-indigo-400"
                       />
                     </div>
                     <div className="space-y-1">
@@ -1899,12 +1899,12 @@ export function DriverJourneyAuditDialog({
                         value={auditTimeEnd}
                         onChange={(event) => handleAuditTimeChange('end', event.target.value)}
                         disabled={!isEditable || actionLoading}
-                        className="h-9 rounded-xl border-slate-200 bg-white text-xs font-bold text-slate-800 focus:border-indigo-400"
+                        className="h-9 rounded-sm border-slate-200 bg-white text-xs font-bold text-slate-800 focus:border-indigo-400"
                       />
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between rounded-xl bg-indigo-50/70 px-3 py-2 text-[10px] font-bold text-indigo-800">
+                  <div className="flex items-center justify-between rounded-md bg-indigo-50/70 px-3 py-2 text-[10px] font-bold text-indigo-800">
                     <span>
                       Durasi {auditIsMultiDay ? 'lintas hari' : 'hari yang sama'}:{' '}
                       {auditCalc.actualJourneyDurationHours > 0
@@ -1936,7 +1936,7 @@ export function DriverJourneyAuditDialog({
                         value={auditDistanceKm || ''}
                         readOnly
                         disabled
-                        className="rounded-xl text-xs font-bold bg-slate-100/70 border-slate-200 text-slate-600 cursor-not-allowed"
+                        className="rounded-sm text-xs font-bold bg-slate-100/70 border-slate-200 text-slate-600 cursor-not-allowed"
                       />
                     </div>
                     <div className="space-y-1">
@@ -1953,7 +1953,7 @@ export function DriverJourneyAuditDialog({
                         value={auditDurationHours || ''}
                         onChange={(e) => setAuditDurationHours(Math.max(0, parseFloat(e.target.value) || 0))}
                         disabled={!isManualDurationOverride || !isEditable || actionLoading}
-                        className={`rounded-xl text-xs font-bold transition-all ${!isManualDurationOverride
+                        className={`rounded-sm text-xs font-bold transition-all ${!isManualDurationOverride
                             ? 'bg-slate-100/70 border-slate-200 text-slate-600 cursor-not-allowed'
                             : 'border-slate-200 focus:border-indigo-400 text-slate-800 bg-white'
                           }`}
@@ -1989,7 +1989,7 @@ export function DriverJourneyAuditDialog({
                         disabled={!isEditable || actionLoading}
                         aria-label="Uang didapatkan selama perjalanan"
                         aria-describedby="audit-meal-money-received-help"
-                        className="pl-8 rounded-xl text-xs font-bold border-indigo-200 hover:border-indigo-300 focus:border-indigo-500 text-slate-800 bg-white"
+                        className="pl-8 rounded-sm text-xs font-bold border-indigo-200 hover:border-indigo-300 focus:border-indigo-500 text-slate-800 bg-white"
                       />
                     </div>
                     <p id="audit-meal-money-received-help" className="text-[9px] font-semibold text-slate-400">
@@ -2008,7 +2008,7 @@ export function DriverJourneyAuditDialog({
                         value={auditCalc.fuelProcurementMode === 'hold_accumulate' ? '' : (auditFuelDelta || '')}
                         onChange={(e) => setAuditFuelDelta(parseInt(e.target.value, 10) || 0)}
                         disabled={!isEditable || actionLoading || auditCalc.fuelProcurementMode === 'hold_accumulate'}
-                        className={`rounded-xl text-xs font-bold transition-all ${!auditFuelDelta || auditFuelDelta === 0
+                        className={`rounded-sm text-xs font-bold transition-all ${!auditFuelDelta || auditFuelDelta === 0
                             ? 'bg-emerald-50/80 border-emerald-300 text-emerald-700 placeholder:text-emerald-600/70 focus:border-emerald-500 font-semibold'
                             : 'border-slate-200 focus:border-indigo-400 text-slate-800'
                           }`}
@@ -2024,7 +2024,7 @@ export function DriverJourneyAuditDialog({
                         value={(auditCalc.mealPaidInWage ? auditCalc.mealWageComponent : auditCalc.deltaMeal) || ''}
                         readOnly
                         disabled
-                        className={`rounded-xl text-xs font-bold transition-all ${(auditCalc.mealPaidInWage ? auditCalc.mealWageComponent : auditCalc.deltaMeal) === 0
+                        className={`rounded-sm text-xs font-bold transition-all ${(auditCalc.mealPaidInWage ? auditCalc.mealWageComponent : auditCalc.deltaMeal) === 0
                             ? 'bg-emerald-50/80 border-emerald-300 text-emerald-700 placeholder:text-emerald-600/70 focus:border-emerald-500 font-semibold'
                             : 'border-slate-200 focus:border-indigo-400 text-slate-800'
                           }`}
@@ -2043,7 +2043,7 @@ export function DriverJourneyAuditDialog({
                         value={auditTollDelta || ''}
                         onChange={(e) => setAuditTollDelta(parseInt(e.target.value, 10) || 0)}
                         disabled={!isEditable || actionLoading}
-                        className={`rounded-xl text-xs font-bold transition-all ${!auditTollDelta || auditTollDelta === 0
+                        className={`rounded-sm text-xs font-bold transition-all ${!auditTollDelta || auditTollDelta === 0
                             ? 'bg-emerald-50/80 border-emerald-300 text-emerald-700 placeholder:text-emerald-600/70 focus:border-emerald-500 font-semibold'
                             : 'border-slate-200 focus:border-indigo-400 text-slate-800'
                           }`}
@@ -2056,10 +2056,10 @@ export function DriverJourneyAuditDialog({
                       <Label className="text-[9.5px] font-bold text-slate-400 uppercase">Jenis Kendaraan</Label>
                       {isEditable ? (
                         <Select value={auditVehicleType} onValueChange={(v) => setAuditVehicleType(v || 'Suzuki XL7')}>
-                          <SelectTrigger className="text-xs font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-9 px-3">
+                          <SelectTrigger className="text-xs font-bold text-slate-700 bg-white rounded-sm border border-slate-200 h-9 px-3">
                             <SelectValue />
                           </SelectTrigger>
-                          <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white text-xs">
+                          <SelectContent className="rounded-md border-slate-100 shadow-xl bg-white text-xs">
                             {VEHICLE_OPTIONS.map(v => (
                               <SelectItem key={v} value={v}>{v}</SelectItem>
                             ))}
@@ -2070,7 +2070,7 @@ export function DriverJourneyAuditDialog({
                           type="text"
                           value={auditVehicleType}
                           disabled
-                          className="rounded-xl bg-slate-50 border-slate-200 text-xs font-bold"
+                          className="rounded-sm bg-slate-50 border-slate-200 text-xs font-bold"
                         />
                       )}
                     </div>
@@ -2083,7 +2083,7 @@ export function DriverJourneyAuditDialog({
                         <Button
                           type="button"
                           variant="outline"
-                          className="h-9 w-9 rounded-xl p-0 text-lg font-black"
+                          className="h-9 w-9 rounded-sm p-0 text-lg font-black"
                           onClick={() => setAuditNightCount((count) => Math.max(0, count - 1))}
                           disabled={!isEditable || actionLoading || auditNightCount === 0}
                         >
@@ -2105,12 +2105,12 @@ export function DriverJourneyAuditDialog({
                             );
                           }}
                           disabled={!isEditable || actionLoading}
-                          className="h-9 w-16 rounded-xl bg-white text-center font-black"
+                          className="h-9 w-16 rounded-sm bg-white text-center font-black"
                         />
                         <Button
                           type="button"
                           variant="outline"
-                          className="h-9 w-9 rounded-xl p-0 text-lg font-black"
+                          className="h-9 w-9 rounded-sm p-0 text-lg font-black"
                           onClick={() => setAuditNightCount((count) => Math.min(365, count + 1))}
                           disabled={!isEditable || actionLoading || auditNightCount >= 365}
                         >
@@ -2125,15 +2125,15 @@ export function DriverJourneyAuditDialog({
               {/* RIGHT HALF: Card 3 (Komponen Earning) & Card 4 (Biaya Operasional Matrix) */}
               <div className="flex flex-col gap-4 overflow-y-auto pr-1">
                 {/* CARD 3: Komponen Earning (Upah Bersih Sopir) Card */}
-                <div className="p-4 rounded-2xl bg-indigo-50/40 border border-indigo-100/60 space-y-2.5 text-xs shadow-xs">
+                <div className="p-4 rounded-md bg-indigo-50/40 border border-indigo-100/60 space-y-2.5 text-xs shadow-xs">
                   <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest block">Komponen Earning (Upah Bersih Sopir)</span>
 
                   <div className="grid grid-cols-2 gap-3 text-slate-600 font-medium pt-1">
-                    <div className="flex justify-between bg-white p-2.5 rounded-xl border border-indigo-100/50">
+                    <div className="flex justify-between bg-white p-2.5 rounded-md border border-indigo-100/50">
                       <span>Komponen Jarak ({auditDistanceKm} km x Rp300)</span>
                       <span className="font-extrabold text-slate-800">{fmtRp(auditCalc.componentJarak)}</span>
                     </div>
-                    <div className="flex justify-between bg-white p-2.5 rounded-xl border border-indigo-100/50">
+                    <div className="flex justify-between bg-white p-2.5 rounded-md border border-indigo-100/50">
                       <span>Komponen Waktu ({formatDurationHoursAsJamMenit(auditRouteDurationHours)} x Rp5.000)</span>
                       <span className="font-extrabold text-slate-800">{fmtRp(auditCalc.componentWaktu)}</span>
                     </div>
@@ -2141,7 +2141,7 @@ export function DriverJourneyAuditDialog({
 
                   {auditCalc.mealWageComponent > 0 && (
                     <div className="flex pt-1">
-                      <div className="flex-1 flex justify-between bg-white p-2.5 rounded-xl border border-emerald-100">
+                      <div className="flex-1 flex justify-between bg-white p-2.5 rounded-md border border-emerald-100">
                         <span>
                           Uang Makan ({journeyDayCount(auditCalc.actualJourneyDurationHours)} hari)
                           <span className="block text-[9px] text-slate-400 font-normal">
@@ -2156,13 +2156,13 @@ export function DriverJourneyAuditDialog({
                   {(auditCalc.premiumWeekend > 0 || auditCalc.nightPremium > 0) && (
                     <div className="flex gap-3 pt-1">
                       {auditCalc.premiumWeekend > 0 && (
-                        <div className="flex-1 flex justify-between bg-white p-2.5 rounded-xl border border-indigo-100/50">
+                        <div className="flex-1 flex justify-between bg-white p-2.5 rounded-md border border-indigo-100/50">
                           <span>Weekend Premium</span>
                           <span className="font-extrabold text-slate-800">+{fmtRp(auditCalc.premiumWeekend)}</span>
                         </div>
                       )}
                       {auditCalc.nightPremium > 0 && (
-                        <div className="flex-1 flex justify-between bg-white p-2.5 rounded-xl border border-indigo-100/50">
+                        <div className="flex-1 flex justify-between bg-white p-2.5 rounded-md border border-indigo-100/50">
                           <span>Premium Malam ({auditNightCount} × Rp50.000)</span>
                           <span className="font-extrabold text-slate-800">+{fmtRp(auditCalc.nightPremium)}</span>
                         </div>
@@ -2184,18 +2184,18 @@ export function DriverJourneyAuditDialog({
 
                 {/* CARD 4: Biaya Operasional (SPJ) — Matriks Perbandingan Card */}
                 {!isOperationalMatrixMoot && (
-                <div className="p-4 rounded-2xl bg-blue-50/40 border border-blue-150 space-y-3 shadow-xs">
+                <div className="p-4 rounded-md bg-blue-50/40 border border-blue-150 space-y-3 shadow-xs">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-black text-blue-700 uppercase tracking-widest block">
                       Biaya Operasional (SPJ) — Matriks Perbandingan
                     </span>
-                    <Badge variant="outline" className="bg-blue-100/60 border-blue-200 text-blue-700 text-[10px] font-bold">
+                    <Badge variant="outline" className="rounded-sm bg-blue-100/60 border-blue-200 text-blue-700 text-[10px] font-bold">
                       Otorisasi vs Audit
                     </Badge>
                   </div>
 
                   {/* Comparison Table */}
-                  <div className="overflow-x-auto rounded-xl border border-blue-100 bg-white shadow-xs">
+                  <div className="overflow-x-auto rounded-md border border-blue-100 bg-white shadow-xs">
                     <table className="w-full text-xs text-left border-collapse">
                       <thead>
                         <tr className="bg-blue-100/40 text-[9.5px] font-extrabold text-blue-800 uppercase tracking-wider border-b border-blue-100">
@@ -2298,15 +2298,15 @@ export function DriverJourneyAuditDialog({
             </div>
           )}
 
-          <DialogFooter className="gap-3 border-t border-slate-100 pt-3 shrink-0">
-            <Button variant="ghost" onClick={() => onOpenChange(false)} className="rounded-xl font-bold text-slate-500">
+          <DialogFooter className="rounded-b-md gap-3 border-t border-slate-100 pt-3 shrink-0">
+            <Button variant="ghost" onClick={() => onOpenChange(false)} className="rounded-sm font-bold text-slate-500">
               Kembali
             </Button>
             {canDecline && (
               <Button
                 onClick={onDecline}
                 disabled={actionLoading}
-                className="rounded-xl bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 font-bold"
+                className="rounded-sm bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 font-bold"
               >
                 Tolak Perjalanan
               </Button>
@@ -2322,7 +2322,7 @@ export function DriverJourneyAuditDialog({
                   !auditCalc ||
                   auditCalc.actualJourneyDurationHours <= 0
                 }
-                className="rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold hover:shadow-lg shadow-indigo-100"
+                className="rounded-sm bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold hover:shadow-lg shadow-indigo-100"
               >
                 {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
                 {canReEditConfirmed ? 'Simpan Perubahan' : 'Audit & Setujui'}
@@ -2334,7 +2334,7 @@ export function DriverJourneyAuditDialog({
 
       {/* ── Google Maps Selector Dialog ──────────────────────────────────── */}
       <Dialog open={showMapSelector} onOpenChange={setShowMapSelector}>
-        <DialogContent className="sm:max-w-[500px] rounded-2xl bg-white border-slate-100 shadow-2xl p-6">
+        <DialogContent className="sm:max-w-[500px] rounded-md bg-white border-slate-100 shadow-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-base font-extrabold text-slate-800 flex items-center gap-2">
               <MapPin className="w-5 h-5 text-indigo-600" />
@@ -2347,7 +2347,7 @@ export function DriverJourneyAuditDialog({
 
           <div className="space-y-4 pt-2">
             <div className="relative">
-              <div className="flex h-11 items-center gap-2.5 rounded-2xl border border-slate-200 bg-white px-3.5 shadow-sm transition-all focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-500/20">
+              <div className="flex h-11 items-center gap-2.5 rounded-sm border border-slate-200 bg-white px-3.5 shadow-sm transition-all focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-500/20">
                 <Compass className="h-4.5 w-4.5 shrink-0 text-indigo-500" />
                 <Input
                   placeholder="Cari lokasi tujuan dinas..."
@@ -2358,7 +2358,7 @@ export function DriverJourneyAuditDialog({
                   autoComplete="off"
                   role="combobox"
                   aria-expanded={placeSuggestions.length > 0}
-                  className="h-full flex-1 border-none bg-transparent p-0 text-xs font-bold text-slate-700 placeholder:text-slate-400 focus-visible:ring-0"
+                  className="rounded-sm h-full flex-1 border-none bg-transparent p-0 text-xs font-bold text-slate-700 placeholder:text-slate-400 focus-visible:ring-0"
                 />
                 {isSearchingPlaces && <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />}
                 {mapSearchText && (
@@ -2370,7 +2370,7 @@ export function DriverJourneyAuditDialog({
                       setMapAddress('');
                       setMapLocation(null);
                     }}
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-600"
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-600"
                     aria-label="Hapus pencarian"
                   >
                     <XCircle className="h-4 w-4" />
@@ -2390,7 +2390,7 @@ export function DriverJourneyAuditDialog({
                       );
                     }
                   }}
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-indigo-500 transition-all hover:bg-indigo-50 hover:text-indigo-600"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-indigo-500 transition-all hover:bg-indigo-50 hover:text-indigo-600"
                   aria-label="Pilih saran lokasi pertama"
                 >
                   <Search className="h-4.5 w-4.5" />
@@ -2398,7 +2398,7 @@ export function DriverJourneyAuditDialog({
               </div>
 
               {placeSuggestions.length > 0 && (
-                <div className="absolute inset-x-0 top-full z-[100] mt-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                <div className="absolute inset-x-0 top-full z-[100] mt-1 overflow-hidden rounded-md border border-slate-200 bg-white shadow-xl">
                   {placeSuggestions.map((suggestion) => (
                     <button
                       key={suggestion.id}
@@ -2424,7 +2424,7 @@ export function DriverJourneyAuditDialog({
               Ketik minimal {PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH} karakter, lalu pilih salah satu saran.
             </p>
             {(mapSearchError || placeSearchError) && (
-              <p className="rounded-lg bg-amber-50 px-3 py-2 text-[10px] font-semibold text-amber-700">
+              <p className="rounded-md bg-amber-50 px-3 py-2 text-[10px] font-semibold text-amber-700">
                 {mapSearchError || placeSearchError}
               </p>
             )}
@@ -2436,7 +2436,7 @@ export function DriverJourneyAuditDialog({
                   initMap(el);
                 }
               }}
-              className="w-full h-[280px] rounded-xl border border-slate-100 overflow-hidden bg-slate-50 relative flex items-center justify-center"
+              className="w-full h-[280px] rounded-md border border-slate-100 overflow-hidden bg-slate-50 relative flex items-center justify-center"
             >
               <div className="flex flex-col items-center gap-2 text-slate-400">
                 <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
@@ -2446,18 +2446,18 @@ export function DriverJourneyAuditDialog({
 
             {/* Selected Address Box */}
             {mapAddress && (
-              <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-600 leading-relaxed font-semibold">
+              <div className="p-3 bg-slate-50 border border-slate-100 rounded-md text-xs text-slate-600 leading-relaxed font-semibold">
                 <span className="text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">Alamat Terpilih:</span>
                 📍 {mapAddress}
               </div>
             )}
 
-            <DialogFooter className="pt-2 border-t border-slate-100 gap-2">
+            <DialogFooter className="rounded-b-md pt-2 border-t border-slate-100 gap-2">
               <Button
                 type="button"
                 variant="ghost"
                 onClick={() => setShowMapSelector(false)}
-                className="rounded-xl font-bold text-slate-500 hover:bg-slate-50 text-xs px-4"
+                className="rounded-sm font-bold text-slate-500 hover:bg-slate-50 text-xs px-4"
               >
                 Batal
               </Button>
@@ -2465,7 +2465,7 @@ export function DriverJourneyAuditDialog({
                 type="button"
                 disabled={!mapAddress || !mapLocation}
                 onClick={handleConfirmMapLocation}
-                className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 h-10 cursor-pointer"
+                className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 h-10 cursor-pointer"
               >
                 Konfirmasi Lokasi
               </Button>

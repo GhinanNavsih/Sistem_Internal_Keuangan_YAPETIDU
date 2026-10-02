@@ -653,7 +653,7 @@ export default function PelaporanKegiatanPage() {
   return (
     <div className="flex flex-col gap-8">
       {/* Top Section: Daftar Laporan Kegiatan Grid */}
-      <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6">
+      <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6">
         <div className="flex justify-between items-center mb-6">
           <div>
             <h3 className="font-bold text-slate-800 text-sm">Daftar Laporan Kegiatan</h3>
@@ -667,14 +667,14 @@ export default function PelaporanKegiatanPage() {
             {/* Buat Baru Card */}
             <div
               onClick={() => resetPelaporanForm()}
-              className="p-4 rounded-2xl border-2 border-dashed border-slate-200 hover:border-indigo-450 hover:bg-indigo-50/10 transition-all cursor-pointer flex flex-col items-center justify-center min-h-[110px] gap-2 text-center group"
+              className="p-4 rounded-md border-2 border-dashed border-slate-200 hover:border-indigo-450 hover:bg-indigo-50/10 transition-all cursor-pointer flex flex-col items-center justify-center min-h-[110px] gap-2 text-center group"
             >
               <Plus className="w-5 h-5 text-slate-455 group-hover:text-indigo-500 group-hover:scale-110 transition-all" />
               <span className="text-xs font-bold text-slate-500 group-hover:text-indigo-600">Buat Laporan Baru</span>
             </div>
             {/* Draft card */}
             {!selectedPelaporanId && (
-              <div className="p-4 rounded-2xl border bg-indigo-50/30 border-indigo-200 shadow-sm flex flex-col justify-between min-h-[110px] scale-[1.02]">
+              <div className="p-4 rounded-md border bg-indigo-50/30 border-indigo-200 shadow-sm flex flex-col justify-between min-h-[110px] scale-[1.02]">
                 <div>
                   <p className="font-bold text-indigo-600 text-sm line-clamp-1 italic">
                     {pelaporanReportName.trim() !== '' ? pelaporanReportName : 'Laporan Baru (Tanpa Judul)'}
@@ -682,7 +682,7 @@ export default function PelaporanKegiatanPage() {
                   <p className="text-[10px] text-indigo-400 font-bold mt-1 uppercase tracking-wider">{pelaporanDept || 'Belum Pilih Unit'}</p>
                 </div>
                 <div className="flex items-center justify-between mt-3">
-                  <span className="text-[10px] text-indigo-400 font-bold bg-indigo-50/50 px-2 py-0.5 rounded border border-indigo-100">
+                  <span className="text-[10px] text-indigo-400 font-bold bg-indigo-50/50 px-2 py-0.5 rounded-sm border border-indigo-100">
                     {[realisasiEnabled, vakasiPengujiEnabled, kepanitiaaanEnabled, receiptEnabled].filter(Boolean).length} Seksi Aktif
                   </span>
                 </div>
@@ -694,7 +694,7 @@ export default function PelaporanKegiatanPage() {
                 <div
                   key={rpt.id}
                   onClick={() => loadPelaporanFromData(rpt)}
-                  className={`p-4 rounded-2xl border transition-all cursor-pointer outline-none focus:outline-none flex flex-col justify-between min-h-[110px] ${isActive
+                  className={`p-4 rounded-md border transition-all cursor-pointer outline-none focus:outline-none flex flex-col justify-between min-h-[110px] ${isActive
                     ? 'bg-indigo-50/50 border-indigo-300 shadow-md ring-1 ring-indigo-300/25 scale-[1.02]'
                     : 'bg-white border-slate-100 hover:border-indigo-150 hover:shadow-sm'
                     }`}
@@ -704,7 +704,7 @@ export default function PelaporanKegiatanPage() {
                     <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-wider">{rpt.departmentUnit}</p>
                   </div>
                   <div className="flex items-center justify-between mt-3">
-                    <span className="text-[10px] text-slate-400 font-bold bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
+                    <span className="text-[10px] text-slate-400 font-bold bg-slate-50 px-2 py-0.5 rounded-sm border border-slate-100">
                       {[rpt.realisasiEnabled !== false, rpt.vakasiPengujiEnabled !== false, rpt.kepanitiaaanEnabled !== false, rpt.receiptEnabled === true].filter(Boolean).length} Seksi
                     </span>
                   </div>
@@ -716,7 +716,7 @@ export default function PelaporanKegiatanPage() {
       </Card>
 
       {/* Editor Form Card */}
-      <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none overflow-visible p-4 md:p-6 space-y-5 animate-in fade-in duration-500">
+      <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none overflow-visible p-4 md:p-6 space-y-5 animate-in fade-in duration-500">
         {/* Header */}
         <div className="flex justify-between items-center border-b border-slate-50 pb-4">
           <div>
@@ -729,7 +729,7 @@ export default function PelaporanKegiatanPage() {
         </div>
 
         {/* Letterhead Preview */}
-        <div className="border border-slate-200/80 rounded-2xl p-4 bg-slate-50/40 relative overflow-hidden flex items-center gap-4">
+        <div className="border border-slate-200/80 rounded-md p-4 bg-slate-50/40 relative overflow-hidden flex items-center gap-4">
           <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50/30 rounded-full blur-2xl pointer-events-none" />
           <Image src="/Logo UNIPDU.png" alt="UNIPDU" width={300} height={304} className="w-12 h-12 shrink-0 object-contain" />
           <div className="space-y-0.5">
@@ -747,21 +747,21 @@ export default function PelaporanKegiatanPage() {
               placeholder="E.g., Ujian Proposal Tesis Pascasarjana..."
               value={pelaporanReportName}
               onChange={(e) => setPelaporanReportName(e.target.value)}
-              className="rounded-xl border-slate-200 font-bold text-slate-900 text-xs h-11 w-full"
+              className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-11 w-full"
             />
           </div>
           <div className="space-y-2">
             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Unit Kerja (Department)</label>
             <Select value={pelaporanDept} onValueChange={(val) => setPelaporanDept(val || '')}>
-              <SelectTrigger className={`rounded-xl text-sm font-bold h-11 border focus:ring-4 focus:ring-indigo-100 ${pelaporanDept ? 'bg-indigo-50/60 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-400'}`}>
+              <SelectTrigger className={`rounded-sm text-sm font-bold h-11 border focus:ring-4 focus:ring-indigo-100 ${pelaporanDept ? 'bg-indigo-50/60 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-400'}`}>
                 <div className="flex items-center gap-2 min-w-0">
                   <Building2 className="w-4 h-4 shrink-0" />
                   <SelectValue placeholder="Pilih Unit Kerja..." />
                 </div>
               </SelectTrigger>
-              <SelectContent className="rounded-2xl border border-slate-100 shadow-2xl bg-white p-1.5 max-h-64 overflow-y-auto w-max min-w-[var(--radix-select-trigger-width)]">
+              <SelectContent className="rounded-md border border-slate-100 shadow-2xl bg-white p-1.5 max-h-64 overflow-y-auto w-max min-w-[var(--radix-select-trigger-width)]">
                 {departments.map(dept => (
-                  <SelectItem key={dept} value={dept} className="rounded-xl text-xs font-bold uppercase text-slate-900 data-[highlighted]:bg-indigo-50 data-[highlighted]:text-indigo-700 cursor-pointer">{dept}</SelectItem>
+                  <SelectItem key={dept} value={dept} className="rounded-sm text-xs font-bold uppercase text-slate-900 data-[highlighted]:bg-indigo-50 data-[highlighted]:text-indigo-700 cursor-pointer">{dept}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -780,7 +780,7 @@ export default function PelaporanKegiatanPage() {
               key={s.key}
               type="button"
               onClick={() => s.toggle(!s.enabled)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${s.enabled
+              className={`flex items-center gap-2 px-3 py-2 rounded-sm text-xs font-bold transition-all cursor-pointer border ${s.enabled
                 ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
                 : 'bg-slate-50 border-slate-150 text-slate-400'
                 }`}
@@ -845,7 +845,7 @@ export default function PelaporanKegiatanPage() {
           const sisaRealisasi = danaOperasionalRealisasi - totalPengeluaranRealisasi;
 
           return (
-            <div className="border border-slate-150 rounded-2xl overflow-hidden">
+            <div className="border border-slate-150 rounded-md overflow-hidden">
               <button type="button" onClick={() => toggleSection('realisasi')} className="w-full flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-emerald-50 to-emerald-50/40 hover:from-emerald-100/60 transition-all cursor-pointer">
                 <div className="flex items-center gap-2.5">
                   <Receipt className="w-4 h-4 text-emerald-600" />
@@ -857,15 +857,15 @@ export default function PelaporanKegiatanPage() {
                 <div className="p-4 md:p-5 space-y-6 bg-white">
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Judul Seksi (di PDF)</label>
-                    <Input type="text" placeholder="REALISASI UJIAN PROPOSAL TESIS..." value={realisasiTitle} onChange={(e) => setRealisasiTitle(e.target.value)} className="rounded-xl border-slate-200 font-bold text-slate-900 text-xs h-10 w-full uppercase" />
+                    <Input type="text" placeholder="REALISASI UJIAN PROPOSAL TESIS..." value={realisasiTitle} onChange={(e) => setRealisasiTitle(e.target.value)} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-10 w-full uppercase" />
                   </div>
 
                   {/* PART A: PEMASUKAN */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100 font-sans">1. Pemasukan (Pendapatan Kegiatan)</span>
+                      <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider bg-emerald-50 px-2.5 py-1 rounded-sm border border-emerald-100 font-sans">1. Pemasukan (Pendapatan Kegiatan)</span>
                     </div>
-                    <div className="border border-slate-150 rounded-2xl shadow-sm overflow-x-auto bg-white">
+                    <div className="border border-slate-150 rounded-md shadow-sm overflow-x-auto bg-white">
                       <table className="w-full text-left border-collapse min-w-[700px]">
                         <thead>
                           <tr className="bg-slate-50 border-b border-slate-100">
@@ -884,11 +884,11 @@ export default function PelaporanKegiatanPage() {
                             return (
                               <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
                                 <td className="px-2.5 py-1 text-xs font-bold text-slate-400 text-center">{idx + 1}</td>
-                                <td className="px-2.5 py-1"><Input type="text" placeholder="Biaya Test, Kontribusi, dll..." value={row.uraian} onChange={(e) => { const val = e.target.value; setPemasukanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pemasukan', idx, 0)} data-table="pemasukan" data-row={idx} data-col={0} className="rounded-lg border-slate-200 font-medium text-slate-900 text-xs h-7.5 w-full" /></td>
-                                <td className="px-2.5 py-1"><Input type="text" placeholder="250 Siswa" value={row.rincianQty} onChange={(e) => { const val = e.target.value; setPemasukanRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianQty: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(val) * c[idx].rincianRate; } return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pemasukan', idx, 1)} data-table="pemasukan" data-row={idx} data-col={1} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-7.5 w-full text-center" /></td>
-                                <td className="px-2.5 py-1"><Input type="text" inputMode="numeric" placeholder="0" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setPemasukanRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianRate: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(c[idx].rincianQty) * val; } return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pemasukan', idx, 2)} data-table="pemasukan" data-row={idx} data-col={2} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-7.5 w-full text-right" /></td>
+                                <td className="px-2.5 py-1"><Input type="text" placeholder="Biaya Test, Kontribusi, dll..." value={row.uraian} onChange={(e) => { const val = e.target.value; setPemasukanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pemasukan', idx, 0)} data-table="pemasukan" data-row={idx} data-col={0} className="rounded-sm border-slate-200 font-medium text-slate-900 text-xs h-7.5 w-full" /></td>
+                                <td className="px-2.5 py-1"><Input type="text" placeholder="250 Siswa" value={row.rincianQty} onChange={(e) => { const val = e.target.value; setPemasukanRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianQty: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(val) * c[idx].rincianRate; } return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pemasukan', idx, 1)} data-table="pemasukan" data-row={idx} data-col={1} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-7.5 w-full text-center" /></td>
+                                <td className="px-2.5 py-1"><Input type="text" inputMode="numeric" placeholder="0" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setPemasukanRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianRate: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(c[idx].rincianQty) * val; } return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pemasukan', idx, 2)} data-table="pemasukan" data-row={idx} data-col={2} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-7.5 w-full text-right" /></td>
                                 <td className="px-2.5 py-1 text-xs font-bold text-slate-600 text-right font-mono">{fmtRp(anggaran)}</td>
-                                <td className="px-2.5 py-1"><Input type="text" inputMode="numeric" placeholder="0" value={row.realisasi > 0 ? fmtRp(row.realisasi) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setPemasukanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], realisasi: val }; return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pemasukan', idx, 3)} data-table="pemasukan" data-row={idx} data-col={3} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-7.5 w-full text-right" /></td>
+                                <td className="px-2.5 py-1"><Input type="text" inputMode="numeric" placeholder="0" value={row.realisasi > 0 ? fmtRp(row.realisasi) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setPemasukanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], realisasi: val }; return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pemasukan', idx, 3)} data-table="pemasukan" data-row={idx} data-col={3} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-7.5 w-full text-right" /></td>
                                 <td className="px-2.5 py-1 text-center">
                                   <div className="flex items-center justify-center gap-1">
                                     <Button type="button" variant="ghost" size="icon" title="Sisipkan baris di bawah (Shift+Enter)" onClick={() => {
@@ -898,10 +898,10 @@ export default function PelaporanKegiatanPage() {
                                         return c;
                                       });
                                       setFocusTarget({ table: 'pemasukan', row: idx + 1, col: 0 });
-                                    }} className="h-7 w-7 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg cursor-pointer">
+                                    }} className="h-7 w-7 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-sm cursor-pointer">
                                       <Plus className="w-3.5 h-3.5" />
                                     </Button>
-                                    <Button type="button" variant="ghost" size="icon" title="Hapus baris" onClick={() => setPemasukanRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer">
+                                    <Button type="button" variant="ghost" size="icon" title="Hapus baris" onClick={() => setPemasukanRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer">
                                       <Trash2 className="w-3.5 h-3.5" />
                                     </Button>
                                   </div>
@@ -915,7 +915,7 @@ export default function PelaporanKegiatanPage() {
                               <Button type="button" size="sm" onClick={() => {
                                 setPemasukanRows(prev => [...prev, { uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }]);
                                 setFocusTarget({ table: 'pemasukan', row: pemasukanRows.length, col: 0 });
-                              }} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer">
+                              }} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer">
                                 <Plus className="w-3.5 h-3.5" /> Tambah Pemasukan
                               </Button>
                             </td>
@@ -932,14 +932,14 @@ export default function PelaporanKegiatanPage() {
                   </div>
 
                   {/* PART B: DANA PENGEMBANGAN & DANA OPERASIONAL (AUTOMATIC) */}
-                  <div className="bg-slate-50/55 border border-slate-150 rounded-2xl p-4 md:p-5 space-y-4">
-                    <span className="text-xs font-bold text-slate-850 uppercase tracking-wider bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs block w-fit font-sans">2. Alokasi Dana Pengembangan & Operasional</span>
+                  <div className="bg-slate-50/55 border border-slate-150 rounded-md p-4 md:p-5 space-y-4">
+                    <span className="text-xs font-bold text-slate-850 uppercase tracking-wider bg-white px-2.5 py-1 rounded-sm border border-slate-200 shadow-2xs block w-fit font-sans">2. Alokasi Dana Pengembangan & Operasional</span>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-1.5 bg-white p-3.5 rounded-xl border border-slate-200/60">
+                      <div className="space-y-1.5 bg-white p-3.5 rounded-md border border-slate-200/60">
                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 font-sans">Dana Pengembangan Yayasan (%)</label>
                         <div className="flex items-center gap-2">
-                          <Input type="number" min={0} max={100} value={yayasanPercentage} onChange={(e) => setYayasanPercentage(parseFloat(e.target.value) || 0)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-20 text-center" />
+                          <Input type="number" min={0} max={100} value={yayasanPercentage} onChange={(e) => setYayasanPercentage(parseFloat(e.target.value) || 0)} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-20 text-center" />
                           <span className="text-xs font-bold text-slate-500">%</span>
                           <div className="text-right ml-auto text-xs font-semibold text-slate-600">
                             Anggaran: <span className="font-bold text-slate-900 font-mono">{fmtRp(yayasanAnggaran)}</span>
@@ -949,10 +949,10 @@ export default function PelaporanKegiatanPage() {
                         </div>
                       </div>
 
-                      <div className="space-y-1.5 bg-white p-3.5 rounded-xl border border-slate-200/60">
+                      <div className="space-y-1.5 bg-white p-3.5 rounded-md border border-slate-200/60">
                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 font-sans">Dana Pengembangan UNIPDU (%)</label>
                         <div className="flex items-center gap-2">
-                          <Input type="number" min={0} max={100} value={unipduPercentage} onChange={(e) => setUnipduPercentage(parseFloat(e.target.value) || 0)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-20 text-center" />
+                          <Input type="number" min={0} max={100} value={unipduPercentage} onChange={(e) => setUnipduPercentage(parseFloat(e.target.value) || 0)} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-20 text-center" />
                           <span className="text-xs font-bold text-slate-500">%</span>
                           <div className="text-right ml-auto text-xs font-semibold text-slate-600">
                             Anggaran: <span className="font-bold text-slate-900 font-mono">{fmtRp(unipduAnggaran)}</span>
@@ -963,7 +963,7 @@ export default function PelaporanKegiatanPage() {
                       </div>
                     </div>
 
-                    <div className="bg-indigo-900/95 text-white p-4 rounded-xl border border-indigo-950 flex flex-col md:flex-row items-center justify-between gap-4 shadow-md">
+                    <div className="bg-indigo-900/95 text-white p-4 rounded-md border border-indigo-950 flex flex-col md:flex-row items-center justify-between gap-4 shadow-md">
                       <div>
                         <h4 className="text-sm font-bold uppercase tracking-wider text-indigo-200 font-sans">Dana Operasional (Sisa untuk Pengeluaran)</h4>
                         <p className="text-[11px] text-indigo-300 mt-0.5 font-sans">Rumus: Pemasukan - (Dana Pengembangan Yayasan + UNIPDU)</p>
@@ -985,9 +985,9 @@ export default function PelaporanKegiatanPage() {
                   {/* PART C: PENGELUARAN */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-indigo-850 uppercase tracking-wider bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100 font-sans">3. Pengeluaran (Biaya Operasional Kegiatan)</span>
+                      <span className="text-xs font-bold text-indigo-850 uppercase tracking-wider bg-indigo-50 px-2.5 py-1 rounded-sm border border-indigo-100 font-sans">3. Pengeluaran (Biaya Operasional Kegiatan)</span>
                     </div>
-                    <div className="border border-slate-150 rounded-2xl shadow-sm overflow-x-auto bg-white">
+                    <div className="border border-slate-150 rounded-md shadow-sm overflow-x-auto bg-white">
                       <table className="w-full text-left border-collapse min-w-[700px]">
                         <thead>
                           <tr className="bg-slate-50 border-b border-slate-100">
@@ -1010,7 +1010,7 @@ export default function PelaporanKegiatanPage() {
                               return (
                                 <tr key={idx} className="bg-slate-50/60 border-b border-slate-100">
                                   <td className="px-2.5 py-1.5 text-xs font-bold text-slate-400 text-center"></td>
-                                  <td colSpan={5} className="px-2.5 py-1.5"><Input type="text" placeholder="Nama grup (e.g., A. Pengeluaran)..." value={row.uraian} onChange={(e) => { const val = e.target.value; setPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pengeluaran', idx, 0)} data-table="pengeluaran" data-row={idx} data-col={0} className="rounded-lg border-slate-200 font-bold text-slate-800 text-xs h-7.5 w-full bg-transparent border-none focus:ring-0" /></td>
+                                  <td colSpan={5} className="px-2.5 py-1.5"><Input type="text" placeholder="Nama grup (e.g., A. Pengeluaran)..." value={row.uraian} onChange={(e) => { const val = e.target.value; setPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pengeluaran', idx, 0)} data-table="pengeluaran" data-row={idx} data-col={0} className="rounded-sm border-slate-200 font-bold text-slate-800 text-xs h-7.5 w-full bg-transparent border-none focus:ring-0" /></td>
                                   <td className="px-2.5 py-1.5 text-center">
                                     <div className="flex items-center justify-center gap-1">
                                       <Button type="button" variant="ghost" size="icon" title="Sisipkan baris di bawah (Shift+Enter)" onClick={() => {
@@ -1020,10 +1020,10 @@ export default function PelaporanKegiatanPage() {
                                           return c;
                                         });
                                         setFocusTarget({ table: 'pengeluaran', row: idx + 1, col: 0 });
-                                      }} className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer">
+                                      }} className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-sm cursor-pointer">
                                         <Plus className="w-3.5 h-3.5" />
                                       </Button>
-                                      <Button type="button" variant="ghost" size="icon" title="Hapus grup" onClick={() => setPengeluaranRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer">
+                                      <Button type="button" variant="ghost" size="icon" title="Hapus grup" onClick={() => setPengeluaranRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer">
                                         <Trash2 className="w-3.5 h-3.5" />
                                       </Button>
                                     </div>
@@ -1035,28 +1035,28 @@ export default function PelaporanKegiatanPage() {
                             return (
                               <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
                                 <td className="px-2.5 py-1 text-xs font-bold text-slate-400 text-center">{itemNum}</td>
-                                <td className="px-2.5 py-1"><Input type="text" placeholder="Uraian pengeluaran..." value={row.uraian} onChange={(e) => { const val = e.target.value; setPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pengeluaran', idx, 0)} data-table="pengeluaran" data-row={idx} data-col={0} className="rounded-lg border-slate-200 font-medium text-slate-900 text-xs h-7.5 w-full" /></td>
-                                <td className="px-2.5 py-1"><Input type="text" placeholder="Nilai / Presentase" value={row.rincianQty} onChange={(e) => { const val = e.target.value; setPengeluaranRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianQty: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(val) * c[idx].rincianRate; } return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pengeluaran', idx, 1)} data-table="pengeluaran" data-row={idx} data-col={1} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-7.5 w-full text-center" /></td>
-                                <td className="px-2.5 py-1"><Input type="text" inputMode="numeric" placeholder="0" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setPengeluaranRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianRate: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(c[idx].rincianQty) * val; } return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pengeluaran', idx, 2)} data-table="pengeluaran" data-row={idx} data-col={2} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-7.5 w-full text-right" /></td>
+                                <td className="px-2.5 py-1"><Input type="text" placeholder="Uraian pengeluaran..." value={row.uraian} onChange={(e) => { const val = e.target.value; setPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pengeluaran', idx, 0)} data-table="pengeluaran" data-row={idx} data-col={0} className="rounded-sm border-slate-200 font-medium text-slate-900 text-xs h-7.5 w-full" /></td>
+                                <td className="px-2.5 py-1"><Input type="text" placeholder="Nilai / Presentase" value={row.rincianQty} onChange={(e) => { const val = e.target.value; setPengeluaranRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianQty: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(val) * c[idx].rincianRate; } return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pengeluaran', idx, 1)} data-table="pengeluaran" data-row={idx} data-col={1} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-7.5 w-full text-center" /></td>
+                                <td className="px-2.5 py-1"><Input type="text" inputMode="numeric" placeholder="0" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setPengeluaranRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianRate: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(c[idx].rincianQty) * val; } return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pengeluaran', idx, 2)} data-table="pengeluaran" data-row={idx} data-col={2} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-7.5 w-full text-right" /></td>
                                 <td className="px-2.5 py-1 text-xs font-bold text-slate-600 text-right font-mono">{fmtRp(anggaran)}</td>
-                                <td className="px-2.5 py-1"><Input type="text" inputMode="numeric" placeholder="0" value={row.realisasi > 0 ? fmtRp(row.realisasi) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], realisasi: val }; return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pengeluaran', idx, 3)} data-table="pengeluaran" data-row={idx} data-col={3} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-7.5 w-full text-right" /></td>
+                                <td className="px-2.5 py-1"><Input type="text" inputMode="numeric" placeholder="0" value={row.realisasi > 0 ? fmtRp(row.realisasi) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], realisasi: val }; return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pengeluaran', idx, 3)} data-table="pengeluaran" data-row={idx} data-col={3} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-7.5 w-full text-right" /></td>
                                 <td className="px-2.5 py-1 text-center">
                                   <div className="flex items-center justify-center gap-1">
                                     <div className="relative">
-                                      <Button type="button" variant="ghost" size="icon" title="Sisipkan baris di bawah" onClick={() => setActiveInsertMenuIdx(activeInsertMenuIdx === idx ? null : idx)} className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer">
+                                      <Button type="button" variant="ghost" size="icon" title="Sisipkan baris di bawah" onClick={() => setActiveInsertMenuIdx(activeInsertMenuIdx === idx ? null : idx)} className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-sm cursor-pointer">
                                         <Plus className="w-3.5 h-3.5" />
                                       </Button>
                                       {activeInsertMenuIdx === idx && (
                                         <>
                                           <div className="fixed inset-0 z-40" onClick={() => setActiveInsertMenuIdx(null)} />
-                                          <div className="absolute right-0 bottom-8 z-50 w-44 bg-white border border-slate-150 rounded-xl shadow-xl py-1.5 animate-in fade-in slide-in-from-bottom-2 duration-150 text-left">
+                                          <div className="absolute right-0 bottom-8 z-50 w-44 bg-white border border-slate-150 rounded-md shadow-xl py-1.5 animate-in fade-in slide-in-from-bottom-2 duration-150 text-left">
                                             <button type="button" onClick={() => { setPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { type: 'item', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }); return c; }); setFocusTarget({ table: 'pengeluaran', row: idx + 1, col: 0 }); setActiveInsertMenuIdx(null); }} className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 transition-colors cursor-pointer"><FileText className="w-3.5 h-3.5 text-indigo-500" /><span>Baris Biasa</span></button>
                                             <button type="button" onClick={() => { setPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { type: 'group_header', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }); return c; }); setFocusTarget({ table: 'pengeluaran', row: idx + 1, col: 0 }); setActiveInsertMenuIdx(null); }} className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 transition-colors cursor-pointer"><Layers className="w-3.5 h-3.5 text-indigo-500" /><span>Header Grup</span></button>
                                           </div>
                                         </>
                                       )}
                                     </div>
-                                    <Button type="button" variant="ghost" size="icon" title="Hapus baris" onClick={() => setPengeluaranRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer">
+                                    <Button type="button" variant="ghost" size="icon" title="Hapus baris" onClick={() => setPengeluaranRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer">
                                       <Trash2 className="w-3.5 h-3.5" />
                                     </Button>
                                   </div>
@@ -1071,13 +1071,13 @@ export default function PelaporanKegiatanPage() {
                                 <Button type="button" size="sm" onClick={() => {
                                   setPengeluaranRows(prev => [...prev, { type: 'item', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }]);
                                   setFocusTarget({ table: 'pengeluaran', row: pengeluaranRows.length, col: 0 });
-                                }} className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer">
+                                }} className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer">
                                   <Plus className="w-3.5 h-3.5" /> Tambah Baris
                                 </Button>
                                 <Button type="button" size="sm" onClick={() => {
                                   setPengeluaranRows(prev => [...prev, { type: 'group_header', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }]);
                                   setFocusTarget({ table: 'pengeluaran', row: pengeluaranRows.length, col: 0 });
-                                }} variant="outline" className="border-indigo-200 text-indigo-600 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer">
+                                }} variant="outline" className="border-indigo-200 text-indigo-600 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer">
                                   <Layers className="w-3.5 h-3.5" /> Tambah Header Grup
                                 </Button>
                               </div>
@@ -1091,7 +1091,7 @@ export default function PelaporanKegiatanPage() {
                           </tr>
                           <tr className="bg-slate-50/50">
                             <td colSpan={3} className="px-3 py-2 text-xs font-bold text-slate-650 text-right">Kepanitiaan</td>
-                            <td className="px-3 py-2"><div className="flex items-center gap-1 justify-end"><Input type="number" value={kepanitiaaanPercentage} onChange={(e) => setKepanitiaaanPercentage(parseFloat(e.target.value) || 0)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-7 w-16 text-center" /><span className="text-xs font-bold text-slate-550">%</span></div></td>
+                            <td className="px-3 py-2"><div className="flex items-center gap-1 justify-end"><Input type="number" value={kepanitiaaanPercentage} onChange={(e) => setKepanitiaaanPercentage(parseFloat(e.target.value) || 0)} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-7 w-16 text-center" /><span className="text-xs font-bold text-slate-550">%</span></div></td>
                             <td className="px-3 py-2 text-xs font-bold text-slate-600 text-right font-mono">{fmtRp(kepanitiaaanAnggaran)}</td>
                             <td className="px-3 py-2 text-xs font-bold text-slate-600 text-right font-mono">{fmtRp(kepanitiaaanRealisasi)}</td>
                             <td></td>
@@ -1120,7 +1120,7 @@ export default function PelaporanKegiatanPage() {
 
         {/* SECTION 2: VAKASI PENGUJI */}
         {vakasiPengujiEnabled && (
-          <div className="border border-slate-150 rounded-2xl overflow-hidden">
+          <div className="border border-slate-150 rounded-md overflow-hidden">
             <button type="button" onClick={() => toggleSection('vakasiPenguji')} className="w-full flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-blue-50 to-blue-50/40 hover:from-blue-100/60 transition-all cursor-pointer">
               <div className="flex items-center gap-2.5">
                 <Users className="w-4 h-4 text-blue-600" />
@@ -1132,19 +1132,19 @@ export default function PelaporanKegiatanPage() {
               <div className="p-4 md:p-5 space-y-4 bg-white">
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Judul Seksi (di PDF)</label>
-                  <Input type="text" placeholder="VAKASI PENGUJI UJIAN PROPOSAL TESIS..." value={vakasiPengujiTitle} onChange={(e) => setVakasiPengujiTitle(e.target.value)} className="rounded-xl border-slate-200 font-bold text-slate-900 text-xs h-10 w-full uppercase" />
+                  <Input type="text" placeholder="VAKASI PENGUJI UJIAN PROPOSAL TESIS..." value={vakasiPengujiTitle} onChange={(e) => setVakasiPengujiTitle(e.target.value)} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-10 w-full uppercase" />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Daftar Role & Tarif</span>
-                    <Button type="button" size="sm" onClick={() => setVakasiRoles(prev => [...prev, { name: '', rate: 0 }])} className="bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer"><Plus className="w-3.5 h-3.5" /> Tambah Role</Button>
+                    <Button type="button" size="sm" onClick={() => setVakasiRoles(prev => [...prev, { name: '', rate: 0 }])} className="bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer"><Plus className="w-3.5 h-3.5" /> Tambah Role</Button>
                   </div>
                   <div className="flex flex-wrap gap-3">
                     {vakasiRoles.map((role, rIdx) => (
-                      <div key={rIdx} className="flex items-center gap-2 p-2.5 rounded-xl border border-blue-100 bg-blue-50/20">
-                        <Input type="text" placeholder="Nama Role" value={role.name} onChange={(e) => { const val = e.target.value; setVakasiRoles(prev => { const c = [...prev]; c[rIdx] = { ...c[rIdx], name: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-28" />
-                        <Input type="text" inputMode="numeric" placeholder="Tarif" value={role.rate > 0 ? fmtRp(role.rate) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setVakasiRoles(prev => { const c = [...prev]; c[rIdx] = { ...c[rIdx], rate: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-28 text-right" />
-                        {vakasiRoles.length > 1 && <Button type="button" variant="ghost" size="icon" onClick={() => setVakasiRoles(prev => prev.filter((_, i) => i !== rIdx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"><X className="w-3.5 h-3.5" /></Button>}
+                      <div key={rIdx} className="flex items-center gap-2 p-2.5 rounded-md border border-blue-100 bg-blue-50/20">
+                        <Input type="text" placeholder="Nama Role" value={role.name} onChange={(e) => { const val = e.target.value; setVakasiRoles(prev => { const c = [...prev]; c[rIdx] = { ...c[rIdx], name: val }; return c; }); }} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-28" />
+                        <Input type="text" inputMode="numeric" placeholder="Tarif" value={role.rate > 0 ? fmtRp(role.rate) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setVakasiRoles(prev => { const c = [...prev]; c[rIdx] = { ...c[rIdx], rate: val }; return c; }); }} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-28 text-right" />
+                        {vakasiRoles.length > 1 && <Button type="button" variant="ghost" size="icon" onClick={() => setVakasiRoles(prev => prev.filter((_, i) => i !== rIdx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer"><X className="w-3.5 h-3.5" /></Button>}
                       </div>
                     ))}
                   </div>
@@ -1152,7 +1152,7 @@ export default function PelaporanKegiatanPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tabel Pegawai</span>
                 </div>
-                <div className="border border-slate-150 rounded-2xl shadow-sm overflow-x-auto bg-white">
+                <div className="border border-slate-150 rounded-md shadow-sm overflow-x-auto bg-white">
                   <table className="w-full text-left border-collapse min-w-[700px]">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-100">
@@ -1178,9 +1178,9 @@ export default function PelaporanKegiatanPage() {
                                 <Input type="text" placeholder="Cari nama..." value={row.searchText || ''} onChange={(e) => handleEmpSearch(e.target.value)}
                                   onFocus={() => { setVakasiPengujiRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], showDropdown: true }; return c; }); setActivePelaporanSuggestionIndex(0); }}
                                   onBlur={() => { setTimeout(() => { setVakasiPengujiRows(prev => { const c = [...prev]; if (c[idx]) c[idx] = { ...c[idx], showDropdown: false }; return c; }); }, 200); }}
-                                  className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full" />
+                                  className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-full" />
                                 {row.showDropdown && (
-                                  <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50">
+                                  <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50">
                                     {(() => {
                                       const otherIds = vakasiPengujiRows.filter((_, i) => i !== idx).map(w => w.employeeId).filter(Boolean);
                                       const filtered = loyalisEmployees.filter(emp => !otherIds.includes(emp.id)).filter(emp => emp.name.toLowerCase().includes((row.searchText || '').toLowerCase()));
@@ -1197,11 +1197,11 @@ export default function PelaporanKegiatanPage() {
                             </td>
                             {vakasiRoles.map((role, rIdx) => (
                               <td key={rIdx} className="px-3 py-2 text-center">
-                                <Input type="number" min={0} placeholder="0" value={row.roleQtys[role.name] || ''} onChange={(e) => { const val = parseInt(e.target.value) || 0; setVakasiPengujiRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], roleQtys: { ...c[idx].roleQtys, [role.name]: val } }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-16 text-center mx-auto" />
+                                <Input type="number" min={0} placeholder="0" value={row.roleQtys[role.name] || ''} onChange={(e) => { const val = parseInt(e.target.value) || 0; setVakasiPengujiRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], roleQtys: { ...c[idx].roleQtys, [role.name]: val } }; return c; }); }} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-16 text-center mx-auto" />
                               </td>
                             ))}
                             <td className="px-3 py-2 text-xs font-black text-slate-900 text-right font-mono">{fmtRp(rowTotal)}</td>
-                            <td className="px-3 py-2 text-center"><Button type="button" variant="ghost" size="icon" onClick={() => setVakasiPengujiRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></Button></td>
+                            <td className="px-3 py-2 text-center"><Button type="button" variant="ghost" size="icon" onClick={() => setVakasiPengujiRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></Button></td>
                           </tr>
                         );
                       })}
@@ -1209,7 +1209,7 @@ export default function PelaporanKegiatanPage() {
                       <tr className="border-b border-slate-100 hover:bg-slate-50/10 transition-colors">
                         <td></td>
                         <td colSpan={1 + vakasiRoles.length} className="px-3 py-2.5">
-                          <Button type="button" size="sm" onClick={() => setVakasiPengujiRows(prev => [...prev, { employeeId: '', employeeName: '', roleQtys: {}, searchText: '', showDropdown: false }])} className="bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer">
+                          <Button type="button" size="sm" onClick={() => setVakasiPengujiRows(prev => [...prev, { employeeId: '', employeeName: '', roleQtys: {}, searchText: '', showDropdown: false }])} className="bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer">
                             <Plus className="w-3.5 h-3.5" /> Tambah Pegawai
                           </Button>
                         </td>
@@ -1230,7 +1230,7 @@ export default function PelaporanKegiatanPage() {
 
         {/* SECTION 3: VAKASI KEPANITIAAN */}
         {kepanitiaaanEnabled && (
-          <div className="border border-slate-150 rounded-2xl overflow-hidden">
+          <div className="border border-slate-150 rounded-md overflow-hidden">
             <button type="button" onClick={() => toggleSection('kepanitiaan')} className="w-full flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-violet-50 to-violet-50/40 hover:from-violet-100/60 transition-all cursor-pointer">
               <div className="flex items-center gap-2.5">
                 <Layers className="w-4 h-4 text-violet-600" />
@@ -1242,18 +1242,18 @@ export default function PelaporanKegiatanPage() {
               <div className="p-4 md:p-5 space-y-4 bg-white">
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Judul Seksi (di PDF)</label>
-                  <Input type="text" placeholder="VAKASI KEPANITIAAN UJIAN PROPOSAL TESIS..." value={kepanitiaaanTitle} onChange={(e) => setKepanitiaaanTitle(e.target.value)} className="rounded-xl border-slate-200 font-bold text-slate-900 text-xs h-10 w-full uppercase" />
+                  <Input type="text" placeholder="VAKASI KEPANITIAAN UJIAN PROPOSAL TESIS..." value={kepanitiaaanTitle} onChange={(e) => setKepanitiaaanTitle(e.target.value)} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-10 w-full uppercase" />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tahap / Fase</span>
-                    <Button type="button" size="sm" onClick={() => setKepanitiaaanPhases(prev => [...prev, { name: '' }])} className="bg-violet-50 hover:bg-violet-100 text-violet-600 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer"><Plus className="w-3.5 h-3.5" /> Tambah Fase</Button>
+                    <Button type="button" size="sm" onClick={() => setKepanitiaaanPhases(prev => [...prev, { name: '' }])} className="bg-violet-50 hover:bg-violet-100 text-violet-600 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer"><Plus className="w-3.5 h-3.5" /> Tambah Fase</Button>
                   </div>
                   <div className="flex flex-wrap gap-3">
                     {kepanitiaaanPhases.map((phase, pIdx) => (
-                      <div key={pIdx} className="flex items-center gap-2 p-2.5 rounded-xl border border-violet-100 bg-violet-50/20">
-                        <Input type="text" placeholder="Nama Fase" value={phase.name} onChange={(e) => { const val = e.target.value; setKepanitiaaanPhases(prev => { const c = [...prev]; c[pIdx] = { ...c[pIdx], name: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-32" />
-                        {kepanitiaaanPhases.length > 1 && <Button type="button" variant="ghost" size="icon" onClick={() => setKepanitiaaanPhases(prev => prev.filter((_, i) => i !== pIdx))} className="h-7 w-7 text-rose-450 hover:text-rose-650 hover:bg-rose-50 rounded-lg cursor-pointer"><X className="w-3.5 h-3.5" /></Button>}
+                      <div key={pIdx} className="flex items-center gap-2 p-2.5 rounded-md border border-violet-100 bg-violet-50/20">
+                        <Input type="text" placeholder="Nama Fase" value={phase.name} onChange={(e) => { const val = e.target.value; setKepanitiaaanPhases(prev => { const c = [...prev]; c[pIdx] = { ...c[pIdx], name: val }; return c; }); }} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-32" />
+                        {kepanitiaaanPhases.length > 1 && <Button type="button" variant="ghost" size="icon" onClick={() => setKepanitiaaanPhases(prev => prev.filter((_, i) => i !== pIdx))} className="h-7 w-7 text-rose-450 hover:text-rose-650 hover:bg-rose-50 rounded-sm cursor-pointer"><X className="w-3.5 h-3.5" /></Button>}
                       </div>
                     ))}
                   </div>
@@ -1261,7 +1261,7 @@ export default function PelaporanKegiatanPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tabel Anggota</span>
                 </div>
-                <div className="border border-slate-150 rounded-2xl shadow-sm overflow-x-auto bg-white">
+                <div className="border border-slate-150 rounded-md shadow-sm overflow-x-auto bg-white">
                   <table className="w-full text-left border-collapse min-w-[700px]">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-100">
@@ -1284,9 +1284,9 @@ export default function PelaporanKegiatanPage() {
                                   onChange={(e) => { const text = e.target.value; setKepanitiaaanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], name: text, searchText: text, showDropdown: true }; return c; }); setActivePelaporanSuggestionIndex(0); }}
                                   onFocus={() => { setKepanitiaaanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], showDropdown: true }; return c; }); setActivePelaporanSuggestionIndex(0); }}
                                   onBlur={() => { setTimeout(() => { setKepanitiaaanRows(prev => { const c = [...prev]; if (c[idx]) c[idx] = { ...c[idx], showDropdown: false }; return c; }); }, 200); }}
-                                  className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full" />
+                                  className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-full" />
                                 {row.showDropdown && (row.searchText || '').length > 0 && (
-                                  <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50">
+                                  <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50">
                                     {(() => {
                                       const filtered = loyalisEmployees.filter(emp => emp.name.toLowerCase().includes((row.searchText || '').toLowerCase()));
                                       if (filtered.length === 0) return null;
@@ -1303,11 +1303,11 @@ export default function PelaporanKegiatanPage() {
                             </td>
                             {kepanitiaaanPhases.map((phase, pIdx) => (
                               <td key={pIdx} className="px-3 py-2 text-center">
-                                <Input type="text" inputMode="numeric" placeholder="0" value={(row.phaseAmounts[phase.name] || 0) > 0 ? fmtRp(row.phaseAmounts[phase.name] || 0) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setKepanitiaaanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], phaseAmounts: { ...c[idx].phaseAmounts, [phase.name]: val } }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-24 text-right mx-auto" />
+                                <Input type="text" inputMode="numeric" placeholder="0" value={(row.phaseAmounts[phase.name] || 0) > 0 ? fmtRp(row.phaseAmounts[phase.name] || 0) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setKepanitiaaanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], phaseAmounts: { ...c[idx].phaseAmounts, [phase.name]: val } }; return c; }); }} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-24 text-right mx-auto" />
                               </td>
                             ))}
                             <td className="px-3 py-2 text-xs font-black text-slate-900 text-right font-mono">{fmtRp(rowTotal)}</td>
-                            <td className="px-3 py-2 text-center"><Button type="button" variant="ghost" size="icon" onClick={() => setKepanitiaaanRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></Button></td>
+                            <td className="px-3 py-2 text-center"><Button type="button" variant="ghost" size="icon" onClick={() => setKepanitiaaanRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></Button></td>
                           </tr>
                         );
                       })}
@@ -1315,7 +1315,7 @@ export default function PelaporanKegiatanPage() {
                       <tr className="border-b border-slate-100 hover:bg-slate-50/10 transition-colors">
                         <td></td>
                         <td colSpan={1 + kepanitiaaanPhases.length} className="px-3 py-2.5">
-                          <Button type="button" size="sm" onClick={() => setKepanitiaaanRows(prev => [...prev, { name: '', phaseAmounts: {}, searchText: '', showDropdown: false }])} className="bg-violet-50 hover:bg-violet-100 text-violet-600 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer">
+                          <Button type="button" size="sm" onClick={() => setKepanitiaaanRows(prev => [...prev, { name: '', phaseAmounts: {}, searchText: '', showDropdown: false }])} className="bg-violet-50 hover:bg-violet-100 text-violet-600 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer">
                             <Plus className="w-3.5 h-3.5" /> Tambah Anggota
                           </Button>
                         </td>
@@ -1336,7 +1336,7 @@ export default function PelaporanKegiatanPage() {
 
         {/* SECTION 4: KWITANSI */}
         {receiptEnabled && (
-          <div className="border border-slate-150 rounded-2xl overflow-hidden">
+          <div className="border border-slate-150 rounded-md overflow-hidden">
             <button type="button" onClick={() => toggleSection('kwitansi')} className="w-full flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-amber-50 to-amber-50/40 hover:from-amber-100/60 transition-all cursor-pointer">
               <div className="flex items-center gap-2.5">
                 <Receipt className="w-4 h-4 text-amber-600" />
@@ -1348,12 +1348,12 @@ export default function PelaporanKegiatanPage() {
               <div className="p-4 md:p-5 space-y-4 bg-white">
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Judul Seksi (di PDF)</label>
-                  <Input type="text" placeholder="KWITANSI PEMBELIAN KONSUMSI..." value={receiptTitle} onChange={(e) => setReceiptTitle(e.target.value)} className="rounded-xl border-slate-200 font-bold text-slate-900 text-xs h-10 w-full uppercase" />
+                  <Input type="text" placeholder="KWITANSI PEMBELIAN KONSUMSI..." value={receiptTitle} onChange={(e) => setReceiptTitle(e.target.value)} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-10 w-full uppercase" />
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Daftar Pembelian</span>
                 </div>
-                <div className="border border-slate-150 rounded-2xl shadow-sm overflow-x-auto bg-white">
+                <div className="border border-slate-150 rounded-md shadow-sm overflow-x-auto bg-white">
                   <table className="w-full text-left border-collapse min-w-[700px]">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-100">
@@ -1369,18 +1369,18 @@ export default function PelaporanKegiatanPage() {
                       {receiptRows.map((row, idx) => (
                         <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
                           <td className="px-3 py-2 text-xs font-bold text-slate-400 text-center">{idx + 1}</td>
-                          <td className="px-3 py-2"><Input type="text" placeholder="Nama barang..." value={row.itemName} onChange={(e) => { const val = e.target.value; setReceiptRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], itemName: val }; return c; }); }} className="rounded-lg border-slate-200 font-medium text-slate-900 text-xs h-8 w-full" /></td>
-                          <td className="px-3 py-2"><Input type="number" min={1} value={row.qty} onChange={(e) => { const val = parseInt(e.target.value) || 1; setReceiptRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], qty: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-center" /></td>
-                          <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.unitPrice > 0 ? fmtRp(row.unitPrice) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setReceiptRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], unitPrice: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
+                          <td className="px-3 py-2"><Input type="text" placeholder="Nama barang..." value={row.itemName} onChange={(e) => { const val = e.target.value; setReceiptRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], itemName: val }; return c; }); }} className="rounded-sm border-slate-200 font-medium text-slate-900 text-xs h-8 w-full" /></td>
+                          <td className="px-3 py-2"><Input type="number" min={1} value={row.qty} onChange={(e) => { const val = parseInt(e.target.value) || 1; setReceiptRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], qty: val }; return c; }); }} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-center" /></td>
+                          <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.unitPrice > 0 ? fmtRp(row.unitPrice) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setReceiptRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], unitPrice: val }; return c; }); }} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
                           <td className="px-3 py-2 text-xs font-black text-slate-900 text-right font-mono">{fmtRp(row.qty * row.unitPrice)}</td>
-                          <td className="px-3 py-2 text-center"><Button type="button" variant="ghost" size="icon" onClick={() => setReceiptRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-450 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></Button></td>
+                          <td className="px-3 py-2 text-center"><Button type="button" variant="ghost" size="icon" onClick={() => setReceiptRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-450 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></Button></td>
                         </tr>
                       ))}
                       {/* Action Row inside Table Body */}
                       <tr className="border-b border-slate-100 hover:bg-slate-50/10 transition-colors">
                         <td></td>
                         <td colSpan={4} className="px-3 py-2.5">
-                          <Button type="button" size="sm" onClick={() => setReceiptRows(prev => [...prev, { itemName: '', qty: 1, unitPrice: 0 }])} className="bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer">
+                          <Button type="button" size="sm" onClick={() => setReceiptRows(prev => [...prev, { itemName: '', qty: 1, unitPrice: 0 }])} className="bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer">
                             <Plus className="w-3.5 h-3.5" /> Tambah Item
                           </Button>
                         </td>
@@ -1412,7 +1412,7 @@ export default function PelaporanKegiatanPage() {
                 });
               };
               return (
-                <div key={sIdx} className="p-4 rounded-2xl border border-slate-150 bg-slate-50/30 space-y-3">
+                <div key={sIdx} className="p-4 rounded-md border border-slate-150 bg-slate-50/30 space-y-3">
                   <span className="text-[10px] font-bold text-indigo-500 uppercase">Posisi {sIdx + 1}</span>
                   <div className="space-y-2">
                     <div className="relative">
@@ -1446,7 +1446,7 @@ export default function PelaporanKegiatanPage() {
                             });
                           }, 200);
                         }}
-                        className={`rounded-lg text-xs h-8 w-full pr-8 font-bold transition-all ${sig.name
+                        className={`rounded-sm text-xs h-8 w-full pr-8 font-bold transition-all ${sig.name
                             ? 'bg-emerald-50/40 border-emerald-300 text-emerald-900 placeholder-emerald-400 focus:ring-emerald-100'
                             : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400 focus:ring-indigo-100'
                           }`}
@@ -1455,7 +1455,7 @@ export default function PelaporanKegiatanPage() {
                         <CheckCircle2 className="w-4 h-4 text-emerald-600 absolute right-2.5 top-2" />
                       )}
                       {sig.showDropdown && (
-                        <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50">
+                        <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50">
                           {(() => {
                             const queryText = (sig.searchText ?? sig.name ?? '').toLowerCase();
                             const filtered = loyalisEmployees.filter(emp =>
@@ -1493,7 +1493,7 @@ export default function PelaporanKegiatanPage() {
                         </div>
                       )}
                     </div>
-                    <Input type="text" placeholder="Jabatan/Titel" value={sig.title} onChange={(e) => updateSig('title', e.target.value)} className="rounded-lg border-slate-200 text-xs h-8 font-medium text-slate-800" />
+                    <Input type="text" placeholder="Jabatan/Titel" value={sig.title} onChange={(e) => updateSig('title', e.target.value)} className="rounded-sm border-slate-200 text-xs h-8 font-medium text-slate-800" />
                   </div>
                 </div>
               );
@@ -1505,7 +1505,7 @@ export default function PelaporanKegiatanPage() {
         <div className="flex flex-wrap justify-between gap-3 pt-6 border-t border-slate-100 mt-auto">
           <div>
             {selectedPelaporanId && (
-              <Button type="button" variant="outline" onClick={() => handleDeletePelaporan(selectedPelaporanId)} className="rounded-xl border-rose-200 text-rose-600 bg-rose-50/50 hover:bg-rose-50 text-xs font-bold flex items-center gap-1.5 h-10 cursor-pointer">
+              <Button type="button" variant="outline" onClick={() => handleDeletePelaporan(selectedPelaporanId)} className="rounded-sm border-rose-200 text-rose-600 bg-rose-50/50 hover:bg-rose-50 text-xs font-bold flex items-center gap-1.5 h-10 cursor-pointer">
                 <Trash2 className="w-4 h-4" /> Hapus Laporan
               </Button>
             )}
@@ -1529,11 +1529,11 @@ export default function PelaporanKegiatanPage() {
                 Gagal menyimpan otomatis
               </span>
             )}
-            <Button type="button" onClick={handleSavePelaporan} disabled={savingPelaporan} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer">
+            <Button type="button" onClick={handleSavePelaporan} disabled={savingPelaporan} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-sm px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer">
               {savingPelaporan ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Simpan Laporan
             </Button>
-            <Button type="button" onClick={handlePrintPelaporan} disabled={!pelaporanReportName.trim() || !pelaporanDept} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer">
+            <Button type="button" onClick={handlePrintPelaporan} disabled={!pelaporanReportName.trim() || !pelaporanDept} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-sm px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer">
               <FileText className="w-4 h-4" /> Cetak PDF
             </Button>
           </div>

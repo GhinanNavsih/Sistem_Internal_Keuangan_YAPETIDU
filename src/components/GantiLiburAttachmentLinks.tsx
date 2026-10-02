@@ -25,7 +25,7 @@ export function GantiLiburAttachmentLinks({
               target="_blank"
               rel="noopener noreferrer"
               title={`${attachment.name} · ${formatAttachmentSize(attachment.size)}`}
-              className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-50"
+              className="inline-flex max-w-full items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-50"
             >
               <Icon className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate">{attachment.name}</span>

@@ -49,7 +49,7 @@ export function CurrencyInput({ value, onValue, ...props }: Omit<React.Component
           setDigits(next);
           onValue(next === '' ? 0 : Number(next));
         }}
-        className="rounded-xl pl-10"
+        className="rounded-sm pl-10"
       />
     </div>
   );

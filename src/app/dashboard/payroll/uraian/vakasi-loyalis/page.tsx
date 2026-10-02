@@ -822,15 +822,15 @@ export default function VakasiLoyalisPage() {
     const currentStatus = status || 'approved';
     switch (currentStatus) {
       case 'draft':
-        return <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-slate-50 text-slate-600 border-slate-200">Draft</span>;
+        return <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm border bg-slate-50 text-slate-600 border-slate-200">Draft</span>;
       case 'pending_review':
-        return <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200 animate-pulse">Menunggu Review</span>;
+        return <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm border bg-amber-50 text-amber-700 border-amber-200 animate-pulse">Menunggu Review</span>;
       case 'approved':
-        return <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">Disetujui</span>;
+        return <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm border bg-emerald-50 text-emerald-700 border-emerald-200">Disetujui</span>;
       case 'revision_needed':
-        return <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-orange-50 text-orange-700 border-orange-200">Perlu Revisi</span>;
+        return <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm border bg-orange-50 text-orange-700 border-orange-200">Perlu Revisi</span>;
       case 'declined':
-        return <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-rose-50 text-rose-700 border-rose-200">Ditolak</span>;
+        return <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm border bg-rose-50 text-rose-700 border-rose-200">Ditolak</span>;
       default:
         return null;
     }
@@ -874,13 +874,13 @@ export default function VakasiLoyalisPage() {
   return (
     <div className="space-y-6">
       {/* Action panel */}
-      <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-[20px] border border-slate-200/60 shadow-sm">
-        <div className="flex bg-slate-50 p-1 rounded-xl w-fit border border-slate-200/40">
+      <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-md border border-slate-200/60 shadow-sm">
+        <div className="flex bg-slate-50 p-1 rounded-md w-fit border border-slate-200/40">
           <Select value={filterDept} onValueChange={(v) => setFilterDept(v || '')}>
-            <SelectTrigger className="w-56 bg-white shadow-sm border-slate-200 rounded-lg font-semibold hover:border-indigo-300 transition-all h-9 text-xs">
+            <SelectTrigger className="w-56 bg-white shadow-sm border-slate-200 rounded-sm font-semibold hover:border-indigo-300 transition-all h-9 text-xs">
               <SelectValue placeholder="Semua Unit Kerja" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="rounded-md">
               <SelectItem value="">Semua Unit Kerja</SelectItem>
               {departments.map(d => (
                 <SelectItem key={d} value={d}>{d}</SelectItem>
@@ -892,7 +892,7 @@ export default function VakasiLoyalisPage() {
           <Button
             onClick={() => setCetakKegiatanDialogOpen(true)}
             variant="outline"
-            className="rounded-xl border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer text-xs h-9"
+            className="rounded-sm border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer text-xs h-9"
           >
             <FileText className="w-4 h-4 text-indigo-600" />
             Laporan Kegiatan Pegawai
@@ -900,7 +900,7 @@ export default function VakasiLoyalisPage() {
           <Button
             onClick={handlePrintLoyalisRecap}
             variant="outline"
-            className="rounded-xl border-slate-200 text-slate-700 bg-slate-50 hover:bg-slate-100 hover:border-slate-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer text-xs h-9"
+            className="rounded-sm border-slate-200 text-slate-700 bg-slate-50 hover:bg-slate-100 hover:border-slate-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer text-xs h-9"
           >
             <FileText className="w-4 h-4 text-indigo-500" />
             Rekap Kegiatan (PDF)
@@ -908,7 +908,7 @@ export default function VakasiLoyalisPage() {
           <Button
             onClick={handleExportLoyalisRecapXlsx}
             variant="outline"
-            className="rounded-xl border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer text-xs h-9"
+            className="rounded-sm border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer text-xs h-9"
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
             Rekap Kegiatan (Excel)
@@ -921,7 +921,7 @@ export default function VakasiLoyalisPage() {
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
         {/* Left side list of existing events */}
         <div className="xl:col-span-4 space-y-6">
-          <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6">
+          <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-bold text-slate-800 text-sm">Daftar Kegiatan Vakasi Pegawai</h3>
               {(!isReadOnly || profile?.role === 'super_admin') && (
@@ -944,7 +944,7 @@ export default function VakasiLoyalisPage() {
                     setAutosaveMessage('');
                   }}
                   size="sm"
-                  className="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl font-bold flex items-center gap-1.5"
+                  className="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-sm font-bold flex items-center gap-1.5"
                 >
                   <Plus className="w-4.5 h-4.5" /> Baru
                 </Button>
@@ -998,14 +998,14 @@ export default function VakasiLoyalisPage() {
                         });
                         setWorkerRows(rows.length > 0 ? rows : [createEmptyWorkerRow()]);
                       }}
-                      className={`p-4 rounded-xl border transition-all duration-200 cursor-pointer ${getCardBgClass(evt.status, isActive)}`}
+                      className={`p-4 rounded-md border transition-all duration-200 cursor-pointer ${getCardBgClass(evt.status, isActive)}`}
                     >
                       <div className="flex justify-between items-start gap-2">
                         <div className="font-bold text-slate-800 text-xs line-clamp-1">{evt.eventName}</div>
                         {getStatusBadge(evt.status)}
                       </div>
                       <div className="flex items-center justify-between mt-3 text-[10px] text-slate-400 font-medium">
-                        <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-600 font-bold uppercase tracking-wider">{evt.departmentUnit || 'UMUM'}</span>
+                        <span className="bg-slate-100 px-2 py-0.5 rounded-sm text-slate-600 font-bold uppercase tracking-wider">{evt.departmentUnit || 'UMUM'}</span>
                         <span>{wCount} Pegawai · {fmtRp(evt.totalPayout || 0)}</span>
                       </div>
                     </div>
@@ -1018,7 +1018,7 @@ export default function VakasiLoyalisPage() {
 
         {/* Right side form */}
         <div className="xl:col-span-8">
-          <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
+          <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
             <div className="flex justify-between items-center pb-4 border-b border-slate-100">
               <div>
                 <h3 className="font-bold text-slate-800 text-sm">
@@ -1043,7 +1043,7 @@ export default function VakasiLoyalisPage() {
             </div>
 
             {currentEventStatus === 'revision_needed' && currentEventReviewNote && (
-              <div className="p-4 bg-orange-50 border border-orange-200 rounded-2xl flex gap-3 text-orange-900 text-xs">
+              <div className="p-4 bg-orange-50 border border-orange-200 rounded-md flex gap-3 text-orange-900 text-xs">
                 <AlertTriangle className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
                 <div>
                   <p className="font-bold text-orange-800 text-sm mb-1">Catatan Revisi dari Admin</p>
@@ -1064,7 +1064,7 @@ export default function VakasiLoyalisPage() {
                     setEventName(e.target.value);
                     triggerAutosave();
                   }}
-                  className="rounded-xl border-slate-200 font-semibold text-slate-800 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-10"
+                  className="rounded-sm border-slate-200 font-semibold text-slate-800 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-10"
                 />
               </div>
 
@@ -1078,10 +1078,10 @@ export default function VakasiLoyalisPage() {
                     triggerAutosave();
                   }}
                 >
-                  <SelectTrigger className="w-full bg-white border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all text-xs h-10">
+                  <SelectTrigger className="w-full bg-white border-slate-200 rounded-sm font-semibold hover:border-indigo-300 transition-all text-xs h-10">
                     <SelectValue placeholder="Pilih Unit Kerja" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="rounded-md">
                     {departments.map(d => (
                       <SelectItem key={d} value={d}>{d}</SelectItem>
                     ))}
@@ -1091,9 +1091,9 @@ export default function VakasiLoyalisPage() {
             </div>
 
             {/* Total Summary Card */}
-            <div className="bg-gradient-to-r from-indigo-50/60 to-purple-50/40 rounded-[20px] border border-indigo-100/40 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="bg-gradient-to-r from-indigo-50/60 to-purple-50/40 rounded-md border border-indigo-100/40 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-500 text-white flex items-center justify-center shadow-md shadow-indigo-100">
+                <div className="w-10 h-10 rounded-sm bg-indigo-500 text-white flex items-center justify-center shadow-md shadow-indigo-100">
                   <Banknote className="w-5 h-5" />
                 </div>
                 <div>
@@ -1107,7 +1107,7 @@ export default function VakasiLoyalisPage() {
               <div className="hidden sm:block h-8 w-px bg-slate-200/80" />
 
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-purple-500 text-white flex items-center justify-center shadow-md shadow-purple-100">
+                <div className="w-10 h-10 rounded-sm bg-purple-500 text-white flex items-center justify-center shadow-md shadow-purple-100">
                   <Users className="w-5 h-5" />
                 </div>
                 <div>
@@ -1123,7 +1123,7 @@ export default function VakasiLoyalisPage() {
             <div className="space-y-4 pt-2">
               <h4 className="font-bold text-slate-700 text-xs uppercase tracking-wider">Daftar Penerima Vakasi</h4>
               {/* Arrow key navigation handler for the table cells */}
-              <div className="border border-slate-100 rounded-[20px] bg-slate-50/50 p-4 space-y-3">
+              <div className="border border-slate-100 rounded-md bg-slate-50/50 p-4 space-y-3">
                 {workerRows.map((row, idx) => (
                   <div key={idx} className="flex flex-col md:flex-row md:items-center gap-3">
                     <div className="flex-1 relative">
@@ -1170,10 +1170,10 @@ export default function VakasiLoyalisPage() {
                           const el = document.getElementById(targetId);
                           if (el) { e.preventDefault(); el.focus(); }
                         }}
-                        className="rounded-xl border-slate-200 font-semibold text-slate-800 text-xs h-9 bg-white"
+                        className="rounded-sm border-slate-200 font-semibold text-slate-800 text-xs h-9 bg-white"
                       />
                       {row.showDropdown && (
-                        <div className="absolute left-0 right-0 top-10 max-h-40 overflow-y-auto bg-white border border-slate-100 rounded-xl shadow-2xl z-50 divide-y divide-slate-50">
+                        <div className="absolute left-0 right-0 top-10 max-h-40 overflow-y-auto bg-white border border-slate-100 rounded-md shadow-2xl z-50 divide-y divide-slate-50">
                           {(() => {
                             const search = (row.searchText || '').toLowerCase();
                             const takenIds = new Set(
@@ -1255,7 +1255,7 @@ export default function VakasiLoyalisPage() {
                           const el = document.getElementById(targetId);
                           if (el) { e.preventDefault(); el.focus(); }
                         }}
-                        className="rounded-xl border-slate-200 font-bold text-slate-800 text-xs h-9 bg-white text-right"
+                        className="rounded-sm border-slate-200 font-bold text-slate-800 text-xs h-9 bg-white text-right"
                       />
                     </div>
                     {(!isReadOnly || profile?.role === 'super_admin') && (
@@ -1269,7 +1269,7 @@ export default function VakasiLoyalisPage() {
                           });
                           triggerAutosave();
                         }}
-                        className="text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl h-9 w-9 shrink-0 flex items-center justify-center p-0"
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50 rounded-sm h-9 w-9 shrink-0 flex items-center justify-center p-0"
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
@@ -1281,7 +1281,7 @@ export default function VakasiLoyalisPage() {
                     type="button"
                     onClick={handleAddRow}
                     variant="outline"
-                    className="w-full rounded-xl border-slate-200 text-slate-500 hover:bg-slate-100 text-xs font-semibold h-9 flex items-center justify-center gap-1.5"
+                    className="w-full rounded-sm border-slate-200 text-slate-500 hover:bg-slate-100 text-xs font-semibold h-9 flex items-center justify-center gap-1.5"
                   >
                     <Plus className="w-4.5 h-4.5 text-indigo-500" /> Tambah Pegawai
                   </Button>
@@ -1291,7 +1291,7 @@ export default function VakasiLoyalisPage() {
 
             {/* Signed report upload section for Satker Loyalis */}
             {profile?.role === 'satker_head_loyalis' && selectedEventId && (
-              <div className="border border-slate-100 rounded-[20px] overflow-hidden bg-slate-50/50 p-4 space-y-3">
+              <div className="border border-slate-100 rounded-md overflow-hidden bg-slate-50/50 p-4 space-y-3">
                 <h4 className="font-bold text-slate-700 text-xs uppercase tracking-wider">Unggah Laporan Bertandatangan</h4>
                 <p className="text-[10px] text-slate-400">Silakan cetak laporan, minta tanda tangan pimpinan, lalu pindai/foto dan unggah file PDF/JPG/PNG ke sini sebelum mengajukan review.</p>
                 <div className="flex flex-col md:flex-row items-center gap-4">
@@ -1301,13 +1301,13 @@ export default function VakasiLoyalisPage() {
                         <Loader2 className="w-4 h-4 animate-spin" /> Mengunggah berkas...
                       </div>
                     ) : reportFileUrl ? (
-                      <div className="flex items-center justify-between bg-white border border-slate-150 p-2.5 rounded-xl">
+                      <div className="flex items-center justify-between bg-white border border-slate-150 p-2.5 rounded-md">
                         <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 truncate max-w-[250px]">
                           <FileText className="w-4 h-4 text-indigo-500 flex-shrink-0" />
                           <span className="truncate">{reportFileName || 'File Unggahan'}</span>
                         </div>
                         <div className="flex gap-1.5">
-                          <Button size="icon" variant="ghost" onClick={() => setLightboxUrl(reportFileUrl)} className="h-7 w-7 rounded-lg text-indigo-600"><Eye className="w-4 h-4" /></Button>
+                          <Button size="icon" variant="ghost" onClick={() => setLightboxUrl(reportFileUrl)} className="h-7 w-7 rounded-sm text-indigo-600"><Eye className="w-4 h-4" /></Button>
                           {!isReadOnly && (
                             <Button
                               size="icon"
@@ -1317,13 +1317,13 @@ export default function VakasiLoyalisPage() {
                                 setReportFileName(null);
                                 triggerAutosave();
                               }}
-                              className="h-7 w-7 rounded-lg text-red-500"
+                              className="h-7 w-7 rounded-sm text-red-500"
                             ><Trash2 className="w-4 h-4" /></Button>
                           )}
                         </div>
                       </div>
                     ) : (
-                      <div className="relative border-2 border-dashed border-slate-200 hover:border-indigo-300 rounded-xl p-6 text-center bg-white cursor-pointer transition-colors" onClick={() => document.getElementById('report-upload-input')?.click()}>
+                      <div className="relative border-2 border-dashed border-slate-200 hover:border-indigo-300 rounded-sm p-6 text-center bg-white cursor-pointer transition-colors" onClick={() => document.getElementById('report-upload-input')?.click()}>
                         <Upload className="w-6 h-6 text-slate-400 mx-auto mb-1" />
                         <span className="text-[11px] font-bold text-slate-500">Pilih Berkas Laporan</span>
                         <input id="report-upload-input" type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => e.target.files?.[0] && handleReportFileChange(e.target.files[0])} />
@@ -1336,21 +1336,21 @@ export default function VakasiLoyalisPage() {
 
             {/* View Uploaded File for Admin / Reviewer */}
             {profile?.role !== 'satker_head_loyalis' && reportFileUrl && (
-              <div className="border border-slate-100 rounded-[20px] overflow-hidden bg-slate-50/50 p-4 space-y-3">
+              <div className="border border-slate-100 rounded-md overflow-hidden bg-slate-50/50 p-4 space-y-3">
                 <h4 className="font-bold text-slate-700 text-xs uppercase tracking-wider">Berkas Laporan Pertanggungjawaban</h4>
-                <div className="flex items-center justify-between bg-white border border-slate-150 p-2.5 rounded-xl max-w-md">
+                <div className="flex items-center justify-between bg-white border border-slate-150 p-2.5 rounded-md max-w-md">
                   <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 truncate">
                     <FileText className="w-4 h-4 text-indigo-500" />
                     <span className="truncate">{reportFileName || 'Lihat berkas pertanggungjawaban...'}</span>
                   </div>
-                  <Button size="icon" variant="ghost" onClick={() => setLightboxUrl(reportFileUrl)} className="h-7 w-7 rounded-lg text-indigo-600"><Eye className="w-4 h-4" /></Button>
+                  <Button size="icon" variant="ghost" onClick={() => setLightboxUrl(reportFileUrl)} className="h-7 w-7 rounded-sm text-indigo-600"><Eye className="w-4 h-4" /></Button>
                 </div>
               </div>
             )}
 
             {/* Submitter Info Card */}
             {selectedEventId && (
-              <div className="text-[10px] text-slate-400 bg-slate-50 p-3.5 rounded-xl space-y-1">
+              <div className="text-[10px] text-slate-400 bg-slate-50 p-3.5 rounded-md space-y-1">
                 {currentEventSubmittedByName && <div><strong>Dibuat oleh:</strong> {currentEventSubmittedByName} ({currentEventSubmittedByEmail || 'No Email'})</div>}
                 {currentEventStatus === 'approved' && <div><strong>Status:</strong> Disetujui (Sinkron ke slip gaji berjalan)</div>}
                 {currentEventStatus === 'revision_needed' && <div><strong>Status:</strong> Perlu Revisi</div>}
@@ -1363,7 +1363,7 @@ export default function VakasiLoyalisPage() {
                 <Button
                   onClick={() => handleDeleteEvent(selectedEventId)}
                   variant="ghost"
-                  className="rounded-xl text-rose-500 hover:text-rose-700 hover:bg-rose-50 font-bold px-5 text-xs h-10 flex items-center gap-1.5"
+                  className="rounded-sm text-rose-500 hover:text-rose-700 hover:bg-rose-50 font-bold px-5 text-xs h-10 flex items-center gap-1.5"
                 >
                   <Trash2 className="w-4 h-4" /> Hapus
                 </Button>
@@ -1374,7 +1374,7 @@ export default function VakasiLoyalisPage() {
                 <Button
                   onClick={handleSubmitForReview}
                   disabled={saving || isReadOnly || !reportFileUrl}
-                  className="rounded-xl px-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-lg shadow-indigo-100 transition-all flex items-center gap-2 h-10 text-xs cursor-pointer"
+                  className="rounded-sm px-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-lg shadow-indigo-100 transition-all flex items-center gap-2 h-10 text-xs cursor-pointer"
                 >
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                   Submit ke Admin
@@ -1386,7 +1386,7 @@ export default function VakasiLoyalisPage() {
                 <Button
                   onClick={handleSaveEvent}
                   disabled={saving}
-                  className="rounded-xl px-6 bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-lg shadow-emerald-100 transition-all flex items-center gap-2 h-10 text-xs cursor-pointer"
+                  className="rounded-sm px-6 bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-lg shadow-emerald-100 transition-all flex items-center gap-2 h-10 text-xs cursor-pointer"
                 >
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
                   Simpan Event
@@ -1399,21 +1399,21 @@ export default function VakasiLoyalisPage() {
                   <Button
                     onClick={() => { setReviewAction('approved'); handleReviewEvent(selectedEventId, 'approved', ''); }}
                     disabled={saving}
-                    className="rounded-xl px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-10 flex items-center gap-1.5 shadow-md"
+                    className="rounded-sm px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-10 flex items-center gap-1.5 shadow-md"
                   >
                     <CheckCircle className="w-4 h-4" /> Setujui
                   </Button>
                   <Button
                     onClick={() => { setReviewAction('revision_needed'); setReviewingEventId(selectedEventId); setReviewNote(''); setShowReviewDialog(true); }}
                     disabled={saving}
-                    className="rounded-xl px-5 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs h-10 flex items-center gap-1.5 shadow-md"
+                    className="rounded-sm px-5 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs h-10 flex items-center gap-1.5 shadow-md"
                   >
                     <RotateCcw className="w-4 h-4" /> Minta Revisi
                   </Button>
                   <Button
                     onClick={() => { setReviewAction('declined'); setReviewingEventId(selectedEventId); setReviewNote(''); setShowReviewDialog(true); }}
                     disabled={saving}
-                    className="rounded-xl px-5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs h-10 flex items-center gap-1.5 shadow-md"
+                    className="rounded-sm px-5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs h-10 flex items-center gap-1.5 shadow-md"
                   >
                     <XCircle className="w-4 h-4" /> Tolak
                   </Button>
@@ -1425,7 +1425,7 @@ export default function VakasiLoyalisPage() {
                 <Button
                   onClick={() => handleUnverifyEvent(selectedEventId)}
                   disabled={saving}
-                  className="rounded-xl px-5 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs h-10 flex items-center gap-1.5 shadow-md cursor-pointer"
+                  className="rounded-sm px-5 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs h-10 flex items-center gap-1.5 shadow-md cursor-pointer"
                 >
                   <RotateCcw className="w-4 h-4" /> Batalkan Persetujuan
                 </Button>
@@ -1448,7 +1448,7 @@ export default function VakasiLoyalisPage() {
 
       {/* Review Dialog */}
       <Dialog open={showReviewDialog} onOpenChange={setShowReviewDialog}>
-        <DialogContent className="sm:max-w-md max-w-full overflow-hidden flex flex-col p-0 border-none bg-white shadow-2xl rounded-3xl animate-in fade-in duration-300">
+        <DialogContent className="sm:max-w-md max-w-full overflow-hidden flex flex-col p-0 border-none bg-white shadow-2xl rounded-md animate-in fade-in duration-300">
           <DialogHeader className="p-6 pb-4 bg-gradient-to-r from-orange-50/80 to-rose-50/60 border-b border-slate-100 shrink-0">
             <DialogTitle className="text-slate-800 flex items-center gap-3 font-bold text-lg">
               {reviewAction === 'revision_needed' ? (
@@ -1470,12 +1470,12 @@ export default function VakasiLoyalisPage() {
                 placeholder="Contoh: Lampiran berkas kurang jelas, mohon upload ulang..."
                 value={reviewNote}
                 onChange={(e) => setReviewNote(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 p-3 font-semibold text-slate-800 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-28 resize-none focus:outline-none"
+                className="w-full rounded-sm border border-slate-200 p-3 font-semibold text-slate-800 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-28 resize-none focus:outline-none"
               />
             </div>
           </div>
-          <div className="p-5 bg-slate-50 border-t border-slate-100 flex justify-end gap-2.5 shrink-0 rounded-b-3xl">
-            <Button variant="ghost" onClick={() => { setShowReviewDialog(false); setReviewNote(''); }} className="rounded-xl text-slate-500 hover:bg-slate-100">Batal</Button>
+          <div className="p-5 bg-slate-50 border-t border-slate-100 flex justify-end gap-2.5 shrink-0 rounded-b-md">
+            <Button variant="ghost" onClick={() => { setShowReviewDialog(false); setReviewNote(''); }} className="rounded-sm text-slate-500 hover:bg-slate-100">Batal</Button>
             <Button
               onClick={() => {
                 if (reviewingEventId) {
@@ -1483,7 +1483,7 @@ export default function VakasiLoyalisPage() {
                 }
               }}
               disabled={saving || !reviewNote.trim()}
-              className={`rounded-xl px-6 text-white font-bold shadow-lg transition-all flex items-center gap-2 cursor-pointer ${reviewAction === 'revision_needed' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-rose-600 hover:bg-rose-700'}`}
+              className={`rounded-sm px-6 text-white font-bold shadow-lg transition-all flex items-center gap-2 cursor-pointer ${reviewAction === 'revision_needed' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-rose-600 hover:bg-rose-700'}`}
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
               Konfirmasi
@@ -1506,7 +1506,7 @@ export default function VakasiLoyalisPage() {
             onClick={() => setLightboxUrl(null)}
           >
             <div
-              className="relative max-w-5xl w-full h-[88vh] flex flex-col bg-slate-900/95 p-4 rounded-3xl border border-white/10 shadow-2xl overflow-hidden"
+              className="relative max-w-5xl w-full h-[88vh] flex flex-col bg-slate-900/95 p-4 rounded-md border border-white/10 shadow-2xl overflow-hidden"
               onClick={e => e.stopPropagation()}
             >
               {/* Header Bar */}
@@ -1522,7 +1522,7 @@ export default function VakasiLoyalisPage() {
                     href={lightboxUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all shadow-md"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all shadow-md"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                     <span className="hidden sm:inline">Buka di Tab Baru</span>
@@ -1533,7 +1533,7 @@ export default function VakasiLoyalisPage() {
                     variant="ghost"
                     size="icon"
                     onClick={() => setLightboxUrl(null)}
-                    className="text-slate-400 hover:text-white hover:bg-white/10 rounded-full h-8 w-8 transition-colors"
+                    className="text-slate-400 hover:text-white hover:bg-white/10 rounded-sm h-8 w-8 transition-colors"
                   >
                     <X className="w-5 h-5" />
                   </Button>
@@ -1541,18 +1541,18 @@ export default function VakasiLoyalisPage() {
               </div>
 
               {/* Content Area */}
-              <div className="w-full flex-1 flex items-center justify-center overflow-hidden rounded-2xl bg-slate-950/60 relative">
+              <div className="w-full flex-1 flex items-center justify-center overflow-hidden rounded-md bg-slate-950/60 relative">
                 {isPdf ? (
                   <iframe
                     src={lightboxUrl}
-                    className="w-full h-full rounded-2xl border-none bg-white"
+                    className="w-full h-full rounded-sm border-none bg-white"
                     title={reportFileName || 'File LPJ PDF'}
                   />
                 ) : (
                   <img
                     src={lightboxUrl}
                     alt={reportFileName || 'File LPJ'}
-                    className="max-w-full max-h-full rounded-2xl object-contain shadow-2xl"
+                    className="max-w-full max-h-full rounded-sm object-contain shadow-2xl"
                   />
                 )}
               </div>
