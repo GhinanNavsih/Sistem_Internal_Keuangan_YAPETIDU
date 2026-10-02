@@ -1346,6 +1346,18 @@ export default function PresensiLoyalisRawPage() {
     [holdScroll],
   );
 
+  // Picking a stratum changes how many rows the list has, sometimes down to a
+  // handful. Holding the toolbar keeps the toggle the reviewer just pressed
+  // where it is instead of the page jumping to wherever the new list ends.
+  const strataToolbarRef = useRef<HTMLDivElement>(null);
+  const changeStrataFilter = useCallback(
+    (next: typeof strataFilter) => {
+      holdScroll(strataToolbarRef.current);
+      setStrataFilter(next);
+    },
+    [holdScroll],
+  );
+
   const handleLinkEmployee = useCallback((excelName: string, employeeId: string) => {
     const emp = loyalisEmployees.find(e => e.id === employeeId);
     setUploadedData(prev => {
@@ -2622,7 +2634,7 @@ export default function PresensiLoyalisRawPage() {
                     </p>
                   </div>
                 )}
-                <div className="flex flex-wrap justify-between items-center gap-4 bg-slate-50/70 p-3 rounded-md border border-slate-200/70">
+                <div ref={strataToolbarRef} className="flex flex-wrap justify-between items-center gap-4 bg-slate-50/70 p-3 rounded-md border border-slate-200/70">
                   <div className="flex flex-col gap-1.5">
                     <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                       {uploadedData ? 'Preview Hasil Perhitungan Presensi (Raw Daily Logs)' : 'Data Perhitungan Presensi Tersimpan'}
@@ -2647,7 +2659,7 @@ export default function PresensiLoyalisRawPage() {
                             <button
                               key={val}
                               type="button"
-                              onClick={() => setStrataFilter(val)}
+                              onClick={() => changeStrataFilter(val)}
                               className={`px-2.5 py-1 rounded-sm transition-all cursor-pointer text-[11px] flex items-center gap-1.5 ${
                                 isActive
                                   ? 'bg-indigo-600 text-white shadow-xs font-extrabold'
@@ -2692,7 +2704,7 @@ export default function PresensiLoyalisRawPage() {
                       </p>
                       <button
                         type="button"
-                        onClick={() => setStrataFilter('all')}
+                        onClick={() => changeStrataFilter('all')}
                         className="text-xs text-indigo-600 font-bold hover:underline cursor-pointer"
                       >
                         Tampilkan Semua Strata
@@ -2709,7 +2721,11 @@ export default function PresensiLoyalisRawPage() {
                           } ${activeSearchRowKey === row.key ? 'overflow-visible z-30 relative' : 'overflow-hidden'}`}
                       >
                         <div
-                          onClick={() => setExpandedRowKey(isExpanded ? null : row.key)}
+                          onClick={(event) => {
+                            // Opening one card closes another, often above this one.
+                            holdScroll(event.currentTarget);
+                            setExpandedRowKey(isExpanded ? null : row.key);
+                          }}
                           className="p-4 flex flex-wrap lg:flex-nowrap items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/20 transition-colors"
                         >
                           {/* Left: Index & Name */}
