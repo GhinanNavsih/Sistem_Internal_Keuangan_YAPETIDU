@@ -3167,11 +3167,9 @@ export default function PekaryaAttendancePage() {
                                       ? 'Izin Resmi'
                                       : day.corrected
                                       ? 'Dikoreksi'
-                                      : day.completePunch
-                                        ? 'Lengkap'
-                                        : day.present
-                                          ? 'Scan satu sisi'
-                                          : 'Tidak hadir'}
+                                      : day.present
+                                        ? day.completePunch ? 'Lengkap' : 'Scan satu sisi'
+                                        : 'Tidak hadir'}
                                   </span>
                                 </td>
                                 {canEdit && (

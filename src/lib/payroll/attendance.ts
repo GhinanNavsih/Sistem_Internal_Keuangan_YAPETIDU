@@ -240,6 +240,32 @@ function normalizedHeaderMap(row: Record<string, unknown>): Map<string, unknown>
   );
 }
 
+function importedAttendancePresent(
+  workStatus: string,
+  scanIn: string | null,
+  scanOut: string | null,
+): boolean {
+  // Some scanner exports leave Jam kerja blank even on worked days. A valid
+  // punch is attendance evidence unless the source explicitly marks absence.
+  return workStatus.trim().toUpperCase() !== 'TIDAK HADIR' && Boolean(scanIn || scanOut);
+}
+
+function attendancePresenceIssues(
+  workStatus: string,
+  scanIn: string | null,
+  scanOut: string | null,
+): AttendanceIssueCode[] {
+  const issues: AttendanceIssueCode[] = [];
+  const hasScan = Boolean(scanIn || scanOut);
+  const absent = workStatus.trim().toUpperCase() === 'TIDAK HADIR';
+  if (workStatus && !absent && !hasScan) issues.push('MASUK_WITHOUT_SCAN');
+  if (absent && hasScan) issues.push('SCAN_WITHOUT_MASUK');
+  if (importedAttendancePresent(workStatus, scanIn, scanOut) && Boolean(scanIn) !== Boolean(scanOut)) {
+    issues.push('INCOMPLETE_PUNCH');
+  }
+  return issues;
+}
+
 export function normalizeAttendanceWorkbookRow(
   row: Record<string, unknown>,
   rowNumber: number,
@@ -276,15 +302,7 @@ export function normalizeAttendanceWorkbookRow(
   }
 
   const workStatus = String(fields.get('JAM KERJA') ?? '').trim().toUpperCase();
-  // The status column carries a role label ("STAFF", "CS", "SATPAM") for a day
-  // worked and "TIDAK HADIR" for an absence, so presence is the absence of an
-  // explicit absence rather than a literal "MASUK".
-  const isPresentStatus = Boolean(workStatus) && workStatus !== 'TIDAK HADIR';
-  if (isPresentStatus && !scanIn && !scanOut) issues.push('MASUK_WITHOUT_SCAN');
-  if (!isPresentStatus && (scanIn || scanOut)) issues.push('SCAN_WITHOUT_MASUK');
-  if (isPresentStatus && Boolean(scanIn) !== Boolean(scanOut)) {
-    issues.push('INCOMPLETE_PUNCH');
-  }
+  issues.push(...attendancePresenceIssues(workStatus, scanIn, scanOut));
 
   return {
     rowNumber,
@@ -293,7 +311,7 @@ export function normalizeAttendanceWorkbookRow(
     sourcePin,
     sourceNipy,
     name: String(fields.get('NAMA') ?? '').trim(),
-    department: String(fields.get('DEPARTEMEN') ?? '').trim(),
+    department: String(fields.get('DEPARTEMEN') ?? fields.get('DEPERTEMEN') ?? '').trim(),
     date,
     workStatus,
     scanIn,
@@ -356,7 +374,7 @@ export function consolidateAttendanceDays(
       const correction = corrections.get(key);
       const chosen =
         dayRows.find(
-          (row) => row.workStatus === 'MASUK' && Boolean(row.scanIn || row.scanOut),
+          (row) => importedAttendancePresent(row.workStatus, row.scanIn, row.scanOut),
         ) || dayRows[0];
       const baseScanIn =
         dayRows.map((row) => row.scanIn).filter((value): value is string => Boolean(value)).sort()[0] ||
@@ -370,18 +388,20 @@ export function consolidateAttendanceDays(
       const scanIn = correction && 'scanIn' in correction ? correction.scanIn || null : baseScanIn;
       const scanOut =
         correction && 'scanOut' in correction ? correction.scanOut || null : baseScanOut;
-      // The scanner writes a role label in the status column — "STAFF", "CS",
-      // "SATPAM" — and reserves "TIDAK HADIR" for a real absence. Anything that
-      // is not an explicit absence, and that carries a scan, is a day on site.
       const present =
         correction && typeof correction.present === 'boolean'
           ? correction.present
-          : Boolean(workStatus) &&
-            workStatus !== 'TIDAK HADIR' &&
-            Boolean(scanIn || scanOut);
+          : importedAttendancePresent(workStatus, scanIn, scanOut);
       const issues = Array.from(
         new Set<AttendanceIssueCode>([
-          ...dayRows.flatMap((row) => row.issues),
+          // Reclassify old persisted imports too, without rewriting their raw
+          // evidence or requiring another upload under the corrected rule.
+          ...dayRows.flatMap((row) => [
+            ...row.issues.filter((issue) => ![
+              'MASUK_WITHOUT_SCAN', 'SCAN_WITHOUT_MASUK', 'INCOMPLETE_PUNCH',
+            ].includes(issue)),
+            ...attendancePresenceIssues(row.workStatus, row.scanIn, row.scanOut),
+          ]),
           ...(dayRows.length > 1 ? ['DUPLICATE_EMPLOYEE_DAY' as const] : []),
           ...(present && Boolean(scanIn) !== Boolean(scanOut)
             ? ['INCOMPLETE_PUNCH' as const]

@@ -230,6 +230,64 @@ test('a role label in the status column counts as a day on site', () => {
   assert.equal(consolidateAttendanceDays([absent])[0].present, false);
 });
 
+test('September scanner rows with blank Jam kerja still pay from valid scans', () => {
+  const rows = [
+    { Tanggal: '2026-09-01', 'Scan masuk': '06:10:31', 'Scan pulang': '16:01:32' },
+    { Tanggal: '2026-09-02', 'Scan masuk': '06:58:10', 'Scan pulang': '14:01:52' },
+    { Tanggal: '2026-09-03', 'Scan masuk': '06:04:44', 'Scan pulang': null },
+    { Tanggal: '2026-09-04', 'Scan masuk': '07:30:00', 'Scan pulang': '14:00:00' },
+    { Tanggal: '2026-09-05', 'Scan masuk': null, 'Scan pulang': null },
+  ].map((row, index) => normalizeAttendanceWorkbookRow({
+    ...row, NIPY: '14011000002', Nama: 'abdul khanan', Depertemen: 'DRIVER', 'Jam kerja': '',
+  }, index + 2, '2026-09'));
+  assert.equal(rows.every((row) => row.department === 'DRIVER'), true);
+  assert.equal(rows.some((row) => row.issues.includes('SCAN_WITHOUT_MASUK')), false);
+  const summary = summarizePekaryaAttendance('14011000002', consolidateAttendanceDays(rows), new Set());
+  assert.deepEqual(summary.days.map((day) => day.amount), [12_500, 12_500, 4_808, 25_001, 0]);
+  assert.equal(summary.payableDays, 4);
+  assert.equal(summary.incompletePunchCount, 1);
+  assert.equal(summary.days[2].scanOutAuto, true);
+  assert.equal(summary.days[4].present, false);
+});
+
+test('previously persisted blank-status rows are reclassified without modifying source evidence', () => {
+  const raw = normalizeAttendanceWorkbookRow({
+    NIPY: 'P1', Tanggal: '2026-09-03', 'Jam kerja': '', 'Scan masuk': '06:04:44',
+  }, 2, '2026-09');
+  raw.issues = ['SCAN_WITHOUT_MASUK'];
+  const before = structuredClone(raw);
+  const [day] = consolidateAttendanceDays([raw]);
+  assert.equal(day.present, true);
+  assert.equal(day.completePunch, false);
+  assert.deepEqual(day.issues, ['INCOMPLETE_PUNCH']);
+  assert.equal(summarizePekaryaAttendance('P1', [day], new Set()).totalAmount, 4_808);
+  assert.deepEqual(raw, before);
+});
+
+test('blank-status presence cannot override an explicit absence or reviewer denial', () => {
+  const scanned = normalizeAttendanceWorkbookRow({
+    NIPY: 'P1', Tanggal: '2026-09-01', 'Jam kerja': '',
+    'Scan masuk': '07:30:00', 'Scan pulang': '14:00:00',
+  }, 2, '2026-09');
+  const absent = { ...scanned, workStatus: 'TIDAK HADIR' };
+  assert.equal(consolidateAttendanceDays([absent])[0].present, false);
+  const denied = consolidateAttendanceDays([scanned], new Map([
+    [attendanceDayKey('P1', scanned.date), { present: false }],
+  ]));
+  assert.equal(summarizePekaryaAttendance('P1', denied, new Set()).totalAmount, 0);
+});
+
+test('duplicate rows prefer scanned blank-status evidence over an unscanned absence', () => {
+  const absence = normalizeAttendanceWorkbookRow({
+    NIPY: 'P1', Tanggal: '2026-09-01', 'Jam kerja': 'TIDAK HADIR',
+  }, 2, '2026-09');
+  const scanned = { ...absence, rowNumber: 3, workStatus: '', scanIn: '07:30:00', scanOut: '14:00:00' };
+  const days = consolidateAttendanceDays([absence, scanned]);
+  assert.equal(days.length, 1);
+  assert.equal(days[0].present, true);
+  assert.equal(summarizePekaryaAttendance('P1', days, new Set()).totalAmount, 12_500);
+});
+
 test('duplicate employee-days produce at most one payment', () => {
   const rows = [
     normalizeAttendanceWorkbookRow(
