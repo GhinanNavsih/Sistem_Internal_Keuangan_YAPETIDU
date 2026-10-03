@@ -23,7 +23,7 @@ import {
 import {
   Upload, Loader2, FileText, AlertCircle, ImageIcon, Trash2, Eye,
   RotateCw, Sparkles, X, Crop, Building2, Code2, ShieldCheck, FileDown, Plus, Save,
-  Lock, Unlock
+  Unlock
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
@@ -164,7 +164,6 @@ export default function RekapPekaryaPage() {
   const [saving, setSaving] = useState(false);
   const isSavingRef = useRef(false);
   const [saved, setSaved] = useState(false);
-  const [isLocked, setIsLocked] = useState(false);
   const [historicalSpjCorrectionMode, setHistoricalSpjCorrectionMode] = useState(false);
   const [historicalSpjCorrectionSaving, setHistoricalSpjCorrectionSaving] = useState(false);
   const [satpamDutyPlanRequired, setSatpamDutyPlanRequired] = useState(false);
@@ -789,9 +788,6 @@ export default function RekapPekaryaPage() {
           );
           setCustomColumns(loadedCustomCols);
 
-          const lockState = docData.isLocked === true || docData.status === 'locked' || (docData.isLocked !== false && docData.status !== 'draft');
-          setIsLocked(lockState);
-
           Object.values(docData.entries || {}).forEach((entry: any) => {
             const effectiveEntry =
               category === 'SATPAM'
@@ -821,7 +817,6 @@ export default function RekapPekaryaPage() {
         } else {
           setCustomColumns([]);
           setSaved(false);
-          setIsLocked(false);
         }
         const uploadedRevisionId = String(
           uploadedAttendance?.importRevisionId || '',
@@ -1021,7 +1016,6 @@ export default function RekapPekaryaPage() {
       historicalSpjEditEnabled &&
       key === 'spj' &&
       allowsHistoricalPaperSpjEntry(category, period, employeeId);
-    if (isLocked && !isHistoricalSpjCell) return;
     if (category === 'SOPIR' && key === 'piket') return;
     if (
       satpamDutyPlanRequired &&
@@ -1157,8 +1151,6 @@ export default function RekapPekaryaPage() {
       jobCategory: category,
       entries,
       customColumns: sanitizedCustomCols,
-      isLocked: true,
-      status: 'locked',
       ...(canEditSatpamMonthlyBonus
         ? {
             satpamMonthlyBonusManualOverride: true,
@@ -1234,15 +1226,13 @@ export default function RekapPekaryaPage() {
           {
             ...payload,
             entries: mergedEntries,
-            isLocked: true,
-            status: 'locked',
             updatedAt: serverTimestamp(),
           },
           { merge: true },
         );
       });
       const catLabel = category.replace('_', ' ').toUpperCase();
-      // Employees cannot read UraianGaji, so the locked figures have to be
+      // Employees cannot read UraianGaji, so the saved figures have to be
       // pushed onto their draft slips or the payslip keeps showing Rp 0.
       const propagationNote = await propagateUraianToSlips({
         scope: 'pekarya',
@@ -1251,10 +1241,9 @@ export default function RekapPekaryaPage() {
       });
       setMessage({
         type: 'success',
-        text: `Data rekapitulasi presensi ${catLabel} berhasil disimpan dan dikunci.${propagationNote}`,
+        text: `Data rekapitulasi presensi ${catLabel} berhasil disimpan.${propagationNote}`,
       });
       setSaved(true);
-      setIsLocked(true);
       // Edits are committed, so a later cache-driven reload may reseed freely.
       hasUnsavedEdits.current = false;
     } catch (err) {
@@ -1627,7 +1616,7 @@ export default function RekapPekaryaPage() {
         <Button
           variant="outline"
           onClick={() => setIsCustomColDialogOpen(true)}
-          disabled={isLocked || !category || employees.length === 0}
+          disabled={!category || employees.length === 0}
           className="rounded-sm border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 flex items-center gap-2 font-semibold transition-all shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Plus className="w-4 h-4 text-indigo-500" />
@@ -1635,13 +1624,13 @@ export default function RekapPekaryaPage() {
         </Button>
         <Button
           onClick={handleSave}
-          disabled={saving || isLocked || !category || employees.length === 0 || attendanceMoneyLoadFailed}
+          disabled={saving || !category || employees.length === 0 || attendanceMoneyLoadFailed}
           className="rounded-sm px-6 bg-indigo-600 shadow-lg shadow-indigo-200 text-white font-bold transition-all hover:bg-indigo-700 hover:shadow-indigo-300 flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
           Simpan rekap
         </Button>
-        {canCorrectHistoricalSpj ? (
+        {canCorrectHistoricalSpj && (
           <>
             <Button
               onClick={() => setHistoricalSpjCorrectionMode((previous) => !previous)}
@@ -1663,25 +1652,6 @@ export default function RekapPekaryaPage() {
               </Button>
             )}
           </>
-        ) : isLocked ? (
-          <Button
-            onClick={() => setIsLocked(false)}
-            variant="outline"
-            className="rounded-sm border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 hover:border-amber-400 font-bold transition-all flex items-center gap-2 shadow-sm cursor-pointer"
-          >
-            <Unlock className="w-4 h-4 text-amber-600" />
-            Buka Kunci
-          </Button>
-        ) : (
-          <Button
-            onClick={() => setIsLocked(true)}
-            disabled={!category || employees.length === 0}
-            variant="outline"
-            className="rounded-sm border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 font-semibold transition-all flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Lock className="w-4 h-4 text-slate-500" />
-            Kunci
-          </Button>
         )}
         {saved && (
           <Button
@@ -1720,7 +1690,7 @@ export default function RekapPekaryaPage() {
         <Button
           variant="outline"
           onClick={() => setShowScanPanel(!showScanPanel)}
-          disabled={isLocked || !category || employees.length === 0}
+          disabled={!category || employees.length === 0}
           className="rounded-sm border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer ml-auto disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Sparkles className="w-4 h-4 text-indigo-600" />
@@ -1794,12 +1764,6 @@ export default function RekapPekaryaPage() {
           <div className="p-5 flex items-center justify-between border-b border-slate-100 bg-white/50 backdrop-blur-sm z-10">
             <div className="flex items-center gap-3">
               <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2"><ImageIcon className="w-4 h-4 text-indigo-500" /> Preview Uraian Gaji — {MONTHS_ID[month - 1]} {year}</h2>
-              {isLocked && (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-sm text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200/80 shadow-2xs">
-                  <Lock className="w-3 h-3 text-amber-600" />
-                  Terkunci
-                </span>
-              )}
             </div>
             {category && <span className="text-xs text-slate-400 font-medium bg-slate-50 px-2 py-1 rounded-sm border border-slate-100">{employees.length} Karyawan</span>}
           </div>
@@ -1818,7 +1782,7 @@ export default function RekapPekaryaPage() {
             <div className="p-20 flex-1 flex flex-col items-center justify-center text-slate-400"><Loader2 className="w-8 h-8 animate-spin mb-3 text-indigo-400" /><p className="font-medium animate-pulse">Memuat data...</p></div>
           ) : (
             <>
-            {manualSpjEnabled && !isLocked && (
+            {manualSpjEnabled && (
               <div className="mx-5 mt-4 p-3 bg-indigo-50/70 border border-indigo-100 rounded-md text-indigo-900 text-xs flex gap-2 font-medium">
                 <AlertCircle className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
                 <span>
@@ -1827,7 +1791,7 @@ export default function RekapPekaryaPage() {
                 </span>
               </div>
             )}
-            {canEditSatpamMonthlyBonus && !isLocked && (
+            {canEditSatpamMonthlyBonus && (
               <div className="mx-5 mt-4 p-3 bg-amber-50/80 border border-amber-200 rounded-md text-amber-950 text-xs flex gap-2 font-medium">
                 <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <span>
@@ -1854,7 +1818,7 @@ export default function RekapPekaryaPage() {
                           <div className="flex flex-col items-center justify-center gap-0.5 relative group/header">
                             <div className="flex items-center justify-center gap-1">
                               <span className="text-slate-950">{col.label}</span>
-                              {isCustom && !isLocked && (
+                              {isCustom && (
                                 <button
                                   onClick={() => handleRemoveCustomColumn(col.key)}
                                   className="text-slate-400 hover:text-red-500 rounded-sm hover:bg-slate-100 p-0.5 transition-colors opacity-0 group-hover/header:opacity-100 cursor-pointer flex-shrink-0"
@@ -1998,7 +1962,6 @@ export default function RekapPekaryaPage() {
                                 value={displayedCellValue}
                                 onChange={(e) => updateCell(emp.employeeId, col.key, e.target.value)}
                                 disabled={
-                                  (isLocked && !canEditThisHistoricalSpj) ||
                                   (isSpj && !manualSpjEnabled && !canEditThisHistoricalSpj) ||
                                   isAttendanceDerived ||
                                   isDutyPlanDerived ||
@@ -2017,18 +1980,14 @@ export default function RekapPekaryaPage() {
                                       : 'Nilai sementara (pratinjau) — akan diganti otomatis begitu presensi bulanan diimpor.'
                                     : isSopirPiket
                                       ? 'Piket dihitung otomatis dari jadwal Piket Sopir dan selalu diperbarui setiap kali rekap disimpan.'
-                                      : isLocked && !canEditThisHistoricalSpj
-                                        ? 'Tabel rekap sedang dikunci. Klik "Buka Kunci" jika ingin mengubah data.'
-                                        : isSpj
-                                          ? (manualSpjEnabled || canEditThisHistoricalSpj)
-                                            ? 'Periode Juli 2026 (26 Jun–31 Jul) masih berbasis kertas. Isi akumulasi SPJ secara manual; kosongkan untuk memakai nilai kegiatan.'
-                                            : 'SPJ dihitung otomatis dari kegiatan yang disetujui.'
-                                          : undefined
+                                      : isSpj
+                                        ? (manualSpjEnabled || canEditThisHistoricalSpj)
+                                          ? 'Periode Juli 2026 (26 Jun–31 Jul) masih berbasis kertas. Isi akumulasi SPJ secara manual; kosongkan untuk memakai nilai kegiatan.'
+                                          : 'SPJ dihitung otomatis dari kegiatan yang disetujui.'
+                                        : undefined
                                 }
-                                className={`h-10 text-center font-extrabold transition-all ${isLocked
-                                  ? 'bg-slate-50/60 border-slate-200/80 text-slate-900 disabled:opacity-100 cursor-default shadow-2xs'
-                                  : isAttendanceDerived || isDutyPlanDerived || isSopirPiket
-                                    ? 'bg-indigo-50 border-indigo-200 text-indigo-800 disabled:opacity-100 cursor-not-allowed'
+                                className={`h-10 text-center font-extrabold transition-all ${isAttendanceDerived || isDutyPlanDerived || isSopirPiket
+                                  ? 'bg-indigo-50 border-indigo-200 text-indigo-800 disabled:opacity-100 cursor-not-allowed'
                                   : isManualSatpamBonus || (isSpj && canEditThisHistoricalSpj) || isSatpamShift || (isTunjanganJabatan && ketuaShiftIds.has(emp.employeeId))
                                     ? 'bg-indigo-50/30 border-indigo-200 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'
                                     : hasScanData
@@ -2225,10 +2184,6 @@ export default function RekapPekaryaPage() {
             <DialogTitle className="text-slate-800 flex items-center gap-3 font-bold text-lg">Konfirmasi & Simpan Rekap</DialogTitle>
           </DialogHeader>
           <div className="p-6 max-h-[50vh] overflow-y-auto space-y-4">
-            <div className="p-3 bg-indigo-50/70 border border-indigo-100 rounded-md text-indigo-900 text-xs flex items-center gap-2 font-medium">
-              <Lock className="w-4 h-4 text-indigo-600 shrink-0" />
-              <span>Setelah Anda mengonfirmasi <strong>Simpan rekap</strong>, tabel presensi akan otomatis dikunci untuk mencegah perubahan yang tidak disengaja.</span>
-            </div>
             <p className="text-xs text-slate-500">Anda akan menyimpan data rekapitulasi presensi berikut ke database. Harap periksa rincian sebelum konfirmasi:</p>
             {spjDiscrepancies.length > 0 && (
               <div className="p-4 bg-amber-50 border border-amber-200 rounded-md flex gap-3 text-amber-900 text-xs">

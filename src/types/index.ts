@@ -149,8 +149,6 @@ export interface UraianGajiDocument {
   satpamMonthlyBonusManualOverride?: boolean;
   satpamMonthlyBonusManualOverrideBy?: string;
   satpamMonthlyBonusManualOverrideAt?: unknown;
-  isLocked?: boolean;
-  status?: 'draft' | 'locked';
   createdAt?: any;
   updatedAt?: any;
 }
