@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { adminDb } from '@/lib/firebase-admin';
+import admin, { adminDb } from '@/lib/firebase-admin';
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import {
   AttendanceDayCorrection,
@@ -11,6 +11,13 @@ import {
   resolveEmployeeAttendanceNipy,
 } from '@/lib/payroll/attendance';
 import { periodCalendarFromData } from '@/lib/payroll/calendar';
+import {
+  applyDriverJourneyCredits,
+  DRIVER_JOURNEY_ATTENDANCE_START_PERIOD,
+  driverJourneyDayCredits,
+  shiftPeriodToken,
+  type DriverJourneyInterval,
+} from '@/lib/payroll/driverJourneyAttendance';
 import { MANUAL_OVERRIDES, normalizeName } from '@/lib/payroll/employeeNames';
 
 export const ATTENDANCE_IMPORTS_COLLECTION = 'AttendanceImports';
@@ -322,6 +329,104 @@ export async function loadAttendanceManualLinks(
   return bySourceKey;
 }
 
+/**
+ * The approved SOPIR journeys that can reach `period`. A trip is filed under
+ * the period it starts in or ends in, so the neighbouring periods are read too.
+ * Only the timeline fields are fetched: reports also carry receipts and
+ * route data that attendance never needs.
+ */
+export async function loadApprovedDriverJourneys(
+  period: string,
+): Promise<DriverJourneyInterval[]> {
+  const snapshots = await Promise.all(
+    [-1, 0, 1].map((delta) =>
+      adminDb
+        .collection('ActivityReports')
+        .where('period', '==', shiftPeriodToken(period, delta))
+        .where('jobCategory', '==', 'SOPIR')
+        .where('status', '==', 'approved')
+        .select(
+          'employeeId',
+          'journeyId',
+          'activityDate',
+          'dateStart',
+          'dateEnd',
+          'timeStart',
+          'timeEnd',
+          'isMultiDay',
+        )
+        .get(),
+    ),
+  );
+  return snapshots.flatMap((snapshot) =>
+    snapshot.docs.flatMap((document): DriverJourneyInterval[] => {
+      const data = document.data();
+      const journeyId = String(data.journeyId || '');
+      const dateStart = String(data.dateStart || data.activityDate || '');
+      if (!journeyId || !dateStart || !data.timeStart || !data.timeEnd) return [];
+      return [
+        {
+          employeeId: String(data.employeeId || ''),
+          journeyId,
+          dateStart,
+          dateEnd: data.dateEnd ? String(data.dateEnd) : undefined,
+          timeStart: String(data.timeStart),
+          timeEnd: String(data.timeEnd),
+          isMultiDay: data.isMultiDay === true,
+        },
+      ];
+    }),
+  );
+}
+
+/**
+ * A journey's approval or re-audit changes which driver days count, so the
+ * SOPIR attendance already published for the months it touches no longer
+ * matches what the page now shows. Flag those publications "perlu
+ * dipublikasikan ulang", the same state a manual link leaves behind. Closed
+ * months and months before the rule's start are never touched. Callers treat
+ * this as best effort: the review it follows has already been saved.
+ */
+export async function markDriverAttendancePublicationsStale(
+  ranges: ReadonlyArray<{ dateStart: string; dateEnd: string }>,
+): Promise<string[]> {
+  const periods = new Set<string>();
+  for (const range of ranges) {
+    const first = range.dateStart.slice(0, 7);
+    const last = (range.dateEnd || range.dateStart).slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(first) || !/^\d{4}-\d{2}$/.test(last)) continue;
+    let guard = 0;
+    for (let period = first; period <= last && guard < 24; guard += 1) {
+      periods.add(period);
+      period = shiftPeriodToken(period, 1);
+    }
+  }
+  const marked: string[] = [];
+  for (const period of periods) {
+    if (period < DRIVER_JOURNEY_ATTENDANCE_START_PERIOD) continue;
+    const [periodSnapshot, publicationSnapshot] = await Promise.all([
+      adminDb.collection('PayrollPeriods').doc(period).get(),
+      adminDb
+        .collection(PEKARYA_PUBLICATIONS_COLLECTION)
+        .doc(pekaryaPublicationId(period, 'SOPIR'))
+        .get(),
+    ]);
+    if (periodSnapshot.data()?.attendanceStatus === 'closed') continue;
+    const publication = publicationSnapshot.data();
+    if (!publication || publication.state !== 'published' || publication.stale === true) {
+      continue;
+    }
+    await publicationSnapshot.ref.update({
+      state: 'stale',
+      stale: true,
+      staleReason: 'driver_journey_reviewed',
+      staleAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    marked.push(period);
+  }
+  return marked;
+}
+
 export async function loadEffectiveAttendanceDays(
   period: string,
   options: {
@@ -333,15 +438,25 @@ export async function loadEffectiveAttendanceDays(
     identities?: AttendanceIdentityIndex;
   } = {},
 ) {
-  const [{ rows, importData, revisionData }, correctionsSnapshot, manualLinks] =
-    await Promise.all([
-      loadActiveAttendanceRows(period, options),
-      adminDb
-        .collection(PEKARYA_CORRECTION_HEADS_COLLECTION)
-        .where('period', '==', period)
-        .get(),
-      loadAttendanceManualLinks(period),
-    ]);
+  // A driver's approved journeys count as time on duty, but only from the
+  // period the rule starts in, and only for the Pekarya pipeline (the one that
+  // passes the identity index to map a driver to his attendance).
+  const wantsDriverJourneys =
+    Boolean(options.identities) && period >= DRIVER_JOURNEY_ATTENDANCE_START_PERIOD;
+  const [
+    { rows, importData, revisionData },
+    correctionsSnapshot,
+    manualLinks,
+    driverJourneys,
+  ] = await Promise.all([
+    loadActiveAttendanceRows(period, options),
+    adminDb
+      .collection(PEKARYA_CORRECTION_HEADS_COLLECTION)
+      .where('period', '==', period)
+      .get(),
+    loadAttendanceManualLinks(period),
+    wantsDriverJourneys ? loadApprovedDriverJourneys(period) : Promise.resolve([]),
+  ]);
   const corrections = new Map<string, AttendanceDayCorrection>();
   const correctionRevisions = new Map<string, number>();
   for (const snapshot of correctionsSnapshot.docs) {
@@ -399,8 +514,7 @@ export async function loadEffectiveAttendanceDays(
             ),
           };
         });
-  return {
-    days: consolidateAttendanceDays(
+  const consolidatedDays = consolidateAttendanceDays(
       linkedRows.filter(
         (row) =>
           row.nipy &&
@@ -416,7 +530,28 @@ export async function loadEffectiveAttendanceDays(
           ),
       ),
       corrections,
-    ),
+    );
+  // There is nothing for a journey to complement until a monthly file is active.
+  const days =
+    wantsDriverJourneys && importData.activeRevisionId && driverJourneys.length > 0
+      ? applyDriverJourneyCredits({
+          days: consolidatedDays,
+          credits: driverJourneyDayCredits(driverJourneys, period),
+          joinNipyByEmployeeId: new Map(
+            (identities?.identities || [])
+              .filter(
+                (identity) =>
+                  identity.employeeCollection === 'Employees_BlueCollar' &&
+                  identity.jobCategory === 'SOPIR',
+              )
+              .map((identity) => [identity.employeeId, attendanceJoinNipy(identity)]),
+          ),
+          // A date someone decided by hand keeps that decision.
+          correctedKeys: new Set(corrections.keys()),
+        })
+      : consolidatedDays;
+  return {
+    days,
     rows: linkedRows,
     importData,
     revisionData,

@@ -45,6 +45,7 @@ import {
   satpamFoundItemFeeNeedsAdjustmentReason,
 } from '@/lib/payroll/pekaryaSpj';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
+import { markDriverAttendancePublicationsStale } from '@/lib/server/attendanceStore';
 import {
   errorResponse,
   HttpError,
@@ -291,7 +292,11 @@ export async function POST(request: NextRequest) {
     const command = parseCommand(await request.json());
     const requestHash = createHash('sha256').update(JSON.stringify(command)).digest('hex');
 
+    // Date ranges of the driver journeys this request approved or re-audited,
+    // gathered inside the transaction (which may run more than once).
+    const reviewedDriverRanges: Array<{ dateStart: string; dateEnd: string }> = [];
     const result = await adminDb.runTransaction(async (transaction) => {
+      reviewedDriverRanges.length = 0;
       const idempotencyRef = adminDb
         .collection('FinancialIdempotencyKeys')
         .doc(`${actor.uid}__${command.requestId}`);
@@ -865,6 +870,19 @@ export async function POST(request: NextRequest) {
         }
 
         after = { ...after, payrollPeriod: reportPeriods[index] };
+        if (command.action === 'approve_driver' && category === 'SOPIR') {
+          // Before and after: a re-audit may move the trip to other dates.
+          reviewedDriverRanges.push(
+            {
+              dateStart: String(before.dateStart || before.activityDate || ''),
+              dateEnd: String(before.dateEnd || before.dateStart || before.activityDate || ''),
+            },
+            {
+              dateStart: String(after.dateStart || ''),
+              dateEnd: String(after.dateEnd || after.dateStart || ''),
+            },
+          );
+        }
         if (
           command.action !== 'decline' &&
           !materializedPeriods.has(reportPeriods[index])
@@ -1046,6 +1064,16 @@ export async function POST(request: NextRequest) {
       });
       return { reviewed: command.items.length, idempotent: false };
     });
+
+    if (reviewedDriverRanges.length > 0) {
+      try {
+        await markDriverAttendancePublicationsStale(reviewedDriverRanges);
+      } catch (cause) {
+        // The review is saved; a missed flag only means the page does not
+        // prompt a re-publish, which the admin can still do by hand.
+        console.error('Could not flag driver attendance as stale', cause);
+      }
+    }
 
     return Response.json(result);
   } catch (error) {

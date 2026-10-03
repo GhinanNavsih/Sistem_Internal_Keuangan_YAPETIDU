@@ -113,6 +113,8 @@ type AttendanceDay = {
   issues: string[];
   payType: 'Harian' | 'Jumat & Libur' | null;
   amount: number;
+  /** Which sides of the day an approved driver journey supplied. */
+  journeyCredit?: { scanIn: boolean; scanOut: boolean; journeyIds: string[] };
 };
 
 type EmployeeAttendance = {
@@ -280,15 +282,32 @@ function workedDuration(day: AttendanceDay) {
  * input is read-only rather than disabled: a disabled input drops keyboard
  * focus, so tabbing from one scan cell to the next would lose its place.
  */
+const JOURNEY_TAG_TITLE =
+  'Dihitung dari perjalanan dinas yang disetujui, karena sisi ini tidak ter-scan.';
+
+function JourneyTag() {
+  return (
+    <span
+      className="inline-flex shrink-0 select-none items-center rounded-sm border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-indigo-700 cursor-help"
+      title={JOURNEY_TAG_TITLE}
+    >
+      Perjalanan
+    </span>
+  );
+}
+
 function ScanCell({
   value,
   auto,
+  journey,
   editable,
   disabled,
   onCommit,
 }: {
   value: string | null;
   auto: boolean;
+  /** This side came from an approved driver journey, not from a scan. */
+  journey?: boolean;
   editable?: boolean;
   disabled?: boolean;
   onCommit?: (value: string) => void;
@@ -319,10 +338,19 @@ function ScanCell({
             Auto
           </span>
         )}
+        {journey && <JourneyTag />}
       </span>
     );
   }
   if (!value) return <span>—</span>;
+  if (journey) {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <span className="font-mono text-indigo-700 font-semibold">{value}</span>
+        <JourneyTag />
+      </span>
+    );
+  }
   if (!auto) return <span>{value}</span>;
   return (
     <span className="inline-flex items-center gap-1">
@@ -2806,6 +2834,7 @@ export default function PekaryaAttendancePage() {
                                   <ScanCell
                                     value={day.scanIn}
                                     auto={day.scanInAuto}
+                                    journey={day.journeyCredit?.scanIn}
                                     editable={canEditScans}
                                     disabled={working}
                                     onCommit={(value) =>
@@ -2817,6 +2846,7 @@ export default function PekaryaAttendancePage() {
                                   <ScanCell
                                     value={day.scanOut}
                                     auto={day.scanOutAuto}
+                                    journey={day.journeyCredit?.scanOut}
                                     editable={canEditScans}
                                     disabled={working}
                                     onCommit={(value) =>
@@ -2857,6 +2887,11 @@ export default function PekaryaAttendancePage() {
                                         ? day.completePunch ? 'Lengkap' : 'Scan satu sisi'
                                         : 'Tidak hadir'}
                                   </span>
+                                  {day.journeyCredit && (
+                                    <span className="mt-1 block text-xs font-semibold text-indigo-700">
+                                      Perjalanan dinas
+                                    </span>
+                                  )}
                                 </td>
                                 {canEdit && (
                                   <td className="p-3">

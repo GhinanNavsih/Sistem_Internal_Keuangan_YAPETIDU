@@ -80,6 +80,12 @@ export interface EffectiveAttendanceDay {
   corrected: boolean;
   sourceRows: number[];
   issues: AttendanceIssueCode[];
+  /**
+   * Set when approved driver journeys supplied part of this day (see
+   * driverJourneyAttendance.ts): which sides came from the trip, and which
+   * journeys. Absent for every day the scans or a correction decided alone.
+   */
+  journeyCredit?: { scanIn: boolean; scanOut: boolean; journeyIds: string[] };
 }
 
 export interface PekaryaAttendanceSummary {
