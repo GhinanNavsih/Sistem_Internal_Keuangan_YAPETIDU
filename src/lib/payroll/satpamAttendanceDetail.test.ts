@@ -285,3 +285,73 @@ test('an extra shift is judged against its own shift start', () => {
   });
   assert.equal(result.days[0].status, 'late');
 });
+
+test('a reported duty opens its own shift report, on that guard', () => {
+  const result = build({
+    planDays: [{ dutyDate: '2026-09-02', shiftName: 'Pagi', occurrenceId: 'team_3__20260902__pagi' }],
+    reports: [
+      report({ dutyDate: '2026-09-02', sourceOccurrenceId: 'team_3__20260902__pagi' }),
+    ],
+  });
+  assert.deepEqual(result.days[0].review, {
+    occurrenceId: 'team_3__20260902__pagi',
+    employeeId: 'BC_024',
+  });
+});
+
+test('a duty with no report still opens its shift report once one was submitted', () => {
+  const result = build({
+    planDays: [
+      { dutyDate: '2026-09-10', shiftName: 'Malam', occurrenceId: 'team_3__20260910__malam' },
+      { dutyDate: '2026-10-20', shiftName: 'Pagi', occurrenceId: null },
+    ],
+    absences: [leave({ dutyDate: '2026-09-10' })],
+  });
+  assert.equal(result.days[0].status, 'leave');
+  assert.equal(result.days[0].review?.occurrenceId, 'team_3__20260910__malam');
+  // Nothing was submitted for the future duty, so there is nothing to check.
+  assert.equal(result.days[1].status, 'upcoming');
+  assert.equal(result.days[1].review, null);
+});
+
+test('a handed-over duty opens the shift report on the guard who covered it', () => {
+  const result = build({
+    planDays: [{ dutyDate: '2026-09-27', shiftName: 'Malam', occurrenceId: 'team_3__20260927__malam' }],
+    coverReports: [
+      report({
+        id: 'cover-1',
+        employeeId: 'BC_021',
+        dutyDate: '2026-09-27',
+        shiftType: 'Lembur Cover',
+        coveredEmployeeId: 'BC_024',
+        sourceOccurrenceId: 'team_3__20260927__malam',
+      }),
+    ],
+  });
+  assert.equal(result.days[0].status, 'covered');
+  assert.deepEqual(result.days[0].review, {
+    occurrenceId: 'team_3__20260927__malam',
+    employeeId: 'BC_021',
+  });
+});
+
+test('an extra shift opens its own report; bare attendance has nothing to check', () => {
+  const result = build({
+    reports: [
+      report({
+        id: 'extra-1',
+        dutyDate: '2026-09-01',
+        shiftType: 'Lembur Sendiri',
+        sourceOccurrenceId: 'team_3__20260901__pagi',
+      }),
+    ],
+    scanDays: new Map([
+      ['2026-09-01', { scanIn: '07:41:54', scanOut: '14:00:24' }],
+      ['2026-09-09', { scanIn: '08:00:00', scanOut: '14:00:00' }],
+    ]),
+  });
+  const byDate = Object.fromEntries(result.days.map((row) => [row.date, row]));
+  assert.equal(byDate['2026-09-01'].review?.occurrenceId, 'team_3__20260901__pagi');
+  assert.equal(byDate['2026-09-09'].status, 'scan_only');
+  assert.equal(byDate['2026-09-09'].review, null);
+});

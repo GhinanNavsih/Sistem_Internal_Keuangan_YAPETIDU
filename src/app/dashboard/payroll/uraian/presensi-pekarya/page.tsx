@@ -3110,6 +3110,15 @@ export default function PekaryaAttendancePage() {
                     }
                     canEdit={canEdit}
                     working={working}
+                    reviewHref={(day) =>
+                      day.review
+                        ? satpamShiftMismatchReviewHref(
+                            period,
+                            day.review.occurrenceId,
+                            day.review.employeeId,
+                          )
+                        : null
+                    }
                     canReviewAbsence={(absenceId) =>
                       Boolean(findPendingRequest(absenceId))
                     }

@@ -28,7 +28,7 @@ import {
   SATPAM_DUTY_PLANS_COLLECTION,
 } from '@/lib/server/satpamDutyPlan';
 import { satpamAttendanceReportType } from '@/lib/payroll/satpamAttendance';
-import { isImmutablePayrollStatus } from '@/lib/payroll/domain';
+import { isImmutablePayrollStatus, shiftOccurrenceId } from '@/lib/payroll/domain';
 import {
   isPayableSatpamOfficialLeave,
   isSatpamShiftPayReport,
@@ -481,7 +481,8 @@ export async function buildSatpamAttendanceDetails(
   const { identityIndex } = shared;
   const { days } = shared.effective;
   const { premiumDates, periodData } = shared.premium;
-  const [planSnapshot, reportSnapshot, absenceSnapshot] = await Promise.all([
+  const [planSnapshot, reportSnapshot, absenceSnapshot, occurrenceSnapshot] =
+    await Promise.all([
     adminDb
       .collection(SATPAM_DUTY_PLANS_COLLECTION)
       .where('period', '==', period)
@@ -511,7 +512,16 @@ export async function buildSatpamAttendanceDetails(
       .collection(SATPAM_ABSENCE_REQUESTS_COLLECTION)
       .where('period', '==', period)
       .get(),
+    // Only which shift reports exist matters here, so no fields are read.
+    adminDb
+      .collection('ShiftOccurrences')
+      .where('payrollPeriod', '==', period)
+      .select()
+      .get(),
   ]);
+  const submittedOccurrenceIds = new Set(
+    occurrenceSnapshot.docs.map((document) => document.id),
+  );
   const guards = identityIndex.identities.filter(
     (identity) =>
       identity.employeeCollection === 'Employees_BlueCollar' &&
@@ -524,6 +534,7 @@ export async function buildSatpamAttendanceDetails(
   const planDaysByEmployee = new Map<string, SatpamDetailPlanDay[]>();
   for (const plan of planSnapshot.docs) {
     const generatedDays = plan.data().generatedDays;
+    const teamId = String(plan.data().teamId || '');
     if (!Array.isArray(generatedDays)) continue;
     for (const day of generatedDays) {
       const assignments: Array<{ employeeId?: unknown }> = Array.isArray(day?.assignments)
@@ -533,9 +544,20 @@ export async function buildSatpamAttendanceDetails(
         const employeeId = String(assignment.employeeId || '');
         if (!employeeId) continue;
         const list = planDaysByEmployee.get(employeeId) || [];
+        const dutyDate = String(day.dutyDate || '');
+        const shiftName = String(day.shiftName || '');
+        const occurrenceId =
+          teamId && /^\d{4}-\d{2}-\d{2}$/.test(dutyDate) &&
+          (shiftName === 'Pagi' || shiftName === 'Sore' || shiftName === 'Malam')
+            ? shiftOccurrenceId(teamId, dutyDate, shiftName)
+            : null;
         list.push({
-          dutyDate: String(day.dutyDate || ''),
-          shiftName: String(day.shiftName || ''),
+          dutyDate,
+          shiftName,
+          occurrenceId:
+            occurrenceId && submittedOccurrenceIds.has(occurrenceId)
+              ? occurrenceId
+              : null,
         });
         planDaysByEmployee.set(employeeId, list);
       }
@@ -560,6 +582,7 @@ export async function buildSatpamAttendanceDetails(
       status: String(data.status || 'approved'),
       fee: Number(data.fee || 0),
       coveredEmployeeId,
+      sourceOccurrenceId: String(data.sourceOccurrenceId || '') || null,
     };
     reportsByEmployee.set(employeeId, [
       ...(reportsByEmployee.get(employeeId) || []),

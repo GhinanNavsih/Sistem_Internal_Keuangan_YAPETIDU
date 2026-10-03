@@ -44,6 +44,12 @@ export interface SatpamAttendanceDetailRow {
   coveredByName: string | null;
   /** A leave or scan request on this date still waiting for a decision. */
   pendingAbsenceId: string | null;
+  /**
+   * The shift report to open when checking this row: the report's shift (an
+   * occurrence) and the guard whose card to highlight there. Null when no
+   * report for this duty exists yet, so there is nothing to check.
+   */
+  review: { occurrenceId: string; employeeId: string } | null;
 }
 
 export interface SatpamAttendanceDetailEmployee {
@@ -67,6 +73,8 @@ export interface SatpamAttendanceDetailEmployee {
 export interface SatpamDetailPlanDay {
   dutyDate: string;
   shiftName: string;
+  /** The duty's shift report occurrence, only when one has been submitted. */
+  occurrenceId?: string | null;
 }
 
 export interface SatpamDetailReport {
@@ -78,6 +86,7 @@ export interface SatpamDetailReport {
   status: string;
   fee: number;
   coveredEmployeeId: string | null;
+  sourceOccurrenceId?: string | null;
 }
 
 export interface SatpamDetailAbsence {
@@ -191,6 +200,10 @@ export function buildSatpamAttendanceDetail(
   input: BuildSatpamAttendanceDetailInput,
 ): SatpamAttendanceDetailEmployee {
   const { employee, premiumDates, scanDays, now } = input;
+  const occurrenceReview = (occurrenceId: string | null | undefined, guardId: string) =>
+    occurrenceId ? { occurrenceId, employeeId: guardId } : null;
+  const ownReview = (occurrenceId: string | null | undefined) =>
+    occurrenceReview(occurrenceId, employee.employeeId);
   const planByDate = new Map(input.planDays.map((day) => [day.dutyDate, day]));
   const regularReportsByDate = new Map<string, SatpamDetailReport[]>();
   const extraReports: SatpamDetailReport[] = [];
@@ -254,6 +267,7 @@ export function buildSatpamAttendanceDetail(
       scanOut: scan?.scanOut ?? null,
       coveredByName: null as string | null,
       pendingAbsenceId: pendingAbsenceByDate.get(date) ?? null,
+      review: ownReview(report?.sourceOccurrenceId || plan?.occurrenceId),
     };
     // Nothing scheduled, reported or approved: a bare scan is still shown so a
     // reviewer can see attendance that no report accounts for.
@@ -299,6 +313,13 @@ export function buildSatpamAttendanceDetail(
         coveredByName: cover
           ? input.employeeNames.get(cover.employeeId) || cover.employeeId
           : null,
+        // A handed-over duty is checked on the guard who covered it.
+        review: cover
+          ? occurrenceReview(
+              cover.sourceOccurrenceId || plan?.occurrenceId,
+              cover.employeeId,
+            )
+          : base.review,
       });
     }
   }
@@ -330,6 +351,7 @@ export function buildSatpamAttendanceDetail(
           : 'pending',
       coveredByName: null,
       pendingAbsenceId: null,
+      review: ownReview(report.sourceOccurrenceId),
     });
   }
 

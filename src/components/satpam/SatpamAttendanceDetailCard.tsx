@@ -1,6 +1,7 @@
 'use client';
 
-import { AlertTriangle, Check, ChevronDown, ChevronUp, X } from 'lucide-react';
+import Link from 'next/link';
+import { AlertTriangle, Check, ChevronDown, ChevronUp, ExternalLink, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type {
   SatpamAttendanceDetailEmployee,
@@ -53,6 +54,7 @@ export function SatpamAttendanceDetailCard({
   onToggle,
   canEdit,
   working,
+  reviewHref,
   canReviewAbsence,
   onApproveAbsence,
   onDeclineAbsence,
@@ -63,6 +65,8 @@ export function SatpamAttendanceDetailCard({
   onToggle: () => void;
   canEdit: boolean;
   working: boolean;
+  /** Where to check the shift report behind a row, or null when none exists yet. */
+  reviewHref: (row: SatpamAttendanceDetailRow) => string | null;
   /** Whether the pending request behind a row can be decided from this screen. */
   canReviewAbsence: (absenceId: string) => boolean;
   onApproveAbsence: (absenceId: string) => void;
@@ -223,6 +227,7 @@ export function SatpamAttendanceDetailCard({
                   const reviewable = Boolean(
                     row.pendingAbsenceId && canReviewAbsence(row.pendingAbsenceId),
                   );
+                  const checkHref = reviewHref(row);
                   return (
                     <tr key={row.key} className="border-b border-slate-100">
                       <td className="p-3 font-semibold">{row.date}</td>
@@ -257,32 +262,45 @@ export function SatpamAttendanceDetailCard({
                       </td>
                       {canEdit && (
                         <td className="p-3">
-                          {reviewable ? (
-                            <div className="flex gap-2">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                disabled={working}
-                                className="rounded-sm min-h-12 gap-1.5 border-rose-200 text-rose-600 hover:bg-rose-50"
-                                onClick={() =>
-                                  onDeclineAbsence(
-                                    row.pendingAbsenceId as string,
-                                    employee.name,
-                                  )
-                                }
-                              >
-                                <X className="h-3.5 w-3.5" /> Tolak
-                              </Button>
-                              <Button
-                                type="button"
-                                disabled={working}
-                                className="rounded-sm min-h-12 gap-1.5 bg-indigo-600 hover:bg-indigo-700"
-                                onClick={() =>
-                                  onApproveAbsence(row.pendingAbsenceId as string)
-                                }
-                              >
-                                <Check className="h-3.5 w-3.5" /> Setujui
-                              </Button>
+                          {checkHref || reviewable ? (
+                            <div className="flex flex-wrap gap-2">
+                              {checkHref && (
+                                <Button
+                                  variant="outline"
+                                  className="rounded-sm min-h-12 gap-1.5 border-amber-300 text-amber-800 hover:bg-amber-50"
+                                  render={<Link href={checkHref} />}
+                                >
+                                  <ExternalLink className="h-3.5 w-3.5" /> Periksa
+                                </Button>
+                              )}
+                              {reviewable && (
+                                <>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    disabled={working}
+                                    className="rounded-sm min-h-12 gap-1.5 border-rose-200 text-rose-600 hover:bg-rose-50"
+                                    onClick={() =>
+                                      onDeclineAbsence(
+                                        row.pendingAbsenceId as string,
+                                        employee.name,
+                                      )
+                                    }
+                                  >
+                                    <X className="h-3.5 w-3.5" /> Tolak
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    disabled={working}
+                                    className="rounded-sm min-h-12 gap-1.5 bg-indigo-600 hover:bg-indigo-700"
+                                    onClick={() =>
+                                      onApproveAbsence(row.pendingAbsenceId as string)
+                                    }
+                                  >
+                                    <Check className="h-3.5 w-3.5" /> Setujui
+                                  </Button>
+                                </>
+                              )}
                             </div>
                           ) : (
                             <span className="text-slate-400">—</span>
