@@ -1178,9 +1178,6 @@ export default function UserManagementPage() {
                 <UserCog className="w-5 h-5 text-indigo-400" />
                 Impersonasi & Akses Pengguna ("View-As")
               </h3>
-              <p className="text-slate-300 text-xs md:text-sm leading-relaxed">
-                Super Admin dapat mensimulasikan tampilan aplikasi (UI/UX) atau melakukan switch sesi penuh ke akun pegawai manapun (seperti <em>Miftakhul Arif</em> - Honorer, <em>Teguh Priyo Utomo</em> - Karyawan Loyalis, atau <em>Hj. Suspa Hariati</em> - Loyalis Admin) tanpa perlu mengisi password.
-              </p>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3 bg-white/10 p-3.5 rounded-md backdrop-blur-md border border-white/10 shrink-0 text-xs">
