@@ -1,3 +1,4 @@
+import { isActiveSatpamShiftRegistration } from '@/lib/payroll/satpamDutyPlan';
 import { createHash } from 'node:crypto';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
@@ -481,15 +482,16 @@ export async function buildSatpamAttendanceMismatches(
     const dutyDate = String(report.dutyDate || report.activityDate || '');
     const shiftName = String(report.reportedShiftName || report.shiftName || '');
     if (approvedAbsenceKeys.has(`${String(report.employeeId || '')}__${dutyDate}`)) {
-      mismatches.push({
+      if (isActiveSatpamShiftRegistration(report)) mismatches.push({
         code: 'APPROVED_ABSENCE_WORK_CONFLICT',
         employeeId: String(report.employeeId || '') || null,
         employeeName: String(report.employeeName || ''),
         nipy: employee?.nipy || '',
         dutyDate,
         reportId: snapshot.id,
-        message: 'Pegawai tercatat bekerja sekaligus memiliki izin dibayar yang disetujui.',
+        message: 'Izin disetujui menjadi dasar pembayaran. Perbaiki laporan shift yang masih mencantumkan pegawai ini.',
       });
+      continue;
     }
     if (!employee?.nipy || (byNipy.get(employee.nipy)?.length || 0) !== 1) {
       mismatches.push({
@@ -567,9 +569,9 @@ export async function buildSatpamAttendanceMismatches(
     importRevision: Number(importData.activeRevision || 0),
     importRevisionId: String(importData.activeRevisionId || ''),
     calendarRevision: calendar.revision,
-    paymentSource: 'Ketua Shift',
+    paymentSource: 'Laporan shift / izin disetujui',
     // Linking a SECURITY row changes no pay — Satpam wages come from the Ketua
-    // Shift reports — but it removes the row from the comparison's blind spot,
+    // Shift reports or approved scheduled leave — but it removes the row from the comparison's blind spot,
     // so the mismatches below describe real discrepancies rather than
     // unidentified scans.
     departmentUnmatched: collectDepartmentUnmatched(rows, byNipy),

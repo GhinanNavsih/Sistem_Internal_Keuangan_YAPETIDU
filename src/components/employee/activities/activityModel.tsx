@@ -182,6 +182,7 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
     fixedPost9EmployeeId: string | null;
     day: SatpamDutyPlanDay | null;
     generatedDays: SatpamDutyPlanDay[];
+    approvedLeaveEmployeeIds: string[];
   } | null>(null);
   const [satpamSuggestedShiftName, setSatpamSuggestedShiftName] = useState<'Pagi' | 'Sore' | 'Malam'>('Pagi');
   const [satpamReportedShiftName, setSatpamReportedShiftName] = useState<'Pagi' | 'Sore' | 'Malam'>('Pagi');
@@ -620,6 +621,7 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
             fixedPost9EmployeeId: string | null;
             day: SatpamDutyPlanDay | null;
             generatedDays: SatpamDutyPlanDay[];
+            approvedLeaveEmployeeIds: string[];
           };
         }>(`/api/satpam/config?dutyDate=${encodeURIComponent(requestedDate)}`, {
           method: 'GET',
@@ -1756,6 +1758,7 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
       satpamRegularPayType,
     );
     satpamDutyPlan.day.assignments.forEach((assignment) => {
+      if (satpamDutyPlan.approvedLeaveEmployeeIds?.includes(assignment.employeeId)) return;
       // Both the Ketua's own post and the designated Pos 9 guard follow the
       // same Friday/holiday calendar rate as an ordinary post by default
       // (resolveKetuaSatpamPayType / resolveDesignatedPos9PayType) — an

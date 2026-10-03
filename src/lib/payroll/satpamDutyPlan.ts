@@ -263,21 +263,6 @@ export function isActiveSatpamShiftRegistration(
   return !TERMINAL_SATPAM_SHIFT_REGISTRATION_STATUSES.has(status);
 }
 
-/**
- * A leave request is not payable as Harian when the guard is already
- * registered for a Ketua Shift duty on the same date. Persisted exclusions
- * keep that approval non-payable even if the shift record changes later.
- */
-export function shouldExcludeSatpamLeaveFromHarian(input: {
-  payrollExcludedFromHarian?: unknown;
-  hasShiftRegistration?: boolean;
-}): boolean {
-  return (
-    input.payrollExcludedFromHarian === true ||
-    input.hasShiftRegistration === true
-  );
-}
-
 export function satpamHarianCountWithApprovedAbsences(
   workedHarianCount: number,
   approvedAbsenceCount: number,

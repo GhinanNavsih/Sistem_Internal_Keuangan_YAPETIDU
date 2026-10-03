@@ -18,7 +18,6 @@ import {
   satpamHarianCountWithApprovedAbsences,
   satpamDutyKey,
   satpamMonthlyScheduledShiftTarget,
-  shouldExcludeSatpamLeaveFromHarian,
   SATPAM_DUTY_PLAN_ROTATION_VERSION,
   SATPAM_FIXED_POST_ID,
   SATPAM_KETUA_POST_ID,
@@ -749,25 +748,6 @@ test('only payable approved Satpam leave is added to the Harian count used by pa
   assert.equal(satpamHarianCountWithApprovedAbsences(8, 1), 9);
   assert.equal(satpamHarianCountWithApprovedAbsences(0, 2), 2);
   assert.equal(satpamHarianCountWithApprovedAbsences(-1, Number.NaN), 0);
-});
-
-test('an approved leave overlapping a Ketua Shift registration is excluded from Harian', () => {
-  assert.equal(
-    shouldExcludeSatpamLeaveFromHarian({ hasShiftRegistration: true }),
-    true,
-  );
-  assert.equal(
-    shouldExcludeSatpamLeaveFromHarian({
-      payrollExcludedFromHarian: true,
-      hasShiftRegistration: false,
-    }),
-    true,
-  );
-  assert.equal(
-    shouldExcludeSatpamLeaveFromHarian({ hasShiftRegistration: false }),
-    false,
-  );
-  assert.equal(satpamHarianCountWithApprovedAbsences(8, 0), 8);
 });
 
 test('same-date Ketua Shift registrations are active conflict sources', () => {

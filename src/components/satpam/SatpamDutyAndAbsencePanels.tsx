@@ -1980,12 +1980,11 @@ export function SatpamAbsencePanel(props: {
                         request.hasShiftRegistrationConflict && (
                           <p className="mt-2 flex items-start gap-1.5 text-xs font-semibold text-amber-800">
                             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                            {request.status === 'approved' &&
-                            request.payrollExcludedFromHarian
-                              ? request.payrollExclusionReason === 'NO_SCHEDULED_DUTY'
-                                ? 'Izin disetujui tanpa tambahan Harian karena belum ada regu atau jadwal dinas.'
-                                : 'Izin disetujui tanpa tambahan Harian karena Anda sudah terdaftar pada shift ini.'
-                              : 'Anda sudah terdaftar pada shift ini. Jika izin disetujui, pengajuan tidak menambah hitungan Harian.'}
+                            {request.scheduleRelation === 'unassigned' || !request.teamId
+                              ? 'Izin tanpa regu atau jadwal dinas tidak menambah pembayaran shift.'
+                              : request.status === 'approved'
+                              ? 'Izin disetujui menjadi dasar pembayaran. Laporan shift yang masih mencantumkan Anda perlu diperbaiki.'
+                              : 'Jika izin disetujui, pembayaran mengikuti izin dan dihitung satu kali meskipun ada laporan shift.'}
                           </p>
                         )}
                       <p className="mt-1 text-xs text-slate-500">
@@ -1996,9 +1995,7 @@ export function SatpamAbsencePanel(props: {
                         request.status === 'approved'
                           ? request.payrollExclusionReason === 'NO_SCHEDULED_DUTY'
                             ? ' · Tanpa tambahan Harian (tanpa regu/jadwal)'
-                            : request.payrollExcludedFromHarian
-                            ? ' · Tanpa tambahan Harian'
-                            : ' · Dibayar Rp12.500'
+                            : ` · Dibayar Rp${Number(request.approvedAmount || 0).toLocaleString('id-ID')}`
                           : ''}
                       </p>
                     </div>

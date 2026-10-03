@@ -41,6 +41,7 @@ import {
   satpamDutyPlanId,
   type SatpamDutyPlanDay,
 } from '@/lib/payroll/satpamDutyPlan';
+import { satpamAttendanceReportType } from '@/lib/payroll/satpamAttendance';
 import { SATPAM_DUTY_PLANS_COLLECTION } from '@/lib/server/satpamDutyPlan';
 import {
   errorResponse,
@@ -765,6 +766,7 @@ async function mutateShift(
       idempotencySnapshot,
       dutyPlanSnapshot,
       pos9PlanSnapshots,
+      approvedLeaveSnapshots,
       ...employeeSnapshots
     ] = await Promise.all([
       transaction.get(occurrenceRef),
@@ -773,6 +775,9 @@ async function mutateShift(
       transaction.get(idempotencyRef),
       transaction.get(dutyPlanRef),
       transaction.get(pos9PlansQuery),
+      Promise.all([...new Set([...command.assignments.map((item) => item.employeeId), ...(command.extraAssignment ? [command.extraAssignment.employeeId] : [])])].map((id) =>
+        transaction.get(adminDb.collection('SatpamAbsenceRequests').doc(`${id}__${command.dutyDate.replaceAll('-', '')}`)),
+      )),
       ...employeeRefs.map((ref) => transaction.get(ref)),
     ]);
 
@@ -797,6 +802,12 @@ async function mutateShift(
         409,
         'Tanggal ini berada di periode payroll yang sudah ditutup permanen.',
       );
+    }
+    const approvedLeave = approvedLeaveSnapshots.find((snapshot) =>
+      snapshot.data()?.status === 'approved' && satpamAttendanceReportType(snapshot.data() || {}) === 'izin_resmi',
+    );
+    if (approvedLeave) {
+      throw new HttpError(409, `${approvedLeave.data()?.employeeName || approvedLeave.data()?.employeeId} memiliki izin disetujui pada tanggal ini. Pilih pengganti atau kosongkan pos.`);
     }
     const canonicalPlanEnabled = isSatpamDutyPlanRequired(
       period,

@@ -406,6 +406,9 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                   Ketua Shift / Keliling
                                 </span>
                               )}
+                              {plannedEmployeeForPost && satpamDutyPlan?.approvedLeaveEmployeeIds?.includes(plannedEmployeeForPost) && (
+                                <span className="mt-1 block text-sm font-semibold text-amber-700">Petugas terjadwal izin disetujui · pilih pengganti atau kosongkan pos</span>
+                              )}
                               {post.id === 'Pos 9' && satpamDutyPlan?.day && (
                                 <span className="mt-1 block text-sm font-bold text-violet-700">
                                   Pos 9 Satpam Regu
@@ -435,7 +438,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                         Tiga Pos 9 Satpam
                                       </SelectLabel>
                                       {visiblePos9Employees.map(emp => (
-                                        <SelectItem key={emp.id} value={emp.id} className="text-base py-3 pl-3">
+                                        <SelectItem key={emp.id} value={emp.id} disabled={satpamDutyPlan?.approvedLeaveEmployeeIds?.includes(emp.id)} className="text-base py-3 pl-3">
                                           {emp.name}
                                         </SelectItem>
                                       ))}
@@ -446,7 +449,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                       {visibleAllSatpamEmployees
                                         .filter((employee) => !pos9GuardIds.has(employee.id))
                                         .map((emp) => (
-                                          <SelectItem key={emp.id} value={emp.id} className="text-base py-3 pl-3">
+                                          <SelectItem key={emp.id} value={emp.id} disabled={satpamDutyPlan?.approvedLeaveEmployeeIds?.includes(emp.id)} className="text-base py-3 pl-3">
                                             {emp.name} {groupEmployeeIds.includes(emp.id) ? '· Regu Anda' : '· Regu lain'}
                                           </SelectItem>
                                         ))}
@@ -456,7 +459,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                       <SelectGroup>
                                         <SelectLabel className="text-base font-black text-purple-700 px-2 py-2 bg-purple-50/50">Anggota Regu Anda</SelectLabel>
                                         {visibleGroupEmployees.map(emp => (
-                                          <SelectItem key={emp.id} value={emp.id} className="text-base py-3 pl-3">
+                                          <SelectItem key={emp.id} value={emp.id} disabled={satpamDutyPlan?.approvedLeaveEmployeeIds?.includes(emp.id)} className="text-base py-3 pl-3">
                                             {emp.name} {emp.id === profile.linkedEmployeeId ? '(Anda)' : ''}
                                           </SelectItem>
                                         ))}
@@ -465,7 +468,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                       <SelectGroup>
                                         <SelectLabel className="text-base font-black text-slate-600 px-2 py-2 bg-slate-50">Satpam Regu Lain (Substitusi — default Harian)</SelectLabel>
                                         {visibleExternalEmployees.map(emp => (
-                                          <SelectItem key={emp.id} value={emp.id} className="text-base py-3 pl-3">
+                                          <SelectItem key={emp.id} value={emp.id} disabled={satpamDutyPlan?.approvedLeaveEmployeeIds?.includes(emp.id)} className="text-base py-3 pl-3">
                                             {emp.name} {emp.isActive === false ? '· perlu verifikasi' : ''}
                                           </SelectItem>
                                         ))}
@@ -719,7 +722,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                 <SelectGroup>
                                   <SelectLabel className="text-base font-black text-purple-700 px-2 py-2 bg-purple-50/50">Anggota Regu Anda</SelectLabel>
                                   {visibleGroupEmployees.map(emp => (
-                                    <SelectItem key={emp.id} value={emp.id} className="text-base py-3 pl-3">
+                                    <SelectItem key={emp.id} value={emp.id} disabled={satpamDutyPlan?.approvedLeaveEmployeeIds?.includes(emp.id)} className="text-base py-3 pl-3">
                                       {emp.name} {emp.id === profile.linkedEmployeeId ? '(Anda)' : ''} {emp.isActive === false ? '· perlu verifikasi' : ''}
                                     </SelectItem>
                                   ))}
@@ -732,7 +735,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                         Satpam di Luar Regu Anda (Lembur Sendiri)
                                       </SelectLabel>
                                       {visibleExternalEmployees.map(emp => (
-                                        <SelectItem key={emp.id} value={emp.id} className="text-base py-3 pl-3">
+                                        <SelectItem key={emp.id} value={emp.id} disabled={satpamDutyPlan?.approvedLeaveEmployeeIds?.includes(emp.id)} className="text-base py-3 pl-3">
                                           {emp.name} · Regu lain / belum masuk regu
                                         </SelectItem>
                                       ))}

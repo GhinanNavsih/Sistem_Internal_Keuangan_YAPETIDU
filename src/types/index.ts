@@ -119,6 +119,9 @@ export interface UraianEntry {
     planId?: string;
     planRevision?: number;
     approvedAbsenceCount?: number;
+    approvedAbsenceHarianCount?: number;
+    approvedAbsencePremiumCount?: number;
+    approvedShiftCounts?: import('@/lib/payroll/satpamOfficialLeave').SatpamApprovedShiftCounts;
     annualPaidLeaveCount?: number;
     annualPaidLeaveHarianCount?: number;
     annualPaidLeavePremiumCount?: number;

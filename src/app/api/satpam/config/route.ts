@@ -18,6 +18,7 @@ import {
   SATPAM_DUTY_PLANS_COLLECTION,
   loadSatpamDutyPlanContext,
 } from '@/lib/server/satpamDutyPlan';
+import { satpamAttendanceReportType } from '@/lib/payroll/satpamAttendance';
 import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
 import { isPeriodClosed, jakartaToday } from '@/lib/server/payrollPeriod';
 import {
@@ -71,7 +72,7 @@ export async function GET(request: NextRequest) {
       throw new HttpError(409, 'Regu Satpam wajib berisi satu Ketua dan sembilan anggota unik.');
     }
 
-    const [employeeSnapshot, rosterSnapshots] = await Promise.all([
+    const [employeeSnapshot, rosterSnapshots, absenceSnapshots] = await Promise.all([
       adminDb
         .collection('Employees_BlueCollar')
         .where('employment.jobCategory', '==', 'SATPAM')
@@ -81,7 +82,11 @@ export async function GET(request: NextRequest) {
           adminDb.collection('Employees_BlueCollar').doc(employeeId),
         ),
       ),
+      adminDb.collection('SatpamAbsenceRequests').where('dutyDate', '==', dutyDate).get(),
     ]);
+    const approvedLeaveEmployeeIds = absenceSnapshots.docs.filter((snapshot) =>
+      snapshot.data().status === 'approved' && satpamAttendanceReportType(snapshot.data()) === 'izin_resmi',
+    ).map((snapshot) => String(snapshot.data().employeeId || ''));
     const employeeDocuments = new Map(
       [...employeeSnapshot.docs, ...rosterSnapshots]
         .filter((snapshot) => snapshot.exists)
@@ -223,6 +228,7 @@ export async function GET(request: NextRequest) {
         flexibilityEnabled: isSatpamFlexibilityEnabled(teamSnapshot.id),
         pos9Guards,
         dutyPlan: {
+          approvedLeaveEmployeeIds,
           enabled: isSatpamDutyPlanRequired(
             dutyPeriod,
             dutyPeriodSnapshot.data() || null,

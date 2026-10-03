@@ -1260,10 +1260,11 @@ function BlueCollarSubmissionsCard({
                                           ⚠ Pegawai sudah terdaftar pada shift tanggal ini
                                         </p>
                                         <p className="text-[11px] font-semibold">
-                                          {item.status === 'approved' &&
-                                          item.payrollExcludedFromHarian
-                                            ? 'Izin telah disetujui tanpa tambahan Harian karena shift ini sudah terdaftar.'
-                                            : 'Jika izin disetujui, pengajuan tidak akan menambah hitungan Harian.'}
+                                          {item.isUnassignedSatpam
+                                            ? 'Izin tanpa regu atau jadwal dinas tidak menambah pembayaran shift.'
+                                            : item.status === 'approved'
+                                            ? 'Izin disetujui menjadi dasar pembayaran. Perbaiki laporan shift yang masih mencantumkan pegawai ini.'
+                                            : 'Jika izin disetujui, pembayaran mengikuti izin dan dihitung satu kali meskipun ada laporan shift.'}
                                         </p>
                                         {item.shiftRegistrationConflicts?.map((reg) => (
                                           <p key={reg.id} className="text-[11px] font-semibold">
@@ -1315,7 +1316,7 @@ function BlueCollarSubmissionsCard({
                                         {item.decisionReason}
                                       </div>
                                     )}
-                                    {item.approvedAmount && item.status === 'approved' && (
+                                    {item.approvedAmount !== undefined && item.status === 'approved' && (
                                       <p className="pt-2 text-xs font-bold text-emerald-700">
                                         Nilai disetujui: {money(item.approvedAmount)}
                                       </p>
@@ -1325,7 +1326,7 @@ function BlueCollarSubmissionsCard({
                                         <p className="pt-2 text-xs font-bold text-amber-700">
                                           {item.payrollExclusionReason === 'NO_SCHEDULED_DUTY'
                                             ? 'Disetujui tanpa tambahan Harian karena pegawai belum memiliki regu atau jadwal dinas.'
-                                            : 'Disetujui tanpa tambahan Harian karena pegawai telah terdaftar pada shift ini.'}
+                                            : 'Nilai payroll historis mengikuti keputusan sebelumnya.'}
                                         </p>
                                       )}
                                   </div>
@@ -1614,7 +1615,7 @@ export default function PekaryaAttendancePage() {
             importRevision: 0,
             importRevisionId: '',
             calendarRevision: 0,
-            paymentSource: 'Ketua Shift',
+            paymentSource: 'Laporan shift / izin disetujui',
             departmentUnmatched: [],
             linkCandidates: [],
             mismatches: [],
@@ -1705,6 +1706,7 @@ export default function PekaryaAttendancePage() {
       const reviewResult = await authenticatedJson<{
         payrollExcludedFromHarian?: boolean;
         payrollExclusionReason?: string | null;
+        amount?: number;
       }>('/api/satpam/absences/review', {
         method: 'POST',
         body: JSON.stringify({
@@ -1726,9 +1728,7 @@ export default function PekaryaAttendancePage() {
             ? reviewResult.payrollExclusionReason === 'NO_SCHEDULED_DUTY' ||
               (isUnassignedSatpam && reviewResult.payrollExcludedFromHarian === true)
               ? 'Izin disetujui tanpa tambahan Harian karena pegawai belum memiliki regu atau jadwal dinas.'
-              : reviewResult.payrollExcludedFromHarian === true
-                ? 'Izin disetujui tanpa tambahan Harian karena pegawai telah terdaftar shift pada tanggal tersebut.'
-                : 'Izin disetujui. Hak Rp12.500 dan rekonsiliasi telah diperbarui.'
+              : `Izin disetujui. Hak ${money(reviewResult.amount || 0)} dan rekonsiliasi telah diperbarui.`
             : 'Izin ditolak dan rekonsiliasi telah diperbarui.',
       );
       await refresh();
@@ -2396,7 +2396,7 @@ export default function PekaryaAttendancePage() {
             <p className="mt-1 text-sm">
               Daftar ini menggabungkan seluruh kategori yang memakai upah
               presensi beserta seluruh pengajuan presensi, cuti, dan ganti libur (termasuk Satpam) dalam satu card utama.
-              Pembayaran shift Satpam tetap bersumber dari laporan Ketua Shift.
+              Pembayaran shift Satpam mengikuti laporan Ketua Shift atau izin resmi disetujui. Izin disetujui menjadi dasar pembayaran jika keduanya ada pada tanggal yang sama.
             </p>
           </div>
         )}
@@ -2467,7 +2467,7 @@ export default function PekaryaAttendancePage() {
               <div>
                 <p className="font-bold">Presensi Satpam hanya untuk verifikasi</p>
                 <p className="mt-1 text-sm">
-                  Upah tetap mengikuti laporan Ketua Shift. Peringatan di bawah
+                  Upah mengikuti laporan shift atau izin resmi disetujui. Peringatan di bawah
                   tidak menambah atau mengurangi pembayaran shift.
                 </p>
               </div>

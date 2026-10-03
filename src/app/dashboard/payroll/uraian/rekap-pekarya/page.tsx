@@ -64,7 +64,6 @@ import { generateRekapPresensiKebersihanyPdf } from '@/utils/generateRekapPresen
 import { dedupeSatpamActivityReports } from '@/lib/payroll/domain';
 import {
   isSatpamDutyPlanRequired,
-  satpamHarianCountWithApprovedAbsences,
   satpamMonthlyScheduledShiftTarget,
 } from '@/lib/payroll/satpamDutyPlan';
 import { authenticatedJson, propagateUraianToSlips } from '@/lib/payroll/client';
@@ -78,6 +77,8 @@ import {
 import { DriverPiketSchedule, countDriverPiketInPeriod, classifyDriverPiketDatesInPeriod } from '@/lib/payroll/driverPiket';
 import { periodCalendarFromData } from '@/lib/payroll/calendar';
 
+type SatpamApprovedShiftCounts = import('@/lib/payroll/satpamOfficialLeave').SatpamApprovedShiftCounts;
+
 type SatpamDutyReconciliationResponse = {
   plans?: Array<{
     ketuaShiftId?: string;
@@ -86,6 +87,9 @@ type SatpamDutyReconciliationResponse = {
       employeeId?: string;
       requiredDuties?: number;
       approvedAbsenceCount?: number;
+      approvedAbsenceHarianCount?: number;
+      approvedAbsencePremiumCount?: number;
+      approvedShiftCounts?: SatpamApprovedShiftCounts;
     }>;
   }>;
 };
@@ -94,6 +98,9 @@ type SatpamScheduledShiftData = {
   period: string;
   counts: Record<string, number>;
   approvedAbsenceCounts: Record<string, number>;
+  approvedAbsenceHarianCounts: Record<string, number>;
+  approvedAbsencePremiumCounts: Record<string, number>;
+  approvedShiftCounts: Record<string, SatpamApprovedShiftCounts>;
   ketuaShiftIds: Record<string, true>;
   fixedPost9Ids: Record<string, true>;
   status: 'loaded' | 'error';
@@ -205,6 +212,9 @@ export default function RekapPekaryaPage() {
         if (!active) return;
         const scheduledCounts: Record<string, number> = {};
         const approvedAbsenceCounts: Record<string, number> = {};
+        const approvedAbsenceHarianCounts: Record<string, number> = {};
+        const approvedAbsencePremiumCounts: Record<string, number> = {};
+        const approvedShiftCounts: Record<string, SatpamApprovedShiftCounts> = {};
         const scheduledKetuaShiftIds: Record<string, true> = {};
         const scheduledFixedPost9Ids: Record<string, true> = {};
         for (const plan of view.plans || []) {
@@ -218,6 +228,9 @@ export default function RekapPekaryaPage() {
             if (!Number.isFinite(requiredDuties)) continue;
             scheduledCounts[employee.employeeId] =
               (scheduledCounts[employee.employeeId] || 0) + Math.max(0, requiredDuties);
+            approvedAbsenceHarianCounts[employee.employeeId] = Number(employee.approvedAbsenceHarianCount || 0);
+            approvedAbsencePremiumCounts[employee.employeeId] = Number(employee.approvedAbsencePremiumCount || 0);
+            if (employee.approvedShiftCounts) approvedShiftCounts[employee.employeeId] = employee.approvedShiftCounts;
             const approvedAbsenceCount = Number(employee.approvedAbsenceCount);
             if (Number.isFinite(approvedAbsenceCount)) {
               approvedAbsenceCounts[employee.employeeId] =
@@ -229,7 +242,7 @@ export default function RekapPekaryaPage() {
         setSatpamScheduledShiftData({
           period,
           counts: scheduledCounts,
-          approvedAbsenceCounts,
+          approvedAbsenceCounts, approvedAbsenceHarianCounts, approvedAbsencePremiumCounts, approvedShiftCounts,
           ketuaShiftIds: scheduledKetuaShiftIds,
           fixedPost9Ids: scheduledFixedPost9Ids,
           status: 'loaded',
@@ -241,7 +254,7 @@ export default function RekapPekaryaPage() {
           setSatpamScheduledShiftData({
             period,
             counts: {},
-            approvedAbsenceCounts: {},
+            approvedAbsenceCounts: {}, approvedAbsenceHarianCounts: {}, approvedAbsencePremiumCounts: {}, approvedShiftCounts: {},
             ketuaShiftIds: {},
             fixedPost9Ids: {},
             status: 'error',
@@ -538,20 +551,20 @@ export default function RekapPekaryaPage() {
     
     if (!targetShiftType) return 0;
     
-    const workedHarianCount = approvedActivityReports.filter(ar =>
-      ar.employeeId === empId && 
-      ar.jobCategory === 'SATPAM' &&
-      ar.shiftType === targetShiftType
-    ).length;
-    if (targetShiftType !== 'Harian') return workedHarianCount;
-    const approvedAbsenceCount =
-      satpamScheduledShiftData?.period === period
-        ? satpamScheduledShiftData.approvedAbsenceCounts[empId] || 0
-        : satpamDutySources[empId]?.approvedAbsenceCount || 0;
-    return satpamHarianCountWithApprovedAbsences(
-      workedHarianCount,
-      approvedAbsenceCount,
-    );
+    const scheduled = satpamScheduledShiftData?.period === period ? satpamScheduledShiftData : null;
+    const source = satpamDutySources[empId];
+    const approvedCounts = scheduled?.approvedShiftCounts[empId] || source?.approvedShiftCounts;
+    const workedCount = approvedCounts
+      ? Number(approvedCounts[shiftTypeKey as keyof SatpamApprovedShiftCounts] || 0)
+      : approvedActivityReports.filter(ar => ar.employeeId === empId && ar.jobCategory === 'SATPAM' &&
+          ar.shiftType === targetShiftType && !ar.payrollExcludedByApprovedLeave).length;
+    if (shiftTypeKey === 'harian') return workedCount + (scheduled
+      ? scheduled.approvedAbsenceHarianCounts[empId] || 0
+      : source?.approvedAbsenceHarianCount ?? source?.approvedAbsenceCount ?? 0);
+    if (shiftTypeKey === 'jumatLibur') return workedCount + (scheduled
+      ? scheduled.approvedAbsencePremiumCounts[empId] || 0
+      : source?.approvedAbsencePremiumCount || 0);
+    return workedCount;
   }, [approvedActivityReports, period, satpamDutySources, satpamScheduledShiftData]);
 
   const getSatpamMonthlyAttendanceComparison = useCallback((empId: string) => {

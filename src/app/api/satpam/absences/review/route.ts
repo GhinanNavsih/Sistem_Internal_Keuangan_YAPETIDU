@@ -5,7 +5,6 @@ import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import {
   assertRequestId,
   isImmutablePayrollStatus,
-  satpamRatesForDutyDate,
 } from '@/lib/payroll/domain';
 import {
   normalizeAttendanceTime,
@@ -16,10 +15,9 @@ import {
   isValidSatpamAttendanceScanRange,
   satpamAttendanceReportType,
 } from '@/lib/payroll/satpamAttendance';
-import {
-  isActiveSatpamShiftRegistration,
-  shouldExcludeSatpamLeaveFromHarian,
-} from '@/lib/payroll/satpamDutyPlan';
+import { satpamOfficialLeavePayment } from '@/lib/payroll/satpamOfficialLeave';
+import { readSatpamLeaveWorkEntries, writeSatpamLeaveWorkExclusions } from '@/lib/server/satpamOfficialLeave';
+import { periodCalendarFromData } from '@/lib/payroll/calendar';
 import { scanAttendanceCorrection } from '@/lib/payroll/pekaryaOfficialLeave';
 import {
   absenceEntitlementData,
@@ -42,7 +40,7 @@ import {
   requireAuthenticatedProfile,
   requireRole,
 } from '@/lib/server/auth';
-import { assertPeriodAcceptsInput } from '@/lib/server/payrollPeriod';
+import { assertPeriodAcceptsInput, annualCalendarRef, annualDatesFrom, buildPeriodMaterialization } from '@/lib/server/payrollPeriod';
 import {
   ANNUAL_PAID_LEAVE_REQUESTS_COLLECTION,
   annualPaidLeaveDocumentId,
@@ -786,6 +784,7 @@ export async function POST(request: NextRequest) {
         shiftReportsSnapshot,
         annualPaidLeaveSnapshot,
         gantiLiburSnapshot,
+        holidaySnapshot,
       ] = await Promise.all([
         transaction.get(absenceRef),
         planRef ? transaction.get(planRef) : Promise.resolve(null),
@@ -796,6 +795,7 @@ export async function POST(request: NextRequest) {
         transaction.get(employeeShiftReportsQuery),
         transaction.get(annualPaidLeaveRef),
         transaction.get(employeeGantiLiburQuery(employeeId)),
+        transaction.get(annualCalendarRef(period)),
       ]);
       if (idempotencySnapshot.exists) {
         if (idempotencySnapshot.data()?.requestHash !== requestHash) {
@@ -808,6 +808,7 @@ export async function POST(request: NextRequest) {
           ),
           status: idempotencySnapshot.data()?.status,
           amount: Number(idempotencySnapshot.data()?.amount || 0),
+          payType: idempotencySnapshot.data()?.payType || null,
           harianCountAdded:
             idempotencySnapshot.data()?.harianCountAdded === true,
           payrollExcludedFromHarian:
@@ -871,29 +872,23 @@ export async function POST(request: NextRequest) {
       const revision = expectedRevision + 1;
       const status = approving ? 'approved' : 'declined';
       const now = admin.firestore.FieldValue.serverTimestamp();
-      const shiftRegistration = shiftReportsSnapshot.docs.find((snapshot) => {
-        const report = snapshot.data();
-        return (
-          isActiveSatpamShiftRegistration(report) &&
-          String(report.dutyDate || report.activityDate || '') ===
-            String(current.dutyDate || '')
-        );
-      });
-      const payrollExcludedFromHarian =
-        approving &&
-        (isUnassignedSatpam ||
-          shouldExcludeSatpamLeaveFromHarian({
-            hasShiftRegistration: Boolean(shiftRegistration),
-          }));
-      const harianCountAdded = approving && !payrollExcludedFromHarian;
-      const approvedAmount = harianCountAdded
-        ? satpamRatesForDutyDate(String(current.dutyDate || '')).Harian
-        : 0;
-      const payrollExclusionReason = payrollExcludedFromHarian
-        ? isUnassignedSatpam
-          ? 'NO_SCHEDULED_DUTY'
-          : 'SHIFT_REGISTERED_SAME_DATE'
-        : null;
+      const overlappingWork = await readSatpamLeaveWorkEntries(
+        transaction, shiftReportsSnapshot.docs, dutyDate, absenceRequestId,
+      );
+      const payrollExcludedFromHarian = approving && isUnassignedSatpam;
+      const paidDutyAdded = approving && !isUnassignedSatpam;
+      const calendar = periodCalendarFromData(period, periodSnapshot.data(), annualDatesFrom(holidaySnapshot));
+      const payment = satpamOfficialLeavePayment(dutyDate, new Set(calendar.premiumDates));
+      const approvedPayType = paidDutyAdded ? payment.payType : null;
+      const harianCountAdded = approvedPayType === 'Harian';
+      const approvedAmount = paidDutyAdded ? payment.amount : 0;
+      const payrollExclusionReason = payrollExcludedFromHarian ? 'NO_SCHEDULED_DUTY' : null;
+      const materialization = paidDutyAdded ? buildPeriodMaterialization({
+        period, periodData: periodSnapshot.data(), annualDates: annualDatesFrom(holidaySnapshot),
+        actorUid: actor.uid, reason: 'SATPAM_OFFICIAL_LEAVE_APPROVAL',
+      }) : null;
+      if (materialization) transaction.set(periodRef, materialization, { merge: true });
+      writeSatpamLeaveWorkExclusions(transaction, overlappingWork, absenceRequestId, paidDutyAdded, actor.uid);
       const after = {
         ...current,
         status,
@@ -903,11 +898,12 @@ export async function POST(request: NextRequest) {
         decidedBy: actor.uid,
         decidedByName: actor.displayName,
         decisionAction: action,
-        approvedPayType: harianCountAdded ? 'Harian' : null,
+        approvedPayType,
         approvedAmount,
+        payrollPolicyVersion: 2,
         payrollExcludedFromHarian,
         payrollExclusionReason,
-        payrollExclusionShiftReportId: shiftRegistration?.id || null,
+        payrollExclusionShiftReportId: null,
         planRevision: plan?.revision ?? null,
         updatedAt: now,
       };
@@ -928,7 +924,7 @@ export async function POST(request: NextRequest) {
           createdAt: now,
         },
       );
-      if (harianCountAdded) {
+      if (paidDutyAdded) {
         if (!plan) {
           throw new HttpError(
             409,
@@ -947,9 +943,11 @@ export async function POST(request: NextRequest) {
             planRevision: plan.revision,
             approvedBy: actor.uid,
             approvedAt: now,
+            payType: payment.payType,
           }),
           status: 'posted',
           revision,
+          payrollPolicyVersion: 2,
           updatedAt: now,
         };
         transaction.set(entitlementRef, entitlement);
@@ -958,8 +956,9 @@ export async function POST(request: NextRequest) {
           payrollPeriod: period,
           sourceType: 'satpam_approved_absence',
           sourceId: absenceRequestId,
-          payType: 'Harian',
+          payType: approvedPayType,
           amount: approvedAmount,
+          payrollPolicyVersion: 2,
           currency: 'IDR',
           status: 'posted',
           dutyDate: current.dutyDate,
@@ -986,7 +985,7 @@ export async function POST(request: NextRequest) {
               payrollExclusionReason || 'ABSENCE_DECLINED',
             payrollExcludedFromHarian,
             payrollExclusionReason,
-            payrollExclusionShiftReportId: shiftRegistration?.id || null,
+            payrollExclusionShiftReportId: null,
             updatedAt: now,
           },
           { merge: true },
@@ -1007,7 +1006,7 @@ export async function POST(request: NextRequest) {
               payrollExclusionReason || 'ABSENCE_DECLINED',
             payrollExcludedFromHarian,
             payrollExclusionReason,
-            payrollExclusionShiftReportId: shiftRegistration?.id || null,
+            payrollExclusionShiftReportId: null,
             updatedAt: now,
           },
           { merge: true },
@@ -1032,7 +1031,12 @@ export async function POST(request: NextRequest) {
             harianCountAdded,
             payrollExcludedFromHarian,
             payrollExclusionReason,
-            shiftRegistrationReportId: shiftRegistration?.id || null,
+            paidDutyAdded,
+            payType: approvedPayType,
+            overlappingWork: overlappingWork.map(({ snapshot, report, ledger }) => ({
+              reportId: snapshot.id, previousFee: Number(report.fee || 0),
+              previousLedgerStatus: ledger?.status || null, previousLedgerAmount: Number(ledger?.amount || 0),
+            })),
             planRevision: plan?.revision ?? null,
           },
         }),
@@ -1046,6 +1050,8 @@ export async function POST(request: NextRequest) {
         revision,
         status,
         amount: approvedAmount,
+        payType: approvedPayType,
+        paidDutyAdded,
         harianCountAdded,
         payrollExcludedFromHarian,
         payrollExclusionReason,
@@ -1056,6 +1062,8 @@ export async function POST(request: NextRequest) {
         revision,
         status,
         amount: approvedAmount,
+        payType: approvedPayType,
+        paidDutyAdded,
         harianCountAdded,
         payrollExcludedFromHarian,
         payrollExclusionReason,

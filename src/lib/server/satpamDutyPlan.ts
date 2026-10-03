@@ -1,6 +1,7 @@
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
   hasSatpamShiftEnded,
+  isImmutablePayrollStatus,
   satpamRatesForDutyDate,
   satpamRatesForPeriod,
   type SatpamShiftName,
@@ -12,12 +13,14 @@ import {
   satpamDutyKey,
   satpamDutyPlanId,
   SATPAM_MONTHLY_ATTENDANCE_BONUS,
-  shouldExcludeSatpamLeaveFromHarian,
   type SatpamDutyPlanDay,
   type SatpamDutyPlanStatus,
   type SatpamRotationSlotAssignment,
 } from '@/lib/payroll/satpamDutyPlan';
 import { satpamAttendanceReportType } from '@/lib/payroll/satpamAttendance';
+import { emptySatpamShiftCounts, isPayableSatpamOfficialLeave, isSatpamShiftPayReport, satpamOfficialLeavePayment, type SatpamApprovedShiftCounts } from '@/lib/payroll/satpamOfficialLeave';
+import { periodCalendarFromData } from '@/lib/payroll/calendar';
+import { annualCalendarRef, annualDatesFrom, isPeriodClosed } from '@/lib/server/payrollPeriod';
 import {
   normalizeSatpamUraianEntry,
 } from '@/lib/payroll/satpamCompensation';
@@ -101,6 +104,9 @@ export interface SatpamDutyReconciliationView {
       bonusCount: 0 | 1;
       bonusAmount: number;
       approvedAbsenceCount: number;
+      approvedAbsenceHarianCount: number;
+      approvedAbsencePremiumCount: number;
+      approvedShiftCounts: SatpamApprovedShiftCounts;
       gantiLiburCount: number;
       annualPaidLeaveCount: number;
       annualPaidLeaveHarianCount: number;
@@ -259,7 +265,9 @@ export async function buildSatpamDutyReconciliation(
     absenceSnapshot,
     employeeSnapshot,
     uraianSnapshot,
-    shiftRegistrations,
+    periodSnapshot,
+    holidaySnapshot,
+    reportQuerySnapshot,
     annualPaidLeaveSnapshot,
     gantiLiburSnapshot,
   ] = await Promise.all([
@@ -280,7 +288,9 @@ export async function buildSatpamDutyReconciliation(
       .collection('UraianGaji')
       .doc(`${period.replace('-', '_')}_SATPAM`)
       .get(),
-    loadSatpamShiftRegistrations(period),
+    adminDb.collection('PayrollPeriods').doc(period).get(),
+    annualCalendarRef(period).get(),
+    adminDb.collection('ActivityReports').where('period', '==', period).get(),
     adminDb
       .collection(ANNUAL_PAID_LEAVE_PAYROLL_POSTS_COLLECTION)
       .where('period', '==', period)
@@ -297,29 +307,26 @@ export async function buildSatpamDutyReconciliation(
       String(snapshot.data().name || snapshot.id),
     ]),
   );
-  const reportIds = Array.from(
-    new Set(
-      occurrenceSnapshot.docs.flatMap((snapshot) => {
-        const value = snapshot.data().reportIds;
-        return Array.isArray(value)
-          ? value.filter((item: unknown): item is string => typeof item === 'string')
-          : [];
-      }),
-    ),
-  );
-  const reportSnapshots =
-    reportIds.length > 0
-      ? await adminDb.getAll(
-          ...reportIds.map((reportId) =>
-            adminDb.collection('ActivityReports').doc(reportId),
-          ),
-        )
-      : [];
+  const reportSnapshots = reportQuerySnapshot.docs;
+  const payrollEmployeeIds = Array.from(new Set([
+    ...plans.flatMap((plan) => plan.reconciliationEmployeeIds || plan.rosterEmployeeIds),
+    ...absenceSnapshot.docs.map((snapshot) => String(snapshot.data().employeeId || '')),
+  ])).filter(Boolean);
+  const slipSnapshots = payrollEmployeeIds.length ? await adminDb.getAll(...payrollEmployeeIds.map((id) =>
+    adminDb.doc(`PayrollSlipStates/${period.replace('-', '_')}_${id}`),
+  )) : [];
+  const immutableEmployeeIds = new Set(payrollEmployeeIds.filter((_, index) => isImmutablePayrollStatus(slipSnapshots[index]?.data()?.status)));
+  const calendar = periodCalendarFromData(period, periodSnapshot.data(), annualDatesFrom(holidaySnapshot));
+  const premiumDates = new Set(calendar.premiumDates);
   const fulfilledWorkKeys = new Set<string>();
   const extraDutyKeys = new Set<string>();
   const extraDutyEmployeeIds = new Set<string>();
   const approvedAbsenceKeys = new Set<string>();
   const approvedAbsenceCounts = new Map<string, number>();
+  const approvedAbsencePayCounts = new Map<string, { harian: number; premium: number }>();
+  const officialLeaveKeys = new Set<string>();
+  const shiftCountsByEmployee = new Map<string, SatpamApprovedShiftCounts>();
+  const countedFinancialSources = new Set<string>();
   const workedShiftCountsByEmployee = new Map<string, number>();
   const annualPaidLeaveCounts = new Map<
     string,
@@ -328,11 +335,6 @@ export async function buildSatpamDutyReconciliation(
   const annualPaidLeaveEmployeeIds = new Set<string>();
   const gantiLiburCounts = new Map<string, number>();
   const conflictKeys = new Set<string>();
-  const registeredShiftKeys = new Set(
-    shiftRegistrations.map((registration) =>
-      satpamDutyKey(registration.employeeId, registration.dutyDate),
-    ),
-  );
 
   for (const paidLeaveDocument of annualPaidLeaveSnapshot.docs) {
     const paidLeave = paidLeaveDocument.data();
@@ -364,6 +366,39 @@ export async function buildSatpamDutyReconciliation(
     if (!workedShiftCountsByEmployee.has(employeeId)) workedShiftCountsByEmployee.set(employeeId, 0);
   }
 
+  for (const absenceDocument of absenceSnapshot.docs) {
+    const absence = absenceDocument.data();
+    if (
+      absence.status !== 'approved' ||
+      satpamAttendanceReportType(absence) === 'scan'
+    ) {
+      continue;
+    }
+    const employeeId = String(absence.employeeId || '');
+    const dutyDate = String(absence.dutyDate || '');
+    if (!employeeId || !dutyDate) continue;
+    const key = satpamDutyKey(employeeId, dutyDate);
+    const preserveRecordedPayment = isPeriodClosed(periodSnapshot.data()) || immutableEmployeeIds.has(employeeId);
+    if (!isPayableSatpamOfficialLeave(absence, preserveRecordedPayment)) continue;
+    officialLeaveKeys.add(key);
+    const payment = satpamOfficialLeavePayment(dutyDate, premiumDates);
+    const payCounts = approvedAbsencePayCounts.get(employeeId) || { harian: 0, premium: 0 };
+    const payType = preserveRecordedPayment ? absence.approvedPayType : payment.payType;
+    if (payType === 'Jumat & Libur') payCounts.premium += 1;
+    else payCounts.harian += 1;
+    approvedAbsencePayCounts.set(employeeId, payCounts);
+    approvedAbsenceKeys.add(key);
+    approvedAbsenceCounts.set(
+      employeeId,
+      Number(approvedAbsenceCounts.get(employeeId) || 0) + 1,
+    );
+    // A paid scheduled leave fulfills one duty, regardless of its rate.
+    workedShiftCountsByEmployee.set(
+      employeeId,
+      Number(workedShiftCountsByEmployee.get(employeeId) || 0) + 1,
+    );
+  }
+
   for (const reportSnapshot of reportSnapshots) {
     if (!reportSnapshot.exists || reportSnapshot.data()?.status !== 'approved') {
       continue;
@@ -373,7 +408,18 @@ export async function buildSatpamDutyReconciliation(
     const dutyDate = String(report.dutyDate || report.activityDate || '');
     if (!employeeId || !dutyDate) continue;
     const key = satpamDutyKey(employeeId, dutyDate);
+    if (officialLeaveKeys.has(key)) continue;
+    if (!isSatpamShiftPayReport(report)) continue;
+    const sourceIdentity = String(report.sourceLedgerEntryId || `${report.sourceOccurrenceId || ''}__${report.assignmentKey || reportSnapshot.id}`);
+    if (countedFinancialSources.has(sourceIdentity)) continue;
+    countedFinancialSources.add(sourceIdentity);
     const shiftType = String(report.shiftType || '');
+    const counts = shiftCountsByEmployee.get(employeeId) || emptySatpamShiftCounts();
+    if (shiftType === 'Harian') counts.harian += 1;
+    if (shiftType === 'Jumat & Libur') counts.jumatLibur += 1;
+    if (shiftType === 'Lembur Sendiri') counts.lemburSendiri += 1;
+    if (shiftType === 'Lembur Cover') counts.lemburCover += 1;
+    shiftCountsByEmployee.set(employeeId, counts);
     if (
       ['Harian', 'Jumat & Libur', 'Lembur Sendiri', 'Lembur Cover'].includes(
         shiftType,
@@ -395,40 +441,6 @@ export async function buildSatpamDutyReconciliation(
       extraDutyKeys.add(`${key}__${reportSnapshot.id}`);
       extraDutyEmployeeIds.add(employeeId);
     }
-  }
-
-  for (const absenceDocument of absenceSnapshot.docs) {
-    const absence = absenceDocument.data();
-    if (
-      absence.status !== 'approved' ||
-      satpamAttendanceReportType(absence) === 'scan'
-    ) {
-      continue;
-    }
-    const employeeId = String(absence.employeeId || '');
-    const dutyDate = String(absence.dutyDate || '');
-    if (!employeeId || !dutyDate) continue;
-    const key = satpamDutyKey(employeeId, dutyDate);
-    if (
-      shouldExcludeSatpamLeaveFromHarian({
-        payrollExcludedFromHarian: absence.payrollExcludedFromHarian,
-        hasShiftRegistration: registeredShiftKeys.has(key),
-      })
-    ) {
-      continue;
-    }
-    approvedAbsenceKeys.add(key);
-    approvedAbsenceCounts.set(
-      employeeId,
-      Number(approvedAbsenceCounts.get(employeeId) || 0) + 1,
-    );
-    // Approved leave is represented as paid Harian in the Uraian counts, so
-    // keep the bonus comparison aligned with that persisted count.
-    workedShiftCountsByEmployee.set(
-      employeeId,
-      Number(workedShiftCountsByEmployee.get(employeeId) || 0) + 1,
-    );
-    if (fulfilledWorkKeys.has(key)) conflictKeys.add(key);
   }
 
   const occurrencesByTeamDate = new Map<
@@ -509,6 +521,9 @@ export async function buildSatpamDutyReconciliation(
       approvedAbsenceCount: Number(
         approvedAbsenceCounts.get(employee.employeeId) || 0,
       ),
+      approvedAbsenceHarianCount: approvedAbsencePayCounts.get(employee.employeeId)?.harian || 0,
+      approvedAbsencePremiumCount: approvedAbsencePayCounts.get(employee.employeeId)?.premium || 0,
+      approvedShiftCounts: shiftCountsByEmployee.get(employee.employeeId) || emptySatpamShiftCounts(),
       gantiLiburCount: gantiLiburCounts.get(employee.employeeId) || 0,
       annualPaidLeaveCount:
         Number(annualPaidLeaveCounts.get(employee.employeeId)?.harian || 0) +
@@ -619,59 +634,28 @@ export async function syncSatpamDutyReconciliation(
   period: string,
   actorUid = 'system',
 ): Promise<SatpamDutyReconciliationView> {
-  const [view, approvedShiftSnapshot] = await Promise.all([
-    buildSatpamDutyReconciliation(period),
-    adminDb.collection('ActivityReports').where('period', '==', period).get(),
-  ]);
+  const view = await buildSatpamDutyReconciliation(period);
   const rates = satpamRatesForPeriod(period);
-  const shiftCountsByEmployee = new Map<
-    string,
-    {
-      harian: number;
-      jumatLibur: number;
-      lemburSendiri: number;
-      lemburCover: number;
-    }
-  >();
-  const countedFinancialSources = new Set<string>();
-  for (const reportSnapshot of approvedShiftSnapshot.docs) {
-    const report = reportSnapshot.data();
-    if (
-      report.status !== 'approved' ||
-      !(
-        report.reportKind === 'satpam_shift_assignment' ||
-        report.sourceType === 'satpam_shift' ||
-        report.sourceOccurrenceId
-      )
-    ) {
-      continue;
-    }
+  const shiftCountsByEmployee = new Map<string, SatpamApprovedShiftCounts>();
+  for (const plan of view.plans) {
+    for (const employee of plan.employees) shiftCountsByEmployee.set(employee.employeeId, employee.approvedShiftCounts);
+  }
+  // External substitutes have no planned duties, but retain their reviewed work.
+  const externalReports = await adminDb.collection('ActivityReports').where('period', '==', period).get();
+  const countedExternalSources = new Set<string>();
+  for (const snapshot of externalReports.docs) {
+    const report = snapshot.data();
     const employeeId = String(report.employeeId || '');
-    const payType = String(report.shiftType || '');
-    const sourceIdentity = String(
-      report.sourceLedgerEntryId ||
-        `${report.sourceOccurrenceId || ''}__${report.assignmentKey || reportSnapshot.id}`,
-    );
-    if (
-      !employeeId ||
-      countedFinancialSources.has(sourceIdentity) ||
-      !['Harian', 'Jumat & Libur', 'Lembur Sendiri', 'Lembur Cover'].includes(
-        payType,
-      )
-    ) {
-      continue;
-    }
-    countedFinancialSources.add(sourceIdentity);
-    const counts = shiftCountsByEmployee.get(employeeId) || {
-      harian: 0,
-      jumatLibur: 0,
-      lemburSendiri: 0,
-      lemburCover: 0,
-    };
-    if (payType === 'Harian') counts.harian += 1;
-    if (payType === 'Jumat & Libur') counts.jumatLibur += 1;
-    if (payType === 'Lembur Sendiri') counts.lemburSendiri += 1;
-    if (payType === 'Lembur Cover') counts.lemburCover += 1;
+    if (!employeeId || view.plans.some((plan) => plan.employees.some((employee) => employee.employeeId === employeeId))) continue;
+    if (report.status !== 'approved' || !isSatpamShiftPayReport(report) || report.payrollExcludedByApprovedLeave === true) continue;
+    const source = String(report.sourceLedgerEntryId || snapshot.id);
+    if (countedExternalSources.has(source)) continue;
+    countedExternalSources.add(source);
+    const counts = shiftCountsByEmployee.get(employeeId) || emptySatpamShiftCounts();
+    if (report.shiftType === 'Harian') counts.harian += 1;
+    if (report.shiftType === 'Jumat & Libur') counts.jumatLibur += 1;
+    if (report.shiftType === 'Lembur Sendiri') counts.lemburSendiri += 1;
+    if (report.shiftType === 'Lembur Cover') counts.lemburCover += 1;
     shiftCountsByEmployee.set(employeeId, counts);
   }
   const now = admin.firestore.FieldValue.serverTimestamp();
@@ -680,10 +664,16 @@ export async function syncSatpamDutyReconciliation(
     .doc(`${period.replace('-', '_')}_SATPAM`);
   const periodRef = adminDb.collection('PayrollPeriods').doc(period);
   await adminDb.runTransaction(async (transaction) => {
-    const [periodSnapshot, uraianSnapshot] = await Promise.all([
+    const employeeIds = Array.from(new Set([
+      ...view.plans.flatMap((plan) => plan.employees.map((employee) => employee.employeeId)),
+      ...view.unassignedExternalEmployees.map((employee) => employee.employeeId),
+    ]));
+    const [periodSnapshot, uraianSnapshot, ...slipSnapshots] = await Promise.all([
       transaction.get(periodRef),
       transaction.get(uraianRef),
+      ...employeeIds.map((id) => transaction.get(adminDb.doc(`PayrollSlipStates/${period.replace('-', '_')}_${id}`))),
     ]);
+    const immutableEmployeeIds = new Set(employeeIds.filter((_, index) => isImmutablePayrollStatus(slipSnapshots[index]?.data()?.status)));
     if (periodSnapshot.data()?.attendanceStatus === 'closed') {
       throw new Error(
         `Periode payroll ${period} sudah ditutup; rekonsiliasi tidak dapat mengubah data historis.`,
@@ -725,6 +715,7 @@ export async function syncSatpamDutyReconciliation(
     for (const plan of view.plans) {
       for (const employee of plan.employees) {
         reconciledEmployeeIds.add(employee.employeeId);
+        if (immutableEmployeeIds.has(employee.employeeId)) continue;
         const existing = entries[employee.employeeId] || {};
         const existingValues =
           existing.values && typeof existing.values === 'object'
@@ -754,12 +745,12 @@ export async function syncSatpamDutyReconciliation(
         };
         const totalHarianCount = satpamHarianCountWithApprovedAbsences(
           shiftCounts.harian,
-          employee.approvedAbsenceCount,
+          employee.approvedAbsenceHarianCount,
         ) + employee.annualPaidLeaveHarianCount + employee.gantiLiburCount;
         counts.harian = totalHarianCount;
         values.harian = totalHarianCount * rates.Harian;
         counts.jumatLibur =
-          shiftCounts.jumatLibur + employee.annualPaidLeavePremiumCount;
+          shiftCounts.jumatLibur + employee.approvedAbsencePremiumCount + employee.annualPaidLeavePremiumCount;
         values.jumatLibur =
           counts.jumatLibur * rates['Jumat & Libur'];
         counts.lemburSendiri = shiftCounts.lemburSendiri;
@@ -794,6 +785,8 @@ export async function syncSatpamDutyReconciliation(
             planId: plan.planId,
             planRevision: plan.revision,
             approvedAbsenceCount: employee.approvedAbsenceCount,
+            approvedAbsenceHarianCount: employee.approvedAbsenceHarianCount,
+            approvedAbsencePremiumCount: employee.approvedAbsencePremiumCount,
             gantiLiburCount: employee.gantiLiburCount,
             annualPaidLeaveCount: employee.annualPaidLeaveCount,
             annualPaidLeaveHarianCount: employee.annualPaidLeaveHarianCount,
@@ -815,6 +808,7 @@ export async function syncSatpamDutyReconciliation(
     }
     for (const external of view.unassignedExternalEmployees) {
       if (reconciledEmployeeIds.has(external.employeeId)) continue;
+      if (immutableEmployeeIds.has(external.employeeId)) continue;
       const existing = entries[external.employeeId] || {};
       const shiftCounts = shiftCountsByEmployee.get(external.employeeId) || {
         harian: 0,
@@ -917,12 +911,12 @@ export function absenceEntitlementData(input: {
   planRevision: number;
   approvedBy: string;
   approvedAt: FirebaseFirestore.FieldValue;
+  payType: 'Harian' | 'Jumat & Libur';
 }) {
   return {
     ...input,
-    payType: 'Harian',
     count: 1,
-    amount: satpamRatesForDutyDate(input.dutyDate).Harian,
+    amount: satpamRatesForDutyDate(input.dutyDate)[input.payType],
     sourceType: 'satpam_approved_absence',
     schemaVersion: 1,
   };

@@ -90,9 +90,10 @@ export async function GET(request: NextRequest) {
         'satker_head',
       ]);
     }
-    const [snapshot, shiftRegistrations] = await Promise.all([
+    const [snapshot, shiftRegistrations, periodSnapshot] = await Promise.all([
       query.get(),
       loadSatpamShiftRegistrations(period),
+      adminDb.collection('PayrollPeriods').doc(period).get(),
     ]);
     const registrationsByEmployeeDate = new Map<
       string,
@@ -113,10 +114,10 @@ export async function GET(request: NextRequest) {
           satpamAttendanceReportType(data) === 'izin_resmi'
             ? registrationsByEmployeeDate.get(`${employeeId}__${dutyDate}`) || []
             : [];
-        const payrollExcludedFromHarian =
-          data.payrollExcludedFromHarian === true ||
-          (data.status === 'approved' &&
-            shiftRegistrationConflicts.length > 0);
+        const payrollExcludedFromHarian = isPeriodClosed(periodSnapshot.data())
+          ? data.payrollExcludedFromHarian === true
+          : data.status === 'approved' &&
+            (data.scheduleRelation === 'unassigned' || !data.teamId || data.payrollExclusionReason === 'NO_SCHEDULED_DUTY');
         return {
           id: document.id,
           ...data,

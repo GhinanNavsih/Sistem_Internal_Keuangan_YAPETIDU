@@ -724,7 +724,7 @@ export async function POST(request: NextRequest) {
           ) {
             throw new HttpError(
               409,
-              `${String(before.employeeName || before.employeeId)} memiliki izin dibayar pada tanggal ini. Selesaikan konflik izin terlebih dahulu.`,
+              `${String(before.employeeName || before.employeeId)} memiliki izin disetujui yang menjadi dasar pembayaran pada tanggal ini. Tolak atau hapus petugas dari laporan shift.`,
             );
           }
           if (gantiLiburSnapshot.docs.some((doc) => doc.data().status === 'approved' &&
@@ -1872,7 +1872,7 @@ export async function PUT(request: NextRequest) {
             );
             throw new HttpError(
               409,
-              `${employeeName} memiliki izin dibayar pada tanggal ini. Selesaikan konflik izin terlebih dahulu.`,
+              `${employeeName} memiliki izin disetujui yang menjadi dasar pembayaran pada tanggal ini. Tolak atau hapus petugas dari laporan shift.`,
             );
           }
         });
