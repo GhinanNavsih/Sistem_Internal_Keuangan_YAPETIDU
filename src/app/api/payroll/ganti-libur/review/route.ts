@@ -5,6 +5,9 @@ import { assertRequestId, isImmutablePayrollStatus } from '@/lib/payroll/domain'
 import { resolveEmployeeAttendanceNipy } from '@/lib/payroll/attendance';
 import {
   gantiLiburDecisionIssue,
+  GANTI_LIBUR_ATTENDANCE_CONFIRMATION_REQUIRED,
+  gantiLiburAttendanceConfirmationMatches,
+  parseGantiLiburAttendanceConfirmation,
   gantiLiburVerdictLabel,
   isActiveGantiLiburStatus,
   canReadGantiLibur,
@@ -13,6 +16,7 @@ import {
   gantiLiburPeriod,
   type GantiLiburDecisionIssue,
   type GantiLiburRequest,
+  type GantiLiburAttendanceCheck,
 } from '@/lib/payroll/gantiLibur';
 import {
   applyApprovedPaidLeaveToLoyalisEntry,
@@ -81,10 +85,16 @@ function decisionIssueMessage(issue: GantiLiburDecisionIssue, verdictLabel: stri
     immutable_slip: 'Slip bulan tanggal ganti libur sudah final; gunakan koreksi finansial.',
     revision_conflict: 'Pengajuan telah berubah. Muat ulang sebelum memutuskan.',
     not_pending: 'Pengajuan ini sudah pernah diputuskan atau ditarik.',
-    attendance_not_verified: `Presensi hari libur belum memenuhi 07.30–14.00 WIB (${verdictLabel}); pengajuan tidak dapat disetujui.`,
+    attendance_not_verified: `Presensi hari libur belum memenuhi 07.30–14.00 WIB (${verdictLabel}). Konfirmasi diperlukan untuk tetap menyetujui dan menerapkan ganti libur.`,
     day_off_now_holiday: 'Tanggal ganti libur kini tercatat sebagai hari libur; minta pegawai memilih tanggal lain.',
     day_off_conflict: 'Tanggal ganti libur sudah memiliki presensi, koreksi, atau cuti tahunan.',
   }[issue];
+}
+
+class AttendanceConfirmationRequired extends HttpError {
+  constructor(readonly attendanceCheck: GantiLiburAttendanceCheck) {
+    super(409, decisionIssueMessage('attendance_not_verified', gantiLiburVerdictLabel(attendanceCheck.verdict)));
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -140,6 +150,10 @@ export async function POST(request: NextRequest) {
     const commandId = String(body.requestId || '');
     const expectedRevision = Number(body.expectedRevision);
     const decisionReason = String(body.reason || '').trim();
+    const attendanceConfirmation = parseGantiLiburAttendanceConfirmation(body.attendanceConfirmation);
+    if (body.attendanceConfirmation != null && (!attendanceConfirmation || action !== 'approve')) {
+      throw new HttpError(400, 'Konfirmasi presensi ganti libur tidak valid.');
+    }
     if (!/^[a-f0-9]{64}$/.test(gantiLiburRequestId)) {
       throw new HttpError(400, 'ID pengajuan ganti libur tidak valid.');
     }
@@ -211,6 +225,7 @@ export async function POST(request: NextRequest) {
       commandId,
       expectedRevision,
       decisionReason,
+      ...(attendanceConfirmation ? { attendanceConfirmation } : {}),
     });
 
     const result = await adminDb.runTransaction(async (transaction) => {
@@ -304,10 +319,12 @@ export async function POST(request: NextRequest) {
         currentRevision: current.revision,
         status: current.status,
         verdict: attendanceCheck.verdict,
+        attendanceConfirmed: gantiLiburAttendanceConfirmationMatches(attendanceConfirmation, attendanceCheck),
         dayOffIsOffDay,
         dayOffConflict,
       });
       if (issue) {
+        if (issue === 'attendance_not_verified') throw new AttendanceConfirmationRequired(attendanceCheck);
         throw new HttpError(
           409,
           decisionIssueMessage(issue, gantiLiburVerdictLabel(attendanceCheck.verdict)),
@@ -326,6 +343,12 @@ export async function POST(request: NextRequest) {
         decidedBy: actor.uid,
         decidedByName: actor.displayName,
         attendanceCheck,
+        attendanceOverride: approving && attendanceCheck.verdict !== 'eligible' ? {
+          attendanceCheck,
+          confirmedBy: actor.uid,
+          confirmedByName: actor.displayName,
+          confirmedAt: now,
+        } : null,
         approvedPayType: approving ? 'Harian' : null,
         approvedAmount: approving ? amount : 0,
         updatedAt: now,
@@ -396,6 +419,7 @@ export async function POST(request: NextRequest) {
             dayOffDate,
             dayOffPeriod,
             attendanceVerdict: attendanceCheck.verdict,
+            attendanceOverridden: approving && attendanceCheck.verdict !== 'eligible',
           },
         }),
       );
@@ -429,6 +453,13 @@ export async function POST(request: NextRequest) {
     }
     return Response.json({ ...result, payrollWarning }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
+    if (error instanceof AttendanceConfirmationRequired) {
+      return Response.json({
+        error: error.message,
+        code: GANTI_LIBUR_ATTENDANCE_CONFIRMATION_REQUIRED,
+        details: { attendanceCheck: error.attendanceCheck },
+      }, { status: error.status, headers: { 'Cache-Control': 'no-store' } });
+    }
     return errorResponse(error);
   }
 }

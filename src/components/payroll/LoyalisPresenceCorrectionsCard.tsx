@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { GantiLiburAttachmentLinks } from '@/components/GantiLiburAttachmentLinks';
 import {
+  GANTI_LIBUR_ATTENDANCE_CONFIRMATION_REQUIRED,
+  parseGantiLiburAttendanceConfirmation,
   gantiLiburDeclineSuggestion,
   gantiLiburEmployeeKind,
   gantiLiburVerdictLabel,
@@ -40,6 +42,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  ApiError,
   authenticatedJson,
   createFinancialRequestId,
   propagateUraianToSlips,
@@ -261,6 +264,12 @@ export function LoyalisPresenceCorrectionsCard({
     () => new Set(),
   );
   const [reviewProgress, setReviewProgress] = useState<ReviewProgressState | null>(null);
+  const [gantiLiburConfirmation, setGantiLiburConfirmation] = useState<{
+    period: string;
+    scope: 'single' | 'bulk';
+    items: LoyalisReviewItem[];
+    checks: Array<{ request: GantiLiburRequest; check: GantiLiburAttendanceCheck }>;
+  } | null>(null);
 
   // Type changing state
   const [editingLoyalisReqId, setEditingLoyalisReqId] = useState<string | null>(null);
@@ -675,7 +684,10 @@ export function LoyalisPresenceCorrectionsCard({
     });
   };
 
-  const approveGantiLiburItem = async (item: GantiLiburRequest) => {
+  const approveGantiLiburItem = async (
+    item: GantiLiburRequest,
+    attendanceConfirmation?: GantiLiburAttendanceCheck,
+  ) => {
     await authenticatedJson('/api/payroll/ganti-libur/review', {
       method: 'POST',
       body: JSON.stringify({
@@ -684,6 +696,7 @@ export function LoyalisPresenceCorrectionsCard({
         action: 'approve',
         expectedRevision: item.revision,
         reason: '',
+        ...(attendanceConfirmation ? { attendanceConfirmation } : {}),
       }),
     });
   };
@@ -701,7 +714,18 @@ export function LoyalisPresenceCorrectionsCard({
     });
   };
 
-  const handleApproveLoyalisItem = async (item: LoyalisReviewItem) => {
+  const handleApproveLoyalisItem = async (
+    item: LoyalisReviewItem,
+    attendanceConfirmation?: GantiLiburAttendanceCheck,
+  ) => {
+    if (item.kind === 'ganti_libur' && !attendanceConfirmation &&
+      item.request.attendanceCheck && item.request.attendanceCheck.verdict !== 'eligible') {
+      setGantiLiburConfirmation({
+        period, scope: 'single', items: [item],
+        checks: [{ request: item.request, check: item.request.attendanceCheck }],
+      });
+      return;
+    }
     const key = loyalisItemKey(item);
     setActionLoading(key);
     setMessage(null);
@@ -726,9 +750,12 @@ export function LoyalisPresenceCorrectionsCard({
         await fetchExtraRequests();
         successText = `Cuti tahunan ${loyalisItemEmployeeName(item)} berhasil disetujui.`;
       } else if (item.kind === 'ganti_libur') {
-        await approveGantiLiburItem(item.request);
+        await approveGantiLiburItem(item.request, attendanceConfirmation);
+        const slipMessage = await propagateUraianToSlips({
+          scope: 'loyalis', period: item.request.dayOffPeriod,
+        });
         await fetchExtraRequests();
-        successText = `Ganti libur ${loyalisItemEmployeeName(item)} berhasil disetujui.`;
+        successText = `Ganti libur ${loyalisItemEmployeeName(item)} berhasil disetujui.${slipMessage}`;
       }
       setMessage({ type: 'success', text: successText });
       setReviewProgress({
@@ -742,6 +769,18 @@ export function LoyalisPresenceCorrectionsCard({
       });
       if (onResolved) await onResolved();
     } catch (err: unknown) {
+      if (item.kind === 'ganti_libur' && err instanceof ApiError &&
+        err.code === GANTI_LIBUR_ATTENDANCE_CONFIRMATION_REQUIRED) {
+        const details = err.details as { attendanceCheck?: unknown } | undefined;
+        const check = parseGantiLiburAttendanceConfirmation(details?.attendanceCheck);
+        if (check) {
+          setReviewProgress(null);
+          setGantiLiburConfirmation({
+            period, scope: 'single', items: [item], checks: [{ request: item.request, check }],
+          });
+          return;
+        }
+      }
       console.error(err);
       const errorText = err instanceof Error ? err.message : 'Gagal menyetujui pengajuan Loyalis.';
       setMessage({
@@ -763,13 +802,28 @@ export function LoyalisPresenceCorrectionsCard({
     }
   };
 
-  const handleBulkApproveLoyalisRequests = async () => {
-    const selectedItems = bulkEligibleLoyalisRequests.filter((item) =>
+  const handleBulkApproveLoyalisRequests = async (
+    confirmedItems?: LoyalisReviewItem[],
+    attendanceConfirmations?: Map<string, GantiLiburAttendanceCheck>,
+  ) => {
+    const selectedItems = confirmedItems || bulkEligibleLoyalisRequests.filter((item) =>
       selectedLoyalisRequestIds.has(loyalisItemKey(item)),
     );
     if (selectedItems.length === 0) {
       setMessage({ type: 'error', text: 'Pilih minimal satu pengajuan Loyalis untuk disetujui.' });
       return;
+    }
+
+    if (!confirmedItems) {
+      const checks = selectedItems.flatMap((item) =>
+        item.kind === 'ganti_libur' && item.request.attendanceCheck &&
+          item.request.attendanceCheck.verdict !== 'eligible'
+          ? [{ request: item.request, check: item.request.attendanceCheck }] : [],
+      );
+      if (checks.length > 0) {
+        setGantiLiburConfirmation({ period, scope: 'bulk', items: selectedItems, checks });
+        return;
+      }
     }
 
     setActionLoading('bulk-loyalis-approve');
@@ -787,6 +841,7 @@ export function LoyalisPresenceCorrectionsCard({
 
     let succeeded = 0;
     const errors: string[] = [];
+    const gantiLiburPeriods = new Set<string>();
     try {
       for (let index = 0; index < selectedItems.length; index += 1) {
         const item = selectedItems[index];
@@ -805,7 +860,8 @@ export function LoyalisPresenceCorrectionsCard({
           } else if (item.kind === 'paid_leave') {
             await approvePaidLeaveItem(item.request);
           } else if (item.kind === 'ganti_libur') {
-            await approveGantiLiburItem(item.request);
+            await approveGantiLiburItem(item.request, attendanceConfirmations?.get(item.request.id));
+            gantiLiburPeriods.add(item.request.dayOffPeriod);
           }
           succeeded += 1;
         } catch (err: unknown) {
@@ -830,11 +886,16 @@ export function LoyalisPresenceCorrectionsCard({
       await Promise.all([invalidateLoyalisPresenceCorrections(), fetchExtraRequests()]);
       if (onResolved) await onResolved();
 
+      let slipMessage = '';
+      for (const dayOffPeriod of gantiLiburPeriods) {
+        slipMessage += await propagateUraianToSlips({ scope: 'loyalis', period: dayOffPeriod });
+      }
       const failed = errors.length;
-      const summaryMessage =
+      const summaryMessage = (
         failed === 0
           ? `${succeeded} pengajuan Loyalis berhasil disetujui dan disimpan.`
-          : `${succeeded} pengajuan Loyalis berhasil disetujui; ${failed} pengajuan gagal diproses.`;
+          : `${succeeded} pengajuan Loyalis berhasil disetujui; ${failed} pengajuan gagal diproses.`
+      ) + slipMessage;
       setReviewProgress({
         status: failed === 0 ? 'success' : 'error',
         scope: 'bulk',
@@ -1643,6 +1704,12 @@ export function LoyalisPresenceCorrectionsCard({
                                           workedDate={item.request.workedDate}
                                         />
                                       )}
+                                      {item.request.status === 'approved' && item.request.attendanceOverride && (
+                                        <p className="text-xs text-amber-800">
+                                          Disetujui dengan konfirmasi presensi oleh{' '}
+                                          {item.request.attendanceOverride.confirmedByName || 'admin'}.
+                                        </p>
+                                      )}
                                     </div>
 
                                     <div className="space-y-1.5 bg-slate-50/50 p-4 rounded-md border border-slate-100 text-left">
@@ -1781,6 +1848,67 @@ export function LoyalisPresenceCorrectionsCard({
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={gantiLiburConfirmation?.period === period}
+        onOpenChange={(open) => { if (!open) setGantiLiburConfirmation(null); }}
+      >
+        <DialogContent className="rounded-md sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Konfirmasi Persetujuan Ganti Libur</DialogTitle>
+            <DialogDescription>
+              Presensi Masuk Hari Libur berikut belum terdeteksi atau belum memenuhi
+              jam kerja penuh 07.30–14.00 WIB. Periksa pengajuan dan dokumen pendukung
+              sebelum melanjutkan.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-72 space-y-3 overflow-y-auto">
+            {gantiLiburConfirmation?.checks.map(({ request, check }) => (
+              <div key={request.id} className="space-y-1 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
+                <p className="font-semibold">{request.employeeName}</p>
+                <p>Masuk Hari Libur: {formatDateDisplay(request.workedDate)}</p>
+                <p>Tanggal Libur: {formatDateDisplay(request.dayOffDate)}</p>
+                <p>{gantiLiburVerdictLabel(check.verdict)}</p>
+                <p>Scan masuk: {check.scanIn || '—'} · Scan pulang: {check.scanOut || '—'}</p>
+              </div>
+            ))}
+          </div>
+          {gantiLiburConfirmation?.scope === 'bulk' && (
+            <p className="text-sm font-medium text-slate-700">
+              Seluruh {gantiLiburConfirmation.items.length} pengajuan yang dipilih
+              akan diproses, termasuk {gantiLiburConfirmation.checks.length} ganti
+              libur yang memerlukan konfirmasi presensi.
+            </p>
+          )}
+          <p className="text-sm text-slate-600">
+            Jika dilanjutkan, ganti libur akan disetujui dan tanggal libur dihitung
+            sebagai presensi berbayar penuh. Konfirmasi admin akan dicatat dalam
+            riwayat keputusan.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGantiLiburConfirmation(null)}>
+              Batal
+            </Button>
+            <Button
+              className="bg-indigo-600 text-white hover:bg-indigo-700"
+              onClick={() => {
+                const confirmation = gantiLiburConfirmation;
+                if (!confirmation || confirmation.period !== period) return;
+                setGantiLiburConfirmation(null);
+                if (confirmation.scope === 'single') {
+                  void handleApproveLoyalisItem(confirmation.items[0], confirmation.checks[0].check);
+                } else {
+                  void handleBulkApproveLoyalisRequests(confirmation.items, new Map(
+                    confirmation.checks.map(({ request, check }) => [request.id, check]),
+                  ));
+                }
+              }}
+            >
+              Tetap setujui &amp; terapkan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Progress Dialog for Approvals */}
       <Dialog

@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { NextRequest } from 'next/server';
 import { PEKARYA_JOB_CATEGORIES } from '../src/lib/payroll/pekaryaSpj';
+import { GANTI_LIBUR_ATTENDANCE_CONFIRMATION_REQUIRED } from '../src/lib/payroll/gantiLibur';
 
 const PROJECT = 'demo-pekarya-leave';
 type Handler = (request: NextRequest) => Promise<Response>;
@@ -16,6 +17,7 @@ async function main() {
   const { adminDb: db, default: admin } = await import('../src/lib/firebase-admin');
   const swap = await import('../src/app/api/employee/ganti-libur/route');
   const swapReview = await import('../src/app/api/payroll/ganti-libur/review/route');
+  const propagation = await import('../src/app/api/payroll/uraian-propagation/route');
   const leave = await import('../src/app/api/employee/paid-leave/route');
   const leaveReview = await import('../src/app/api/payroll/paid-leave/review/route');
   const balances = await import('../src/app/api/payroll/paid-leave/balances/route');
@@ -180,6 +182,22 @@ async function main() {
   assert.equal((await call(swapReview.GET, loyalisAdmin, undefined, 200, '?status=all')).requests.length, 0);
   assert.equal((await call(swapReview.GET, superAdmin, undefined, 200, '?status=all')).requests.length, fixtures.length);
 
+  // The shared API also requires an explicit exception for every Pekarya category.
+  for (const fixture of fixtures) {
+    const request = await call(swap.POST, fixture.worker, submit('2026-09-11', '2026-10-06'));
+    const approve = command({ action: 'approve', gantiLiburRequestId: request.id, expectedRevision: 1 });
+    const warning = await call(swapReview.POST, fixture.reviewer, approve, 409);
+    assert.equal(warning.code, GANTI_LIBUR_ATTENDANCE_CONFIRMATION_REQUIRED, fixture.category);
+    await call(swapReview.POST, fixture.reviewer, { ...approve, attendanceConfirmation: warning.details.attendanceCheck });
+    const stored = (await db.doc(`GantiLiburRequests/${request.id}`).get()).data()!;
+    assert.equal(stored.status, 'approved', fixture.category);
+    assert.ok(stored.approvedAmount > 0, fixture.category);
+    assert.equal(stored.attendanceOverride.attendanceCheck.verdict, 'absent', fixture.category);
+    const uraian = (await db.doc(`UraianGaji/2026_10_${fixture.category}`).get()).data()!;
+    assert.equal(uraian.entries[fixture.employeeId].counts.harian, 3, fixture.category);
+  }
+  console.log('PASS confirmed attendance exceptions apply paid Ganti Libur to all seven Pekarya categories');
+
   // Missing/short attendance, withdrawal, weekly limits, locked periods and slips.
   const fixture = fixtures[1];
   const request = await call(swap.POST, fixture.worker, submit('2026-09-18', '2026-09-29'));
@@ -228,6 +246,101 @@ async function main() {
   const legacyPresence = (await db.doc('LoyalisPresence/2026_10').get()).data()!;
   assert.equal(legacyPresence.entries.LOY_1.dailyLogs[0]['Jam kerja'], 'GANTI LIBUR');
   console.log('PASS immutable compensatory credits, izin conflicts, import changes and legacy Loyalis approvals');
+
+  // Loyalis admin exceptions preserve real attendance evidence and apply one paid day.
+  for (const [verdict, scanIn, scanOut] of [
+    ['absent', '', ''], ['incomplete', '07:30', ''],
+    ['lembur', '07:40', '13:00'], ['awaiting_upload', '', ''],
+  ] as const) {
+    const employeeId = `LOY_OVERRIDE_${verdict}`;
+    const worker = await account('loyalis', employeeId);
+    await db.doc(`Employees_Loyalis/${employeeId}`).set({ personal_info: { name: employeeId, status: 'AKTIF' } });
+    await db.doc('LoyalisPresence/2026_09').set({ entries: { [employeeId]: { dailyLogs: [{
+      Tanggal: verdict === 'awaiting_upload' ? '01-09-2026' : '18-09-2026',
+      'Jam kerja': 'MASUK', 'Scan masuk': scanIn, 'Scan pulang': scanOut,
+    }] } } }, { merge: true });
+    const dayOffEntry = { employeeId, minutes: 24 * 390, absenceMinutes: 390, netBonus: 230_000,
+      activeDaysCount: 24, absentDaysCount: 1, dailyLogs: [{
+        Tanggal: '01-10-2026', 'Jam kerja': 'TIDAK HADIR', 'Scan masuk': '', 'Scan pulang': '',
+      }] };
+    await db.doc('LoyalisPresence/2026_10').set({ entries: { [employeeId]: dayOffEntry } }, { merge: true });
+    const request = await call(swap.POST, worker, submit('2026-09-18'));
+    const approve = command({ action: 'approve', gantiLiburRequestId: request.id, expectedRevision: 1 });
+    const warning = await call(swapReview.POST, loyalisAdmin, approve, 409);
+    assert.equal(warning.code, GANTI_LIBUR_ATTENDANCE_CONFIRMATION_REQUIRED);
+    assert.equal(warning.details.attendanceCheck.verdict, verdict);
+    assert.equal((await db.doc(`GantiLiburRequests/${request.id}`).get()).data()!.status, 'pending');
+    assert.equal((await db.doc('LoyalisPresence/2026_10').get()).data()!.entries[employeeId].absenceMinutes, 390);
+    assert.equal((await db.doc(`FinancialIdempotencyKeys/${(await admin.auth().verifyIdToken(loyalisAdmin.slice(7))).uid}__${approve.requestId}`).get()).exists, false);
+    await call(swapReview.POST, loyalisAdmin, { ...approve, attendanceConfirmation: true }, 400);
+    let confirmation = warning.details.attendanceCheck;
+    if (verdict === 'incomplete') {
+      await db.doc('LoyalisPresence/2026_09').update({ [`entries.${employeeId}.dailyLogs`]: [{
+        Tanggal: '18-09-2026', 'Jam kerja': 'MASUK', 'Scan masuk': '07:40', 'Scan pulang': '',
+      }] });
+      const refreshed = await call(swapReview.POST, loyalisAdmin, { ...approve, attendanceConfirmation: confirmation }, 409);
+      assert.equal(refreshed.code, GANTI_LIBUR_ATTENDANCE_CONFIRMATION_REQUIRED);
+      assert.equal(refreshed.details.attendanceCheck.scanIn, '07:40');
+      confirmation = refreshed.details.attendanceCheck;
+    }
+    const confirmed = { ...approve, attendanceConfirmation: confirmation };
+    await call(swapReview.POST, finance, confirmed, 403);
+    await call(swapReview.POST, loyalisAdmin, { ...confirmed, expectedRevision: 99 }, 409);
+    if (verdict === 'absent') {
+      await db.doc('PayrollPeriods/2026-10').set({ attendanceStatus: 'closed' });
+      assert.match((await call(swapReview.POST, loyalisAdmin, confirmed, 409)).error, /ditutup/);
+      await db.doc('PayrollPeriods/2026-10').delete();
+      await db.doc(`PayrollSlipStates/2026_10_${employeeId}`).set({ status: 'locked' });
+      assert.match((await call(swapReview.POST, loyalisAdmin, confirmed, 409)).error, /final/);
+      await db.doc(`PayrollSlipStates/2026_10_${employeeId}`).delete();
+      await db.doc('LoyalisPresence/2026_10').update({ [`entries.${employeeId}.dailyLogs`]: [{
+        Tanggal: '01-10-2026', 'Jam kerja': 'MASUK', 'Scan masuk': '07:30', 'Scan pulang': '14:00',
+      }] });
+      const conflict = await call(swapReview.POST, loyalisAdmin, confirmed, 409);
+      assert.match(conflict.error, /sudah memiliki presensi/);
+      assert.equal(conflict.code, undefined, 'attendance override does not bypass replacement-date conflicts');
+      await db.doc('LoyalisPresence/2026_10').update({ [`entries.${employeeId}`]: dayOffEntry });
+    }
+    await call(swapReview.POST, loyalisAdmin, confirmed);
+    assert.equal((await call(swapReview.POST, loyalisAdmin, confirmed)).idempotent, true);
+    await call(swapReview.POST, loyalisAdmin, approve, 409);
+    const stored = (await db.doc(`GantiLiburRequests/${request.id}`).get()).data()!;
+    assert.equal(stored.status, 'approved');
+    assert.equal(stored.attendanceCheck.verdict, verdict);
+    assert.deepEqual(stored.attendanceOverride.attendanceCheck, confirmation);
+    assert.ok(stored.attendanceOverride.confirmedBy);
+    assert.ok(stored.attendanceOverride.confirmedAt);
+    const presence = (await db.doc('LoyalisPresence/2026_10').get()).data()!.entries[employeeId];
+    assert.equal(presence.dailyLogs[0]['Jam kerja'], 'GANTI LIBUR');
+    assert.equal(presence.minutes, 25 * 390);
+    assert.equal(presence.absenceMinutes, 0);
+    assert.equal(presence.netBonus, 250_000);
+    assert.equal(presence.activeDaysCount, 25, 'idempotent retries never add a second paid day');
+    await db.doc(`PayrollSlipStates/2026_10_${employeeId}`).set({ status: 'draft',
+      earnings: [{ label: 'Bonus Presensi', amount: 250_000 }],
+      deductions: [{ label: 'Potongan Bonus Presensi', amount: 20_000 }], taxes: [],
+    });
+    await call(propagation.POST, loyalisAdmin, command({ scope: 'loyalis', period: '2026-10' }));
+    const slip = (await db.doc(`PayrollSlipStates/2026_10_${employeeId}`).get()).data()!;
+    assert.equal(slip.deductions.find((field: { label: string }) => field.label === 'Potongan Bonus Presensi').amount, 0);
+    assert.equal((await db.doc(`GantiLiburRequestRevisions/${request.id}__r2`).get()).data()!.after.attendanceOverride.confirmedBy, stored.attendanceOverride.confirmedBy);
+    const audits = await db.collection('FinancialAuditLogs').where('entityId', '==', request.id).get();
+    assert.ok(audits.docs.some((document) => document.data().metadata?.attendanceOverridden === true));
+    const reviewed = await call(swapReview.GET, loyalisAdmin, undefined, 200, '?status=all');
+    assert.equal(reviewed.requests.find((item: { id: string }) => item.id === request.id).attendanceOverride.confirmedBy, stored.attendanceOverride.confirmedBy);
+  }
+  console.log('PASS Loyalis attendance override: absent/incomplete/short/unuploaded scans, refreshed confirmation, paid bonus, audit, idempotency and financial guards');
+
+  const decliningWorker = await account('loyalis', 'LOY_DECLINE');
+  await db.doc('Employees_Loyalis/LOY_DECLINE').set({ personal_info: { name: 'Declined Loyalis', status: 'AKTIF' } });
+  const declined = await call(swap.POST, decliningWorker, submit('2026-09-18'));
+  await call(swapReview.POST, loyalisAdmin, command({ action: 'decline', gantiLiburRequestId: declined.id,
+    expectedRevision: 1, reason: 'Dokumen tidak sesuai' }));
+  assert.equal((await db.doc(`GantiLiburRequests/${declined.id}`).get()).data()!.attendanceOverride, null);
+  // An older exception must never survive a new submission of a declined request.
+  await db.doc(`GantiLiburRequests/${declined.id}`).update({ attendanceOverride: { confirmedBy: 'old-reviewer' } });
+  await call(swap.POST, decliningWorker, submit('2026-09-18', '2026-10-01', 2));
+  assert.equal((await db.doc(`GantiLiburRequests/${declined.id}`).get()).data()!.attendanceOverride, null);
 
   // Client SDKs cannot forge balance/approval data even for their own employee.
   const response = await fetch(`http://${process.env.FIRESTORE_EMULATOR_HOST}/v1/projects/${PROJECT}/databases/(default)/documents/GantiLiburRequests/forged`, {

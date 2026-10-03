@@ -353,6 +353,7 @@ export async function POST(request: NextRequest) {
         decidedAt: null,
         decidedBy: null,
         attendanceCheck: null,
+        attendanceOverride: null,
         updatedAt: now,
         schemaVersion: 2,
       };

@@ -12,7 +12,9 @@ import {
  *
  * A Loyalis who comes in on a non-working day (Jumat or Tanggal Merah) for the
  * full 07:30–14:00 window earns one day off on a working day. Coming in for
- * less than that is lembur, not ganti libur. At most two ganti libur days may
+ * less than that normally counts as lembur. A reviewer may explicitly approve
+ * an exception when attendance is missing or does not cover that window.
+ * At most two ganti libur days may
  * be taken in one Saturday–Friday week (it ends on the Loyalis weekly day
  * off, Friday). The worked holiday and the day off may
  * fall in either order; the request is verified once the worked date's
@@ -44,6 +46,34 @@ export interface GantiLiburAttendanceCheck {
   scanOut: string;
 }
 
+export const GANTI_LIBUR_ATTENDANCE_CONFIRMATION_REQUIRED =
+  'GANTI_LIBUR_ATTENDANCE_CONFIRMATION_REQUIRED';
+
+/** Explicit acknowledgment of the exact attendance evidence shown to the reviewer. */
+export function parseGantiLiburAttendanceConfirmation(
+  value: unknown,
+): GantiLiburAttendanceCheck | null {
+  if (!value || typeof value !== 'object') return null;
+  const check = value as Record<string, unknown>;
+  if (!['lembur', 'incomplete', 'absent', 'awaiting_upload'].includes(String(check.verdict)) ||
+    typeof check.scanIn !== 'string' || typeof check.scanOut !== 'string' ||
+    !/^(?:\d{2}:\d{2}(?::\d{2})?)?$/.test(check.scanIn) ||
+    !/^(?:\d{2}:\d{2}(?::\d{2})?)?$/.test(check.scanOut)) return null;
+  return {
+    verdict: check.verdict as GantiLiburAttendanceVerdict,
+    scanIn: check.scanIn,
+    scanOut: check.scanOut,
+  };
+}
+
+export function gantiLiburAttendanceConfirmationMatches(
+  confirmation: GantiLiburAttendanceCheck | null | undefined,
+  current: GantiLiburAttendanceCheck,
+): boolean {
+  return current.verdict !== 'eligible' && confirmation?.verdict === current.verdict &&
+    confirmation.scanIn === current.scanIn && confirmation.scanOut === current.scanOut;
+}
+
 export interface GantiLiburRequest {
   id: string;
   employeeId: string;
@@ -63,6 +93,12 @@ export interface GantiLiburRequest {
   decisionReason?: string | null;
   /** Live for pending requests; the snapshot taken at decision otherwise. */
   attendanceCheck?: GantiLiburAttendanceCheck | null;
+  /** Kept separately from the real attendance verdict; never fabricates scans. */
+  attendanceOverride?: {
+    confirmedBy: string;
+    confirmedByName: string;
+    attendanceCheck: GantiLiburAttendanceCheck;
+  } | null;
   /** Surat resmi files the employee attached; optional. */
   attachments?: GantiLiburAttachment[];
 }
@@ -375,6 +411,7 @@ export function gantiLiburDecisionIssue(input: {
   currentRevision: number;
   status: GantiLiburStatus;
   verdict: GantiLiburAttendanceVerdict;
+  attendanceConfirmed?: boolean;
   dayOffIsOffDay: boolean;
   dayOffConflict: boolean;
 }): GantiLiburDecisionIssue | null {
@@ -382,8 +419,10 @@ export function gantiLiburDecisionIssue(input: {
   if (input.approving && input.immutableSlip) return 'immutable_slip';
   if (input.currentRevision !== input.expectedRevision) return 'revision_conflict';
   if (input.status !== 'pending') return 'not_pending';
-  if (input.approving && input.verdict !== 'eligible') return 'attendance_not_verified';
   if (input.approving && input.dayOffIsOffDay) return 'day_off_now_holiday';
   if (input.approving && input.dayOffConflict) return 'day_off_conflict';
+  if (input.approving && input.verdict !== 'eligible' && !input.attendanceConfirmed) {
+    return 'attendance_not_verified';
+  }
   return null;
 }

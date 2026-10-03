@@ -4,6 +4,8 @@ import {
   closestGantiLiburOffDay,
   evaluateGantiLiburAttendance,
   gantiLiburAttendanceCheck,
+  gantiLiburAttendanceConfirmationMatches,
+  parseGantiLiburAttendanceConfirmation,
   gantiLiburDecisionIssue,
   gantiLiburSubmitIssue,
   gantiLiburWeekEnd,
@@ -28,6 +30,20 @@ test('every Pekarya category uses category-scoped review, including Satpam', () 
     assert.equal(canReviewGantiLibur({ role: 'super_admin', permittedCategories: [] }, request), true);
     assert.equal(canReadGantiLibur({ role: 'finance_verifier', permittedCategories: [] }, request), true);
     assert.equal(canReviewGantiLibur({ role: 'finance_verifier', permittedCategories: [category] }, request), false);
+  }
+});
+
+test('attendance confirmation must describe the exact current scans and verdict', () => {
+  const current = { verdict: 'incomplete' as const, scanIn: '07:30', scanOut: '' };
+  assert.deepEqual(parseGantiLiburAttendanceConfirmation(current), current);
+  assert.equal(gantiLiburAttendanceConfirmationMatches(current, current), true);
+  assert.equal(gantiLiburAttendanceConfirmationMatches(null, current), false);
+  assert.equal(gantiLiburAttendanceConfirmationMatches({ ...current, scanIn: '07:35' }, current), false);
+  assert.equal(gantiLiburAttendanceConfirmationMatches({ ...current, verdict: 'absent' }, current), false);
+  assert.equal(gantiLiburAttendanceConfirmationMatches(current, { ...current, scanOut: '13:00' }), false);
+  for (const invalid of [true, {}, { confirmed: true }, { ...current, verdict: 'eligible' },
+    { ...current, verdict: 'unknown' }, { ...current, scanIn: 730 }, { ...current, scanOut: 'garbage' }]) {
+    assert.equal(parseGantiLiburAttendanceConfirmation(invalid), null);
   }
 });
 
@@ -319,7 +335,7 @@ test('at most two ganti libur days in one Saturday–Friday week', () => {
   assert.equal(gantiLiburWeekUsage(requests, '2026-09-23', 'b'), 1);
 });
 
-test('approval requires verified attendance on the holiday worked', () => {
+test('approval requires verified attendance or an explicit attendance confirmation', () => {
   const base = {
     approving: true,
     periodClosed: false,
@@ -340,6 +356,17 @@ test('approval requires verified attendance on the holiday worked', () => {
     gantiLiburDecisionIssue({ ...base, verdict: 'awaiting_upload' }),
     'attendance_not_verified',
   );
+  for (const verdict of ['absent', 'incomplete', 'lembur', 'awaiting_upload'] as const) {
+    const confirmed = { ...base, verdict, attendanceConfirmed: true };
+    assert.equal(gantiLiburDecisionIssue({ ...confirmed, attendanceConfirmed: false }), 'attendance_not_verified');
+    assert.equal(gantiLiburDecisionIssue(confirmed), null);
+    assert.equal(gantiLiburDecisionIssue({ ...confirmed, periodClosed: true }), 'period_closed');
+    assert.equal(gantiLiburDecisionIssue({ ...confirmed, immutableSlip: true }), 'immutable_slip');
+    assert.equal(gantiLiburDecisionIssue({ ...confirmed, currentRevision: 2 }), 'revision_conflict');
+    assert.equal(gantiLiburDecisionIssue({ ...confirmed, status: 'approved' }), 'not_pending');
+    assert.equal(gantiLiburDecisionIssue({ ...confirmed, dayOffIsOffDay: true }), 'day_off_now_holiday');
+    assert.equal(gantiLiburDecisionIssue({ ...confirmed, dayOffConflict: true }), 'day_off_conflict');
+  }
   // Declining never waits for attendance.
   assert.equal(
     gantiLiburDecisionIssue({ ...base, approving: false, verdict: 'awaiting_upload' }),

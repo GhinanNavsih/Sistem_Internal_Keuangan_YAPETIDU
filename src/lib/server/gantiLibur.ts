@@ -108,6 +108,11 @@ export function gantiLiburRequestFromData(
     revision: Number(data.revision || 0),
     decisionReason: data.decisionReason ?? null,
     attendanceCheck: data.attendanceCheck ?? null,
+    attendanceOverride: data.attendanceOverride ? {
+      confirmedBy: String(data.attendanceOverride.confirmedBy || ''),
+      confirmedByName: String(data.attendanceOverride.confirmedByName || ''),
+      attendanceCheck: data.attendanceOverride.attendanceCheck,
+    } : null,
     attachments: coerceGantiLiburAttachments(data.attachments),
   };
 }
