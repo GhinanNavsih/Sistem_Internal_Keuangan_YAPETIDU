@@ -102,6 +102,8 @@ import {
   getInitialSatpamDateISO,
   createBlankSatpamAssignments,
   POSTS_CONFIG,
+  EARLIEST_PERIOD_YEAR,
+  EARLIEST_PERIOD_MONTH,
   type SatpamDraftSyncStatus,
   createSatpamDraftFingerprint,
 } from './activityShared';
@@ -117,6 +119,8 @@ export {
   getActivityFeeBreakdown,
   getStatusConfig,
   YEARS,
+  EARLIEST_PERIOD_YEAR,
+  EARLIEST_PERIOD_MONTH,
   POSTS_CONFIG,
 } from './activityShared';
 
@@ -565,6 +569,26 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
 
   // ── Expandable activity cards ──
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // The picker offers nothing before June 2026 or after the current month, so a
+  // year change can't land on a period outside that range.
+  useEffect(() => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+
+    if (year < EARLIEST_PERIOD_YEAR) {
+      setYear(EARLIEST_PERIOD_YEAR);
+      setMonth(EARLIEST_PERIOD_MONTH);
+    } else if (year === EARLIEST_PERIOD_YEAR && month < EARLIEST_PERIOD_MONTH) {
+      setMonth(EARLIEST_PERIOD_MONTH);
+    } else if (year > currentYear) {
+      setYear(currentYear);
+      setMonth(currentMonth);
+    } else if (year === currentYear && month > currentMonth) {
+      setMonth(currentMonth);
+    }
+  }, [year, month]);
 
   // Enforce July 2026 to current month/year limit for Ketua Shift Satpam
   useEffect(() => {

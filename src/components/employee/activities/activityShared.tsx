@@ -436,7 +436,13 @@ export function createBlankSatpamAssignments(
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export const YEARS = Array.from({ length: 3 }, (_, i) => new Date().getFullYear() - i);
+// The period picker offers nothing before June 2026.
+export const EARLIEST_PERIOD_YEAR = 2026;
+export const EARLIEST_PERIOD_MONTH = 6;
+
+export const YEARS = Array.from({ length: 3 }, (_, i) => new Date().getFullYear() - i).filter(
+  (year) => year >= EARLIEST_PERIOD_YEAR,
+);
 
 export const POSTS_CONFIG = [
   { id: 'Pos 1', name: 'Pos IC' },

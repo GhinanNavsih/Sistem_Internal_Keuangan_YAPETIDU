@@ -99,7 +99,6 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
     setExtraOvertimeReason,
     satpamFlexibilityEnabled,
     satpamDutyPlan,
-    satpamSuggestedShiftName,
     setSatpamReportedShiftName,
     satpamOpenPeriods,
     satpamReviewStatus,
@@ -267,9 +266,6 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                           </SelectItem>
                         </SelectContent>
                       </Select>
-                      <p className="text-sm text-slate-600">
-                        Saran sistem: <strong>Shift {satpamSuggestedShiftName}</strong>. Anda tetap boleh memilih shift yang benar.
-                      </p>
                       {!satpamFlexibilityEnabled && (
                         <p className="text-sm font-semibold text-amber-800">
                           Regu ini masih memakai tanggal dan rota hari ini. Pos
@@ -314,11 +310,6 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                     <h3 className="text-base font-bold text-slate-600 border-b border-slate-100 pb-2">
                       Penugasan Pos Keamanan (9 Pos)
                     </h3>
-                    <p className="text-sm text-slate-600">
-                      Jika suatu pos tidak memiliki Satpam, biarkan pilihan
-                      petugas kosong. Laporan tetap dapat dikirim dan akan
-                      ditandai untuk pemeriksaan auditor.
-                    </p>
                     {pos9GuardIds.size < 3 && (
                       <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
                         Tiga petugas Pos 9 belum lengkap dari rencana regu periode ini. Pos 9 tetap dapat dilaporkan, tetapi perlu diperiksa Kepala SatKer.
@@ -605,30 +596,24 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                                 className="hidden"
                               />
                               {val.photoUrl ? (
-                                <div className="flex items-center justify-between gap-2 p-2 bg-blue-50/80 border border-blue-200 rounded-md text-base">
-                                  <div className="flex items-center gap-1.5 truncate font-bold text-blue-800">
-                                    <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                                    <span className="truncate">Foto bukti {post.id} terunggah</span>
-                                  </div>
-                                  <div className="flex items-center gap-1.5 shrink-0">
+                                <div className="relative flex items-center justify-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSatpamPreviewPhoto({ url: val.photoUrl!, title: `${post.id} — ${post.name}` })}
+                                    className="min-h-12 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-sm font-bold text-base flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                                  >
+                                    <Eye className="w-3 h-3" /> Lihat Foto Bukti
+                                  </button>
+                                  {!isSatpamReportLocked && (
                                     <button
                                       type="button"
-                                      onClick={() => setSatpamPreviewPhoto({ url: val.photoUrl!, title: `${post.id} — ${post.name}` })}
-                                      className="min-h-12 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-sm font-bold text-base flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                                      onClick={() => handleRemovePostPhoto(post.id)}
+                                      className="absolute right-0 h-12 w-12 flex items-center justify-center hover:bg-rose-100 text-rose-600 rounded-sm transition-colors cursor-pointer"
+                                      title="Hapus Foto Ini"
                                     >
-                                      <Eye className="w-3 h-3" /> Lihat Foto
+                                      <Trash2 className="w-3.5 h-3.5" />
                                     </button>
-                                    {!isSatpamReportLocked && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleRemovePostPhoto(post.id)}
-                                        className="h-12 w-12 flex items-center justify-center hover:bg-rose-100 text-rose-600 rounded-sm transition-colors cursor-pointer"
-                                        title="Hapus Foto Ini"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    )}
-                                  </div>
+                                  )}
                                 </div>
                               ) : (
                                 // A missing photo can still be supplied after an auditor
@@ -654,12 +639,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                         );
                       })}
 
-                      {!lemburSendiriAllowed ? (
-                        <p className="rounded-md border border-dashed border-slate-300 bg-slate-50/60 p-4 text-sm font-semibold text-slate-600">
-                          Mulai 1 Oktober 2026 tidak ada lagi Lembur Sendiri (petugas tambahan).
-                          Bila ada anggota yang absen, isi posnya dengan Lembur Cover.
-                        </p>
-                      ) : !isExtraPostVisible ? (
+                      {!lemburSendiriAllowed ? null : !isExtraPostVisible ? (
                         !isSatpamReportLocked && (
                           <div
                             onClick={() => setIsExtraPostVisible(true)}

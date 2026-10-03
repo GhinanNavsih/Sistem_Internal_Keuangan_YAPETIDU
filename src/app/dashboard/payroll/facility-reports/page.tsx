@@ -627,11 +627,7 @@ function FacilityReportReviewContent() {
           </header>
         )}
 
-        {isRepairer ? (
-          <p className="max-w-3xl text-xs leading-relaxed text-slate-500 sm:text-sm">
-            Perbaiki laporan fasilitas yang rusak, kotor, atau tidak terawat. Setelah selesai, simpan foto sebagai bukti perbaikan.
-          </p>
-        ) : (
+        {!isRepairer && (
           <div className="flex min-w-0 items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm bg-amber-50 text-amber-600 shadow-inner sm:h-11 sm:w-11 sm:rounded-sm">
               <Wrench className="h-5 w-5" />
