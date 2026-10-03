@@ -58,7 +58,10 @@ export default function EmployeeLeavePage() {
     profile?.permittedCategories?.[0]?.trim().toUpperCase() || '';
   const workflowLabels = {
     presence_correction: 'Koreksi Presensi',
-    sick_leave: 'Izin Sakit',
+    // Blue-collar staff (Satpam and Pekarya) submit this for sickness or any
+    // other official leave, so it is not named after sickness alone. Loyalis
+    // staff use it for sick leave only.
+    sick_leave: isLoyalis ? 'Izin Sakit' : 'Izin Resmi',
     paid_leave: 'Ambil Cuti',
     ganti_libur: 'Ganti Libur',
   } as const;
@@ -207,7 +210,7 @@ export default function EmployeeLeavePage() {
                 value="sick_leave"
                 className="min-h-12 px-3 py-3 text-base font-semibold"
               >
-                Izin Sakit
+                {workflowLabels.sick_leave}
               </SelectItem>
               <SelectItem
                 value="paid_leave"

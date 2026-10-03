@@ -2,6 +2,9 @@ import type { PhotoEvidence } from '@/lib/payroll/domain';
 import { normalizePhotoAuditMetadata } from '@/lib/photoEvidence';
 
 export const LEAVE_DRAFT_STORAGE_VERSION = 1;
+/** The Pekarya work day starts at 07:30; a fresh correction form opens on it. */
+export const PEKARYA_DEFAULT_SCAN_IN = '07:30';
+export const PEKARYA_DEFAULT_SCAN_OUT = '14:00';
 export const PEKARYA_LEAVE_DRAFT_PREFIX = 'unipdu:leave-draft:pekarya:v1:';
 export const SATPAM_LEAVE_DRAFT_PREFIX = 'unipdu:leave-draft:satpam:v1:';
 
@@ -56,8 +59,8 @@ export function isPekaryaLeaveDraftEmpty(
   const hasEvidence = Boolean(draft.evidence && draft.evidence.url);
   const hasCustomDate = Boolean(draft.date && draft.date.trim().length > 0);
   const hasCustomType = Boolean(draft.reportType && draft.reportType !== 'izin_resmi');
-  const hasCustomScanIn = Boolean(draft.scanIn && draft.scanIn !== '08:00');
-  const hasCustomScanOut = Boolean(draft.scanOut && draft.scanOut !== '14:00');
+  const hasCustomScanIn = Boolean(draft.scanIn && draft.scanIn !== PEKARYA_DEFAULT_SCAN_IN);
+  const hasCustomScanOut = Boolean(draft.scanOut && draft.scanOut !== PEKARYA_DEFAULT_SCAN_OUT);
   return (
     !hasReason &&
     !hasEvidence &&
@@ -96,8 +99,8 @@ export function serializePekaryaLeaveDraft(payload: PekaryaLeaveDraftPayload): s
     savedAt: new Date().toISOString(),
     date: payload.date?.trim() || '',
     reportType: payload.reportType === 'scan' ? 'scan' : 'izin_resmi',
-    scanIn: payload.scanIn?.trim() || '08:00',
-    scanOut: payload.scanOut?.trim() || '14:00',
+    scanIn: payload.scanIn?.trim() || PEKARYA_DEFAULT_SCAN_IN,
+    scanOut: payload.scanOut?.trim() || PEKARYA_DEFAULT_SCAN_OUT,
     reason: payload.reason?.trim() || '',
     evidence:
       payload.evidence && typeof payload.evidence.url === 'string' && payload.evidence.url
@@ -119,8 +122,8 @@ export function parsePekaryaLeaveDraft(raw: string | null | undefined): PekaryaL
 
     const reportType = parsed.reportType === 'scan' ? 'scan' : 'izin_resmi';
     const date = typeof parsed.date === 'string' ? parsed.date.trim() : '';
-    const scanIn = typeof parsed.scanIn === 'string' ? parsed.scanIn.trim() : '08:00';
-    const scanOut = typeof parsed.scanOut === 'string' ? parsed.scanOut.trim() : '14:00';
+    const scanIn = typeof parsed.scanIn === 'string' ? parsed.scanIn.trim() : PEKARYA_DEFAULT_SCAN_IN;
+    const scanOut = typeof parsed.scanOut === 'string' ? parsed.scanOut.trim() : PEKARYA_DEFAULT_SCAN_OUT;
     const reason = typeof parsed.reason === 'string' ? parsed.reason.slice(0, 5000) : '';
 
     let evidence: PekaryaLeaveDraft['evidence'] = null;

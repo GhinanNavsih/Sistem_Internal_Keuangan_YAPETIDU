@@ -34,7 +34,7 @@ test('detects empty vs filled Pekarya drafts', () => {
   assert.equal(
     isPekaryaLeaveDraftEmpty({
       reportType: 'izin_resmi',
-      scanIn: '08:00',
+      scanIn: '07:30',
       scanOut: '14:00',
       reason: '',
       date: '',
@@ -46,7 +46,7 @@ test('detects empty vs filled Pekarya drafts', () => {
   assert.equal(isPekaryaLeaveDraftEmpty({ reason: 'Sakit gigi' }), false);
   assert.equal(isPekaryaLeaveDraftEmpty({ date: '2026-09-22' }), false);
   assert.equal(isPekaryaLeaveDraftEmpty({ reportType: 'scan' }), false);
-  assert.equal(isPekaryaLeaveDraftEmpty({ scanIn: '07:30' }), false);
+  assert.equal(isPekaryaLeaveDraftEmpty({ scanIn: '08:00' }), false);
   assert.equal(isPekaryaLeaveDraftEmpty({ scanOut: '15:00' }), false);
   assert.equal(
     isPekaryaLeaveDraftEmpty({

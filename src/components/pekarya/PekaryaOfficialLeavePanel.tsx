@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { uploadProofFile } from '@/lib/uploads';
 import {
+  normalizePhotoAuditMetadata,
   prepareProofImage,
   type PhotoAuditMetadata,
   type PhotoEvidence,
@@ -30,6 +31,8 @@ import {
 import { pekaryaPayrollPeriodForDate } from '@/lib/payroll/pekaryaSpj';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 import {
+  PEKARYA_DEFAULT_SCAN_IN,
+  PEKARYA_DEFAULT_SCAN_OUT,
   readPekaryaLeaveDraft,
   savePekaryaLeaveDraft,
   clearPekaryaLeaveDraft,
@@ -59,13 +62,39 @@ type OpenPeriod = {
   endDate: string;
 };
 
-const DEFAULT_SCAN_IN = '08:00';
-const DEFAULT_SCAN_OUT = '14:00';
+const DEFAULT_SCAN_IN = PEKARYA_DEFAULT_SCAN_IN;
+const DEFAULT_SCAN_OUT = PEKARYA_DEFAULT_SCAN_OUT;
 const CLOCK_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const REPORT_TYPE_LABELS: Record<PekaryaAttendanceReportType, string> = {
   scan: 'Scan Masuk & Scan Keluar',
   izin_resmi: 'Izin Resmi / Sakit (Hari Penuh)',
 };
+
+/** What the form says about the request already sent for the selected date. */
+function savedRequestNotice(request: PekaryaOfficialLeaveRequest): { text: string; className: string } {
+  switch (request.status) {
+    case 'pending':
+      return {
+        text: 'Pengajuan untuk tanggal ini sedang menunggu keputusan. Tarik dulu di Riwayat Pengajuan bila ingin mengubahnya.',
+        className: 'border-amber-200 bg-amber-50 text-amber-900',
+      };
+    case 'approved':
+      return {
+        text: 'Pengajuan untuk tanggal ini sudah disetujui dan tidak dapat diubah.',
+        className: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+      };
+    case 'declined':
+      return {
+        text: `Pengajuan sebelumnya ditolak${request.decisionReason ? `: ${request.decisionReason}` : '.'} Perbaiki lalu kirim ulang.`,
+        className: 'border-rose-200 bg-rose-50 text-rose-900',
+      };
+    default:
+      return {
+        text: 'Pengajuan sebelumnya ditarik. Ubah bila perlu, lalu kirim ulang.',
+        className: 'border-slate-200 bg-slate-50 text-slate-700',
+      };
+  }
+}
 
 function statusLabel(status: PekaryaOfficialLeaveRequest['status']): string {
   return {
@@ -118,7 +147,7 @@ export function PekaryaOfficialLeavePanel(props: {
     [openPeriods],
   );
   const [date, setDate] = useState('');
-  // Optional last day of a multi-day izin sakit; empty means just `date`.
+  // Optional last day of a multi-day izin resmi; empty means just `date`.
   const [endDate, setEndDate] = useState('');
   const [reportType, setReportType] = useState<PekaryaAttendanceReportType>('izin_resmi');
   const activeReportType = workflowMode === 'presence_correction'
@@ -133,6 +162,9 @@ export function PekaryaOfficialLeavePanel(props: {
   const [evidence, setEvidence] = useState<PhotoEvidence | null>(null);
   const [evidenceUploading, setEvidenceUploading] = useState(false);
   const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
+  const [restoredDraftDate, setRestoredDraftDate] = useState('');
+  // Which saved request, or blank date, the form was last filled from.
+  const [filledFrom, setFilledFrom] = useState('');
   const draftHydratedRef = useRef(false);
   const [selectedExifImage, setSelectedExifImage] = useState<{
     url: string;
@@ -153,6 +185,7 @@ export function PekaryaOfficialLeavePanel(props: {
     if (draft) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       if (draft.date) setDate(draft.date);
+      setRestoredDraftDate(draft.date || '');
       if (draft.reportType) setReportType(draft.reportType);
       if (draft.scanIn) setScanIn(draft.scanIn);
       if (draft.scanOut) setScanOut(draft.scanOut);
@@ -162,19 +195,6 @@ export function PekaryaOfficialLeavePanel(props: {
     }
     draftHydratedRef.current = true;
   }, [autoSaveDraft, employeeId]);
-
-  // Persist draft to localStorage as user types
-  useEffect(() => {
-    if (!autoSaveDraft || !draftHydratedRef.current || !employeeId) return;
-    savePekaryaLeaveDraft(employeeId, {
-      date,
-      reportType: activeReportType,
-      scanIn,
-      scanOut,
-      reason,
-      evidence,
-    });
-  }, [autoSaveDraft, date, activeReportType, scanIn, scanOut, reason, evidence, employeeId]);
 
   const discardDraft = useCallback(() => {
     clearPekaryaLeaveDraft(employeeId);
@@ -217,6 +237,82 @@ export function PekaryaOfficialLeavePanel(props: {
   );
   const isRange = range.dates.length > 1;
   const rangeAllOpen = range.dates.every(dayIsOpen);
+
+  // The request already sent for the selected date, when it is the kind of
+  // request this form makes. There is one request per date.
+  const savedRequest = useMemo(
+    () =>
+      requests.find(
+        (request) =>
+          request.date === effectiveDate &&
+          pekaryaAttendanceReportType(request) === activeReportType,
+      ) || null,
+    [requests, effectiveDate, activeReportType],
+  );
+  const hasSavedRequest = savedRequest !== null;
+  // Pending and approved requests cannot be sent again (the server refuses), so
+  // their form is shown for reading. A range still submits its other dates.
+  const isLocked = Boolean(
+    savedRequest &&
+      (savedRequest.status === 'pending' || savedRequest.status === 'approved') &&
+      !isRange,
+  );
+
+  // Persist draft to localStorage as user types
+  useEffect(() => {
+    if (!autoSaveDraft || !draftHydratedRef.current || !employeeId) return;
+    // A form showing a request that was already sent is not an unsent draft.
+    if (hasSavedRequest) return;
+    savePekaryaLeaveDraft(employeeId, {
+      date,
+      reportType: activeReportType,
+      scanIn,
+      scanOut,
+      reason,
+      evidence,
+    });
+  }, [autoSaveDraft, date, activeReportType, scanIn, scanOut, reason, evidence, employeeId, hasSavedRequest]);
+
+  // Selecting a date that already has a request shows what was sent, instead
+  // of a blank form. Filled while rendering, as soon as the selected date or
+  // its request changes.
+  const formKey = savedRequest
+    ? `request:${savedRequest.id}:${savedRequest.revision}`
+    : `date:${effectiveDate}`;
+  if (formKey !== filledFrom) {
+    setFilledFrom(formKey);
+    if (savedRequest) {
+      // A draft restored for this very date keeps what the employee typed.
+      const keepsDraft = hasRestoredDraft && savedRequest.date === restoredDraftDate;
+      if (!keepsDraft) {
+        setReason(savedRequest.reason || '');
+        setEvidence(
+          savedRequest.evidenceUrl
+            ? {
+                url: savedRequest.evidenceUrl,
+                // Older requests may carry no photo details; the form's own
+                // normaliser then supplies the empty set it uses for any photo.
+                auditMetadata: normalizePhotoAuditMetadata(
+                  savedRequest.evidenceAuditMetadata ?? undefined,
+                ),
+              }
+            : null,
+        );
+        setSelectedExifImage(null);
+        if (activeReportType === 'scan') {
+          if (savedRequest.scanIn) setScanIn(savedRequest.scanIn.slice(0, 5));
+          if (savedRequest.scanOut) setScanOut(savedRequest.scanOut.slice(0, 5));
+        }
+      }
+    } else if (filledFrom.startsWith('request:')) {
+      // Leaving a sent request: its text and photo must not carry into a new one.
+      setReason('');
+      setEvidence(null);
+      setSelectedExifImage(null);
+      setScanIn(DEFAULT_SCAN_IN);
+      setScanOut(DEFAULT_SCAN_OUT);
+    }
+  }
 
   const scanRangeInvalid =
     activeReportType === 'scan' &&
@@ -331,9 +427,9 @@ export function PekaryaOfficialLeavePanel(props: {
             }),
           });
         },
-        (done, total) => setMessage(`Mengirim izin sakit ${Math.min(done + 1, total)} dari ${total}…`),
+        (done, total) => setMessage(`Mengirim izin resmi ${Math.min(done + 1, total)} dari ${total}…`),
       );
-      const summary = describeLeaveRangeOutcome(outcome, 'izin sakit', formatRangeDate);
+      const summary = describeLeaveRangeOutcome(outcome, 'izin resmi', formatRangeDate);
       if (summary.failed) {
         setMessage('');
         setError(summary.text);
@@ -351,7 +447,7 @@ export function PekaryaOfficialLeavePanel(props: {
       await load();
     } catch (cause) {
       setMessage('');
-      setError(cause instanceof Error ? cause.message : 'Pengajuan izin sakit gagal dikirim.');
+      setError(cause instanceof Error ? cause.message : 'Pengajuan izin resmi gagal dikirim.');
     } finally {
       setWorking(false);
     }
@@ -407,14 +503,12 @@ export function PekaryaOfficialLeavePanel(props: {
         clearPekaryaLeaveDraft(employeeId);
       }
       setHasRestoredDraft(false);
-      setReason('');
-      setEvidence(null);
       setSelectedExifImage(null);
       setMessage(
         activeReportType === 'scan'
           ? 'Laporan scan dikirim kepada Kepala SatKer.'
           : workflowMode === 'sick_leave'
-            ? 'Pengajuan izin sakit dikirim kepada Kepala SatKer.'
+            ? 'Pengajuan izin resmi dikirim kepada Kepala SatKer.'
             : 'Pengajuan izin resmi dikirim kepada Kepala SatKer.',
       );
       await load();
@@ -527,7 +621,7 @@ export function PekaryaOfficialLeavePanel(props: {
                 dayCount={range.dates.length}
                 error={range.error}
                 disabled={working}
-                noun="izin sakit"
+                noun="izin resmi"
               />
               {isRange && !range.error && !rangeAllOpen && (
                 <p className="text-sm font-semibold text-rose-700">
@@ -573,6 +667,14 @@ export function PekaryaOfficialLeavePanel(props: {
               </SelectContent>
             </Select>
           </div>}
+          {savedRequest && (
+            <div
+              role="status"
+              className={`rounded-md border p-4 text-sm ${savedRequestNotice(savedRequest).className}`}
+            >
+              {savedRequestNotice(savedRequest).text}
+            </div>
+          )}
           {activeReportType === 'scan' ? (
             <>
               <div className="grid grid-cols-2 gap-3">
@@ -582,6 +684,7 @@ export function PekaryaOfficialLeavePanel(props: {
                     id="official-leave-scan-in"
                     type="time"
                     value={scanIn}
+                    disabled={isLocked}
                     onChange={(event) => setScanIn(event.target.value)}
                     className="min-h-14 rounded-sm text-base font-mono"
                   />
@@ -592,6 +695,7 @@ export function PekaryaOfficialLeavePanel(props: {
                     id="official-leave-scan-out"
                     type="time"
                     value={scanOut}
+                    disabled={isLocked}
                     onChange={(event) => setScanOut(event.target.value)}
                     className="min-h-14 rounded-sm text-base font-mono"
                   />
@@ -603,7 +707,7 @@ export function PekaryaOfficialLeavePanel(props: {
               <p className="flex items-center gap-2 font-bold">
                 <CalendarDays className="h-4 w-4" />
                 {workflowMode === 'sick_leave'
-                  ? 'Izin sakit dicatat sebagai izin hari penuh'
+                  ? 'Izin resmi dicatat sebagai izin hari penuh'
                   : 'Izin resmi dihitung sebagai hari penuh'}
               </p>
               <p className="mt-1">
@@ -623,12 +727,13 @@ export function PekaryaOfficialLeavePanel(props: {
               id="official-leave-reason"
               className="min-h-28 w-full rounded-sm border border-slate-300 p-3 text-base"
               value={reason}
+              disabled={isLocked}
               onChange={(event) => setReason(event.target.value)}
               placeholder={
                 activeReportType === 'scan'
                   ? 'Contoh: Scan masuk dan scan keluar tidak terbaca pada rekap presensi.'
                   : workflowMode === 'sick_leave'
-                    ? 'Jelaskan kondisi sakit dan tanggal izin.'
+                    ? 'Jelaskan alasan izin (misalnya sakit) dan tanggal izin.'
                     : 'Contoh: Keperluan izin resmi'
               }
             />
@@ -668,22 +773,24 @@ export function PekaryaOfficialLeavePanel(props: {
                     <Eye className="h-4 w-4" />
                     Lihat Foto
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setEvidence(null)}
-                    className="flex h-12 w-12 items-center justify-center rounded-sm text-rose-600 transition-colors hover:bg-rose-100"
-                    title="Hapus Foto Ini"
-                    aria-label="Hapus foto bukti"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  {!isLocked && (
+                    <button
+                      type="button"
+                      onClick={() => setEvidence(null)}
+                      className="flex h-12 w-12 items-center justify-center rounded-sm text-rose-600 transition-colors hover:bg-rose-100"
+                      title="Hapus Foto Ini"
+                      aria-label="Hapus foto bukti"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (
               <Button
                 type="button"
                 variant="outline"
-                disabled={evidenceUploading || !dateIsOpen}
+                disabled={evidenceUploading || !dateIsOpen || isLocked}
                 onClick={() => evidenceInputRef.current?.click()}
                 className="min-h-12 w-full gap-2 rounded-sm border-dashed border-slate-300 bg-slate-50/60 text-base font-bold text-slate-700 hover:bg-slate-100"
               >
@@ -701,6 +808,7 @@ export function PekaryaOfficialLeavePanel(props: {
             className="rounded-sm min-h-12 w-full gap-2 bg-indigo-600 hover:bg-indigo-700"
             disabled={
               working ||
+              isLocked ||
               evidenceUploading ||
               !effectiveDate ||
               !dateIsOpen ||
@@ -715,7 +823,7 @@ export function PekaryaOfficialLeavePanel(props: {
           >
             {working ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
             {isRange
-              ? `Kirim ${range.dates.length} Hari Izin Sakit ke Kepala SatKer`
+              ? `Kirim ${range.dates.length} Hari Izin Resmi ke Kepala SatKer`
               : 'Kirim Pengajuan ke Kepala SatKer'}
           </Button>
         </>
@@ -831,14 +939,14 @@ export function PekaryaOfficialLeavePanel(props: {
             {workflowMode === 'presence_correction'
               ? 'Koreksi Presensi'
               : workflowMode === 'sick_leave'
-                ? 'Izin Sakit'
+                ? 'Izin Resmi'
                 : 'Ajukan Izin Resmi'}
           </CardTitle>
           <p className="text-base text-slate-600">
             {workflowMode === 'presence_correction'
               ? 'Laporkan scan masuk atau scan keluar yang perlu diperbaiki kepada Kepala SatKer.'
               : workflowMode === 'sick_leave'
-                ? 'Ajukan izin sakit kepada Kepala SatKer. Pengajuan ini tidak mengurangi hak cuti tahunan.'
+                ? 'Ajukan izin resmi (sakit atau keperluan resmi lain) kepada Kepala SatKer. Pengajuan ini tidak mengurangi hak cuti tahunan.'
                 : 'Kirim laporan scan masuk &amp; scan keluar atau izin resmi kepada Kepala SatKer.'}
           </p>
         </CardHeader>
