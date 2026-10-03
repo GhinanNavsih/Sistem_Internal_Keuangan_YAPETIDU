@@ -23,8 +23,57 @@ import { PEKARYA_OFFICIAL_LEAVE_REQUESTS_COLLECTION } from '@/lib/server/pekarya
 
 export const dynamic = 'force-dynamic';
 
+// This page offers linking, so it also lists the rows no department claims.
+const VIEW_OPTIONS = {
+  allowMissingActiveImport: true,
+  includeUnrouted: true,
+} as const;
+
 function queryValue(request: NextRequest, key: string): string {
   return request.nextUrl.searchParams.get(key)?.trim() || '';
+}
+
+type UnroutedFields = {
+  unroutedLinkCandidates?: Array<{ category: string }>;
+  unroutedUnmatched?: unknown[];
+  exceptions?: { unroutedUnmatched?: unknown[] } & Record<string, unknown>;
+};
+
+/**
+ * Rows no department claims, and the employees they could be linked to, are
+ * for the roles that link attendance only. A Satker head may link only into
+ * their own categories.
+ */
+function restrictUnrouted<T extends UnroutedFields>(
+  result: T,
+  actor: { role: string; permittedCategories: readonly string[] },
+): T {
+  const mayLink = actor.role === 'super_admin' || actor.role === 'satker_head';
+  const permitted = new Set(
+    actor.permittedCategories.map((item) => item.trim().toUpperCase()),
+  );
+  const candidates = (result.unroutedLinkCandidates || []).filter(
+    (candidate) =>
+      actor.role === 'super_admin' ||
+      (mayLink && permitted.has(candidate.category.toUpperCase())),
+  );
+  return {
+    ...result,
+    ...('unroutedLinkCandidates' in result
+      ? { unroutedLinkCandidates: candidates }
+      : {}),
+    ...('unroutedUnmatched' in result
+      ? { unroutedUnmatched: mayLink ? result.unroutedUnmatched : [] }
+      : {}),
+    ...(result.exceptions
+      ? {
+          exceptions: {
+            ...result.exceptions,
+            unroutedUnmatched: mayLink ? result.exceptions.unroutedUnmatched : [],
+          },
+        }
+      : {}),
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -93,7 +142,7 @@ export async function GET(request: NextRequest) {
     const sharedContext = identityIndex
       ? await loadAttendanceViewContext(
           period,
-          { allowMissingActiveImport: true },
+          VIEW_OPTIONS,
           identityIndex,
         )
       : null;
@@ -107,23 +156,19 @@ export async function GET(request: NextRequest) {
         .includes('SATPAM');
     const [result, satpamAttendance] = await Promise.all([
       category === 'SATPAM'
-        ? buildSatpamAttendanceMismatches(period, {
-            allowMissingActiveImport: true,
-          })
+        ? buildSatpamAttendanceMismatches(period, VIEW_OPTIONS)
         : category === ALL_BLUE_COLLAR_CATEGORY
           ? buildPekaryaAttendanceViewForCategories(
               period,
               visibleCategories || [],
-              { allowMissingActiveImport: true },
+              VIEW_OPTIONS,
               sharedContext ?? undefined,
             )
-          : buildPekaryaAttendanceView(period, category, {
-              allowMissingActiveImport: true,
-            }),
+          : buildPekaryaAttendanceView(period, category, VIEW_OPTIONS),
       sharedContext && canViewSatpam
         ? buildSatpamAttendanceDetails(
             period,
-            { allowMissingActiveImport: true },
+            VIEW_OPTIONS,
             new Date(),
             sharedContext,
           ).catch((error) => {
@@ -141,7 +186,7 @@ export async function GET(request: NextRequest) {
             .where('period', '==', period)
             .get();
     return Response.json({
-      ...result,
+      ...restrictUnrouted(result, actor),
       ...(satpamAttendance ? { satpamAttendance } : {}),
       officialLeaves:
         officialLeaveSnapshot?.docs

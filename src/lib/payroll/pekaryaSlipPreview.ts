@@ -1,3 +1,4 @@
+import { presenceBonusColumnKey } from './pekaryaPresenceBonus';
 import { RekapColumn, SalaryMatrix, UraianEntry } from '@/types';
 import {
   computeSlipAmount,
@@ -406,7 +407,9 @@ export function buildPekaryaSlipPreview(
     );
     const uploaded =
       !isSatpamColumn &&
-      (column.key === 'harian' || column.key === 'jumatLibur')
+      (column.key === 'harian' ||
+        column.key === 'jumatLibur' ||
+        column.key === presenceBonusColumnKey(jobCategory))
         ? readUraianAmount(column, inputs.uploadedAttendanceEntry)
         : null;
     let amount = published ?? uploaded ?? 0;

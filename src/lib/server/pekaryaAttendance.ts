@@ -34,6 +34,12 @@ import {
   isSatpamShiftPayReport,
 } from '@/lib/payroll/satpamOfficialLeave';
 import {
+  applyCorrectionToPresenceDays,
+  calculatePekaryaPresenceBonus,
+  presenceBonusColumnKey,
+  type PekaryaPresenceBonus,
+} from '@/lib/payroll/pekaryaPresenceBonus';
+import {
   buildSatpamAttendanceDetail,
   type SatpamAttendanceDetailEmployee,
   type SatpamDetailAbsence,
@@ -59,6 +65,46 @@ export interface PekaryaAttendanceEmployeeView {
   incompletePunchCount: number;
   correctedDayCount: number;
   days: ReturnType<typeof summarizePekaryaAttendance>['days'];
+  /**
+   * Bonus Presensi for the categories that earn one (Kebersihan, Teknisi) once
+   * an attendance file is active; null for every other case.
+   */
+  presenceBonus: PekaryaPresenceBonus | null;
+}
+
+/**
+ * The rekap values to write for Bonus Presensi after one day's correction, for
+ * the routes that patch a published rekap a day at a time. Empty for the
+ * categories that earn no bonus. `employeeDays` are the employee's days from
+ * the attendance view: a scan-in that was filled in for display is not a
+ * recorded one, so it never counts as late.
+ */
+export function presenceBonusValuesAfterCorrection(input: {
+  category: string;
+  period: string;
+  premiumDates: readonly string[];
+  employeeDays: ReadonlyArray<{
+    date: string;
+    present: boolean;
+    scanIn: string | null;
+    scanInAuto?: boolean;
+  }>;
+  date: string;
+  correction: { present?: boolean; scanIn?: string | null };
+}): Record<string, number> {
+  const key = presenceBonusColumnKey(input.category);
+  if (!key) return {};
+  const recordedDays = input.employeeDays.map((day) => ({
+    date: day.date,
+    present: day.present,
+    scanIn: day.scanInAuto ? null : day.scanIn,
+  }));
+  const bonus = calculatePekaryaPresenceBonus({
+    period: input.period,
+    days: applyCorrectionToPresenceDays(recordedDays, input.date, input.correction),
+    premiumDates: new Set(input.premiumDates),
+  });
+  return { [key]: bonus.amount };
 }
 
 export interface SatpamAttendanceMismatch {
@@ -80,6 +126,33 @@ export interface SatpamAttendanceMismatch {
 
 export interface PekaryaAttendanceViewOptions {
   allowMissingActiveImport?: boolean;
+  /**
+   * Also list the rows no department claims. Only the pages that offer linking
+   * ask for it, since it reads the saved Loyalis presence to leave out the rows
+   * that page has already linked.
+   */
+  includeUnrouted?: boolean;
+}
+
+/**
+ * File names the Loyalis page has already linked to a Loyalis employee in the
+ * saved presence for the period. Its links live in that saved presence, keyed
+ * by the name as the file writes it, not in the shared manual links.
+ */
+export async function loadLoyalisHandledNames(period: string): Promise<Set<string>> {
+  const snapshot = await adminDb
+    .doc(`LoyalisPresence/${period.replace('-', '_')}`)
+    .get();
+  const entries = snapshot.data()?.entries;
+  const handled = new Set<string>();
+  if (!entries || typeof entries !== 'object') return handled;
+  for (const entry of Object.values(entries as Record<string, Record<string, unknown>>)) {
+    const name = String(entry?.excelName ?? '').trim().toLowerCase();
+    if (entry?.employeeId && name && name !== '-' && entry.isNotFoundInExcel !== true) {
+      handled.add(name);
+    }
+  }
+  return handled;
 }
 
 export interface DepartmentUnmatchedRow {
@@ -88,6 +161,8 @@ export interface DepartmentUnmatchedRow {
   sourceName: string;
   department: string;
   dates: string[];
+  /** True for a row with no department at all, which no page owns by routing. */
+  unrouted?: boolean;
 }
 
 function activeBlueCollar(identity: {
@@ -150,6 +225,76 @@ function collectDepartmentUnmatched(
     );
 }
 
+/**
+ * Imported rows that carry no department and whose identifier matches no
+ * employee of any kind. Routing by department cannot say which page owns them
+ * — a monthly file may leave the column empty entirely — so they would
+ * otherwise never be offered for linking anywhere. They are listed apart from
+ * the department-routed rows, and are mostly Loyalis staff the Loyalis page
+ * handles; an admin picks out the blue-collar ones.
+ */
+function collectUnroutedUnmatched(
+  rows: readonly AttendanceNormalizedRow[],
+  byNipy: ReadonlyMap<string, unknown[]>,
+  loyalisHandledNames?: ReadonlySet<string> | null,
+): DepartmentUnmatchedRow[] {
+  const grouped = new Map<string, DepartmentUnmatchedRow>();
+  for (const row of rows) {
+    if (!row.date) continue;
+    if (
+      row.issues.includes('DATE_INVALID') ||
+      row.issues.includes('OUTSIDE_PERIOD')
+    ) {
+      continue;
+    }
+    if (String(row.department ?? '').trim() !== '') continue;
+    // Already resolved onto an employee, by a manual link or a name match.
+    if (isAttendanceSyntheticNipy(row.nipy)) continue;
+    // Known to the roster under any collection: not unrecognised.
+    if ((byNipy.get(row.nipy) || []).length > 0) continue;
+    // Already linked to a Loyalis employee on the Loyalis page.
+    if (loyalisHandledNames?.has(String(row.name ?? '').trim().toLowerCase())) continue;
+    const sourceKey = attendanceManualLinkKey(row.nipy, row.name);
+    const existing = grouped.get(sourceKey);
+    if (existing) {
+      if (!existing.dates.includes(row.date)) existing.dates.push(row.date);
+      continue;
+    }
+    grouped.set(sourceKey, {
+      sourceKey,
+      sourceNipy: row.nipy,
+      sourceName: row.name,
+      department: '',
+      dates: [row.date],
+      unrouted: true,
+    });
+  }
+  return Array.from(grouped.values())
+    .map((entry) => ({ ...entry, dates: entry.dates.sort() }))
+    .sort((left, right) => left.sourceName.localeCompare(right.sourceName, 'id'));
+}
+
+/** Every active blue-collar employee, whatever category, a row may be linked to. */
+function unroutedLinkCandidates(
+  identities: readonly AttendanceEmployeeIdentityLike[],
+) {
+  return identities
+    .filter(activeBlueCollar)
+    .map((employee) => ({
+      employeeId: employee.employeeId,
+      name: employee.name,
+      nipy: employee.nipy,
+      category: employee.jobCategory || '',
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name, 'id'));
+}
+
+type AttendanceEmployeeIdentityLike = Parameters<typeof activeBlueCollar>[0] & {
+  employeeId: string;
+  name: string;
+  nipy: string;
+};
+
 export async function listActivePekaryaAttendanceCategories(
   period?: string,
   identityIndex?: AttendanceIdentityIndex,
@@ -185,7 +330,10 @@ export async function loadDepartmentUnmatchedRows(
     ...options,
     identities,
   });
-  return collectDepartmentUnmatched(rows, identities.byNipy);
+  return [
+    ...collectDepartmentUnmatched(rows, identities.byNipy),
+    ...collectUnroutedUnmatched(rows, identities.byNipy),
+  ];
 }
 
 /**
@@ -199,6 +347,8 @@ export interface AttendanceViewContext {
   effective: Awaited<ReturnType<typeof loadEffectiveAttendanceDays>>;
   premium: Awaited<ReturnType<typeof loadPeriodPremiumDates>>;
   correctionHistorySnapshot: FirebaseFirestore.QuerySnapshot;
+  /** Set only when the caller asked for the unrouted rows. */
+  loyalisHandledNames: ReadonlySet<string> | null;
 }
 
 export async function loadAttendanceViewContext(
@@ -208,19 +358,22 @@ export async function loadAttendanceViewContext(
 ): Promise<AttendanceViewContext> {
   const identities =
     identityIndex ?? (await loadAttendanceEmployeeIdentities(period));
-  const [effective, premium, correctionHistorySnapshot] = await Promise.all([
-    loadEffectiveAttendanceDays(period, { ...options, identities }),
-    loadPeriodPremiumDates(period),
-    adminDb
-      .collection(PEKARYA_CORRECTIONS_COLLECTION)
-      .where('period', '==', period)
-      .get(),
-  ]);
+  const [effective, premium, correctionHistorySnapshot, loyalisHandledNames] =
+    await Promise.all([
+      loadEffectiveAttendanceDays(period, { ...options, identities }),
+      loadPeriodPremiumDates(period),
+      adminDb
+        .collection(PEKARYA_CORRECTIONS_COLLECTION)
+        .where('period', '==', period)
+        .get(),
+      options.includeUnrouted ? loadLoyalisHandledNames(period) : Promise.resolve(null),
+    ]);
   return {
     identityIndex: identities,
     effective,
     premium,
     correctionHistorySnapshot,
+    loyalisHandledNames,
   };
 }
 
@@ -288,6 +441,22 @@ export async function buildPekaryaAttendanceView(
       if (!days.some((day) => day.nipy === joinNipy)) {
         warnings.push('NO_IMPORTED_ROWS');
       }
+      // Scored on the days as recorded (not the display days, whose missing
+      // scans are generated), once an attendance file is active.
+      const presenceBonus =
+        presenceBonusColumnKey(category) && importData.activeRevisionId
+          ? calculatePekaryaPresenceBonus({
+              period,
+              days: days
+                .filter((day) => day.nipy === joinNipy)
+                .map((day) => ({
+                  date: day.date,
+                  present: day.present,
+                  scanIn: day.scanIn,
+                })),
+              premiumDates,
+            })
+          : null;
       return {
         employeeId: employee.employeeId,
         name: employee.name,
@@ -299,6 +468,7 @@ export async function buildPekaryaAttendanceView(
         // — restore the employee's actual (possibly empty) one for display.
         nipy: employee.nipy,
         days: summarizedDays,
+        presenceBonus,
       };
     },
   );
@@ -341,9 +511,13 @@ export async function buildPekaryaAttendanceView(
         })
       : null,
     employees,
+    unroutedLinkCandidates: unroutedLinkCandidates(identities),
     exceptions: {
       unmatchedNipys,
       departmentUnmatched,
+      unroutedUnmatched: options.includeUnrouted
+        ? collectUnroutedUnmatched(rows, byNipy, shared.loyalisHandledNames)
+        : [],
       duplicateNipys: employees
         .filter((employee) => employee.warnings.includes('NIPY_DUPLICATE'))
         .map((employee) => employee.nipy),
@@ -455,6 +629,7 @@ export async function buildPekaryaAttendanceViewForCategories(
       duplicateEmployeeDays: first.exceptions.duplicateEmployeeDays,
       attendanceForOtherIdentities: first.exceptions.attendanceForOtherIdentities,
       departmentUnmatched: first.exceptions.departmentUnmatched,
+      unroutedUnmatched: first.exceptions.unroutedUnmatched,
     },
     correctionHistory: views
       .flatMap((view) => view.correctionHistory)
@@ -654,6 +829,11 @@ export async function buildSatpamAttendanceDetails(
           name: guard.name,
           nipy: guard.nipy,
         },
+        identityIssue: !guard.nipy
+          ? 'NIPY belum diisi, sehingga scan tidak dapat dicocokkan.'
+          : (identityIndex.byNipy.get(guard.nipy)?.length || 0) > 1
+            ? 'NIPY dipakai lebih dari satu pegawai, sehingga scan tidak dapat dicocokkan.'
+            : null,
         planDays: planDaysByEmployee.get(guard.employeeId) || [],
         reports: reportsByEmployee.get(guard.employeeId) || [],
         coverReports: coverReportsByEmployee.get(guard.employeeId) || [],
@@ -829,6 +1009,10 @@ export async function buildSatpamAttendanceMismatches(
     // so the mismatches below describe real discrepancies rather than
     // unidentified scans.
     departmentUnmatched: collectDepartmentUnmatched(rows, byNipy),
+    unroutedUnmatched: options.includeUnrouted
+      ? collectUnroutedUnmatched(rows, byNipy, await loadLoyalisHandledNames(period))
+      : [],
+    unroutedLinkCandidates: unroutedLinkCandidates(identities),
     linkCandidates: satpam.map((employee) => ({
       employeeId: employee.employeeId,
       name: employee.name,
@@ -974,6 +1158,10 @@ export async function publishPekaryaAttendance(
           : {};
       values.harian = employee.harianAmount;
       values.jumatLibur = employee.jumatLiburAmount;
+      const bonusKey = presenceBonusColumnKey(category);
+      if (bonusKey && employee.presenceBonus) {
+        values[bonusKey] = employee.presenceBonus.amount;
+      }
       delete values.presensi;
       counts.harian = employee.harianCount;
       counts.jumatLibur = employee.jumatLiburCount;

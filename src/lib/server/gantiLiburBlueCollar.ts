@@ -18,7 +18,10 @@ import {
   attendanceCorrectionHeadId,
   pekaryaPublicationId,
 } from '@/lib/server/attendanceStore';
-import { buildPekaryaAttendanceView } from '@/lib/server/pekaryaAttendance';
+import {
+  buildPekaryaAttendanceView,
+  presenceBonusValuesAfterCorrection,
+} from '@/lib/server/pekaryaAttendance';
 import { buildPeriodMaterialization } from '@/lib/server/payrollPeriod';
 
 function version(snapshot: FirebaseFirestore.DocumentSnapshot): string {
@@ -176,7 +179,19 @@ export function postBlueCollarGantiLibur(
     const publicationRevision = Number(publication.publicationRevision || 0) + 1;
     entries[request.employeeId] = {
       ...existing, employeeId: request.employeeId, name: employee.name,
-      values: { ...existing.values, harian: employee.harianAmount + amount, jumatLibur: employee.jumatLiburAmount },
+      values: {
+        ...existing.values,
+        harian: employee.harianAmount + amount,
+        jumatLibur: employee.jumatLiburAmount,
+        ...presenceBonusValuesAfterCorrection({
+          category: request.category || '',
+          period,
+          premiumDates: view.premiumDates,
+          employeeDays: employee.days,
+          date: request.dayOffDate,
+          correction,
+        }),
+      },
       counts: { ...existing.counts, harian: employee.harianCount + 1, jumatLibur: employee.jumatLiburCount },
       attendanceSource: { importRevisionId: view.importRevisionId, calendarRevision: view.calendarRevision, publicationRevision },
     };

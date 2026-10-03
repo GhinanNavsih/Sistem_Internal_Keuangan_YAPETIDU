@@ -1,3 +1,7 @@
+import {
+  calculatePekaryaPresenceBonus,
+  presenceBonusColumnKey,
+} from '@/lib/payroll/pekaryaPresenceBonus';
 import { adminDb } from '@/lib/firebase-admin';
 import { jobCategoryForPayrollPeriod, withPayrollJobCategory } from '@/lib/payroll/blueCollarCategory';
 import {
@@ -399,12 +403,30 @@ export async function loadPekaryaSlipPreviews(
           durationSeconds: attendanceWorkedSeconds(day.scanIn, day.scanOut),
         }));
       }
+      const bonusKey = presenceBonusColumnKey(categoryOf(employee));
+      const joinNipy = attendanceJoinNipy(identity);
       uploadedAttendanceEntries[employee.id] = {
         employeeId: employee.id,
         name: identity.name,
         values: {
           harian: summary.harianAmount,
           jumatLibur: summary.jumatLiburAmount,
+          // Scored on the days as recorded, like the attendance page does.
+          ...(bonusKey
+            ? {
+                [bonusKey]: calculatePekaryaPresenceBonus({
+                  period,
+                  days: effectiveAttendance.days
+                    .filter((day) => day.nipy === joinNipy)
+                    .map((day) => ({
+                      date: day.date,
+                      present: day.present,
+                      scanIn: day.scanIn,
+                    })),
+                  premiumDates,
+                }).amount,
+              }
+            : {}),
         },
         counts: {
           harian: summary.harianCount,

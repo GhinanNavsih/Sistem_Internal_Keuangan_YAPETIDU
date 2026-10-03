@@ -53,7 +53,10 @@ import {
   requireAuthenticatedProfile,
   requireRole,
 } from '@/lib/server/auth';
-import { buildPekaryaAttendanceView } from '@/lib/server/pekaryaAttendance';
+import {
+  buildPekaryaAttendanceView,
+  presenceBonusValuesAfterCorrection,
+} from '@/lib/server/pekaryaAttendance';
 import { PEKARYA_OFFICIAL_LEAVE_REQUESTS_COLLECTION, officialLeaveRequestId } from '@/lib/server/pekaryaOfficialLeave';
 import {
   buildPeriodMaterialization,
@@ -687,6 +690,14 @@ export async function POST(request: NextRequest) {
                 ...existingValues,
                 harian: nextHarianAmount,
                 jumatLibur: nextPremiumAmount,
+                ...presenceBonusValuesAfterCorrection({
+                  category: employee.category,
+                  period,
+                  premiumDates: attendanceView?.premiumDates || [],
+                  employeeDays: employeeView.days,
+                  date: leaveDate,
+                  correction,
+                }),
               },
               counts: {
                 ...existingCounts,

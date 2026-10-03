@@ -44,6 +44,8 @@ export interface SatpamAttendanceDetailRow {
   coveredByName: string | null;
   /** A leave or scan request on this date still waiting for a decision. */
   pendingAbsenceId: string | null;
+  /** Something to check on this row that its status does not already say. */
+  warning: string | null;
   /**
    * The shift report to open when checking this row: the report's shift (an
    * occurrence) and the guard whose card to highlight there. Null when no
@@ -65,6 +67,8 @@ export interface SatpamAttendanceDetailEmployee {
   lemburAmount: number;
   totalAmount: number;
   paidDays: number;
+  /** Why this guard's scans may not be matching them (NIPY missing or shared). */
+  identityIssue: string | null;
   /** Paid duties whose scans are missing or one-sided. */
   incompleteDays: number;
   days: SatpamAttendanceDetailRow[];
@@ -108,6 +112,8 @@ export interface SatpamDetailScanDay {
 
 export interface BuildSatpamAttendanceDetailInput {
   employee: { employeeId: string; name: string; nipy: string };
+  /** Set when the guard's NIPY is missing or used by someone else. */
+  identityIssue?: string | null;
   planDays: readonly SatpamDetailPlanDay[];
   /** The employee's own shift reports, whatever their status. */
   reports: readonly SatpamDetailReport[];
@@ -267,6 +273,7 @@ export function buildSatpamAttendanceDetail(
       scanOut: scan?.scanOut ?? null,
       coveredByName: null as string | null,
       pendingAbsenceId: pendingAbsenceByDate.get(date) ?? null,
+      warning: null as string | null,
       review: ownReview(report?.sourceOccurrenceId || plan?.occurrenceId),
     };
     // Nothing scheduled, reported or approved: a bare scan is still shown so a
@@ -283,7 +290,14 @@ export function buildSatpamAttendanceDetail(
       // Approved scheduled leave is the one payment for the duty, even when a
       // work report also exists for the same date.
       const paid = leaveAmount(leave, date, premiumDates, input.preserveRecordedPayment);
-      rows.push({ ...base, payType: paid.payType, amount: paid.amount, status: 'leave' });
+      // The leave stands, but the work side of the date disagrees with it.
+      const workStillListed = Boolean(report && !TERMINAL_REPORT_STATUSES.has(report.status));
+      const warning = workStillListed
+        ? 'Izin disetujui menjadi dasar upah, tetapi laporan shift masih mencantumkan pegawai ini. Perbaiki laporan lewat Periksa.'
+        : hasScan
+          ? 'Ada scan kehadiran pada tanggal izin yang disetujui.'
+          : null;
+      rows.push({ ...base, payType: paid.payType, amount: paid.amount, status: 'leave', warning });
     } else if (report?.status === 'approved') {
       rows.push({
         ...base,
@@ -351,6 +365,7 @@ export function buildSatpamAttendanceDetail(
           : 'pending',
       coveredByName: null,
       pendingAbsenceId: null,
+      warning: null,
       review: ownReview(report.sourceOccurrenceId),
     });
   }
@@ -396,6 +411,7 @@ export function buildSatpamAttendanceDetail(
     name: employee.name,
     nipy: employee.nipy,
     category: 'SATPAM',
+    identityIssue: input.identityIssue ?? null,
     ...summary,
     totalAmount:
       summary.harianAmount + summary.jumatLiburAmount + summary.lemburAmount,

@@ -24,6 +24,7 @@ import {
 } from '@/lib/server/attendanceStore';
 import {
   buildPekaryaAttendanceView,
+  presenceBonusValuesAfterCorrection,
 } from '@/lib/server/pekaryaAttendance';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import {
@@ -399,6 +400,14 @@ export async function POST(request: NextRequest) {
           ...((existingEntry.values as Record<string, unknown>) || {}),
           harian: nextHarianAmount,
           jumatLibur: nextPremiumAmount,
+          ...presenceBonusValuesAfterCorrection({
+            category,
+            period,
+            premiumDates: view.premiumDates,
+            employeeDays: employeeView?.days || [],
+            date,
+            correction: effective,
+          }),
         };
         delete values.presensi;
         const counts: Record<string, unknown> = {

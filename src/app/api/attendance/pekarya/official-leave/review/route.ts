@@ -36,7 +36,10 @@ import {
   PEKARYA_OFFICIAL_LEAVE_REQUESTS_COLLECTION,
   PEKARYA_OFFICIAL_LEAVE_REVISIONS_COLLECTION,
 } from '@/lib/server/pekaryaOfficialLeave';
-import { buildPekaryaAttendanceView } from '@/lib/server/pekaryaAttendance';
+import {
+  buildPekaryaAttendanceView,
+  presenceBonusValuesAfterCorrection,
+} from '@/lib/server/pekaryaAttendance';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import {
   errorResponse,
@@ -673,6 +676,14 @@ export async function POST(request: NextRequest) {
               ...existingValues,
               harian: nextHarianAmount,
               jumatLibur: nextPremiumAmount,
+              ...presenceBonusValuesAfterCorrection({
+                category,
+                period,
+                premiumDates: view.premiumDates,
+                employeeDays: employeeView?.days || [],
+                date,
+                correction,
+              }),
             },
             counts: {
               ...existingCounts,

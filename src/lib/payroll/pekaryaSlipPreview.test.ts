@@ -726,3 +726,54 @@ test('an unreadable matrix warns instead of refusing the write', () => {
   assert.equal(result!.level, 'warning');
   assert.match(result!.message, /matriks gaji aktif \(2026_v1\)/);
 });
+
+// ─── Bonus Presensi (Kebersihan and Teknisi) ─────────────────────────────
+
+const TEKNISI = {
+  ...KHOLIK,
+  id: 'BC_038',
+  name: 'Tutas Subawanto',
+  employment: { jobCategory: 'TEKNISI', startDate: '2005-08-01', status: 'active' },
+};
+
+function uploadedWithBonus(amount: number) {
+  return {
+    employeeId: 'BC_038',
+    name: 'Tutas Subawanto',
+    values: { harian: 300_000, jumatLibur: 0, bonusMutlak: amount },
+    counts: { harian: 24, jumatLibur: 0 },
+  };
+}
+
+test('a Teknisi slip shows the attendance Bonus Presensi before the category is published', () => {
+  const preview = buildPekaryaSlipPreview(
+    kholikInputs({
+      employee: TEKNISI,
+      uploadedAttendanceEntry: uploadedWithBonus(100_000),
+    }),
+  );
+  assert.equal(amountOf(preview.earnings, 'Bonus Presensi Bulanan'), 100_000);
+});
+
+test('a published rekap value for Bonus Presensi still takes precedence', () => {
+  const preview = buildPekaryaSlipPreview(
+    kholikInputs({
+      employee: TEKNISI,
+      uploadedAttendanceEntry: uploadedWithBonus(100_000),
+      uraianEntry: {
+        employeeId: 'BC_038',
+        name: 'Tutas Subawanto',
+        values: { harian: 300_000, jumatLibur: 0, bonusMutlak: 30_000 },
+      },
+    }),
+  );
+  assert.equal(amountOf(preview.earnings, 'Bonus Presensi Bulanan'), 30_000);
+});
+
+test('a category that earns no attendance bonus ignores one in the upload', () => {
+  // KHOLIK is a Sopir, whose bonus column is not scored from attendance.
+  const preview = buildPekaryaSlipPreview(
+    kholikInputs({ uploadedAttendanceEntry: uploadedWithBonus(100_000) }),
+  );
+  assert.equal(amountOf(preview.earnings, 'Bonus Presensi Bulanan'), 0);
+});

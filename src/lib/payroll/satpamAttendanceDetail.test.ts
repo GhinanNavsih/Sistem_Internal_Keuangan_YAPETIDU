@@ -355,3 +355,41 @@ test('an extra shift opens its own report; bare attendance has nothing to check'
   assert.equal(byDate['2026-09-09'].status, 'scan_only');
   assert.equal(byDate['2026-09-09'].review, null);
 });
+
+test('approved leave warns when a work report still lists the guard, or a scan exists', () => {
+  const planDays = [{ dutyDate: '2026-09-30', shiftName: 'Malam' }];
+  const absences = [leave({ dutyDate: '2026-09-30' })];
+
+  const withReport = build({
+    planDays,
+    absences,
+    reports: [report({ dutyDate: '2026-09-30', shiftName: 'Malam', status: 'approved' })],
+  });
+  assert.equal(withReport.days[0].status, 'leave');
+  assert.match(withReport.days[0].warning || '', /laporan shift masih mencantumkan/);
+
+  // A work report that was declined no longer contradicts the leave.
+  const declined = build({
+    planDays,
+    absences,
+    reports: [report({ dutyDate: '2026-09-30', shiftName: 'Malam', status: 'declined' })],
+  });
+  assert.equal(declined.days[0].warning, null);
+
+  const withScan = build({
+    planDays,
+    absences,
+    scanDays: new Map([['2026-09-30', { scanIn: '22:00:00', scanOut: '07:00:00' }]]),
+  });
+  assert.match(withScan.days[0].warning || '', /scan kehadiran/);
+
+  assert.equal(build({ planDays, absences }).days[0].warning, null);
+});
+
+test('an identity problem is carried to the guard, and absent otherwise', () => {
+  assert.equal(build({}).identityIssue, null);
+  assert.match(
+    build({ identityIssue: 'NIPY belum diisi' }).identityIssue || '',
+    /NIPY/,
+  );
+});
