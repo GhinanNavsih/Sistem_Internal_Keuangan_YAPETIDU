@@ -82,6 +82,8 @@ import {
 } from '@/lib/payroll/satpamAttendance';
 import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
 import { attendanceWorkedSeconds } from '@/lib/payroll/attendance';
+import { SatpamAttendanceDetailCard } from '@/components/satpam/SatpamAttendanceDetailCard';
+import type { SatpamAttendanceDetailEmployee } from '@/lib/payroll/satpamAttendanceDetail';
 
 function isSatpamShiftName(value: string | undefined): value is 'Pagi' | 'Sore' | 'Malam' {
   return value === 'Pagi' || value === 'Sore' || value === 'Malam';
@@ -177,6 +179,8 @@ type AttendanceView = {
     actorName?: string;
   }>;
   officialLeaves: PekaryaOfficialLeaveRequest[];
+  /** Review-only Satpam cards, present on "Semua Pekarya" for accounts that may see Satpam. */
+  satpamAttendance?: { employees: SatpamAttendanceDetailEmployee[] } | null;
 };
 
 type SatpamView = {
@@ -317,6 +321,13 @@ type PlanCorrectionState = {
   >[number];
   reason: string;
 };
+
+/**
+ * Longest the page waits for a period's results. Past it the request is
+ * cancelled and an error with a working "Muat Ulang" replaces the placeholder,
+ * so one stalled request can never leave the page loading until it is restarted.
+ */
+const LOAD_TIMEOUT_MS = 60_000;
 
 function isSatpamView(
   value: AttendanceView | SatpamView,
@@ -562,6 +573,27 @@ function submissionStatusLabel(status: string): string {
   }
 }
 
+type SubmissionStatusFilter = 'pending' | 'approved' | 'rejected' | 'all';
+
+const SUBMISSION_FILTER_LABELS: Record<
+  Exclude<SubmissionStatusFilter, 'all'>,
+  string
+> = {
+  pending: 'Tertunda',
+  approved: 'Disetujui',
+  rejected: 'Ditolak',
+};
+
+/** Which filter tab a submission status belongs to; a withdrawn request shows under Semua only. */
+function submissionStatusMatches(
+  status: string,
+  selected: SubmissionStatusFilter,
+): boolean {
+  if (selected === 'all') return true;
+  if (selected === 'rejected') return status === 'rejected' || status === 'declined';
+  return status === selected;
+}
+
 interface BlueCollarSubmissionItem {
   id: string;
   key: string;
@@ -657,6 +689,8 @@ function BlueCollarSubmissionsCard({
 }) {
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selectedStatus, setSelectedStatus] =
+    useState<SubmissionStatusFilter>('pending');
 
   const [editingTypeKey, setEditingTypeKey] = useState<string | null>(null);
   const [editingReportType, setEditingReportType] = useState<PekaryaAttendanceReportType>('scan');
@@ -871,9 +905,29 @@ function BlueCollarSubmissionsCard({
     return items;
   }, [officialLeaves, satpamRequests, paidLeaves, gantiLiburs]);
 
-  const pendingItems = useMemo(
-    () => unifiedItems.filter((i) => i.status === 'pending'),
+  const visibleItems = useMemo(
+    () =>
+      unifiedItems.filter((item) =>
+        submissionStatusMatches(item.status, selectedStatus),
+      ),
+    [unifiedItems, selectedStatus],
+  );
+
+  const stats = useMemo(
+    () => ({
+      pending: unifiedItems.filter((i) => submissionStatusMatches(i.status, 'pending')).length,
+      approved: unifiedItems.filter((i) => submissionStatusMatches(i.status, 'approved')).length,
+      rejected: unifiedItems.filter((i) => submissionStatusMatches(i.status, 'rejected')).length,
+      total: unifiedItems.length,
+    }),
     [unifiedItems],
+  );
+
+  // Only the pending rows on screen can be picked, so a bulk approval never
+  // reaches a request the reviewer cannot see.
+  const pendingItems = useMemo(
+    () => visibleItems.filter((i) => i.status === 'pending'),
+    [visibleItems],
   );
 
   const allPendingSelected =
@@ -922,15 +976,60 @@ function BlueCollarSubmissionsCard({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-md bg-slate-100/80 p-1 text-xs font-semibold">
+              {(
+                [
+                  ['pending', 'Tertunda', 'text-amber-700', 'bg-amber-100 text-amber-800'],
+                  ['approved', 'Disetujui', 'text-emerald-700', 'bg-emerald-100 text-emerald-800'],
+                  ['rejected', 'Ditolak', 'text-rose-700', 'bg-rose-100 text-rose-800'],
+                ] as const
+              ).map(([value, label, activeText, badge]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setSelectedStatus(value)}
+                  className={`flex items-center gap-1.5 rounded-sm px-2.5 py-1 transition-all ${
+                    selectedStatus === value
+                      ? `bg-white ${activeText} shadow-sm`
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {label}
+                  {stats[value] > 0 && (
+                    <span className={`rounded-sm px-1.5 text-[10px] font-bold ${badge}`}>
+                      {stats[value]}
+                    </span>
+                  )}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setSelectedStatus('all')}
+                className={`flex items-center gap-1.5 rounded-sm px-2.5 py-1 transition-all ${
+                  selectedStatus === 'all'
+                    ? 'bg-white text-slate-800 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Semua
+                <span className="text-[10px] font-bold text-slate-400">({stats.total})</span>
+              </button>
+            </div>
             <span className="inline-flex w-fit items-center rounded-sm border border-emerald-100 bg-emerald-50 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
               {profileRole === 'super_admin' ? 'Review oleh Super Admin' : 'Review oleh Kepala SatKer'}
             </span>
-            {canEdit && pendingItems.length > 0 && (
+            {/* Always rendered, hidden when nothing is approvable, so the header
+                keeps its size when the filter changes. */}
+            {canEdit && (
               <Button
                 type="button"
                 onClick={() => void onBulkApprove(selectedPendingItems)}
                 disabled={working || selectedPendingItems.length === 0}
-                className="h-9 rounded-sm bg-emerald-600 px-3 text-xs font-bold text-white shadow-sm hover:bg-emerald-700"
+                aria-hidden={pendingItems.length === 0}
+                tabIndex={pendingItems.length === 0 ? -1 : undefined}
+                className={`h-9 min-w-48 justify-center rounded-sm bg-emerald-600 px-3 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 ${
+                  pendingItems.length === 0 ? 'invisible' : ''
+                }`}
               >
                 {working ? (
                   <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
@@ -961,6 +1060,18 @@ function BlueCollarSubmissionsCard({
               Belum ada pengajuan presensi, izin, cuti, atau ganti libur pada periode ini.
             </p>
           </div>
+        ) : visibleItems.length === 0 ? (
+          <div className="flex flex-col items-center p-16 text-center text-slate-400">
+            <Clock className="mb-4 h-12 w-12 opacity-20" />
+            <h4 className="text-base font-bold text-slate-700">Tidak Ada Pengajuan</h4>
+            <p className="mt-1 max-w-xs text-xs text-slate-400">
+              Belum ada pengajuan dengan status{' '}
+              {selectedStatus === 'all'
+                ? 'apa pun'
+                : SUBMISSION_FILTER_LABELS[selectedStatus]}{' '}
+              pada periode ini.
+            </p>
+          </div>
         ) : (
           <Table>
             <TableHeader className="sticky top-0 z-20 bg-slate-50/60">
@@ -982,7 +1093,7 @@ function BlueCollarSubmissionsCard({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {unifiedItems.map((item) => {
+              {visibleItems.map((item) => {
                 const isExpanded = expandedId === item.key;
                 const isSatpam = item.kind === 'satpam_absence';
                 const isSupersede =
@@ -1502,6 +1613,9 @@ export default function PekaryaAttendancePage() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const loadSequence = useRef(0);
+  const loadAbort = useRef<AbortController | null>(null);
+  // A page that is left mid-load stops asking the server for results nobody sees.
+  useEffect(() => () => loadAbort.current?.abort(), []);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
   // An object per message so showing the same text twice in a row still
@@ -1570,6 +1684,12 @@ export default function PekaryaAttendancePage() {
     // clear the loading flags, so a slow reload finishing late can never put
     // a previous category's data back on screen.
     const sequence = ++loadSequence.current;
+    // A newer load replaces the previous request outright: it is cancelled
+    // rather than left running on the server beside the new one.
+    loadAbort.current?.abort();
+    const controller = new AbortController();
+    loadAbort.current = controller;
+    const { signal } = controller;
     if (
       !category ||
       (period < '2026-08' && category !== 'SATPAM')
@@ -1588,13 +1708,20 @@ export default function PekaryaAttendancePage() {
       setLoading(true);
     }
     setError('');
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, LOAD_TIMEOUT_MS);
     try {
       const paidLeavesPromise = authenticatedJson<{ requests: AnnualPaidLeaveRequest[] }>(
         `/api/payroll/paid-leave/review?year=${year}&period=${encodeURIComponent(period)}&status=all`,
+        { signal },
       ).catch(() => ({ requests: [] }));
 
       const gantiLibursPromise = authenticatedJson<{ requests: GantiLiburRequest[] }>(
         `/api/payroll/ganti-libur/review?dayOffPeriod=${encodeURIComponent(period)}&status=all`,
+        { signal },
       ).catch(() => ({ requests: [] }));
 
       if (category === 'SATPAM') {
@@ -1604,6 +1731,7 @@ export default function PekaryaAttendancePage() {
         let attendanceNotice = '';
         const attendancePromise = authenticatedJson<SatpamView>(
           `/api/attendance/pekarya?period=${encodeURIComponent(period)}&category=SATPAM`,
+          { signal },
         ).catch((cause): SatpamView => {
           attendanceNotice =
             cause instanceof Error
@@ -1626,12 +1754,15 @@ export default function PekaryaAttendancePage() {
             attendancePromise,
             authenticatedJson<SatpamDutyPlanAdminView>(
               `/api/satpam/duty-plans?period=${encodeURIComponent(period)}`,
+              { signal },
             ),
             authenticatedJson<SatpamAbsenceAdminView>(
               `/api/satpam/absences?period=${encodeURIComponent(period)}`,
+              { signal },
             ),
             authenticatedJson<SatpamReconciliationView>(
               `/api/satpam/duty-reconciliation?period=${encodeURIComponent(period)}&refresh=${canEdit ? 'true' : 'false'}`,
+              { signal },
             ),
             paidLeavesPromise,
             gantiLibursPromise,
@@ -1650,6 +1781,7 @@ export default function PekaryaAttendancePage() {
           category === ALL_BLUE_COLLAR_CATEGORY && canViewSatpamCategory
             ? authenticatedJson<SatpamAbsenceAdminView>(
                 `/api/satpam/absences?period=${encodeURIComponent(period)}`,
+                { signal },
               ).catch((cause): SatpamAbsenceAdminView => {
                 submissionNotice =
                   cause instanceof Error
@@ -1661,6 +1793,7 @@ export default function PekaryaAttendancePage() {
         const [result, submissions, paidLeavesRes, gantiLibursRes] = await Promise.all([
           authenticatedJson<AttendanceView>(
             `/api/attendance/pekarya?period=${encodeURIComponent(period)}&category=${encodeURIComponent(category)}`,
+            { signal },
           ),
           satpamSubmissionsPromise,
           paidLeavesPromise,
@@ -1677,8 +1810,17 @@ export default function PekaryaAttendancePage() {
       }
     } catch (cause) {
       if (sequence !== loadSequence.current) return;
-      setError(cause instanceof Error ? cause.message : 'Gagal memuat presensi Pekarya.');
+      // Cancelled because the page was left: nothing is waiting for an answer.
+      if (signal.aborted && !timedOut) return;
+      setError(
+        timedOut
+          ? 'Memuat presensi terlalu lama. Periksa koneksi, lalu tekan Muat Ulang.'
+          : cause instanceof Error
+            ? cause.message
+            : 'Gagal memuat presensi Pekarya.',
+      );
     } finally {
+      window.clearTimeout(timeout);
       if (sequence === loadSequence.current) {
         setLoading(false);
         setRefreshing(false);
@@ -2153,15 +2295,30 @@ export default function PekaryaAttendancePage() {
     if (!data || isSatpamView(data)) return [];
     const linked = data.employees.map((employee) => ({
       key: `employee:${employee.employeeId}`,
-      employee,
+      employee: employee as EmployeeAttendance | null,
       unlinked: null as DepartmentUnmatchedRow | null,
+      satpam: null as SatpamAttendanceDetailEmployee | null,
+    }));
+    const satpam = (data.satpamAttendance?.employees || []).map((guard) => ({
+      key: `satpam:${guard.employeeId}`,
+      employee: null as EmployeeAttendance | null,
+      unlinked: null as DepartmentUnmatchedRow | null,
+      satpam: guard as SatpamAttendanceDetailEmployee | null,
     }));
     const unlinked = departmentUnmatched.map((row) => ({
       key: `unlinked:${row.sourceKey}`,
       employee: null as EmployeeAttendance | null,
-      unlinked: row,
+      unlinked: row as DepartmentUnmatchedRow | null,
+      satpam: null as SatpamAttendanceDetailEmployee | null,
     }));
-    return [...linked, ...unlinked];
+    const nameOf = (row: (typeof linked)[number] | (typeof satpam)[number]) =>
+      row.employee?.name || row.satpam?.name || '';
+    return [
+      ...[...linked, ...satpam].sort((left, right) =>
+        nameOf(left).localeCompare(nameOf(right), 'id'),
+      ),
+      ...unlinked,
+    ];
   }, [data, departmentUnmatched]);
 
   const linkCandidates = useMemo(() => {
@@ -2917,7 +3074,7 @@ export default function PekaryaAttendancePage() {
               <strong className="text-indigo-600 font-mono">
                 {attendanceRows.length}
               </strong>{' '}
-              data ({data.employees.length} Terhubung
+              data ({data.employees.length + (data.satpamAttendance?.employees.length || 0)} Terhubung
               {departmentUnmatched.length > 0
                 ? `, ${departmentUnmatched.length} Belum Terhubung`
                 : ''}
@@ -2930,6 +3087,49 @@ export default function PekaryaAttendancePage() {
               const employee = row.employee;
               const unlinked = row.unlinked;
               const isExpanded = expanded.has(row.key);
+              if (row.satpam) {
+                const pendingRequests = satpamSubmissions?.requests || [];
+                const findPendingRequest = (absenceId: string) =>
+                  pendingRequests.find(
+                    (request) =>
+                      request.id === absenceId && request.status === 'pending',
+                  );
+                return (
+                  <SatpamAttendanceDetailCard
+                    key={row.key}
+                    employee={row.satpam}
+                    index={idx}
+                    expanded={isExpanded}
+                    onToggle={() =>
+                      setExpanded((current) => {
+                        const next = new Set(current);
+                        if (next.has(row.key)) next.delete(row.key);
+                        else next.add(row.key);
+                        return next;
+                      })
+                    }
+                    canEdit={canEdit}
+                    working={working}
+                    canReviewAbsence={(absenceId) =>
+                      Boolean(findPendingRequest(absenceId))
+                    }
+                    onApproveAbsence={(absenceId) => {
+                      const request = findPendingRequest(absenceId);
+                      if (request) void reviewAbsence(request, 'approve');
+                    }}
+                    onDeclineAbsence={(absenceId, employeeName) => {
+                      const request = findPendingRequest(absenceId);
+                      if (request) {
+                        openDeclineDialog(
+                          'satpam_absence',
+                          request,
+                          `Tolak Pengajuan Satpam - ${employeeName}`,
+                        );
+                      }
+                    }}
+                  />
+                );
+              }
               return (
                 <article
                   key={row.key}

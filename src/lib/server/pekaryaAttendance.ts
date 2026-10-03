@@ -14,6 +14,7 @@ import {
   attendanceJoinNipy,
   attendanceManualLinkKey,
   isAttendanceSyntheticNipy,
+  type AttendanceIdentityIndex,
   loadAttendanceEmployeeIdentities,
   loadEffectiveAttendanceDays,
   loadPeriodPremiumDates,
@@ -22,8 +23,24 @@ import {
   PEKARYA_PUBLICATIONS_COLLECTION,
 } from '@/lib/server/attendanceStore';
 import { isPeriodClosed } from './payrollPeriod';
-import { SATPAM_ABSENCE_REQUESTS_COLLECTION } from '@/lib/server/satpamDutyPlan';
+import {
+  SATPAM_ABSENCE_REQUESTS_COLLECTION,
+  SATPAM_DUTY_PLANS_COLLECTION,
+} from '@/lib/server/satpamDutyPlan';
 import { satpamAttendanceReportType } from '@/lib/payroll/satpamAttendance';
+import { isImmutablePayrollStatus } from '@/lib/payroll/domain';
+import {
+  isPayableSatpamOfficialLeave,
+  isSatpamShiftPayReport,
+} from '@/lib/payroll/satpamOfficialLeave';
+import {
+  buildSatpamAttendanceDetail,
+  type SatpamAttendanceDetailEmployee,
+  type SatpamDetailAbsence,
+  type SatpamDetailPlanDay,
+  type SatpamDetailReport,
+  type SatpamDetailScanDay,
+} from '@/lib/payroll/satpamAttendanceDetail';
 
 export interface PekaryaAttendanceEmployeeView {
   employeeId: string;
@@ -133,8 +150,12 @@ function collectDepartmentUnmatched(
     );
 }
 
-export async function listActivePekaryaAttendanceCategories(period?: string): Promise<string[]> {
-  const { identities } = await loadAttendanceEmployeeIdentities(period);
+export async function listActivePekaryaAttendanceCategories(
+  period?: string,
+  identityIndex?: AttendanceIdentityIndex,
+): Promise<string[]> {
+  const { identities } =
+    identityIndex ?? (await loadAttendanceEmployeeIdentities(period));
   return Array.from(
     new Set(
       identities
@@ -167,30 +188,58 @@ export async function loadDepartmentUnmatchedRows(
   return collectDepartmentUnmatched(rows, identities.byNipy);
 }
 
-export async function buildPekaryaAttendanceView(
+/**
+ * What every category's view of one period is built from: the employee roster,
+ * the whole month's scan file, the calendar and the correction log. None of it
+ * depends on the category, so a request that shows several categories loads it
+ * once instead of once per category — the scan file alone is thousands of rows.
+ */
+export interface AttendanceViewContext {
+  identityIndex: AttendanceIdentityIndex;
+  effective: Awaited<ReturnType<typeof loadEffectiveAttendanceDays>>;
+  premium: Awaited<ReturnType<typeof loadPeriodPremiumDates>>;
+  correctionHistorySnapshot: FirebaseFirestore.QuerySnapshot;
+}
+
+export async function loadAttendanceViewContext(
   period: string,
-  category: string,
   options: PekaryaAttendanceViewOptions = {},
-) {
-  const identityIndex = await loadAttendanceEmployeeIdentities(period);
-  const { identities, byNipy } = identityIndex;
-  const [
-    { days, rows, importData, revisionData, correctionRevisions },
-    { calendar, premiumDates },
-    publicationSnapshot,
-    correctionHistorySnapshot,
-  ] = await Promise.all([
-    loadEffectiveAttendanceDays(period, { ...options, identities: identityIndex }),
+  identityIndex?: AttendanceIdentityIndex,
+): Promise<AttendanceViewContext> {
+  const identities =
+    identityIndex ?? (await loadAttendanceEmployeeIdentities(period));
+  const [effective, premium, correctionHistorySnapshot] = await Promise.all([
+    loadEffectiveAttendanceDays(period, { ...options, identities }),
     loadPeriodPremiumDates(period),
-    adminDb
-      .collection(PEKARYA_PUBLICATIONS_COLLECTION)
-      .doc(pekaryaPublicationId(period, category))
-      .get(),
     adminDb
       .collection(PEKARYA_CORRECTIONS_COLLECTION)
       .where('period', '==', period)
       .get(),
   ]);
+  return {
+    identityIndex: identities,
+    effective,
+    premium,
+    correctionHistorySnapshot,
+  };
+}
+
+export async function buildPekaryaAttendanceView(
+  period: string,
+  category: string,
+  options: PekaryaAttendanceViewOptions = {},
+  context?: AttendanceViewContext,
+) {
+  const shared = context ?? (await loadAttendanceViewContext(period, options));
+  const { identityIndex, correctionHistorySnapshot } = shared;
+  const { identities, byNipy } = identityIndex;
+  const { days, rows, importData, revisionData, correctionRevisions } =
+    shared.effective;
+  const { calendar, premiumDates } = shared.premium;
+  const publicationSnapshot = await adminDb
+    .collection(PEKARYA_PUBLICATIONS_COLLECTION)
+    .doc(pekaryaPublicationId(period, category))
+    .get();
 
   const activeEmployees = identities
     .filter(
@@ -339,10 +388,12 @@ export async function buildPekaryaAttendanceViewForCategories(
   period: string,
   categories: readonly string[],
   options: PekaryaAttendanceViewOptions = {},
+  context?: AttendanceViewContext,
 ) {
+  const shared = context ?? (await loadAttendanceViewContext(period, options));
   const views = await Promise.all(
     categories.map((category) =>
-      buildPekaryaAttendanceView(period, category, options),
+      buildPekaryaAttendanceView(period, category, options, shared),
     ),
   );
   const [first] = views;
@@ -413,6 +464,186 @@ export async function buildPekaryaAttendanceViewForCategories(
           Number(right.revision || 0) - Number(left.revision || 0),
       ),
   };
+}
+
+/**
+ * Every Satpam's day-by-day attendance for the "Semua Pekarya" cards. Read-only:
+ * it explains scans against the duty plan, shift reports and approved leave,
+ * and changes no pay, so it never feeds the Pekarya totals or publication.
+ */
+export async function buildSatpamAttendanceDetails(
+  period: string,
+  options: PekaryaAttendanceViewOptions = {},
+  now: Date = new Date(),
+  context?: AttendanceViewContext,
+): Promise<{ employees: SatpamAttendanceDetailEmployee[] }> {
+  const shared = context ?? (await loadAttendanceViewContext(period, options));
+  const { identityIndex } = shared;
+  const { days } = shared.effective;
+  const { premiumDates, periodData } = shared.premium;
+  const [planSnapshot, reportSnapshot, absenceSnapshot] = await Promise.all([
+    adminDb
+      .collection(SATPAM_DUTY_PLANS_COLLECTION)
+      .where('period', '==', period)
+      .get(),
+    // Reports carry proof photos and review history that the cards never show;
+    // reading only these fields cuts this query from seconds to under one.
+    adminDb
+      .collection('ActivityReports')
+      .where('period', '==', period)
+      .select(
+        'employeeId',
+        'dutyDate',
+        'activityDate',
+        'reportedShiftName',
+        'shiftName',
+        'shiftType',
+        'status',
+        'fee',
+        'coveredEmployeeId',
+        'jobCategory',
+        'reportKind',
+        'sourceType',
+        'sourceOccurrenceId',
+      )
+      .get(),
+    adminDb
+      .collection(SATPAM_ABSENCE_REQUESTS_COLLECTION)
+      .where('period', '==', period)
+      .get(),
+  ]);
+  const guards = identityIndex.identities.filter(
+    (identity) =>
+      identity.employeeCollection === 'Employees_BlueCollar' &&
+      identity.jobCategory === 'SATPAM',
+  );
+  const employeeNames = new Map(
+    identityIndex.identities.map((identity) => [identity.employeeId, identity.name]),
+  );
+
+  const planDaysByEmployee = new Map<string, SatpamDetailPlanDay[]>();
+  for (const plan of planSnapshot.docs) {
+    const generatedDays = plan.data().generatedDays;
+    if (!Array.isArray(generatedDays)) continue;
+    for (const day of generatedDays) {
+      const assignments: Array<{ employeeId?: unknown }> = Array.isArray(day?.assignments)
+        ? day.assignments
+        : [];
+      for (const assignment of assignments) {
+        const employeeId = String(assignment.employeeId || '');
+        if (!employeeId) continue;
+        const list = planDaysByEmployee.get(employeeId) || [];
+        list.push({
+          dutyDate: String(day.dutyDate || ''),
+          shiftName: String(day.shiftName || ''),
+        });
+        planDaysByEmployee.set(employeeId, list);
+      }
+    }
+  }
+
+  const reportsByEmployee = new Map<string, SatpamDetailReport[]>();
+  const coverReportsByEmployee = new Map<string, SatpamDetailReport[]>();
+  for (const document of reportSnapshot.docs) {
+    const data = document.data();
+    if (!isSatpamShiftPayReport(data)) continue;
+    const employeeId = String(data.employeeId || '');
+    const dutyDate = String(data.dutyDate || data.activityDate || '');
+    if (!employeeId || !dutyDate) continue;
+    const coveredEmployeeId = String(data.coveredEmployeeId || '') || null;
+    const detail: SatpamDetailReport = {
+      id: document.id,
+      employeeId,
+      dutyDate,
+      shiftName: String(data.reportedShiftName || data.shiftName || '') || null,
+      shiftType: String(data.shiftType || '') || null,
+      status: String(data.status || 'approved'),
+      fee: Number(data.fee || 0),
+      coveredEmployeeId,
+    };
+    reportsByEmployee.set(employeeId, [
+      ...(reportsByEmployee.get(employeeId) || []),
+      detail,
+    ]);
+    if (coveredEmployeeId) {
+      coverReportsByEmployee.set(coveredEmployeeId, [
+        ...(coverReportsByEmployee.get(coveredEmployeeId) || []),
+        detail,
+      ]);
+    }
+  }
+
+  const absenceDocumentsByEmployee = new Map<
+    string,
+    Array<{ id: string; data: FirebaseFirestore.DocumentData }>
+  >();
+  for (const document of absenceSnapshot.docs) {
+    const data = document.data();
+    const employeeId = String(data.employeeId || '');
+    if (!employeeId || !data.dutyDate) continue;
+    absenceDocumentsByEmployee.set(employeeId, [
+      ...(absenceDocumentsByEmployee.get(employeeId) || []),
+      { id: document.id, data },
+    ]);
+  }
+
+  const visibleGuards = guards.filter(
+    (guard) =>
+      guard.active ||
+      planDaysByEmployee.has(guard.employeeId) ||
+      reportsByEmployee.has(guard.employeeId) ||
+      absenceDocumentsByEmployee.has(guard.employeeId),
+  );
+  const slipSnapshots = visibleGuards.length
+    ? await adminDb.getAll(
+        ...visibleGuards.map((guard) =>
+          adminDb.doc(`PayrollSlipStates/${period.replace('-', '_')}_${guard.employeeId}`),
+        ),
+      )
+    : [];
+  const periodClosed = isPeriodClosed(periodData);
+
+  const employees = visibleGuards
+    .map((guard, index) => {
+      const preserveRecordedPayment =
+        periodClosed || isImmutablePayrollStatus(slipSnapshots[index]?.data()?.status);
+      const joinNipy = attendanceJoinNipy(guard);
+      const scanDays = new Map<string, SatpamDetailScanDay>();
+      for (const day of days) {
+        if (day.nipy !== joinNipy || (!day.scanIn && !day.scanOut)) continue;
+        scanDays.set(day.date, { scanIn: day.scanIn, scanOut: day.scanOut });
+      }
+      const absences: SatpamDetailAbsence[] = (
+        absenceDocumentsByEmployee.get(guard.employeeId) || []
+      ).map(({ id, data }) => ({
+        id,
+        dutyDate: String(data.dutyDate),
+        shiftName: String(data.shiftName || '') || null,
+        status: String(data.status || ''),
+        reportType: satpamAttendanceReportType(data),
+        payable: isPayableSatpamOfficialLeave(data, preserveRecordedPayment),
+        approvedPayType: String(data.approvedPayType || '') || null,
+        approvedAmount: Number(data.approvedAmount || 0),
+      }));
+      return buildSatpamAttendanceDetail({
+        employee: {
+          employeeId: guard.employeeId,
+          name: guard.name,
+          nipy: guard.nipy,
+        },
+        planDays: planDaysByEmployee.get(guard.employeeId) || [],
+        reports: reportsByEmployee.get(guard.employeeId) || [],
+        coverReports: coverReportsByEmployee.get(guard.employeeId) || [],
+        absences,
+        scanDays,
+        premiumDates,
+        preserveRecordedPayment,
+        employeeNames,
+        now,
+      });
+    })
+    .sort((left, right) => left.name.localeCompare(right.name, 'id'));
+  return { employees };
 }
 
 export async function buildSatpamAttendanceMismatches(
