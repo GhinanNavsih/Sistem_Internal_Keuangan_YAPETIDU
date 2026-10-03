@@ -29,11 +29,8 @@ export default function SatkerPekaryaNavBar() {
   const permittedCategories = (profile?.permittedCategories || []).map((item) =>
     item.trim().toUpperCase(),
   );
-  const defaultAttendanceCategory = ALL_BLUE_COLLAR_CATEGORY;
-  const attendanceCategory =
-    searchParams.get('category')?.trim().toUpperCase() === 'SATPAM' && pathname.includes('presensi-pekarya')
-      ? 'SATPAM'
-      : defaultAttendanceCategory;
+  // Satpam is reviewed in the same list as every other blue-collar category.
+  const attendanceCategory = ALL_BLUE_COLLAR_CATEGORY;
   // Uraian pages resolve their own default period (previous month before the
   // 6th, unless closed) when the URL carries none at all. Forcing "now" in
   // here — like the non-uraian links below still do — would pre-empt that,

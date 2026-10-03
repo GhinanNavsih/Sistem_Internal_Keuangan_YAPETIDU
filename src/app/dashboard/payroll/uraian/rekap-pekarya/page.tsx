@@ -1,5 +1,6 @@
 "use client"
 
+import { presenceBonusColumnKey } from '@/lib/payroll/pekaryaPresenceBonus';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { useSearchParams } from 'next/navigation';
@@ -90,8 +91,11 @@ type SatpamDutyReconciliationResponse = {
       approvedAbsenceHarianCount?: number;
       approvedAbsencePremiumCount?: number;
       approvedShiftCounts?: SatpamApprovedShiftCounts;
+      /** 1 when the monthly attendance bonus is earned, else 0. */
+      bonusCount?: number;
     }>;
   }>;
+  unassignedExternalEmployees?: Array<{ employeeId?: string }>;
 };
 
 type SatpamScheduledShiftData = {
@@ -101,6 +105,8 @@ type SatpamScheduledShiftData = {
   approvedAbsenceHarianCounts: Record<string, number>;
   approvedAbsencePremiumCounts: Record<string, number>;
   approvedShiftCounts: Record<string, SatpamApprovedShiftCounts>;
+  /** The server's live verdict on the monthly attendance bonus, per guard. */
+  bonusCounts: Record<string, number>;
   ketuaShiftIds: Record<string, true>;
   fixedPost9Ids: Record<string, true>;
   status: 'loaded' | 'error';
@@ -119,6 +125,8 @@ type PekaryaAttendanceMoneyResponse = {
     employeeId: string;
     harianAmount: number;
     jumatLiburAmount: number;
+    /** Bonus Presensi for Kebersihan and Teknisi; null for other categories. */
+    presenceBonus?: { amount: number } | null;
   }>;
 };
 
@@ -215,6 +223,7 @@ export default function RekapPekaryaPage() {
         const approvedAbsenceHarianCounts: Record<string, number> = {};
         const approvedAbsencePremiumCounts: Record<string, number> = {};
         const approvedShiftCounts: Record<string, SatpamApprovedShiftCounts> = {};
+        const bonusCounts: Record<string, number> = {};
         const scheduledKetuaShiftIds: Record<string, true> = {};
         const scheduledFixedPost9Ids: Record<string, true> = {};
         for (const plan of view.plans || []) {
@@ -231,6 +240,7 @@ export default function RekapPekaryaPage() {
             approvedAbsenceHarianCounts[employee.employeeId] = Number(employee.approvedAbsenceHarianCount || 0);
             approvedAbsencePremiumCounts[employee.employeeId] = Number(employee.approvedAbsencePremiumCount || 0);
             if (employee.approvedShiftCounts) approvedShiftCounts[employee.employeeId] = employee.approvedShiftCounts;
+            bonusCounts[employee.employeeId] = Number(employee.bonusCount) === 1 ? 1 : 0;
             const approvedAbsenceCount = Number(employee.approvedAbsenceCount);
             if (Number.isFinite(approvedAbsenceCount)) {
               approvedAbsenceCounts[employee.employeeId] =
@@ -239,10 +249,17 @@ export default function RekapPekaryaPage() {
             }
           }
         }
+        // Guards outside the duty plan never earn the plan-based bonus.
+        for (const external of view.unassignedExternalEmployees || []) {
+          if (external.employeeId && bonusCounts[external.employeeId] === undefined) {
+            bonusCounts[external.employeeId] = 0;
+          }
+        }
         setSatpamScheduledShiftData({
           period,
           counts: scheduledCounts,
           approvedAbsenceCounts, approvedAbsenceHarianCounts, approvedAbsencePremiumCounts, approvedShiftCounts,
+          bonusCounts,
           ketuaShiftIds: scheduledKetuaShiftIds,
           fixedPost9Ids: scheduledFixedPost9Ids,
           status: 'loaded',
@@ -255,6 +272,7 @@ export default function RekapPekaryaPage() {
             period,
             counts: {},
             approvedAbsenceCounts: {}, approvedAbsenceHarianCounts: {}, approvedAbsencePremiumCounts: {}, approvedShiftCounts: {},
+            bonusCounts: {},
             ketuaShiftIds: {},
             fixedPost9Ids: {},
             status: 'error',
@@ -567,6 +585,22 @@ export default function RekapPekaryaPage() {
     return workedCount;
   }, [approvedActivityReports, period, satpamDutySources, satpamScheduledShiftData]);
 
+  // The monthly attendance bonus as the server's reconciliation reads it right
+  // now, so it shows without the rekap having been saved first. Undefined when
+  // that reading is not available, or when the bonus is typed in by hand
+  // (the July 2026 pilot).
+  const getComputedSatpamMonthlyBonus = useCallback(
+    (empId: string): number | undefined => {
+      if (category !== 'SATPAM' || !satpamDutyPlanRequired || canEditSatpamMonthlyBonus) {
+        return undefined;
+      }
+      const scheduled =
+        satpamScheduledShiftData?.period === period ? satpamScheduledShiftData : null;
+      return scheduled?.status === 'loaded' ? scheduled.bonusCounts[empId] : undefined;
+    },
+    [canEditSatpamMonthlyBonus, category, period, satpamDutyPlanRequired, satpamScheduledShiftData],
+  );
+
   const getSatpamMonthlyAttendanceComparison = useCallback((empId: string) => {
     const storedValues = tableData[empId] || {};
     const harian = Number(
@@ -793,6 +827,7 @@ export default function RekapPekaryaPage() {
           uploadedAttendance?.importRevisionId || '',
         );
         if (uploadedRevisionId) {
+          const bonusKey = presenceBonusColumnKey(category);
           for (const attendance of uploadedAttendance?.employees || []) {
             initialTable[attendance.employeeId] = {
               ...(initialTable[attendance.employeeId] || {}),
@@ -800,6 +835,10 @@ export default function RekapPekaryaPage() {
               // by Presensi Pekarya. Counts remain audit metadata only.
               harian: Number(attendance.harianAmount) || 0,
               jumatLibur: Number(attendance.jumatLiburAmount) || 0,
+              // Bonus Presensi follows the attendance too, never a typed figure.
+              ...(bonusKey && attendance.presenceBonus
+                ? { [bonusKey]: Number(attendance.presenceBonus.amount) || 0 }
+                : {}),
             };
           }
           setActiveAttendanceImportRevisionId(uploadedRevisionId);
@@ -1045,6 +1084,12 @@ export default function RekapPekaryaPage() {
             storedValues[k] = getComputedSatpamShiftCount(emp.employeeId, k);
           }
         });
+      }
+      // Saved with the figure the reconciliation gives right now, so the rekap
+      // never has to be re-opened just to pick the bonus up.
+      if (category === 'SATPAM' && storedValues.bonusPresensiBulanan === undefined) {
+        const liveBonus = getComputedSatpamMonthlyBonus(emp.employeeId);
+        if (liveBonus !== undefined) storedValues.bonusPresensiBulanan = liveBonus;
       }
       // An empty July pilot cell is an explicit "no bonus" value, rather than
       // an invitation for a later duty-plan reconciliation to fill it in.
@@ -1419,6 +1464,10 @@ export default function RekapPekaryaPage() {
           computedValues.tunjanganJabatan = getSatpamTunjanganJabatan(
             ketuaShiftIds.has(emp.employeeId),
           );
+        }
+        if (computedValues.bonusPresensiBulanan === undefined) {
+          const liveBonus = getComputedSatpamMonthlyBonus(emp.employeeId);
+          if (liveBonus !== undefined) computedValues.bonusPresensiBulanan = liveBonus;
         }
       }
       if (category === 'SOPIR') {
@@ -1916,6 +1965,8 @@ export default function RekapPekaryaPage() {
                               canEditThisHistoricalSpj
                                 ? (tableData[emp.employeeId]?.spj ?? getComputedSpj(emp.employeeId) ?? 0)
                                 : (getComputedSpj(emp.employeeId) || 0))
+                            : (isDutyPlanDerived && tableData[emp.employeeId]?.[col.key] === undefined)
+                              ? (getComputedSatpamMonthlyBonus(emp.employeeId) ?? '')
                             : (isSatpamShift && tableData[emp.employeeId]?.[col.key] === undefined)
                               ? (getComputedSatpamShiftCount(emp.employeeId, col.key) || 0)
                               : (isTunjanganJabatan && tableData[emp.employeeId]?.[col.key] === undefined)

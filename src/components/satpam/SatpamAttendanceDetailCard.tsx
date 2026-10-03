@@ -194,6 +194,12 @@ export function SatpamAttendanceDetailCard({
 
       {expanded && (
         <div className="border-t border-slate-200 bg-white p-4">
+          {employee.identityIssue && (
+            <p className="mb-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              {employee.identityIssue}
+            </p>
+          )}
           <p className="mb-3 text-xs text-slate-500">
             Upah Satpam dihitung dari laporan shift dan izin resmi yang
             disetujui, bukan dari scan. Scan ditampilkan sebagai bukti kehadiran.
@@ -254,6 +260,12 @@ export function SatpamAttendanceDetailCard({
                             oleh {row.coveredByName}
                           </span>
                         )}
+                        {row.warning && (
+                          <span className="mt-1 flex max-w-xs items-start gap-1 text-xs font-semibold text-amber-700">
+                            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                            {row.warning}
+                          </span>
+                        )}
                         {row.pendingAbsenceId && (
                           <span className="block text-xs text-amber-700">
                             Ada pengajuan menunggu
@@ -268,6 +280,7 @@ export function SatpamAttendanceDetailCard({
                                 <Button
                                   variant="outline"
                                   className="rounded-sm min-h-12 gap-1.5 border-amber-300 text-amber-800 hover:bg-amber-50"
+                                  nativeButton={false}
                                   render={<Link href={checkHref} />}
                                 >
                                   <ExternalLink className="h-3.5 w-3.5" /> Periksa

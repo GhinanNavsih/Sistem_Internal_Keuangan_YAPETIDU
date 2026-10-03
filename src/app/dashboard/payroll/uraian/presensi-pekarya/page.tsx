@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import {
   AlertTriangle,
   Calendar,
@@ -18,7 +18,6 @@ import {
   Loader2,
   RefreshCw,
   Save,
-  ShieldCheck,
   UserRoundX,
   X,
   ZoomIn,
@@ -83,6 +82,9 @@ import {
 import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
 import { attendanceWorkedSeconds } from '@/lib/payroll/attendance';
 import { SatpamAttendanceDetailCard } from '@/components/satpam/SatpamAttendanceDetailCard';
+import { UnroutedAttendanceRows } from '@/components/attendance/UnroutedAttendanceRows';
+import { SatpamAttendanceFindings } from '@/components/satpam/SatpamAttendanceFindings';
+import type { PekaryaPresenceBonus } from '@/lib/payroll/pekaryaPresenceBonus';
 import type { SatpamAttendanceDetailEmployee } from '@/lib/payroll/satpamAttendanceDetail';
 
 function isSatpamShiftName(value: string | undefined): value is 'Pagi' | 'Sore' | 'Malam' {
@@ -130,6 +132,8 @@ type EmployeeAttendance = {
   incompletePunchCount: number;
   correctedDayCount: number;
   days: AttendanceDay[];
+  /** Bonus Presensi for Kebersihan and Teknisi; null for other categories. */
+  presenceBonus: PekaryaPresenceBonus | null;
 };
 
 type DepartmentUnmatchedRow = {
@@ -138,6 +142,8 @@ type DepartmentUnmatchedRow = {
   sourceName: string;
   department: string;
   dates: string[];
+  /** True for a row with no department, which no page owns by routing. */
+  unrouted?: boolean;
 };
 
 type LinkCandidate = {
@@ -160,9 +166,12 @@ type AttendanceView = {
   };
   employees: EmployeeAttendance[];
   linkCandidates: LinkCandidate[];
+  /** Every blue-collar employee a department-less row may be linked to. */
+  unroutedLinkCandidates?: LinkCandidate[];
   exceptions: {
     unmatchedNipys: string[];
     departmentUnmatched: DepartmentUnmatchedRow[];
+    unroutedUnmatched?: DepartmentUnmatchedRow[];
     duplicateNipys: string[];
     missingNipyEmployeeIds: string[];
     incompletePunches: number;
@@ -181,48 +190,6 @@ type AttendanceView = {
   officialLeaves: PekaryaOfficialLeaveRequest[];
   /** Review-only Satpam cards, present on "Semua Pekarya" for accounts that may see Satpam. */
   satpamAttendance?: { employees: SatpamAttendanceDetailEmployee[] } | null;
-};
-
-type SatpamView = {
-  period: string;
-  category: 'SATPAM';
-  importRevision: number;
-  importRevisionId: string;
-  calendarRevision: number;
-  paymentSource: string;
-  departmentUnmatched: DepartmentUnmatchedRow[];
-  linkCandidates: LinkCandidate[];
-  mismatches: Array<{
-    code: string;
-    employeeId: string | null;
-    employeeName: string;
-    nipy: string;
-    dutyDate: string;
-    reportId: string | null;
-    sourceOccurrenceId?: string | null;
-    message: string;
-  }>;
-};
-
-type SatpamDutyPlanAdminView = {
-  enabled: boolean;
-  plans: Array<{
-    id: string;
-    teamId: string;
-    status: string;
-    revision?: number;
-    lateBackfillDates?: string[];
-    rosterSnapshot?: Array<{
-      employeeId: string;
-      name: string;
-    }>;
-    generatedDays?: Array<{
-      dutyDate: string;
-      shiftName: string;
-      offDutyEmployeeId: string;
-      assignments: Array<{ postId: string; employeeId: string }>;
-    }>;
-  }>;
 };
 
 type SatpamAbsenceAdminView = {
@@ -261,49 +228,6 @@ type SatpamAbsenceAdminView = {
   }>;
 };
 
-type SatpamReconciliationView = {
-  periodComplete: boolean;
-  pendingAbsenceCount: number;
-  conflictCount: number;
-  blockers: string[];
-  unassignedExternalEmployees: Array<{
-    employeeId: string;
-    employeeName: string;
-    extraDuties: number;
-    eligibleForBonus: false;
-    bonusAmount: 0;
-  }>;
-  plans: Array<{
-    planId: string;
-    teamId: string;
-    status: string;
-    revision: number;
-    lateBackfillDates: string[];
-    missingOccurrenceDates: string[];
-    pendingOccurrenceDates: string[];
-    employees: Array<{
-      employeeId: string;
-      employeeName: string;
-      requiredDuties: number;
-      fulfilledDuties: number;
-      fulfilledByWork: number;
-      fulfilledByAbsence: number;
-      missedDuties: number;
-      pendingDuties: number;
-      conflictingDuties: number;
-      extraDuties: number;
-      eligibleForBonus: boolean;
-      bonusAmount: number;
-    }>;
-  }>;
-};
-
-type SatpamOperations = {
-  dutyPlans: SatpamDutyPlanAdminView;
-  absences: SatpamAbsenceAdminView;
-  reconciliation: SatpamReconciliationView;
-};
-
 type CorrectionState = {
   employee: EmployeeAttendance;
   date: string;
@@ -314,26 +238,12 @@ type CorrectionState = {
   expectedRevision: number;
 };
 
-type PlanCorrectionState = {
-  plan: SatpamDutyPlanAdminView['plans'][number];
-  day: NonNullable<
-    SatpamDutyPlanAdminView['plans'][number]['generatedDays']
-  >[number];
-  reason: string;
-};
-
 /**
  * Longest the page waits for a period's results. Past it the request is
  * cancelled and an error with a working "Muat Ulang" replaces the placeholder,
  * so one stalled request can never leave the page loading until it is restarted.
  */
 const LOAD_TIMEOUT_MS = 60_000;
-
-function isSatpamView(
-  value: AttendanceView | SatpamView,
-): value is SatpamView {
-  return 'mismatches' in value;
-}
 
 const warningLabel: Record<string, string> = {
   NIPY_MISSING: 'NIPY belum diisi',
@@ -427,6 +337,24 @@ function ScanCell({
   );
 }
 
+/** Why the Bonus Presensi came out as it did, for the reviewer. */
+function presenceBonusReason(bonus: PekaryaPresenceBonus): string {
+  const dates = (list: readonly string[]) =>
+    list.map((date) => Number(date.slice(8))).join(', ');
+  const absent = `${bonus.absentDates.length} hari kerja (tgl ${dates(bonus.absentDates)})`;
+  switch (bonus.tier) {
+    case 'perfect':
+      return `Hadir pada semua ${bonus.workingDays} hari kerja dan tidak pernah telat.`;
+    case 'full':
+      return `Hadir pada semua ${bonus.workingDays} hari kerja, tetapi telat ${bonus.lateDates.length} hari (tgl ${dates(bonus.lateDates)}).`;
+    case 'one_absence':
+    case 'two_absences':
+      return `Tidak hadir ${absent}.`;
+    default:
+      return `Tidak hadir ${absent}; bonus hanya berlaku untuk maksimal dua hari tidak hadir.`;
+  }
+}
+
 function money(value: number) {
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
@@ -474,18 +402,6 @@ function checkClass(check: GantiLiburAttendanceCheck): string {
   if (check.verdict === 'awaiting_upload') return 'border-slate-200 bg-slate-50 text-slate-600';
   if (check.verdict === 'absent') return 'border-rose-200 bg-rose-50 text-rose-800';
   return 'border-amber-200 bg-amber-50 text-amber-800';
-}
-
-function satpamPlanStatusLabel(status: string): string {
-  return (
-    {
-      missing: 'Belum dibuat',
-      draft: 'Draf',
-      published: 'Diterbitkan',
-      pending_backfill_review: 'Diterbitkan (Backfill)',
-      stale: 'Perlu diperbarui',
-    }[status] || 'Status tidak diketahui'
-  );
 }
 
 function categoryLabel(category: string): string {
@@ -1578,8 +1494,6 @@ function BlueCollarSubmissionsCard({
 }
 
 export default function PekaryaAttendancePage() {
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const { profile } = useAuth();
   const month = Number(searchParams.get('month') || new Date().getMonth() + 1);
@@ -1590,21 +1504,12 @@ export default function PekaryaAttendancePage() {
   const canViewSatpamCategory =
     ['super_admin', 'finance_verifier'].includes(profile?.role || '') ||
     Boolean(profile?.permittedCategories?.includes('SATPAM'));
-  const rawCategoryParam = searchParams.get('category')?.trim().toUpperCase();
-  const category =
-    rawCategoryParam === 'SATPAM' && canViewSatpamCategory
-      ? 'SATPAM'
-      : ALL_BLUE_COLLAR_CATEGORY;
-  const setCategory = useCallback(
-    (nextCategory: string) => {
-      const params = new URLSearchParams(searchParams.toString());
-      params.set('category', nextCategory);
-      router.push(`${pathname}?${params.toString()}`, { scroll: false });
-    },
-    [pathname, router, searchParams],
-  );
+  // Satpam is reviewed in this same list, so there is one view: every
+  // blue-collar category together. An older link with ?category=SATPAM simply
+  // opens it.
+  const category = ALL_BLUE_COLLAR_CATEGORY;
   const period = `${year}-${String(month).padStart(2, '0')}`;
-  const [data, setData] = useState<AttendanceView | SatpamView | null>(null);
+  const [data, setData] = useState<AttendanceView | null>(null);
   // `loading` is the blocking first load of a period/category (the results are
   // swapped for a placeholder). `refreshing` is every reload after an action:
   // the results stay on screen and update in place, because collapsing them to
@@ -1646,16 +1551,8 @@ export default function PekaryaAttendancePage() {
       correction.scanOut &&
       !isValidAttendanceScanRange(correction.scanIn, correction.scanOut),
   );
-  const [planCorrection, setPlanCorrection] =
-    useState<PlanCorrectionState | null>(null);
-  const [satpamOperations, setSatpamOperations] =
-    useState<SatpamOperations | null>(null);
   const [satpamSubmissions, setSatpamSubmissions] =
     useState<SatpamAbsenceAdminView | null>(null);
-  const [satpamTab, setSatpamTab] = useState<
-    'plans' | 'absences' | 'reconciliation' | 'mismatches'
-  >('plans');
-  const [satpamAttendanceNotice, setSatpamAttendanceNotice] = useState('');
   const [satpamSubmissionNotice, setSatpamSubmissionNotice] = useState('');
   const [paidLeaves, setPaidLeaves] = useState<AnnualPaidLeaveRequest[]>([]);
   const [gantiLiburs, setGantiLiburs] = useState<GantiLiburRequest[]>([]);
@@ -1669,6 +1566,9 @@ export default function PekaryaAttendancePage() {
   const [linkTarget, setLinkTarget] = useState<DepartmentUnmatchedRow | null>(null);
   const [linkEmployeeId, setLinkEmployeeId] = useState('');
   const [linkSearch, setLinkSearch] = useState('');
+  // The dialog shows the form, then what is happening, then how it ended.
+  const [linkPhase, setLinkPhase] = useState<'form' | 'saving' | 'success' | 'error'>('form');
+  const [linkResult, setLinkResult] = useState<{ detail: string } | null>(null);
   const canEdit =
     profile?.role === 'satker_head' || profile?.role === 'super_admin';
   // The manual-link endpoint accepts super_admin as well as satker_head (it
@@ -1690,10 +1590,7 @@ export default function PekaryaAttendancePage() {
     const controller = new AbortController();
     loadAbort.current = controller;
     const { signal } = controller;
-    if (
-      !category ||
-      (period < '2026-08' && category !== 'SATPAM')
-    ) {
+    if (period < '2026-08') {
       setData(null);
       setPaidLeaves([]);
       setGantiLiburs([]);
@@ -1724,89 +1621,42 @@ export default function PekaryaAttendancePage() {
         { signal },
       ).catch(() => ({ requests: [] }));
 
-      if (category === 'SATPAM') {
-        // The notices are applied together with the data below rather than
-        // cleared up front: clearing first would make a notice that is still
-        // true vanish and reappear, shifting the page twice.
-        let attendanceNotice = '';
-        const attendancePromise = authenticatedJson<SatpamView>(
-          `/api/attendance/pekarya?period=${encodeURIComponent(period)}&category=SATPAM`,
-          { signal },
-        ).catch((cause): SatpamView => {
-          attendanceNotice =
-            cause instanceof Error
-              ? cause.message
-              : 'Import presensi belum tersedia.';
-          return {
-            period,
-            category: 'SATPAM',
-            importRevision: 0,
-            importRevisionId: '',
-            calendarRevision: 0,
-            paymentSource: 'Laporan shift / izin disetujui',
-            departmentUnmatched: [],
-            linkCandidates: [],
-            mismatches: [],
-          };
-        });
-        const [attendance, dutyPlans, absences, reconciliation, paidLeavesRes, gantiLibursRes] =
-          await Promise.all([
-            attendancePromise,
-            authenticatedJson<SatpamDutyPlanAdminView>(
-              `/api/satpam/duty-plans?period=${encodeURIComponent(period)}`,
-              { signal },
-            ),
-            authenticatedJson<SatpamAbsenceAdminView>(
+      let submissionNotice = '';
+      const satpamSubmissionsPromise: Promise<SatpamAbsenceAdminView | null> =
+        canViewSatpamCategory
+          ? authenticatedJson<SatpamAbsenceAdminView>(
               `/api/satpam/absences?period=${encodeURIComponent(period)}`,
               { signal },
-            ),
-            authenticatedJson<SatpamReconciliationView>(
-              `/api/satpam/duty-reconciliation?period=${encodeURIComponent(period)}&refresh=${canEdit ? 'true' : 'false'}`,
-              { signal },
-            ),
-            paidLeavesPromise,
-            gantiLibursPromise,
-          ]);
-        if (sequence !== loadSequence.current) return;
-        setData(attendance);
-        setSatpamOperations({ dutyPlans, absences, reconciliation });
-        setSatpamAttendanceNotice(attendanceNotice);
-        setSatpamSubmissionNotice('');
-        setSatpamSubmissions(null);
-        setPaidLeaves(paidLeavesRes.requests || []);
-        setGantiLiburs(gantiLibursRes.requests || []);
-      } else {
-        let submissionNotice = '';
-        const satpamSubmissionsPromise: Promise<SatpamAbsenceAdminView | null> =
-          category === ALL_BLUE_COLLAR_CATEGORY && canViewSatpamCategory
-            ? authenticatedJson<SatpamAbsenceAdminView>(
-                `/api/satpam/absences?period=${encodeURIComponent(period)}`,
-                { signal },
-              ).catch((cause): SatpamAbsenceAdminView => {
-                submissionNotice =
-                  cause instanceof Error
-                    ? cause.message
-                    : 'Gagal memuat pengajuan Satpam.';
-                return { requests: [] };
-              })
-            : Promise.resolve(null);
-        const [result, submissions, paidLeavesRes, gantiLibursRes] = await Promise.all([
-          authenticatedJson<AttendanceView>(
-            `/api/attendance/pekarya?period=${encodeURIComponent(period)}&category=${encodeURIComponent(category)}`,
-            { signal },
-          ),
-          satpamSubmissionsPromise,
-          paidLeavesPromise,
-          gantiLibursPromise,
-        ]);
-        if (sequence !== loadSequence.current) return;
-        setData(result);
-        setSatpamAttendanceNotice('');
-        setSatpamSubmissionNotice(submissionNotice);
-        setSatpamSubmissions(submissions);
-        setSatpamOperations(null);
-        setPaidLeaves(paidLeavesRes.requests || []);
-        setGantiLiburs(gantiLibursRes.requests || []);
+            ).catch((cause): SatpamAbsenceAdminView => {
+              submissionNotice =
+                cause instanceof Error
+                  ? cause.message
+                  : 'Gagal memuat pengajuan Satpam.';
+              return { requests: [] };
+            })
+          : Promise.resolve(null);
+      const [result, submissions, paidLeavesRes, gantiLibursRes] = await Promise.all([
+        authenticatedJson<AttendanceView>(
+          `/api/attendance/pekarya?period=${encodeURIComponent(period)}&category=${encodeURIComponent(category)}`,
+          { signal },
+        ),
+        satpamSubmissionsPromise,
+        paidLeavesPromise,
+        gantiLibursPromise,
+      ]);
+      if (sequence !== loadSequence.current) return;
+      setData(result);
+      setSatpamSubmissionNotice(submissionNotice);
+      setSatpamSubmissions(submissions);
+      setPaidLeaves(paidLeavesRes.requests || []);
+      setGantiLiburs(gantiLibursRes.requests || []);
+      // Opening the page used to refresh the saved Satpam rekap (shift counts
+      // and the monthly bonus) from the reconciliation. That now happens here,
+      // in the background, so the page does not wait on it.
+      if (!silent && canViewSatpamCategory && canEdit) {
+        void authenticatedJson(
+          `/api/satpam/duty-reconciliation?period=${encodeURIComponent(period)}&refresh=true`,
+        ).catch((cause) => console.error('Satpam rekap refresh failed', cause));
       }
     } catch (cause) {
       if (sequence !== loadSequence.current) return;
@@ -1881,8 +1731,21 @@ export default function PekaryaAttendancePage() {
     }
   };
 
+  const resetLinkDialog = () => {
+    setLinkTarget(null);
+    setLinkEmployeeId('');
+    setLinkSearch('');
+    setLinkPhase('form');
+    setLinkResult(null);
+    setError('');
+  };
+
   const saveManualLink = async () => {
     if (!linkTarget || !linkEmployeeId) return;
+    const chosen = (
+      linkTarget.unrouted ? data?.unroutedLinkCandidates : data?.linkCandidates
+    )?.find((candidate) => candidate.employeeId === linkEmployeeId);
+    setLinkPhase('saving');
     setWorking(true);
     setError('');
     try {
@@ -1895,19 +1758,26 @@ export default function PekaryaAttendancePage() {
           employeeId: linkEmployeeId,
         }),
       });
-      setLinkTarget(null);
-      setLinkEmployeeId('');
-      setLinkSearch('');
-      setMessage(
-        `Baris presensi dihubungkan. ${linkTarget.dates.length} hari kini dihitung untuk pegawai tersebut.`,
-      );
-      await refresh();
+      setLinkResult({
+        detail: `${linkTarget.sourceName || 'Baris presensi'} dihubungkan ke ${
+          chosen?.name || 'pegawai terpilih'
+        }. ${linkTarget.dates.length} hari presensi kini dihitung untuk pegawai tersebut. Jika presensi periode ini sudah dipublikasikan, publikasikan ulang agar upahnya ikut diperbarui.${
+          chosen && !chosen.nipy
+            ? ' Upah pegawai ini baru dapat dipublikasikan setelah NIPY-nya dilengkapi.'
+            : ''
+        }`,
+      });
+      setLinkPhase('success');
+      // The list reloads behind the dialog; it does not hold up the result.
+      void refresh();
     } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : 'Gagal menghubungkan baris presensi.',
-      );
+      setLinkResult({
+        detail:
+          cause instanceof Error
+            ? cause.message
+            : 'Gagal menghubungkan baris presensi.',
+      });
+      setLinkPhase('error');
     } finally {
       setWorking(false);
     }
@@ -2200,56 +2070,6 @@ export default function PekaryaAttendancePage() {
     });
   }, [category, gantiLiburs, canViewSatpamCategory]);
 
-  const satpamPaidLeaves = useMemo(() => {
-    return paidLeaves.filter(
-      (item) => item.employeeKind !== 'loyalis' && item.category === 'SATPAM',
-    );
-  }, [paidLeaves]);
-
-  const satpamGantiLiburs = useMemo(() => {
-    return gantiLiburs.filter(
-      (item) => item.employeeKind !== 'loyalis' && item.category === 'SATPAM',
-    );
-  }, [gantiLiburs]);
-
-  const savePlanCorrection = async () => {
-    if (!planCorrection) return;
-    const reason = planCorrection.reason.trim();
-    if (reason.length < 8) {
-      setError('Alasan koreksi rencana minimal delapan karakter.');
-      return;
-    }
-    setWorking(true);
-    setError('');
-    try {
-      await authenticatedJson('/api/satpam/duty-plans', {
-        method: 'PATCH',
-        body: JSON.stringify({
-          requestId: createFinancialRequestId('satpam-plan-correction'),
-          action: 'edit_day',
-          period,
-          teamId: planCorrection.plan.teamId,
-          expectedRevision: planCorrection.plan.revision,
-          reason,
-          day: planCorrection.day,
-        }),
-      });
-      setPlanCorrection(null);
-      setMessage(
-        'Koreksi rencana tersimpan. Laporan yang terdampak dibuka kembali untuk pemeriksaan finansial.',
-      );
-      await refresh();
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : 'Koreksi rencana dinas gagal disimpan.',
-      );
-    } finally {
-      setWorking(false);
-    }
-  };
-
   useEffect(() => {
     const timeout = window.setTimeout(() => {
       void load();
@@ -2258,7 +2078,7 @@ export default function PekaryaAttendancePage() {
   }, [load]);
 
   const totals = useMemo(() => {
-    if (!data || isSatpamView(data)) return null;
+    if (!data) return null;
     return data.employees.reduce(
       (acc, employee) => ({
         employees: acc.employees + 1,
@@ -2283,16 +2103,14 @@ export default function PekaryaAttendancePage() {
 
   const departmentUnmatched = useMemo(() => {
     if (!data) return [];
-    return isSatpamView(data)
-      ? data.departmentUnmatched || []
-      : data.exceptions.departmentUnmatched || [];
+    return data.exceptions.departmentUnmatched || [];
   }, [data]);
 
   // One list holding both sides of the reconciliation: the employees the import
   // resolved, and the rows it could not, so a reviewer sees the whole period in
   // a single place instead of two disconnected lists.
   const attendanceRows = useMemo(() => {
-    if (!data || isSatpamView(data)) return [];
+    if (!data) return [];
     const linked = data.employees.map((employee) => ({
       key: `employee:${employee.employeeId}`,
       employee: employee as EmployeeAttendance | null,
@@ -2321,8 +2139,19 @@ export default function PekaryaAttendancePage() {
     ];
   }, [data, departmentUnmatched]);
 
+  // Rows with no department and no matching employee.
+  const unroutedUnmatched = useMemo(() => {
+    if (!data) return [];
+    return data.exceptions.unroutedUnmatched || [];
+  }, [data]);
+
   const linkCandidates = useMemo(() => {
-    const candidates = data?.linkCandidates || [];
+    // Any row may belong to Satpam as well as the payable categories, so the
+    // dialog offers every blue-collar employee this account may link to. The
+    // payable categories alone are the fallback for accounts that may not link.
+    const candidates = data?.unroutedLinkCandidates?.length
+      ? data.unroutedLinkCandidates
+      : data?.linkCandidates || [];
     const search = linkSearch.trim().toLowerCase();
     if (!search) return candidates;
     return candidates.filter(
@@ -2434,7 +2263,7 @@ export default function PekaryaAttendancePage() {
   };
 
   const publish = async () => {
-    if (!data || isSatpamView(data)) return;
+    if (!data) return;
     const warnings = Array.from(
       new Set(
         data.employees.flatMap((employee) =>
@@ -2476,7 +2305,7 @@ export default function PekaryaAttendancePage() {
     }
   };
 
-  if (period < '2026-08' && category !== 'SATPAM') {
+  if (period < '2026-08') {
     return (
       <div className="rounded-md border border-amber-200 bg-amber-50 p-6 text-amber-900">
         Presensi Pekarya otomatis mulai berlaku pada periode Agustus 2026.
@@ -2511,27 +2340,6 @@ export default function PekaryaAttendancePage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {canViewSatpamCategory && (
-              <div className="flex rounded-md border border-slate-200 bg-slate-50 p-1">
-                {[
-                  [ALL_BLUE_COLLAR_CATEGORY, 'Semua Pekarya'],
-                  ['SATPAM', 'Satpam'],
-                ].map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setCategory(value)}
-                    className={`min-h-10 rounded-sm px-3 text-sm font-bold transition-all ${
-                      category === value
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'text-slate-500 hover:bg-slate-100'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            )}
             <Button
               variant="outline"
               className="rounded-sm min-h-12 gap-2"
@@ -2545,9 +2353,7 @@ export default function PekaryaAttendancePage() {
         </div>
       </section>
 
-      {data &&
-        !isSatpamView(data) &&
-        category === ALL_BLUE_COLLAR_CATEGORY && (
+      {data && (
           <div className="rounded-md border border-blue-200 bg-blue-50 p-5 text-blue-900">
             <p className="font-bold">Semua pegawai blue collar</p>
             <p className="mt-1 text-sm">
@@ -2564,413 +2370,21 @@ export default function PekaryaAttendancePage() {
         </div>
       )}
 
-      {/* On the payable categories these rows sit inside the employee table
-          itself, next to the people they belong with. Satpam has no such table
-          — it is a verification view — so they are listed on their own there. */}
-      {!loading && data && isSatpamView(data) && departmentUnmatched.length > 0 && (
-        <section className="overflow-hidden rounded-md border border-amber-200 bg-white shadow-sm">
-          <div className="border-b border-amber-100 bg-amber-50 p-5 text-amber-900">
-            <p className="flex items-center gap-2 font-bold">
-              <UserRoundX className="h-5 w-5" />
-              {departmentUnmatched.length} baris presensi belum dikenali
-            </p>
-            <p className="mt-1 text-sm">
-              Baris ini berasal dari departemen blue collar, tetapi kolom
-              NIPY-nya berisi PIN mesin presensi sehingga tidak cocok dengan
-              pegawai mana pun. Hubungkan setiap baris ke pegawai yang benar
-              agar hari kerjanya ikut dihitung.
-            </p>
-          </div>
-          <div className="divide-y divide-slate-100">
-            {departmentUnmatched.map((row) => (
-              <div
-                key={row.sourceKey}
-                className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div>
-                  <p className="font-bold text-slate-900">
-                    {row.sourceName || 'Tanpa nama'}
-                  </p>
-                  <p className="text-sm text-slate-500">
-                    {row.department} · PIN {row.sourceNipy || 'kosong'} ·{' '}
-                    {row.dates.length} hari presensi
-                  </p>
-                </div>
-                {canLinkAttendance && (
-                  <Button
-                    variant="outline"
-                    className="rounded-sm min-h-12 shrink-0"
-                    onClick={() => {
-                      setLinkTarget(row);
-                      setLinkEmployeeId('');
-                      setLinkSearch(row.sourceName || '');
-                      setError('');
-                    }}
-                  >
-                    Hubungkan Pegawai
-                  </Button>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
+      {!loading && data && canLinkAttendance && unroutedUnmatched.length > 0 && (
+        <UnroutedAttendanceRows
+          rows={unroutedUnmatched}
+          candidates={data.unroutedLinkCandidates || []}
+          disabled={working}
+          onLink={(row, suggestion) => {
+            setLinkTarget({ ...row, department: '', unrouted: true });
+            setLinkEmployeeId('');
+            setLinkSearch(suggestion?.name || row.sourceName || '');
+            setError('');
+          }}
+        />
       )}
 
-      {!loading && data && isSatpamView(data) && (
-        <>
-          <div className="rounded-md border border-blue-200 bg-blue-50 p-5 text-blue-900">
-            <div className="flex gap-3">
-              <ShieldCheck className="mt-0.5 h-6 w-6 shrink-0" />
-              <div>
-                <p className="font-bold">Presensi Satpam hanya untuk verifikasi</p>
-                <p className="mt-1 text-sm">
-                  Upah mengikuti laporan shift atau izin resmi disetujui. Peringatan di bawah
-                  tidak menambah atau mengurangi pembayaran shift.
-                </p>
-              </div>
-            </div>
-            {satpamAttendanceNotice && (
-              <p className="mt-3 rounded-md border border-blue-200 bg-white/70 p-3 text-sm">
-                Presensi belum dapat dibandingkan: {satpamAttendanceNotice}
-                {' '}
-                Rencana dinas, izin, dan rekonsiliasi tetap dapat diperiksa.
-              </p>
-            )}
-          </div>
-
-          {satpamOperations && (
-            <div
-              className="grid grid-cols-2 gap-2 rounded-md border border-slate-200 bg-white p-2 shadow-sm lg:grid-cols-4"
-              role="tablist"
-              aria-label="Pemeriksaan Satpam"
-            >
-              {[
-                ['plans', 'Rencana Dinas'],
-                [
-                  'absences',
-                  `Pengajuan (${
-                    satpamOperations.absences.requests.filter((request) => request.status === 'pending').length +
-                    satpamPaidLeaves.filter((leave) => leave.status === 'pending').length +
-                    satpamGantiLiburs.filter((gl) => gl.status === 'pending').length
-                  })`,
-                ],
-                ['reconciliation', 'Bonus & Kewajiban'],
-                ['mismatches', `Presensi (${data.mismatches.length})`],
-              ].map(([tab, label]) => (
-                <button
-                  key={tab}
-                  type="button"
-                  role="tab"
-                  aria-selected={satpamTab === tab}
-                  className={`min-h-12 rounded-sm px-3 py-2 text-sm font-bold ${
-                    satpamTab === tab
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
-                  }`}
-                  onClick={() =>
-                    setSatpamTab(
-                      tab as
-                        | 'plans'
-                        | 'absences'
-                        | 'reconciliation'
-                        | 'mismatches',
-                    )
-                  }
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {satpamOperations && satpamTab === 'plans' && (
-            <section className="space-y-3">
-              {!satpamOperations.dutyPlans.enabled && (
-                <div className="rounded-md border border-slate-200 bg-slate-50 p-5 text-slate-700">
-                  Periode ini masih memakai alur Satpam lama. Rencana dinas
-                  kanonis berlaku untuk periode pertama yang dibuka setelah
-                  fitur diterapkan.
-                </div>
-              )}
-              {satpamOperations.dutyPlans.plans.map((plan) => {
-                const backfillDates = plan.lateBackfillDates || [];
-                return (
-                  <article
-                    key={plan.id}
-                    className="rounded-md border border-slate-200 bg-white p-5 shadow-sm"
-                  >
-                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                      <div>
-                        <h2 className="font-bold text-slate-900">
-                          {plan.teamId} · {plan.status === 'missing'
-                            ? 'Belum dibuat'
-                            : `Revisi ${plan.revision || 1}`}
-                        </h2>
-                        <p className="mt-1 text-sm text-slate-500">
-                          Status: {satpamPlanStatusLabel(plan.status)} ·{' '}
-                          {plan.generatedDays?.length || 0} tanggal dihasilkan
-                        </p>
-                        {backfillDates.length > 0 && (
-                          <p className="mt-2 text-sm font-semibold text-amber-700">
-                            Backfill (diterbitkan setelah shift dimulai): {backfillDates.join(', ')}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    {(plan.generatedDays?.length || 0) > 0 && (
-                      <details className="mt-4 rounded-md border border-slate-200 bg-slate-50">
-                        <summary className="min-h-12 cursor-pointer p-3 font-semibold text-slate-700">
-                          Lihat dan koreksi tanggal rencana
-                        </summary>
-                        <div className="max-h-96 divide-y divide-slate-200 overflow-y-auto border-t border-slate-200">
-                          {plan.generatedDays!.map((day) => (
-                            <div
-                              key={day.dutyDate}
-                              className="flex flex-col gap-3 bg-white p-3 sm:flex-row sm:items-center sm:justify-between"
-                            >
-                              <div>
-                                <p className="font-semibold text-slate-900">
-                                  {day.dutyDate} · {day.shiftName}
-                                </p>
-                                <p className="text-sm text-slate-500">
-                                  Off-duty:{' '}
-                                  {plan.rosterSnapshot?.find(
-                                    (employee) =>
-                                      employee.employeeId ===
-                                      day.offDutyEmployeeId,
-                                  )?.name || day.offDutyEmployeeId}
-                                </p>
-                              </div>
-                              {canEdit && (
-                                <Button
-                                  variant="outline"
-                                  className="rounded-sm min-h-12"
-                                  onClick={() =>
-                                    setPlanCorrection({
-                                      plan,
-                                      day: JSON.parse(JSON.stringify(day)),
-                                      reason: '',
-                                    })
-                                  }
-                                >
-                                  Koreksi Kepala
-                                </Button>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </details>
-                    )}
-                  </article>
-                );
-              })}
-            </section>
-          )}
-
-          {satpamOperations && satpamTab === 'absences' && (
-            <BlueCollarSubmissionsCard
-              category="SATPAM"
-              canViewSatpamCategory={canViewSatpamCategory}
-              canEdit={canEdit}
-              working={working}
-              profileRole={profile?.role}
-              satpamRequests={satpamOperations.absences.requests}
-              paidLeaves={satpamPaidLeaves}
-              gantiLiburs={satpamGantiLiburs}
-              onReviewOfficialLeave={reviewOfficialLeave}
-              onReviewSatpamAbsence={reviewAbsence}
-              onReviewPaidLeave={reviewPaidLeave}
-              onReviewGantiLibur={reviewGantiLibur}
-              openDeclineDialog={openDeclineDialog}
-              onBulkApprove={handleBulkApproveSubmissions}
-              setSelectedEvidence={setSelectedEvidence}
-              onReload={refresh}
-            />
-          )}
-
-          {satpamOperations && satpamTab === 'reconciliation' && (
-            <section className="space-y-4">
-              <div
-                className={`rounded-md border p-5 ${
-                  satpamOperations.reconciliation.blockers.length > 0
-                    ? 'border-amber-200 bg-amber-50 text-amber-900'
-                    : 'border-emerald-200 bg-emerald-50 text-emerald-900'
-                }`}
-              >
-                <p className="font-bold">
-                  {satpamOperations.reconciliation.blockers.length > 0
-                    ? 'Rekonsiliasi belum siap ditutup'
-                    : 'Rekonsiliasi tidak memiliki konflik'}
-                </p>
-                {satpamOperations.reconciliation.blockers.map((blocker) => (
-                  <p key={blocker} className="mt-1 text-sm">
-                    • {blocker}
-                  </p>
-                ))}
-              </div>
-              {satpamOperations.reconciliation.plans.map((plan) => (
-                <article
-                  key={plan.planId}
-                  className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm"
-                >
-                  <div className="border-b border-slate-200 p-5">
-                    <h2 className="font-bold">{plan.teamId}</h2>
-                    <p className="text-sm text-slate-500">
-                      {plan.missingOccurrenceDates.length} laporan belum ada ·{' '}
-                      {plan.pendingOccurrenceDates.length} laporan masih diperiksa
-                    </p>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[860px] text-sm">
-                      <thead>
-                        <tr className="border-b text-left text-slate-500">
-                          <th className="p-3">Satpam</th>
-                          <th className="p-3">Wajib</th>
-                          <th className="p-3">Terpenuhi</th>
-                          <th className="p-3">Kerja</th>
-                          <th className="p-3">Izin</th>
-                          <th className="p-3">Ekstra</th>
-                          <th className="p-3">Konflik</th>
-                          <th className="p-3">Bonus</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {plan.employees.map((employee) => (
-                          <tr
-                            key={employee.employeeId}
-                            className="border-b border-slate-100"
-                          >
-                            <td className="p-3 font-semibold">
-                              {employee.employeeName}
-                            </td>
-                            <td className="p-3">{employee.requiredDuties}</td>
-                            <td className="p-3">{employee.fulfilledDuties}</td>
-                            <td className="p-3">{employee.fulfilledByWork}</td>
-                            <td className="p-3">{employee.fulfilledByAbsence}</td>
-                            <td className="p-3">{employee.extraDuties}</td>
-                            <td className="p-3">{employee.conflictingDuties}</td>
-                            <td className="p-3 font-bold">
-                              {employee.eligibleForBonus
-                                ? money(employee.bonusAmount)
-                                : 'Belum berhak'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </article>
-              ))}
-              {satpamOperations.reconciliation.unassignedExternalEmployees
-                .length > 0 && (
-                <article className="rounded-md border border-blue-200 bg-blue-50 p-5 text-blue-900">
-                  <h2 className="font-bold">
-                    Pengganti eksternal tanpa regu
-                  </h2>
-                  <p className="mt-1 text-sm">
-                    Upah Cover tetap dihitung. Mereka tidak memiliki kewajiban
-                    rencana dan tidak berhak atas bonus sampai masuk regu.
-                  </p>
-                  <div className="mt-3 space-y-2">
-                    {satpamOperations.reconciliation.unassignedExternalEmployees.map(
-                      (employee) => (
-                        <div
-                          key={employee.employeeId}
-                          className="rounded-md bg-white/80 p-3 font-semibold"
-                        >
-                          {employee.employeeName} · {employee.extraDuties}{' '}
-                          penugasan ekstra
-                        </div>
-                      ),
-                    )}
-                  </div>
-                </article>
-              )}
-            </section>
-          )}
-
-          {(!satpamOperations || satpamTab === 'mismatches') && (
-          <section className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-200 p-5">
-              <h2 className="font-bold">Perbedaan yang perlu diperiksa</h2>
-              <p className="text-sm text-slate-500">
-                {data.mismatches.length} temuan
-              </p>
-            </div>
-            {!data.importRevisionId && (
-              <div className="flex items-start gap-2 border-b border-amber-100 bg-amber-50 p-4 text-sm text-amber-900">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <p>
-                  Presensi bulanan periode ini belum diimpor, jadi belum ada data
-                  presensi mentah untuk dicocokkan.
-                  {data.mismatches.length === 0
-                    ? ' Angka 0 di atas belum berarti aman — periksa ulang setelah presensi bulanan diimpor.'
-                    : ' Temuan di bawah baru berdasarkan laporan dan koreksi yang sudah masuk.'}
-                </p>
-              </div>
-            )}
-            <div className="divide-y divide-slate-100">
-              {data.mismatches.length === 0 ? (
-                <div className="p-8 text-center text-slate-500">
-                  Tidak ada perbedaan yang ditemukan.
-                </div>
-              ) : (
-                data.mismatches.map((item, index) => {
-                  const reviewHref =
-                    item.code === 'REPORT_WITHOUT_ATTENDANCE' &&
-                    item.reportId &&
-                    item.sourceOccurrenceId &&
-                    item.employeeId
-                      ? satpamShiftMismatchReviewHref(
-                          period,
-                          item.sourceOccurrenceId,
-                          item.employeeId,
-                        )
-                      : null;
-                  const content = (
-                    <div className="flex items-start gap-3">
-                      <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-                      <div>
-                        <p className="font-semibold text-slate-900">
-                          {item.employeeName || 'Identitas belum cocok'} · {item.dutyDate}
-                        </p>
-                        <p className="text-sm text-slate-600">{item.message}</p>
-                        <p className="mt-1 text-xs font-semibold text-slate-400">
-                          {item.code} {item.nipy ? `· NIPY ${item.nipy}` : ''}
-                        </p>
-                        {reviewHref && (
-                          <span className="mt-2 inline-flex min-h-8 items-center gap-1.5 rounded-sm border border-amber-300 bg-white px-2.5 text-xs font-bold text-amber-800 transition-colors group-hover:bg-amber-100">
-                            <ExternalLink className="h-3.5 w-3.5" />
-                            Tinjau laporan shift
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-
-                  return reviewHref ? (
-                    <Link
-                      key={`${item.code}-${item.dutyDate}-${index}`}
-                      href={reviewHref}
-                      aria-label={`Tinjau laporan shift ${item.employeeName} ${item.dutyDate}`}
-                      className="group block p-5 transition-colors hover:bg-amber-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500"
-                    >
-                      {content}
-                    </Link>
-                  ) : (
-                    <div key={`${item.code}-${item.dutyDate}-${index}`} className="p-5">
-                      {content}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </section>
-          )}
-        </>
-      )}
-
-      {!loading && data && !isSatpamView(data) && totals && (
+      {!loading && data && totals && (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {[
@@ -3350,6 +2764,16 @@ export default function PekaryaAttendancePage() {
 
                   {isExpanded && employee && (
                     <div className="border-t border-slate-200 bg-white p-4">
+                      {employee.presenceBonus && (
+                        <div className="mb-4 rounded-md border border-indigo-100 bg-indigo-50 p-3 text-sm text-indigo-900">
+                          <p className="font-bold">
+                            Bonus Presensi: {money(employee.presenceBonus.amount)}
+                          </p>
+                          <p className="mt-0.5 text-xs">
+                            {presenceBonusReason(employee.presenceBonus)}
+                          </p>
+                        </div>
+                      )}
                       <div className="mb-4 flex justify-end">
                         {canEdit && (
                           <Button
@@ -3457,290 +2881,190 @@ export default function PekaryaAttendancePage() {
             })}
           </section>
 
-          {data.correctionHistory.length > 0 && (
-            <section className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
-              <div className="border-b border-slate-200 p-5">
-                <h2 className="font-bold">Riwayat Koreksi</h2>
-                <p className="text-sm text-slate-500">
-                  Catatan bersifat append-only dan tidak dapat dihapus.
-                </p>
-              </div>
-              <div className="divide-y divide-slate-100">
-                {data.correctionHistory.map((item) => (
-                  <div key={item.id} className="p-4">
-                    <p className="font-semibold text-slate-900">
-                      {item.employeeName || 'Pegawai'} · {item.date} · revisi{' '}
-                      {item.revision || 1}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-600">{item.reason}</p>
-                    <p className="mt-1 text-xs text-slate-400">
-                      Pelaku: {item.actorName || item.actorUid || '—'}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </section>
+          {data.satpamAttendance && (
+            <SatpamAttendanceFindings
+              employees={data.satpamAttendance.employees}
+              attendanceImported={Boolean(data.importRevisionId)}
+              reviewHref={(finding) =>
+                finding.review
+                  ? satpamShiftMismatchReviewHref(
+                      period,
+                      finding.review.occurrenceId,
+                      finding.review.employeeId,
+                    )
+                  : null
+              }
+            />
           )}
         </>
       )}
 
       <Dialog
-        open={Boolean(planCorrection)}
-        onOpenChange={(open) => !open && setPlanCorrection(null)}
-      >
-        <DialogContent className="rounded-md max-h-[90vh] max-w-xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Koreksi Rencana Dinas Satpam</DialogTitle>
-            <DialogDescription>
-              Koreksi Kepala SatKer disimpan sebagai revisi baru dengan
-              sebelum/sesudah. Laporan yang sudah disetujui akan dibuka kembali
-              tanpa menghapus bukti awal.
-            </DialogDescription>
-          </DialogHeader>
-          {planCorrection && (
-            <div className="space-y-4">
-              <div>
-                <p className="font-bold">
-                  {planCorrection.plan.teamId} ·{' '}
-                  {planCorrection.day.dutyDate}
-                </p>
-                <p className="text-sm text-slate-500">
-                  Rencana revisi {planCorrection.plan.revision}
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label>Shift yang dilaporkan</Label>
-                <select
-                  className="min-h-12 w-full rounded-sm border border-slate-300 bg-white px-3"
-                  value={planCorrection.day.shiftName}
-                  onChange={(event) =>
-                    setPlanCorrection({
-                      ...planCorrection,
-                      day: {
-                        ...planCorrection.day,
-                        shiftName: event.target.value,
-                      },
-                    })
-                  }
-                >
-                  <option value="Pagi">Pagi</option>
-                  <option value="Sore">Sore</option>
-                  <option value="Malam">Malam</option>
-                </select>
-              </div>
-              {planCorrection.day.assignments.map((assignment, index) => (
-                <div key={assignment.postId} className="space-y-2">
-                  <Label>{assignment.postId}</Label>
-                  <select
-                    className="min-h-12 w-full rounded-sm border border-slate-300 bg-white px-3"
-                    value={assignment.employeeId}
-                    onChange={(event) =>
-                      setPlanCorrection({
-                        ...planCorrection,
-                        day: {
-                          ...planCorrection.day,
-                          assignments:
-                            planCorrection.day.assignments.map(
-                              (candidate, candidateIndex) =>
-                                candidateIndex === index
-                                  ? {
-                                      ...candidate,
-                                      employeeId: event.target.value,
-                                    }
-                                  : candidate,
-                            ),
-                        },
-                      })
-                    }
-                  >
-                    {(planCorrection.plan.rosterSnapshot || []).map(
-                      (employee) => (
-                        <option
-                          key={employee.employeeId}
-                          value={employee.employeeId}
-                        >
-                          {employee.name}
-                        </option>
-                      ),
-                    )}
-                  </select>
-                </div>
-              ))}
-              <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3">
-                <Label>Off-duty</Label>
-                <select
-                  className="min-h-12 w-full rounded-sm border border-slate-300 bg-white px-3"
-                  value={planCorrection.day.offDutyEmployeeId}
-                  onChange={(event) =>
-                    setPlanCorrection({
-                      ...planCorrection,
-                      day: {
-                        ...planCorrection.day,
-                        offDutyEmployeeId: event.target.value,
-                      },
-                    })
-                  }
-                >
-                  {(planCorrection.plan.rosterSnapshot || []).map(
-                    (employee) => (
-                      <option
-                        key={employee.employeeId}
-                        value={employee.employeeId}
-                      >
-                        {employee.name}
-                      </option>
-                    ),
-                  )}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="plan-correction-reason">Alasan wajib</Label>
-                <textarea
-                  id="plan-correction-reason"
-                  className="min-h-24 w-full rounded-sm border border-slate-300 p-3"
-                  value={planCorrection.reason}
-                  onChange={(event) =>
-                    setPlanCorrection({
-                      ...planCorrection,
-                      reason: event.target.value,
-                    })
-                  }
-                  placeholder="Contoh: Pertukaran jadwal telah dikonfirmasi oleh kedua petugas."
-                />
-              </div>
-            </div>
-          )}
-          <DialogFooter className="rounded-b-md">
-            <Button
-              variant="outline"
-              className="rounded-sm min-h-12"
-              onClick={() => setPlanCorrection(null)}
-            >
-              Batal
-            </Button>
-            <Button
-              className="rounded-sm min-h-12"
-              disabled={
-                working ||
-                !planCorrection ||
-                planCorrection.reason.trim().length < 8
-              }
-              onClick={() => void savePlanCorrection()}
-            >
-              Simpan Koreksi
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
         open={Boolean(linkTarget)}
         onOpenChange={(open) => {
-          if (!open) {
-            setLinkTarget(null);
-            setLinkEmployeeId('');
-            setLinkSearch('');
-            setError('');
-          }
+          // Closing mid-save would hide whether the link was made.
+          if (!open && linkPhase !== 'saving') resetLinkDialog();
         }}
       >
         <DialogContent className="rounded-md max-h-[90vh] max-w-lg overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Hubungkan Baris Presensi</DialogTitle>
-            <DialogDescription>
-              Penghubungan berlaku untuk periode ini saja dan tercatat dalam
-              audit. Seluruh hari presensi baris ini akan dihitung untuk pegawai
-              yang dipilih.
-            </DialogDescription>
-          </DialogHeader>
-          {linkTarget && (
-            <div className="space-y-4">
-              <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                <p className="font-bold text-slate-900">
-                  {linkTarget.sourceName || 'Tanpa nama'}
-                </p>
-                <p className="text-sm text-slate-500">
-                  {linkTarget.department} · PIN {linkTarget.sourceNipy || 'kosong'} ·{' '}
-                  {linkTarget.dates.length} hari
-                </p>
+          {linkPhase === 'saving' && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Menghubungkan Baris Presensi</DialogTitle>
+                <DialogDescription>
+                  Mohon tunggu, jangan tutup halaman ini.
+                </DialogDescription>
+              </DialogHeader>
+              <div
+                role="status"
+                className="flex flex-col items-center gap-3 py-8 text-slate-600"
+              >
+                <Loader2 className="h-10 w-10 animate-spin text-indigo-600" />
+                <p className="font-semibold">Menyimpan penghubungan…</p>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="manual-link-search">Cari pegawai</Label>
-                <Input className="rounded-sm"
-                  id="manual-link-search"
-                  value={linkSearch}
-                  onChange={(event) => setLinkSearch(event.target.value)}
-                  placeholder="Nama atau NIPY pegawai"
-                />
-              </div>
-              <div className="max-h-64 divide-y divide-slate-100 overflow-y-auto rounded-md border border-slate-200">
-                {linkCandidates.length === 0 ? (
-                  <p className="p-4 text-center text-sm text-slate-500">
-                    Pegawai tidak ditemukan.
-                  </p>
-                ) : (
-                  linkCandidates.map((candidate) => {
-                    // A candidate without a NIPY can still be linked — the row
-                    // joins on a stable per-employee token instead — but that
-                    // employee's pay stays unpublishable until a real NIPY
-                    // exists, the same rule already applied elsewhere on this
-                    // page. Surfaced here so the choice is informed, not blocked.
-                    const missingNipy = !candidate.nipy;
-                    return (
-                      <button
-                        key={candidate.employeeId}
-                        type="button"
-                        onClick={() => setLinkEmployeeId(candidate.employeeId)}
-                        className={`flex min-h-14 w-full flex-col items-start justify-center px-4 py-2 text-left ${
-                          linkEmployeeId === candidate.employeeId
-                            ? 'bg-indigo-50'
-                            : 'hover:bg-slate-50'
-                        }`}
-                      >
-                        <span className="font-semibold text-slate-900">
-                          {candidate.name}
-                        </span>
-                        <span
-                          className={`text-sm ${missingNipy ? 'font-semibold text-amber-600' : 'text-slate-500'}`}
-                        >
-                          {categoryLabel(candidate.category)} · NIPY{' '}
-                          {candidate.nipy || 'belum diisi'}
-                          {missingNipy &&
-                            ' — publikasi upah tertunda hingga NIPY dilengkapi'}
-                        </span>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-              {error && (
-                <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
-                  {error}
-                </p>
-              )}
-            </div>
+            </>
           )}
-          <DialogFooter className="rounded-b-md">
-            <Button
-              variant="outline"
-              className="rounded-sm min-h-12"
-              onClick={() => {
-                setLinkTarget(null);
-                setLinkEmployeeId('');
-                setLinkSearch('');
-              }}
-            >
-              Batal
-            </Button>
-            <Button
-              className="rounded-sm min-h-12 gap-2"
-              disabled={working || !linkEmployeeId}
-              onClick={() => void saveManualLink()}
-            >
-              <CheckCircle2 className="h-4 w-4" />
-              Hubungkan
-            </Button>
-          </DialogFooter>
+          {linkPhase === 'success' && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Berhasil Dihubungkan</DialogTitle>
+                <DialogDescription>
+                  Penghubungan tercatat dalam audit.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex flex-col items-center gap-3 py-4 text-center">
+                <CheckCircle2 className="h-12 w-12 text-emerald-600" />
+                <p className="text-sm text-slate-700">{linkResult?.detail}</p>
+              </div>
+              <DialogFooter className="rounded-b-md">
+                <Button className="rounded-sm min-h-12" onClick={resetLinkDialog}>
+                  Selesai
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+          {linkPhase === 'error' && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Gagal Menghubungkan</DialogTitle>
+                <DialogDescription>
+                  Tidak ada yang berubah. Anda dapat mencoba lagi.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex flex-col items-center gap-3 py-4 text-center">
+                <AlertTriangle className="h-12 w-12 text-rose-600" />
+                <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+                  {linkResult?.detail}
+                </p>
+              </div>
+              <DialogFooter className="rounded-b-md">
+                <Button
+                  variant="outline"
+                  className="rounded-sm min-h-12"
+                  onClick={resetLinkDialog}
+                >
+                  Tutup
+                </Button>
+                <Button
+                  className="rounded-sm min-h-12"
+                  onClick={() => setLinkPhase('form')}
+                >
+                  Coba Lagi
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+          {linkPhase === 'form' && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Hubungkan Baris Presensi</DialogTitle>
+                <DialogDescription>
+                  Penghubungan berlaku untuk periode ini saja dan tercatat dalam
+                  audit. Seluruh hari presensi baris ini akan dihitung untuk
+                  pegawai yang dipilih.
+                </DialogDescription>
+              </DialogHeader>
+              {linkTarget && (
+                <div className="space-y-4">
+                  <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                    <p className="font-bold text-slate-900">
+                      {linkTarget.sourceName || 'Tanpa nama'}
+                    </p>
+                    <p className="text-sm text-slate-500">
+                      {linkTarget.department || 'Tanpa departemen'} · PIN{' '}
+                      {linkTarget.sourceNipy || 'kosong'} · {linkTarget.dates.length} hari
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="manual-link-search">Cari pegawai</Label>
+                    <Input className="rounded-sm"
+                      id="manual-link-search"
+                      value={linkSearch}
+                      onChange={(event) => setLinkSearch(event.target.value)}
+                      placeholder="Nama atau NIPY pegawai"
+                    />
+                  </div>
+                  <div className="max-h-64 divide-y divide-slate-100 overflow-y-auto rounded-md border border-slate-200">
+                    {linkCandidates.length === 0 ? (
+                      <p className="p-4 text-center text-sm text-slate-500">
+                        Pegawai tidak ditemukan.
+                      </p>
+                    ) : (
+                      linkCandidates.map((candidate) => {
+                        // A candidate without a NIPY can still be linked — the row
+                        // joins on a stable per-employee token instead — but that
+                        // employee's pay stays unpublishable until a real NIPY
+                        // exists, the same rule already applied elsewhere on this
+                        // page. Surfaced here so the choice is informed, not blocked.
+                        const missingNipy = !candidate.nipy;
+                        return (
+                          <button
+                            key={candidate.employeeId}
+                            type="button"
+                            onClick={() => setLinkEmployeeId(candidate.employeeId)}
+                            className={`flex min-h-14 w-full flex-col items-start justify-center px-4 py-2 text-left ${
+                              linkEmployeeId === candidate.employeeId
+                                ? 'bg-indigo-50'
+                                : 'hover:bg-slate-50'
+                            }`}
+                          >
+                            <span className="font-semibold text-slate-900">
+                              {candidate.name}
+                            </span>
+                            <span
+                              className={`text-sm ${missingNipy ? 'font-semibold text-amber-600' : 'text-slate-500'}`}
+                            >
+                              {categoryLabel(candidate.category)} · NIPY{' '}
+                              {candidate.nipy || 'belum diisi'}
+                              {missingNipy &&
+                                ' — publikasi upah tertunda hingga NIPY dilengkapi'}
+                            </span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+              <DialogFooter className="rounded-b-md">
+                <Button
+                  variant="outline"
+                  className="rounded-sm min-h-12"
+                  onClick={resetLinkDialog}
+                >
+                  Batal
+                </Button>
+                <Button
+                  className="rounded-sm min-h-12 gap-2"
+                  disabled={working || !linkEmployeeId}
+                  onClick={() => void saveManualLink()}
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  Hubungkan
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 

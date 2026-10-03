@@ -26,6 +26,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { SatpamDutyPlanAdminPanel } from '@/components/satpam/SatpamDutyPlanAdminPanel';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Table,
@@ -2721,6 +2722,20 @@ function ActivityReviewPageContent() {
             </CardContent>
           </Card>
         )}
+
+        {/* ── Satpam duty plan ───────────────────────────────────────── */}
+        {(profile?.role === 'super_admin' ||
+          (profile?.role === 'satker_head' &&
+            profile.permittedCategories?.includes('SATPAM'))) &&
+          (categoryFilter === 'all' || categoryFilter === 'SATPAM') &&
+          (reportTypeFilter === 'all' || reportTypeFilter === 'shift') && (
+            <SatpamDutyPlanAdminPanel
+              key={periodToken}
+              period={periodToken}
+              canEdit
+              onChanged={fetchActivities}
+            />
+          )}
 
         {/* ── Activity Table ─────────────────────────────────────────── */}
         <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.02)] border-none overflow-hidden">
