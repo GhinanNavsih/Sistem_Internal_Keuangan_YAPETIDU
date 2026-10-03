@@ -147,6 +147,7 @@ export function parseGantiLiburAttachmentPaths(
   value: unknown,
   employeeId: string,
   folder: string = GANTI_LIBUR_ATTACHMENT_FOLDER,
+  previouslySavedPaths: readonly string[] = [],
 ): GantiLiburAttachmentPathsResult {
   if (value === undefined || value === null) return { ok: true, paths: [] };
   if (!Array.isArray(value)) {
@@ -160,7 +161,8 @@ export function parseGantiLiburAttachmentPaths(
   }
   const paths: string[] = [];
   for (const path of value) {
-    if (!isGantiLiburAttachmentPath(employeeId, path, folder)) {
+    if (!isGantiLiburAttachmentPath(employeeId, path, folder) &&
+      !(typeof path === 'string' && previouslySavedPaths.includes(path))) {
       return { ok: false, message: 'Berkas surat resmi tidak valid.' };
     }
     if (!paths.includes(path)) paths.push(path);

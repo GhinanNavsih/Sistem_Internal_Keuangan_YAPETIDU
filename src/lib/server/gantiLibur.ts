@@ -22,11 +22,32 @@ import type { AnnualPaidLeaveEmployeeKind } from '@/lib/payroll/annualPaidLeave'
 import { shiftPeriod } from '@/lib/server/payrollPeriod';
 import {
   coerceGantiLiburAttachments,
+  parseGantiLiburAttachmentPaths,
+  isGantiLiburAttachmentPath,
   type GantiLiburAttachment,
 } from '@/lib/payroll/gantiLiburAttachments';
 
 export const GANTI_LIBUR_REQUESTS_COLLECTION = 'GantiLiburRequests';
 export const GANTI_LIBUR_REVISIONS_COLLECTION = 'GantiLiburRequestRevisions';
+
+/** A transferred request may retain this employee's proofs from its original workflow. */
+export async function parseSavedLeaveAttachmentPaths(
+  value: unknown,
+  employeeId: string,
+  folder: string,
+  requestRef: FirebaseFirestore.DocumentReference,
+) {
+  const strict = parseGantiLiburAttachmentPaths(value, employeeId, folder);
+  if (strict.ok) return strict;
+  const saved = (await requestRef.get()).data();
+  if (saved?.employeeId !== employeeId) return strict;
+  return parseGantiLiburAttachmentPaths(value, employeeId, folder,
+    coerceGantiLiburAttachments(saved.attachments).filter((attachment) =>
+      ['ganti_libur', 'paid_leave', 'presence_corrections'].some((savedFolder) =>
+        isGantiLiburAttachmentPath(employeeId, attachment.path, savedFolder),
+      ),
+    ).map((attachment) => attachment.path));
+}
 
 export interface GantiLiburEmployee {
   id: string;
@@ -114,6 +135,9 @@ export function gantiLiburRequestFromData(
       attendanceCheck: data.attendanceOverride.attendanceCheck,
     } : null,
     attachments: coerceGantiLiburAttachments(data.attachments),
+    proofUrl: String(data.proofUrl || ''),
+    typeChangedFrom: data.typeChangedFrom || null,
+    typeChangedTo: data.typeChangedTo || null,
   };
 }
 

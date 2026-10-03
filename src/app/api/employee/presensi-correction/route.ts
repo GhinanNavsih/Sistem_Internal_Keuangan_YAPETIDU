@@ -148,6 +148,9 @@ export async function PUT(request: NextRequest) {
       if (current.hiddenFromEmployee === true) {
         throw new HttpError(404, 'Pengajuan koreksi tidak ditemukan.');
       }
+      if (current.typeChangedTo) {
+        throw new HttpError(409, 'Jenis pengajuan sudah diubah oleh admin; gunakan pengajuan jenis yang baru.');
+      }
       if (current.status !== 'pending' && current.status !== 'rejected') {
         throw new HttpError(409, 'Hanya pengajuan menunggu atau ditolak yang dapat diubah.');
       }

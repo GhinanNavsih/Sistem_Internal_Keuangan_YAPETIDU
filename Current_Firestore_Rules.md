@@ -565,8 +565,10 @@ service cloud.firestore {
       allow create: if roleIs('loyalis') &&
         ownsEmployee(request.resource.data.employeeId) &&
         request.resource.data.status == 'pending' &&
+        !request.resource.data.keys().hasAny(['typeChangedFrom', 'typeChangedTo', 'typeChangedBy', 'typeChangedByName']) &&
         createsOpenPeriodRecord();
       allow update: if
+        resource.data.get('typeChangedTo', null) == null &&
         request.resource.data.get('period', '') ==
           resource.data.get('period', request.resource.data.get('period', '')) &&
         periodIsOpen(request.resource.data.get('period', '')) &&
@@ -585,15 +587,21 @@ service cloud.firestore {
             resource.data.status in ['pending', 'rejected'] &&
             request.resource.data.employeeId == resource.data.employeeId &&
             request.resource.data.status == 'pending' &&
-            request.resource.data.diff(resource.data).affectedKeys().hasNone([
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny([
               'hiddenFromEmployee',
               'hiddenAt',
               'hiddenByUid',
-              'hiddenByRole'
+              'hiddenByRole',
+              'typeChangedFrom', 'typeChangedTo', 'typeChangedBy', 'typeChangedByName', 'revision'
             ])
           )
         );
       allow delete: if false;
+    }
+
+    match /LoyalisPresenceCorrectionRevisions/{revisionId} {
+      allow read: if isFinanceRole() || isLoyalisAdmin();
+      allow write: if false;
     }
 
     // Broken-facility reports raised by staff and triaged by the Kepala SatKer

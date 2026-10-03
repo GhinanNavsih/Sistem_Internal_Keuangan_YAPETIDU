@@ -33,10 +33,9 @@ import {
   requireSelfAnnualPaidLeaveEmployee,
 } from '@/lib/server/annualPaidLeave';
 import { assertPeriodAcceptsInput, jakartaToday } from '@/lib/server/payrollPeriod';
-import { employeeGantiLiburQuery, loadGantiLiburAttachments } from '@/lib/server/gantiLibur';
+import { employeeGantiLiburQuery, loadGantiLiburAttachments, parseSavedLeaveAttachmentPaths } from '@/lib/server/gantiLibur';
 import {
   PAID_LEAVE_ATTACHMENT_FOLDER,
-  parseGantiLiburAttachmentPaths,
 } from '@/lib/payroll/gantiLiburAttachments';
 import { isActiveGantiLiburStatus } from '@/lib/payroll/gantiLibur';
 
@@ -158,10 +157,11 @@ export async function POST(request: NextRequest) {
     }
     const expectedRevision = parseExpectedRevision(body.expectedRevision);
     const reason = parseReason(body.reason);
-    const attachmentPaths = parseGantiLiburAttachmentPaths(
+    const attachmentPaths = await parseSavedLeaveAttachmentPaths(
       body.attachmentPaths,
       employee.id,
       PAID_LEAVE_ATTACHMENT_FOLDER,
+      adminDb.collection(ANNUAL_PAID_LEAVE_REQUESTS_COLLECTION).doc(annualPaidLeaveDocumentId(employee.id, leaveDate)),
     );
     if (!attachmentPaths.ok) throw new HttpError(400, attachmentPaths.message);
     const attachments = action === 'submit' || action === 'update'
@@ -416,6 +416,7 @@ export async function POST(request: NextRequest) {
           ...current,
           reason,
           attachments,
+          ...(current.typeChangedFrom && current.attachments?.length ? { proofUrl: attachments[0]?.url || '' } : {}),
           revision,
           editedAt: now,
           editedBy: actor.uid,

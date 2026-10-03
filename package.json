@@ -44,6 +44,7 @@
     "run:loyalis-type": "tsx scripts/runLoyalisTypeCategorization.ts",
     "test:koperasi-members:integration": "firebase emulators:exec --only firestore,auth --project demo-koperasi-members --config firebase.koperasi-test.json 'NEXT_PUBLIC_FIREBASE_PROJECT_ID=demo-koperasi-members npx tsx scripts/testKoperasiMembersEmulator.ts'",
     "test:loyalis-auto-leave:integration": "firebase emulators:exec --only firestore,auth --project demo-loyalis-auto-leave --config firebase.kjm-test.json 'NEXT_PUBLIC_FIREBASE_PROJECT_ID=demo-loyalis-auto-leave npx tsx scripts/testLoyalisAutoLeaveEmulator.ts'",
+    "test:loyalis-submission-type:integration": "firebase emulators:exec --only firestore,auth --project demo-loyalis-submission-type --config firebase.kjm-test.json 'NEXT_PUBLIC_FIREBASE_PROJECT_ID=demo-loyalis-submission-type npx tsx scripts/testLoyalisSubmissionTypeEmulator.ts'",
     "test:venue-inspection:integration": "firebase emulators:exec --only firestore --project demo-venue-inspection --config firebase.kjm-test.json 'NEXT_PUBLIC_FIREBASE_PROJECT_ID=demo-venue-inspection npx tsx scripts/testVenueInspectionEmulator.ts'",
     "test:satker-finance:integration": "firebase emulators:exec --only firestore,auth,storage --project demo-satker-finance --config firebase.satker-finance-test.json 'NEXT_PUBLIC_FIREBASE_PROJECT_ID=demo-satker-finance NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=demo-satker-finance.appspot.com npx tsx scripts/testSatkerFinanceEmulator.ts'"
   },

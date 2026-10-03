@@ -648,9 +648,12 @@ export function GantiLiburPanel() {
                             attachments={request.attachments}
                             className="mt-2"
                           />
-                          <span className={`mt-2 inline-flex items-center gap-1.5 rounded-sm border px-2.5 py-1 text-xs font-bold ${statusClass(request.status)}`}>
+                          {!request.attachments?.length && request.proofUrl && (
+                            <a href={request.proofUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex text-sm text-indigo-600 underline">Lihat bukti pengajuan</a>
+                          )}
+                          <span className={`mt-2 inline-flex items-center gap-1.5 rounded-sm border px-2.5 py-1 text-xs font-bold ${request.typeChangedTo ? 'border-slate-200 bg-slate-100 text-slate-600' : statusClass(request.status)}`}>
                             {request.status === 'approved' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Clock3 className="h-3.5 w-3.5" />}
-                            {statusLabel(request.status)}
+                            {request.typeChangedTo ? 'Jenis Diubah' : statusLabel(request.status)}
                           </span>
                           {request.decisionReason && (
                             <p className="mt-2 text-xs text-slate-500">Keputusan: {request.decisionReason}</p>

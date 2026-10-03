@@ -6,7 +6,16 @@ import {
   employeeRemovalAction,
   isPresenceCorrectionType,
   isPresenceCorrectionVisibleToEmployee,
+  timestampVersion,
 } from './presenceCorrections';
+
+test('timestamp versions preserve Firestore nanoseconds across both SDKs', () => {
+  const adminTimestamp = { seconds: 1, nanoseconds: 123456000, toMillis: () => 1123 };
+  const browserTimestamp = { seconds: 1, nanoseconds: 123456000, toMillis: () => 1123.456 };
+  assert.equal(timestampVersion(adminTimestamp), timestampVersion(browserTimestamp));
+  assert.notEqual(timestampVersion(adminTimestamp), timestampVersion({ ...browserTimestamp, nanoseconds: 123457000 }));
+  assert.equal(timestampVersion(undefined), 'ms0');
+});
 
 test('employee history hides only explicitly soft-deleted requests', () => {
   assert.equal(isPresenceCorrectionVisibleToEmployee({}), true);

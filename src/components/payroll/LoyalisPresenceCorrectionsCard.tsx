@@ -13,6 +13,7 @@ import {
   type GantiLiburRequest,
 } from '@/lib/payroll/gantiLibur';
 import type { AnnualPaidLeaveRequest } from '@/lib/payroll/annualPaidLeave';
+import { isLoyalisLeaveType, loyalisLeaveTypeLabel } from '@/lib/payroll/loyalisLeaveTypes';
 import { useAuth } from '@/lib/AuthContext';
 import { db } from '@/lib/firebase';
 import { useQueryClient } from '@tanstack/react-query';
@@ -80,6 +81,7 @@ import {
   isPresenceCorrectionType,
   parseDateOnly,
   parseDateToDDMMYYYY,
+  timestampVersion,
   type LoyalisRawLog,
   type PresenceCorrectionRequest,
   type PresenceCorrectionStatus,
@@ -149,7 +151,11 @@ function loyalisItemDate(item: LoyalisReviewItem): string {
 }
 
 function loyalisItemStatus(item: LoyalisReviewItem): string {
-  return item.request.status;
+  return item.request.typeChangedTo ? 'type_changed' : item.request.status;
+}
+
+function requiresCanonicalLeave(item: LoyalisReviewItem): boolean {
+  return item.kind === 'correction' && (item.request.type === 'cuti_tahunan' || item.request.type === 'ganti_libur');
 }
 
 function loyalisItemEmployeeName(item: LoyalisReviewItem): string {
@@ -272,8 +278,9 @@ export function LoyalisPresenceCorrectionsCard({
   } | null>(null);
 
   // Type changing state
-  const [editingLoyalisReqId, setEditingLoyalisReqId] = useState<string | null>(null);
+  const [editingLoyalisItem, setEditingLoyalisItem] = useState<LoyalisReviewItem | null>(null);
   const [editingLoyalisType, setEditingLoyalisType] = useState<PresenceCorrectionType>('izin_resmi');
+  const [editingWorkedDate, setEditingWorkedDate] = useState('');
   const [editingLoyalisScanIn, setEditingLoyalisScanIn] = useState('07:30');
   const [editingLoyalisScanOut, setEditingLoyalisScanOut] = useState('14:00');
 
@@ -458,7 +465,7 @@ export function LoyalisPresenceCorrectionsCard({
       periodLoyalisItems.filter(
         (item) =>
           (selectedStatus === 'pending' || selectedStatus === 'all') &&
-          loyalisItemStatus(item) === 'pending',
+          loyalisItemStatus(item) === 'pending' && !requiresCanonicalLeave(item),
       ),
     [periodLoyalisItems, selectedStatus],
   );
@@ -534,82 +541,57 @@ export function LoyalisPresenceCorrectionsCard({
     }
   };
 
-  const startLoyalisTypeEdit = (req: PresenceCorrectionRequest) => {
-    setEditingLoyalisReqId(req.id);
-    setEditingLoyalisType(req.type);
-    setEditingLoyalisScanIn(req.checkInTime?.slice(0, 5) || '07:30');
-    setEditingLoyalisScanOut(req.checkOutTime?.slice(0, 5) || '14:00');
+  const startLoyalisTypeEdit = (item: LoyalisReviewItem) => {
+    setEditingLoyalisItem(item);
+    setEditingLoyalisType(item.kind === 'correction' ? item.request.type : item.kind === 'paid_leave' ? 'cuti_tahunan' : 'ganti_libur');
+    setEditingLoyalisScanIn(item.kind === 'correction' ? item.request.checkInTime?.slice(0, 5) || '07:30' : '07:30');
+    setEditingLoyalisScanOut(item.kind === 'correction' ? item.request.checkOutTime?.slice(0, 5) || '14:00' : '14:00');
+    setEditingWorkedDate(item.kind === 'ganti_libur' ? item.request.workedDate : '');
     setMessage(null);
   };
 
   const cancelLoyalisTypeEdit = () => {
-    setEditingLoyalisReqId(null);
+    setEditingLoyalisItem(null);
   };
 
-  const handleChangeLoyalisType = async (req: PresenceCorrectionRequest) => {
-    if (req.status !== 'pending') return;
-    const actionKey = `loyalis_type:${req.id}`;
+  const handleChangeLoyalisType = async () => {
+    const item = editingLoyalisItem;
+    if (!item || loyalisItemStatus(item) !== 'pending') return;
+    const actionKey = `loyalis_type:${loyalisItemKey(item)}`;
     setActionLoading(actionKey);
     setMessage(null);
     try {
-      const res = await authenticatedJson<{
-        success: boolean;
-        message: string;
-      }>('/api/attendance/loyalis/review', {
-        method: 'POST',
-        body: JSON.stringify({
-          requestId: req.id,
-          action: 'change_type',
-          type: editingLoyalisType,
-          checkInTime:
-            editingLoyalisType === 'both' || editingLoyalisType === 'tap_in'
-              ? editingLoyalisScanIn
-              : editingLoyalisType === 'izin_resmi' ||
-                  editingLoyalisType === 'cuti_tahunan' ||
-                  editingLoyalisType === 'ganti_libur'
-                ? '07:30'
-                : null,
-          checkOutTime:
-            editingLoyalisType === 'both' || editingLoyalisType === 'tap_out'
-              ? editingLoyalisScanOut
-              : editingLoyalisType === 'izin_resmi' ||
-                  editingLoyalisType === 'cuti_tahunan' ||
-                  editingLoyalisType === 'ganti_libur'
-                ? '14:00'
-                : null,
-        }),
-      });
-
-      const nextIn =
-        editingLoyalisType === 'both' || editingLoyalisType === 'tap_in'
-          ? editingLoyalisScanIn
-          : editingLoyalisType === 'izin_resmi' ||
-              editingLoyalisType === 'cuti_tahunan' ||
-              editingLoyalisType === 'ganti_libur'
-            ? '07:30'
-            : null;
-      const nextOut =
-        editingLoyalisType === 'both' || editingLoyalisType === 'tap_out'
-          ? editingLoyalisScanOut
-          : editingLoyalisType === 'izin_resmi' ||
-              editingLoyalisType === 'cuti_tahunan' ||
-              editingLoyalisType === 'ganti_libur'
-            ? '14:00'
-            : null;
-
-      patchCachedCorrection(req.id, {
-        type: editingLoyalisType,
-        checkInTime: nextIn,
-        checkOutTime: nextOut,
-      });
-
-      setEditingLoyalisReqId(null);
+      let successText = 'Jenis pengajuan berhasil diubah.';
+      if (isLoyalisLeaveType(editingLoyalisType)) {
+        const res = await authenticatedJson<{ message: string; target: { kind: string; id: string } }>(
+          '/api/attendance/loyalis/submission-type', {
+            method: 'POST', body: JSON.stringify({
+              requestId: createFinancialRequestId('loyalis-leave-type'), sourceKind: item.kind,
+              sourceRequestId: item.request.id, type: editingLoyalisType,
+              expectedRevision: item.request.revision || 0,
+              ...(item.kind === 'correction' ? { expectedUpdatedAt: timestampVersion(item.request.updatedAt) } : {}),
+              ...(editingLoyalisType === 'ganti_libur' ? { workedDate: editingWorkedDate } : {}),
+            }),
+          },
+        );
+        successText = res.message;
+        setExpandedReqId(`${res.target.kind}:${res.target.id}`);
+      } else if (item.kind === 'correction') {
+        const nextIn = editingLoyalisType === 'both' || editingLoyalisType === 'tap_in' ? editingLoyalisScanIn : null;
+        const nextOut = editingLoyalisType === 'both' || editingLoyalisType === 'tap_out' ? editingLoyalisScanOut : null;
+        const res = await authenticatedJson<{ message: string }>('/api/attendance/loyalis/review', {
+          method: 'POST', body: JSON.stringify({ requestId: item.request.id, action: 'change_type',
+            type: editingLoyalisType, checkInTime: nextIn, checkOutTime: nextOut }),
+        });
+        patchCachedCorrection(item.request.id, { type: editingLoyalisType, checkInTime: nextIn, checkOutTime: nextOut });
+        successText = res.message;
+      }
+      setEditingLoyalisItem(null);
       setMessage({
         type: 'success',
-        text: res.message || 'Jenis pengajuan berhasil diubah.',
+        text: successText,
       });
-      await invalidateLoyalisPresenceCorrections();
-      if (onResolved) await onResolved();
+      await Promise.all([invalidateLoyalisPresenceCorrections(), fetchExtraRequests()]);
     } catch (err: unknown) {
       console.error(err);
       setMessage({
@@ -718,6 +700,10 @@ export function LoyalisPresenceCorrectionsCard({
     item: LoyalisReviewItem,
     attendanceConfirmation?: GantiLiburAttendanceCheck,
   ) => {
+    if (requiresCanonicalLeave(item)) {
+      startLoyalisTypeEdit(item);
+      return;
+    }
     if (item.kind === 'ganti_libur' && !attendanceConfirmation &&
       item.request.attendanceCheck && item.request.attendanceCheck.verdict !== 'eligible') {
       setGantiLiburConfirmation({
@@ -1164,7 +1150,7 @@ export function LoyalisPresenceCorrectionsCard({
                   const employeeName = loyalisItemEmployeeName(item);
                   const date = loyalisItemDate(item);
                   const status = loyalisItemStatus(item);
-                  const statusLbl = STATUS_LABELS[status as PresenceCorrectionStatus] || status;
+                  const statusLbl = status === 'type_changed' ? 'Jenis Diubah' : STATUS_LABELS[status as PresenceCorrectionStatus] || status;
                   const req = item.kind === 'correction' ? item.request : null;
                   const rawLog = req ? rawLogsMap[req.id] : null;
                   const loadingRaw = req ? !!loadingRawMap[req.id] : false;
@@ -1190,7 +1176,7 @@ export function LoyalisPresenceCorrectionsCard({
                           className="w-12 pl-5"
                           onClick={(event) => event.stopPropagation()}
                         >
-                          {status === 'pending' && (
+                          {status === 'pending' && !requiresCanonicalLeave(item) && (
                             <Checkbox
                               checked={selectedLoyalisRequestIds.has(key)}
                               onCheckedChange={(checked) =>
@@ -1265,7 +1251,7 @@ export function LoyalisPresenceCorrectionsCard({
                                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
                                 : status === 'rejected' || status === 'declined'
                                   ? 'bg-rose-50 text-rose-700 border border-rose-100'
-                                  : status === 'withdrawn'
+                                  : status === 'withdrawn' || status === 'type_changed'
                                     ? 'bg-slate-100 text-slate-500 border border-slate-200'
                                     : 'bg-amber-50 text-amber-700 border border-amber-100'
                             }`}
@@ -1343,27 +1329,19 @@ export function LoyalisPresenceCorrectionsCard({
                                                   <span className="text-indigo-600 text-[10px] font-bold text-right">
                                                     {correctionTypeLabel(item.request.type)}
                                                   </span>
-                                                  {item.request.status === 'pending' &&
+                                                  {status === 'pending' &&
                                                     canAuditLoyalis && (
                                                       <Button
                                                         type="button"
                                                         variant="outline"
                                                         onClick={(event) => {
                                                           event.stopPropagation();
-                                                          if (
-                                                            editingLoyalisReqId === item.request.id
-                                                          ) {
-                                                            cancelLoyalisTypeEdit();
-                                                          } else {
-                                                            startLoyalisTypeEdit(item.request);
-                                                          }
+                                                          startLoyalisTypeEdit(item);
                                                         }}
                                                         disabled={actionLoading !== null}
                                                         className="h-6 rounded-sm border-indigo-200 px-2 text-[10px] font-bold text-indigo-700 hover:bg-indigo-50"
                                                       >
-                                                        {editingLoyalisReqId === item.request.id
-                                                          ? 'Tutup'
-                                                          : 'Ubah'}
+                                                        Ubah
                                                       </Button>
                                                     )}
                                                 </div>
@@ -1382,139 +1360,6 @@ export function LoyalisPresenceCorrectionsCard({
                                               </div>
                                             </div>
 
-                                            {editingLoyalisReqId === item.request.id && (
-                                              <div className="mt-3 space-y-3 rounded-md border border-indigo-100 bg-indigo-50/60 p-3 text-left">
-                                                <div>
-                                                  <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700">
-                                                    Ubah Jenis Ajuan
-                                                  </span>
-                                                  <p className="mt-0.5 text-[11px] font-semibold text-indigo-900">
-                                                    Perubahan berlaku sebelum pengajuan diputuskan.
-                                                  </p>
-                                                </div>
-                                                <Select
-                                                  value={editingLoyalisType}
-                                                  onValueChange={(val) => {
-                                                    if (isPresenceCorrectionType(val)) {
-                                                      setEditingLoyalisType(val);
-                                                      if (
-                                                        val === 'izin_resmi' ||
-                                                        val === 'cuti_tahunan' ||
-                                                        val === 'ganti_libur'
-                                                      ) {
-                                                        setEditingLoyalisScanIn('07:30');
-                                                        setEditingLoyalisScanOut('14:00');
-                                                      }
-                                                    }
-                                                  }}
-                                                >
-                                                  <SelectTrigger className="h-9 rounded-sm border-indigo-200 bg-white text-xs font-bold text-slate-800">
-                                                    <SelectValue>
-                                                      {correctionTypeLabel(editingLoyalisType)}
-                                                    </SelectValue>
-                                                  </SelectTrigger>
-                                                  <SelectContent className="rounded-md bg-white">
-                                                    <SelectItem
-                                                      value="izin_resmi"
-                                                      className="text-xs font-semibold"
-                                                    >
-                                                      Izin Resmi (Hari Penuh)
-                                                    </SelectItem>
-                                                    <SelectItem
-                                                      value="cuti_tahunan"
-                                                      className="text-xs font-semibold"
-                                                    >
-                                                      Cuti Tahunan
-                                                    </SelectItem>
-                                                    <SelectItem
-                                                      value="ganti_libur"
-                                                      className="text-xs font-semibold"
-                                                    >
-                                                      Ganti Libur
-                                                    </SelectItem>
-                                                    <SelectItem
-                                                      value="both"
-                                                      className="text-xs font-semibold"
-                                                    >
-                                                      Koreksi Scan Masuk & Pulang
-                                                    </SelectItem>
-                                                    <SelectItem
-                                                      value="tap_in"
-                                                      className="text-xs font-semibold"
-                                                    >
-                                                      Koreksi Scan Masuk Saja
-                                                    </SelectItem>
-                                                    <SelectItem
-                                                      value="tap_out"
-                                                      className="text-xs font-semibold"
-                                                    >
-                                                      Koreksi Scan Pulang Saja
-                                                    </SelectItem>
-                                                  </SelectContent>
-                                                </Select>
-
-                                                {(editingLoyalisType === 'both' ||
-                                                  editingLoyalisType === 'tap_in' ||
-                                                  editingLoyalisType === 'tap_out') && (
-                                                  <div className="grid grid-cols-2 gap-2">
-                                                    {(editingLoyalisType === 'both' ||
-                                                      editingLoyalisType === 'tap_in') && (
-                                                      <label className="space-y-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                                                        Scan Masuk
-                                                        <Input
-                                                          type="time"
-                                                          value={editingLoyalisScanIn}
-                                                          onChange={(e) =>
-                                                            setEditingLoyalisScanIn(e.target.value)
-                                                          }
-                                                          className="h-8 rounded-sm bg-white font-mono text-xs"
-                                                        />
-                                                      </label>
-                                                    )}
-                                                    {(editingLoyalisType === 'both' ||
-                                                      editingLoyalisType === 'tap_out') && (
-                                                      <label className="space-y-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                                                        Scan Pulang
-                                                        <Input
-                                                          type="time"
-                                                          value={editingLoyalisScanOut}
-                                                          onChange={(e) =>
-                                                            setEditingLoyalisScanOut(e.target.value)
-                                                          }
-                                                          className="h-8 rounded-sm bg-white font-mono text-xs"
-                                                        />
-                                                      </label>
-                                                    )}
-                                                  </div>
-                                                )}
-
-                                                <div className="flex justify-end gap-2 pt-1">
-                                                  <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    onClick={cancelLoyalisTypeEdit}
-                                                    disabled={actionLoading !== null}
-                                                    className="h-7 rounded-sm bg-white px-2.5 text-[10px] font-bold"
-                                                  >
-                                                    Batal
-                                                  </Button>
-                                                  <Button
-                                                    type="button"
-                                                    onClick={() =>
-                                                      void handleChangeLoyalisType(item.request)
-                                                    }
-                                                    disabled={actionLoading !== null}
-                                                    className="h-7 rounded-sm bg-indigo-600 px-3 text-[10px] font-bold text-white hover:bg-indigo-700"
-                                                  >
-                                                    {actionLoading ===
-                                                      `loyalis_type:${item.request.id}` && (
-                                                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                                                    )}
-                                                    Simpan Jenis
-                                                  </Button>
-                                                </div>
-                                              </div>
-                                            )}
                                           </div>
                                         </div>
                                       </div>
@@ -1533,7 +1378,9 @@ export function LoyalisPresenceCorrectionsCard({
                                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
                                         Dokumen Pendukung
                                       </span>
-                                      {item.request.proofUrl ? (
+                                      {item.request.attachments?.length ? (
+                                        <GantiLiburAttachmentLinks attachments={item.request.attachments} />
+                                      ) : item.request.proofUrl ? (
                                         isImageProofUrl(item.request.proofUrl) ? (
                                           <div className="border border-slate-100 rounded-md overflow-hidden bg-slate-50 p-2 h-[calc(100%-1.25rem)]">
                                             <button
@@ -1570,10 +1417,15 @@ export function LoyalisPresenceCorrectionsCard({
                                           Tidak ada dokumen pendukung
                                         </div>
                                       )}
+                                      {item.request.attachments?.length && item.request.proofUrl &&
+                                        !item.request.attachments.some((attachment) => attachment.url === item.request.proofUrl) ? (
+                                        <a href={item.request.proofUrl} target="_blank" rel="noopener noreferrer"
+                                          className="mt-2 inline-flex text-xs font-medium text-indigo-600 underline">Lihat bukti terbaru</a>
+                                      ) : null}
                                     </div>
                                   </div>
 
-                                  {item.request.status === 'rejected' &&
+                                  {status === 'rejected' &&
                                     item.request.rejectionReason && (
                                       <div className="bg-rose-50 border border-rose-100 rounded-md p-4 text-xs text-rose-800 font-medium text-left">
                                         <strong>Catatan Penolakan Admin:</strong>{' '}
@@ -1759,6 +1611,22 @@ export function LoyalisPresenceCorrectionsCard({
                                 </div>
                               )}
 
+                              {(item.request.typeChangedFrom || item.request.typeChangedTo) && (
+                                <p className="rounded-md border border-indigo-100 bg-indigo-50 p-3 text-xs text-indigo-800">
+                                  {item.request.typeChangedTo
+                                    ? `Jenis pengajuan diubah menjadi ${loyalisLeaveTypeLabel(item.request.typeChangedTo.type)}.`
+                                    : `Pengajuan dialihkan dari ${loyalisLeaveTypeLabel(item.request.typeChangedFrom!.type)} oleh admin.`}
+                                </p>
+                              )}
+
+                              {item.kind !== 'correction' && item.request.proofUrl && !item.request.attachments?.length && (
+                                <a href={item.request.proofUrl} target="_blank" rel="noopener noreferrer"
+                                  className="inline-flex text-xs font-medium text-indigo-600 underline">Lihat bukti pengajuan</a>
+                              )}
+                              {item.kind === 'paid_leave' && Boolean(item.request.attachments?.length) && (
+                                <GantiLiburAttachmentLinks attachments={item.request.attachments} />
+                              )}
+
                               {status === 'pending' && (
                                 <div className="flex justify-end gap-3 pt-4 border-t border-slate-50">
                                   {rejectingReqId === key ? (
@@ -1800,6 +1668,13 @@ export function LoyalisPresenceCorrectionsCard({
                                     </form>
                                   ) : (
                                     <>
+                                      {item.kind !== 'correction' && (
+                                        <Button type="button" variant="outline"
+                                          onClick={() => startLoyalisTypeEdit(item)} disabled={actionLoading !== null}
+                                          className="h-9 rounded-sm px-4 text-xs">
+                                          Ubah jenis
+                                        </Button>
+                                      )}
                                       <Button
                                         type="button"
                                         onClick={() => {
@@ -1848,6 +1723,75 @@ export function LoyalisPresenceCorrectionsCard({
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={editingLoyalisItem !== null && loyalisItemDate(editingLoyalisItem).slice(0, 7) === period}
+        onOpenChange={(open) => { if (!open && actionLoading === null) cancelLoyalisTypeEdit(); }}
+      >
+        <DialogContent className="rounded-md sm:max-w-lg" showCloseButton={actionLoading === null}>
+          <DialogHeader>
+            <DialogTitle>Ubah Jenis Pengajuan</DialogTitle>
+            <DialogDescription>
+              {editingLoyalisItem && loyalisItemLabel(editingLoyalisItem)}.
+              Pengajuan tetap menunggu persetujuan setelah jenisnya diubah.
+            </DialogDescription>
+          </DialogHeader>
+          <label htmlFor="loyalis-submission-type" className="space-y-2 text-sm font-medium">
+            <span>Jenis Pengajuan</span>
+            <Select value={editingLoyalisType} disabled={actionLoading !== null}
+              onValueChange={(value) => { if (isPresenceCorrectionType(value)) setEditingLoyalisType(value); }}>
+              <SelectTrigger id="loyalis-submission-type" className="w-full"><SelectValue>{correctionTypeLabel(editingLoyalisType)}</SelectValue></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="izin_resmi">Izin Resmi (Hari Penuh)</SelectItem>
+                <SelectItem value="cuti_tahunan">Cuti Tahunan</SelectItem>
+                <SelectItem value="ganti_libur">Ganti Libur</SelectItem>
+                {editingLoyalisItem?.kind === 'correction' && <>
+                  <SelectItem value="tap_in">Scan Masuk</SelectItem>
+                  <SelectItem value="tap_out">Scan Pulang</SelectItem>
+                  <SelectItem value="both">Scan Masuk &amp; Pulang</SelectItem>
+                </>}
+              </SelectContent>
+            </Select>
+          </label>
+          {editingLoyalisType === 'ganti_libur' && editingLoyalisItem?.kind !== 'ganti_libur' && (
+            <label className="space-y-2 text-sm font-medium">
+              <span>Masuk Hari Libur</span>
+              <Input type="date" value={editingWorkedDate} disabled={actionLoading !== null}
+                onChange={(event) => setEditingWorkedDate(event.target.value)} />
+              <p className="text-xs font-normal text-slate-500">Tanggal pegawai bekerja pada Jumat atau tanggal merah.</p>
+            </label>
+          )}
+          {editingLoyalisType === 'cuti_tahunan' && (
+            <p className="text-sm text-slate-600">Satu hari saldo Cuti Tahunan akan direservasi sampai pengajuan diputuskan.</p>
+          )}
+          {editingLoyalisItem?.kind === 'paid_leave' && editingLoyalisType !== 'cuti_tahunan' && (
+            <p className="text-sm text-slate-600">Reservasi satu hari Cuti Tahunan akan dikembalikan.</p>
+          )}
+          {(editingLoyalisType === 'tap_in' || editingLoyalisType === 'both') && (
+            <label className="space-y-2 text-sm font-medium">Scan Masuk
+              <Input type="time" value={editingLoyalisScanIn} disabled={actionLoading !== null}
+                onChange={(event) => setEditingLoyalisScanIn(event.target.value)} />
+            </label>
+          )}
+          {(editingLoyalisType === 'tap_out' || editingLoyalisType === 'both') && (
+            <label className="space-y-2 text-sm font-medium">Scan Pulang
+              <Input type="time" value={editingLoyalisScanOut} disabled={actionLoading !== null}
+                onChange={(event) => setEditingLoyalisScanOut(event.target.value)} />
+            </label>
+          )}
+          <DialogFooter>
+            <Button variant="outline" disabled={actionLoading !== null} onClick={cancelLoyalisTypeEdit}>Batal</Button>
+            <Button disabled={actionLoading !== null || (editingLoyalisType === 'ganti_libur' && !editingWorkedDate) ||
+              (editingLoyalisItem?.kind === 'paid_leave' && editingLoyalisType === 'cuti_tahunan') ||
+              (editingLoyalisItem?.kind === 'ganti_libur' && editingLoyalisType === 'ganti_libur') ||
+              (editingLoyalisItem?.kind === 'correction' && editingLoyalisItem.request.type === 'izin_resmi' && editingLoyalisType === 'izin_resmi')}
+              onClick={() => void handleChangeLoyalisType()}>
+              {actionLoading?.startsWith('loyalis_type:') && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Simpan jenis
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={gantiLiburConfirmation?.period === period}

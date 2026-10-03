@@ -515,7 +515,7 @@ export function LoyalisPresenceCorrectionPanel({
           where('date', '==', date)
         );
         const querySnap = await getDocs(q);
-        const existingDoc = querySnap.docs.find((candidate) => candidate.data().hiddenFromEmployee !== true);
+        const existingDoc = querySnap.docs.find((candidate) => candidate.data().hiddenFromEmployee !== true && !candidate.data().typeChangedTo);
         if (existingDoc) {
           const confirmDate = new Date(date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
           const confirmOverwrite = window.confirm(
@@ -963,13 +963,15 @@ export function LoyalisPresenceCorrectionPanel({
                         <div className="flex items-center gap-1.5">
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] font-bold ${req.status === 'approved'
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                            : req.cancelledByEmployee
+                            : req.cancelledByEmployee || req.typeChangedTo
                               ? 'bg-slate-100 text-slate-600 border border-slate-200'
                               : req.status === 'rejected'
                                 ? 'bg-rose-50 text-rose-700 border border-rose-100'
                                 : 'bg-amber-50 text-amber-700 border border-amber-100'
                             }`}>
-                            {req.status === 'approved' ? (
+                            {req.typeChangedTo ? (
+                              <><XCircle className="w-3 h-3" /> Jenis Diubah</>
+                            ) : req.status === 'approved' ? (
                               <><CheckCircle2 className="w-3 h-3" /> Disetujui</>
                             ) : req.cancelledByEmployee ? (
                               <><XCircle className="w-3 h-3" /> Dibatalkan</>
@@ -996,7 +998,7 @@ export function LoyalisPresenceCorrectionPanel({
                                   onClick={() => setActiveMenuId(null)}
                                 />
                                 <div className="absolute right-0 mt-1 w-28 bg-white rounded-md border border-slate-100 shadow-xl py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
-                                  {(req.status === 'pending' || req.status === 'rejected') && (
+                                  {!req.typeChangedTo && (req.status === 'pending' || req.status === 'rejected') && (
                                     <button
                                       type="button"
                                       onClick={() => handleStartEdit(req)}

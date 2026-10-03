@@ -2,6 +2,7 @@ import { canReviewAnnualPaidLeave, isDateOnly, type AnnualPaidLeaveEmployeeKind 
 import { pekaryaPayrollPeriodForDate } from './pekaryaSpj';
 import { normalizeAttendanceTime } from './attendance';
 import type { GantiLiburAttachment } from './gantiLiburAttachments';
+import type { LeaveTypeChangeHistory } from './loyalisLeaveTypes';
 import {
   LOYALIS_WORK_WINDOW_END_MINUTES,
   LOYALIS_WORK_WINDOW_START_MINUTES,
@@ -74,7 +75,7 @@ export function gantiLiburAttendanceConfirmationMatches(
     confirmation.scanIn === current.scanIn && confirmation.scanOut === current.scanOut;
 }
 
-export interface GantiLiburRequest {
+export interface GantiLiburRequest extends LeaveTypeChangeHistory {
   id: string;
   employeeId: string;
   employeeName: string;
@@ -101,6 +102,7 @@ export interface GantiLiburRequest {
   } | null;
   /** Surat resmi files the employee attached; optional. */
   attachments?: GantiLiburAttachment[];
+  proofUrl?: string;
 }
 
 export function gantiLiburEmployeeKind(data: {

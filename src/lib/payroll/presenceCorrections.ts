@@ -1,3 +1,6 @@
+import type { LeaveTypeChangeHistory } from './loyalisLeaveTypes';
+import type { GantiLiburAttachment } from './gantiLiburAttachments';
+
 export type PresenceCorrectionType =
   | 'tap_in'
   | 'tap_out'
@@ -8,7 +11,7 @@ export type PresenceCorrectionType =
 
 export type PresenceCorrectionStatus = 'pending' | 'approved' | 'rejected';
 
-export interface PresenceCorrectionRequest {
+export interface PresenceCorrectionRequest extends LeaveTypeChangeHistory {
   id: string;
   period?: string;
   date: string;
@@ -17,6 +20,8 @@ export interface PresenceCorrectionRequest {
   checkOutTime?: string | null;
   reason?: string;
   proofUrl?: string;
+  revision?: number;
+  attachments?: GantiLiburAttachment[];
   status: PresenceCorrectionStatus;
   employeeId: string;
   employeeName?: string;
@@ -163,6 +168,17 @@ export function timestampToMillis(value: unknown): number {
   }
 
   return 0;
+}
+
+/** Both Firestore SDKs expose seconds/nanoseconds, but round toMillis differently. */
+export function timestampVersion(value: unknown): string {
+  if (value && typeof value === 'object') {
+    const timestamp = value as { seconds?: number; nanoseconds?: number };
+    if (typeof timestamp.seconds === 'number' && typeof timestamp.nanoseconds === 'number') {
+      return `s${timestamp.seconds}n${timestamp.nanoseconds}`;
+    }
+  }
+  return `ms${timestampToMillis(value)}`;
 }
 
 export function parseDateKey(value: unknown): number {

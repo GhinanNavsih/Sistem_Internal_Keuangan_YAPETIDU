@@ -1,4 +1,5 @@
 import type { GantiLiburAttachment } from './gantiLiburAttachments';
+import type { LeaveTypeChangeHistory } from './loyalisLeaveTypes';
 
 export const ANNUAL_PAID_LEAVE_MAX_DAYS = 9 as const;
 export const ANNUAL_PAID_LEAVE_TIERS = [
@@ -17,7 +18,7 @@ export type AnnualPaidLeaveStatus =
   | 'withdrawn';
 export type AnnualPaidLeavePayType = 'Harian' | 'Jumat & Libur';
 
-export interface AnnualPaidLeaveRequest {
+export interface AnnualPaidLeaveRequest extends LeaveTypeChangeHistory {
   id: string;
   employeeId: string;
   employeeName: string;
@@ -30,6 +31,7 @@ export interface AnnualPaidLeaveRequest {
   reason: string;
   /** Surat resmi that came with the request; older requests carry none. */
   attachments?: GantiLiburAttachment[];
+  proofUrl?: string;
   /**
    * Set when the system created the request from an unexcused absence (see
    * `loyalisAutoLeave.ts`) rather than the employee submitting it.

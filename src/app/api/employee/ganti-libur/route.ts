@@ -14,7 +14,7 @@ import {
   gantiLiburEmployeeKind,
   isActiveGantiLiburStatus,
 } from '@/lib/payroll/gantiLibur';
-import { parseGantiLiburAttachmentPaths } from '@/lib/payroll/gantiLiburAttachments';
+import { GANTI_LIBUR_ATTACHMENT_FOLDER } from '@/lib/payroll/gantiLiburAttachments';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import {
   ANNUAL_PAID_LEAVE_REQUESTS_COLLECTION,
@@ -37,6 +37,7 @@ import {
   loadLoyalisOffDayChecker,
   loadLoyalisOffDayDates,
   requireSelfGantiLiburEmployee,
+  parseSavedLeaveAttachmentPaths,
 } from '@/lib/server/gantiLibur';
 import {
   assertPeriodAcceptsInput,
@@ -233,7 +234,7 @@ export async function POST(request: NextRequest) {
 
     const dayOffDate = parseDate(body.dayOffDate, 'Tanggal ganti libur');
     const reason = parseReason(body.reason);
-    const attachmentPaths = parseGantiLiburAttachmentPaths(body.attachmentPaths, employee.id);
+    const attachmentPaths = await parseSavedLeaveAttachmentPaths(body.attachmentPaths, employee.id, GANTI_LIBUR_ATTACHMENT_FOLDER, requestRef);
     if (!attachmentPaths.ok) throw new HttpError(400, attachmentPaths.message);
     const attachments = await loadGantiLiburAttachments(attachmentPaths.paths);
     const workedPeriod = gantiLiburPeriod(employee.kind, workedDate);
@@ -354,6 +355,12 @@ export async function POST(request: NextRequest) {
         decidedBy: null,
         attendanceCheck: null,
         attendanceOverride: null,
+        ...(current?.status === 'pending' && current.typeChangedFrom ? {
+          typeChangedFrom: current.typeChangedFrom,
+          typeChangedBy: current.typeChangedBy || null,
+          typeChangedByName: current.typeChangedByName || null,
+          proofUrl: attachments[0]?.url || (current.attachments?.length ? '' : current.proofUrl || ''),
+        } : {}),
         updatedAt: now,
         schemaVersion: 2,
       };
