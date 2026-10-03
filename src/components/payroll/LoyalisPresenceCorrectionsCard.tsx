@@ -960,7 +960,7 @@ export function LoyalisPresenceCorrectionsCard({
                   onClick={() => setSelectedStatus('pending')}
                   className={`flex items-center gap-1.5 rounded-sm px-2.5 py-1 transition-all ${
                     selectedStatus === 'pending'
-                      ? 'bg-white text-amber-700 font-bold shadow-sm'
+                      ? 'bg-white text-amber-700 shadow-sm'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -976,7 +976,7 @@ export function LoyalisPresenceCorrectionsCard({
                   onClick={() => setSelectedStatus('approved')}
                   className={`flex items-center gap-1.5 rounded-sm px-2.5 py-1 transition-all ${
                     selectedStatus === 'approved'
-                      ? 'bg-white text-emerald-700 font-bold shadow-sm'
+                      ? 'bg-white text-emerald-700 shadow-sm'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -992,7 +992,7 @@ export function LoyalisPresenceCorrectionsCard({
                   onClick={() => setSelectedStatus('rejected')}
                   className={`flex items-center gap-1.5 rounded-sm px-2.5 py-1 transition-all ${
                     selectedStatus === 'rejected'
-                      ? 'bg-white text-rose-700 font-bold shadow-sm'
+                      ? 'bg-white text-rose-700 shadow-sm'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -1008,7 +1008,7 @@ export function LoyalisPresenceCorrectionsCard({
                   onClick={() => setSelectedStatus('all')}
                   className={`flex items-center gap-1.5 rounded-sm px-2.5 py-1 transition-all ${
                     selectedStatus === 'all'
-                      ? 'bg-white text-slate-800 font-bold shadow-sm'
+                      ? 'bg-white text-slate-800 shadow-sm'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -1033,22 +1033,25 @@ export function LoyalisPresenceCorrectionsCard({
                 Segarkan
               </Button>
 
-              {/* Bulk Approve Button */}
-              {bulkEligibleLoyalisRequests.length > 0 && (
-                <Button
-                  type="button"
-                  onClick={() => void handleBulkApproveLoyalisRequests()}
-                  disabled={actionLoading !== null || selectedBulkLoyalisRequests.length === 0}
-                  className="h-8 rounded-sm bg-indigo-600 px-3 text-xs font-bold text-white shadow-sm hover:bg-indigo-700"
-                >
-                  {actionLoading === 'bulk-loyalis-approve' ? (
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Check className="mr-1.5 h-3.5 w-3.5" />
-                  )}
-                  Setujui Terpilih ({selectedBulkLoyalisRequests.length})
-                </Button>
-              )}
+              {/* Bulk Approve Button: always rendered, hidden when nothing is
+                  approvable, so the header keeps its size when the filter changes. */}
+              <Button
+                type="button"
+                onClick={() => void handleBulkApproveLoyalisRequests()}
+                disabled={actionLoading !== null || selectedBulkLoyalisRequests.length === 0}
+                aria-hidden={bulkEligibleLoyalisRequests.length === 0}
+                tabIndex={bulkEligibleLoyalisRequests.length === 0 ? -1 : undefined}
+                className={`h-8 min-w-40 justify-center rounded-sm bg-indigo-600 px-3 text-xs font-bold text-white shadow-sm hover:bg-indigo-700 ${
+                  bulkEligibleLoyalisRequests.length === 0 ? 'invisible' : ''
+                }`}
+              >
+                {actionLoading === 'bulk-loyalis-approve' ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Check className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                Setujui Terpilih ({selectedBulkLoyalisRequests.length})
+              </Button>
             </div>
           </div>
         </div>
