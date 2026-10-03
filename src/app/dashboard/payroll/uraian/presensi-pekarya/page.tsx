@@ -195,6 +195,7 @@ type SatpamView = {
     nipy: string;
     dutyDate: string;
     reportId: string | null;
+    sourceOccurrenceId?: string | null;
     message: string;
   }>;
 };
@@ -513,6 +514,26 @@ function satpamShiftReviewHref(
   if (absence.employeeId) {
     params.set('employeeId', absence.employeeId);
   }
+  return `/dashboard/payroll/activity-review?${params.toString()}`;
+}
+
+function satpamShiftMismatchReviewHref(
+  period: string,
+  sourceOccurrenceId: string,
+  employeeId: string,
+): string {
+  const params = new URLSearchParams({
+    reportType: 'shift',
+    category: 'SATPAM',
+    status: 'all',
+  });
+  const periodParts = /^(\d{4})-(\d{2})$/.exec(period);
+  if (periodParts) {
+    params.set('year', periodParts[1]);
+    params.set('month', String(Number(periodParts[2])));
+  }
+  params.set('occurrenceId', sourceOccurrenceId);
+  params.set('employeeId', employeeId);
   return `/dashboard/payroll/activity-review?${params.toString()}`;
 }
 
@@ -2737,8 +2758,19 @@ export default function PekaryaAttendancePage() {
                   Tidak ada perbedaan yang ditemukan.
                 </div>
               ) : (
-                data.mismatches.map((item, index) => (
-                  <div key={`${item.code}-${item.dutyDate}-${index}`} className="p-5">
+                data.mismatches.map((item, index) => {
+                  const reviewHref =
+                    item.code === 'REPORT_WITHOUT_ATTENDANCE' &&
+                    item.reportId &&
+                    item.sourceOccurrenceId &&
+                    item.employeeId
+                      ? satpamShiftMismatchReviewHref(
+                          period,
+                          item.sourceOccurrenceId,
+                          item.employeeId,
+                        )
+                      : null;
+                  const content = (
                     <div className="flex items-start gap-3">
                       <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
                       <div>
@@ -2749,10 +2781,31 @@ export default function PekaryaAttendancePage() {
                         <p className="mt-1 text-xs font-semibold text-slate-400">
                           {item.code} {item.nipy ? `· NIPY ${item.nipy}` : ''}
                         </p>
+                        {reviewHref && (
+                          <span className="mt-2 inline-flex min-h-8 items-center gap-1.5 rounded-sm border border-amber-300 bg-white px-2.5 text-xs font-bold text-amber-800 transition-colors group-hover:bg-amber-100">
+                            <ExternalLink className="h-3.5 w-3.5" />
+                            Tinjau laporan shift
+                          </span>
+                        )}
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+
+                  return reviewHref ? (
+                    <Link
+                      key={`${item.code}-${item.dutyDate}-${index}`}
+                      href={reviewHref}
+                      aria-label={`Tinjau laporan shift ${item.employeeName} ${item.dutyDate}`}
+                      className="group block p-5 transition-colors hover:bg-amber-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500"
+                    >
+                      {content}
+                    </Link>
+                  ) : (
+                    <div key={`${item.code}-${item.dutyDate}-${index}`} className="p-5">
+                      {content}
+                    </div>
+                  );
+                })
               )}
             </div>
           </section>

@@ -56,6 +56,7 @@ export interface SatpamAttendanceMismatch {
   nipy: string;
   dutyDate: string;
   reportId: string | null;
+  sourceOccurrenceId?: string | null;
   message: string;
 }
 
@@ -513,6 +514,7 @@ export async function buildSatpamAttendanceMismatches(
         nipy: employee.nipy,
         dutyDate,
         reportId: snapshot.id,
+        sourceOccurrenceId: String(report.sourceOccurrenceId || '') || null,
         message: 'Ada laporan shift, tetapi tidak ditemukan scan pada tanggal bukti yang diizinkan.',
       });
     }
