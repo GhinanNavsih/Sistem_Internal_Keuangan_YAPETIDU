@@ -16,7 +16,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import type { StatusTone } from '@/components/ui/status-dot';
+import { StatusDot, type StatusTone } from '@/components/ui/status-dot';
 import { cn } from '@/lib/utils';
 import {
   LogOut,
@@ -155,34 +155,6 @@ function getStatusConfig(status?: string): { label: string; tone: StatusTone } {
     default:
       return { label: 'Menunggu', tone: 'warning' };
   }
-}
-
-const STATUS_PILL_CLASSES: Record<StatusTone, string> = {
-  success: 'border-green-200 bg-green-50 text-green-700',
-  warning: 'border-amber-200 bg-amber-50 text-amber-800',
-  danger: 'border-red-200 bg-red-50 text-red-700',
-  neutral: 'border-slate-200 bg-slate-50 text-slate-600',
-  accent: 'border-blue-200 bg-blue-50 text-blue-700',
-};
-
-function StatusPill({
-  tone = 'neutral',
-  className,
-  children,
-  ...props
-}: React.ComponentProps<'span'> & { tone?: StatusTone }) {
-  return (
-    <span
-      className={cn(
-        'inline-flex shrink-0 items-center rounded-md border px-2.5 py-1 text-xs font-medium',
-        STATUS_PILL_CLASSES[tone],
-        className,
-      )}
-      {...props}
-    >
-      {children}
-    </span>
-  );
 }
 
 /** "2026-09-26" -> "26 Sep 2026". */
@@ -369,7 +341,7 @@ function DriverHistoryContent() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-white p-4">
         <div className="w-full max-w-sm space-y-4 text-center">
-          <h1 className="text-base font-semibold text-slate-900">Akun Belum Terhubung</h1>
+          <h1 className="text-base font-semibold text-slate-900">Akun belum terhubung</h1>
           <p className="text-sm leading-relaxed text-slate-600">
             Akun Anda belum dihubungkan dengan data pegawai. Hubungi administrator BAK untuk mengaturnya.
           </p>
@@ -386,7 +358,7 @@ function DriverHistoryContent() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-white p-4">
         <div className="w-full max-w-sm space-y-4 text-center">
-          <h1 className="text-base font-semibold text-slate-900">Akses Ditolak</h1>
+          <h1 className="text-base font-semibold text-slate-900">Akses ditolak</h1>
           <p className="text-sm leading-relaxed text-slate-600">
             Halaman ini khusus pegawai berkategori Sopir.
           </p>
@@ -426,7 +398,7 @@ function DriverHistoryContent() {
             >
               <ArrowLeft />
             </Link>
-            <h1 className="text-base font-semibold text-slate-900">Riwayat Perjalanan</h1>
+            <h1 className="text-base font-semibold text-slate-900">Riwayat perjalanan</h1>
           </div>
           <div className="flex items-center gap-2">
             <EmployeeNavigationMenu />
@@ -484,18 +456,18 @@ function DriverHistoryContent() {
         {showReimburseTotal ? (
           <dl className="grid grid-cols-2 divide-x divide-slate-200 border-y border-slate-200">
             <div className="py-4 pr-4">
-              <dt className="text-xs text-slate-500">Upah Bersih Disetujui</dt>
+              <dt className="text-xs text-slate-500">Upah bersih disetujui</dt>
               <dd className="mt-1 text-lg font-semibold tabular-nums text-emerald-700">{fmtRp(stats.totalApprovedWage)}</dd>
             </div>
             <div className="py-4 pl-4">
-              <dt className="text-xs text-slate-500">Total Reimburse</dt>
+              <dt className="text-xs text-slate-500">Total reimburse</dt>
               <dd className="mt-1 text-lg font-semibold tabular-nums text-slate-900">{fmtRp(stats.totalApprovedReimburse)}</dd>
             </div>
           </dl>
         ) : (
           // One figure fills the row: label on the left, amount on the right.
           <dl className="flex items-baseline justify-between gap-4 border-y border-slate-200 py-4">
-            <dt className="text-sm text-slate-500">Upah Bersih Disetujui</dt>
+            <dt className="text-sm text-slate-500">Upah bersih disetujui</dt>
             <dd className="text-lg font-semibold tabular-nums text-emerald-700">{fmtRp(stats.totalApprovedWage)}</dd>
           </dl>
         )}
@@ -576,7 +548,7 @@ function DriverHistoryContent() {
                         {activity.vehicleType ? ` · ${activity.vehicleType}` : ''}
                       </p>
                     </div>
-                    <StatusPill tone={sc.tone}>{sc.label}</StatusPill>
+                    <StatusDot tone={sc.tone} className="shrink-0">{sc.label}</StatusDot>
                   </div>
 
                   {activity.status === 'declined' && activity.declineReason && (
@@ -586,6 +558,7 @@ function DriverHistoryContent() {
                   <div className="flex items-center justify-between gap-3">
                     <p className="min-w-0 flex-1 truncate text-[13px] tabular-nums text-slate-500">
                       <span className="text-base font-semibold text-emerald-700">{fmtRp(upahBersihShown)}</span>
+                      {' upah bersih'}
                       {reimburseDelta !== 0 && ` · ${fmtRp(reimburseDelta)} reimburse`}
                     </p>
 
@@ -664,7 +637,7 @@ function DriverHistoryContent() {
               {reviewActivity?.activityName.split(' (')[0]}
             </DialogTitle>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-slate-500">
-              <StatusPill tone={reviewStatus.tone}>{reviewStatus.label}</StatusPill>
+              <StatusDot tone={reviewStatus.tone} className="text-[13px]">{reviewStatus.label}</StatusDot>
               {reviewActivity?.vehicleType && <span>· {reviewActivity.vehicleType}</span>}
               {reviewActivity?.isSelfAuthorizedWithoutPiket && <span>· SPJ mandiri (tanpa piket)</span>}
             </div>
@@ -695,7 +668,7 @@ function DriverHistoryContent() {
             </DetailList>
 
             <section className="space-y-1">
-              <h2 className="text-sm font-semibold text-slate-900">Upah Bersih Sopir</h2>
+              <h2 className="text-sm font-semibold text-slate-900">Upah bersih sopir</h2>
               <DetailList>
                 <DetailRow label="Komponen jarak">{fmtRp(reviewWageBreakdown?.componentJarak || 0)}</DetailRow>
                 <DetailRow label="Komponen waktu">{fmtRp(reviewWageBreakdown?.componentWaktu || 0)}</DetailRow>
@@ -704,21 +677,21 @@ function DriverHistoryContent() {
                     +{fmtRp(reviewWageBreakdown?.nightPremium || 0)}
                   </DetailRow>
                 )}
-                <DetailRow label="Upah Bersih" emphasis>
+                <DetailRow label="Upah bersih" emphasis>
                   <span className="text-emerald-700">{fmtRp(reviewActivity?.upahBersih || 0)}</span>
                 </DetailRow>
               </DetailList>
             </section>
 
             <section className="space-y-1">
-              <h2 className="text-sm font-semibold text-slate-900">Operasional Dan Reimburse</h2>
+              <h2 className="text-sm font-semibold text-slate-900">Operasional dan reimburse</h2>
               <DetailList>
                 <DetailRow label="BBM">{fmtRp(reviewActivity?.fuelFee || 0)}</DetailRow>
                 <DetailRow label="Tol & parkir">{fmtRp(reviewActivity?.tollParkingFee || 0)}</DetailRow>
                 <DetailRow label="Uang makan">
                   {fmtRp(reviewActivity?.actualMealAllowance ?? reviewActivity?.mealAllowance ?? 0)}
                 </DetailRow>
-                <DetailRow label="Total Reimburse" emphasis>
+                <DetailRow label="Total reimburse" emphasis>
                   {fmtRp(reviewActivity ? getActivityReimburseDelta(reviewActivity) : 0)}
                 </DetailRow>
               </DetailList>

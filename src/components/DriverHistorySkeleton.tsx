@@ -14,7 +14,7 @@ export function DriverHistoryHeaderShell() {
           <div className="flex size-8 items-center justify-center text-slate-400">
             <ArrowLeft className="size-4" />
           </div>
-          <h1 className="text-base font-semibold text-slate-900">Riwayat Perjalanan</h1>
+          <h1 className="text-base font-semibold text-slate-900">Riwayat perjalanan</h1>
         </div>
         <div className="flex items-center gap-2">
           <div className="size-8 animate-pulse rounded-lg bg-slate-100" />
@@ -70,6 +70,9 @@ export function DriverHistoryPageSkeleton() {
         <div className="space-y-3">
           <div className="px-1">
             <h2 className="text-xs font-black uppercase tracking-wider text-slate-600">Riwayat SPJ Penugasan</h2>
+            <p className="mt-0.5 text-[10px] font-medium text-slate-400">
+              Penugasan yang disetujui dan otomatis masuk ke pendapatan SPJ Anda.
+            </p>
           </div>
           <div className="h-16 animate-pulse rounded-2xl bg-slate-100" />
         </div>
@@ -77,11 +80,11 @@ export function DriverHistoryPageSkeleton() {
         {/* Totals — labels are fixed, amounts aren't */}
         <dl className="grid grid-cols-2 divide-x divide-slate-200 border-y border-slate-200">
           <div className="py-4 pr-4">
-            <dt className="text-xs text-slate-500">Upah Bersih Disetujui</dt>
+            <dt className="text-xs text-slate-500">Upah bersih disetujui</dt>
             <dd className="mt-1.5 h-6 w-24 animate-pulse rounded bg-slate-200" />
           </div>
           <div className="py-4 pl-4">
-            <dt className="text-xs text-slate-500">Total Reimburse</dt>
+            <dt className="text-xs text-slate-500">Total reimburse</dt>
             <dd className="mt-1.5 h-6 w-24 animate-pulse rounded bg-slate-200" />
           </div>
         </dl>
