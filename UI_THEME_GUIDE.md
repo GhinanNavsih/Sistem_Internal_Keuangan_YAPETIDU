@@ -125,6 +125,15 @@ Form items use soft borders, clean typography, the small corner radius (`rounded
       className="rounded-sm border-slate-200 font-bold text-slate-700 text-xs h-10 w-full hover:border-indigo-300 focus:border-indigo-500 transition-all placeholder:text-slate-400"
     />
     ```
+*   **Money (Rupiah) Inputs**: every input that takes an amount of rupiah gets a fixed `Rp` prefix and dots between the thousands while typing (`1000000` shows as `Rp 1.000.000`). Never use a bare `<input>` or `<Input>` for money; use `CurrencyInput` from `src/components/ui/currency-input.tsx`.
+    ```tsx
+    <CurrencyInput value={amount} onValue={setAmount} />
+    ```
+    *   `value` and `onValue` are plain numbers, not formatted strings. Empty is `0`, and only whole rupiah up to 10 digits are accepted.
+    *   The component follows the parent's `value`, so resetting the form or removing a row clears the box.
+    *   Pass the page's usual input classes through `className` (the `Rp` padding is added for you). Put margins and width limits (`mt-1`, `max-w-44`, `ml-auto`) on a wrapper around it, not on the input, or the prefix drifts off the text.
+    *   In tables and grids add `text-right`, and label the column or give the input an `aria-label`, because the placeholder is always `0`.
+    *   Amounts that are only displayed (not edited) use the same notation: `Rp 500.000`.
 *   **Custom Autocomplete Suggestions Dropdown**:
     ```html
     <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50 animate-in fade-in slide-in-from-top-1">

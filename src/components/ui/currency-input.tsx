@@ -2,16 +2,20 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 
 /**
  * A rupiah input: fixed "Rp" prefix and dots between thousands while typing
  * (166039 shows as 166.039). Only digits are kept, so the caret is put back
  * after the same digit it was on when the dots were re-inserted. Empty is 0.
  */
-export function CurrencyInput({ value, onValue, ...props }: Omit<React.ComponentProps<typeof Input>, 'value' | 'onChange'> & { value: number; onValue: (value: number) => void }) {
+export function CurrencyInput({ value, onValue, className, ...props }: Omit<React.ComponentProps<typeof Input>, 'value' | 'onChange'> & { value: number; onValue: (value: number) => void }) {
   const [digits, setDigits] = useState(() => (value > 0 ? String(Math.round(value)) : ''));
   const inputRef = useRef<HTMLInputElement>(null);
   const caretDigitsRef = useRef<number | null>(null);
+  // Follow the parent when it changes the amount itself (a form reset, a row removed); typing keeps the two equal.
+  const expected = value > 0 ? Math.round(value) : 0;
+  if ((digits ? Number(digits) : 0) !== expected) setDigits(expected ? String(expected) : '');
   const display = digits ? Number(digits).toLocaleString('id-ID') : '';
 
   useEffect(() => {
@@ -49,7 +53,7 @@ export function CurrencyInput({ value, onValue, ...props }: Omit<React.Component
           setDigits(next);
           onValue(next === '' ? 0 : Number(next));
         }}
-        className="rounded-sm pl-10"
+        className={cn('rounded-sm', className, 'pl-10')}
       />
     </div>
   );

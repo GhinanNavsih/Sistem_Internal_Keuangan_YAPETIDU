@@ -121,12 +121,6 @@ export function buildVoucher(
     if (!source) throw new Error(`Kode akun ${String(raw.paymentAccountCode)} tidak dapat diposting.`);
     if (account.code === source.code) throw new Error('Akun transaksi dan sumber/tujuan kas harus berbeda.');
     if (!source.cashEquivalent) throw new Error('Sumber/tujuan pembayaran harus akun kas atau bank.');
-    if (kind === 'EXPENSE' && account.type !== 'KELUAR' && !(account.type === 'AKTIVA' && !account.cashEquivalent)) {
-      throw new Error('Voucher pengeluaran memerlukan akun beban atau aset.');
-    }
-    if (kind === 'INFLOW' && account.type !== 'TERIMA' && account.type !== 'HUTANG' && account.type !== 'MODAL') {
-      throw new Error('Voucher penerimaan memerlukan akun pendapatan, hutang, atau modal.');
-    }
     if (kind === 'TRANSFER' && !account.cashEquivalent) throw new Error('Transfer harus antar akun kas/bank.');
     lines = kind === 'INFLOW'
       ? [line(source.code, total, 0), line(account.code, 0, total)]

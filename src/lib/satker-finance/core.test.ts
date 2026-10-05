@@ -20,6 +20,18 @@ test('catalog faithfully includes 129 workbook codes and rejects empty placehold
   assert.throws(() => entry('invalid', '2026-09-02', { kind: 'EXPENSE', accountCode: '11002', paymentAccountCode: '10000', amount: 1 }), /tidak dapat diposting|memerlukan/);
 });
 
+test('a pengeluaran may debit any postable account except the cash account it is paid from', () => {
+  const toBank = entry('to-bank', '2026-09-02', { kind: 'EXPENSE', accountCode: '11001', paymentAccountCode: '10000', amount: 750_000 });
+  assert.deepEqual(toBank.lines.map((line) => [line.accountCode, line.debit, line.credit]), [['11001', 750_000, 0], ['10000', 0, 750_000]]);
+  assert.throws(() => entry('same', '2026-09-02', { kind: 'EXPENSE', accountCode: '10000', paymentAccountCode: '10000', amount: 1 }), /harus berbeda/);
+});
+
+test('a penerimaan may credit any postable account except the cash account it is received in', () => {
+  const refund = entry('refund', '2026-09-02', { kind: 'INFLOW', accountCode: '51000', paymentAccountCode: '10000', amount: 100_000 });
+  assert.deepEqual(refund.lines.map((line) => [line.accountCode, line.debit, line.credit]), [['10000', 100_000, 0], ['51000', 0, 100_000]]);
+  assert.throws(() => entry('same', '2026-09-02', { kind: 'INFLOW', accountCode: '10000', paymentAccountCode: '10000', amount: 1 }), /harus berbeda/);
+});
+
 test('September-August fiscal calendar and real dates are enforced', () => {
   assert.deepEqual(fiscalMonths(academicYear).map((month) => month.monthIndex), [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8]);
   assert.equal(academicYearFor(new Date('2027-01-15T00:00:00Z')), academicYear);
