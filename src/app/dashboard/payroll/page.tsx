@@ -852,7 +852,9 @@ export default function PayrollValidationDashboard() {
       return {
         no: idx + 1,
         id: emp.id,
-        nik_niy: payrollCollar === 'loyalis' ? (emp.raw.personal_info?.employee_id_niy || '') : (emp.raw.nik || ''),
+        niy: payrollCollar === 'loyalis' ? String(emp.raw.personal_info?.employee_id_niy || '') : '',
+        // Text, so Excel keeps all 16 digits of a NIK.
+        nik: String((payrollCollar === 'loyalis' ? emp.raw.personal_info?.nik : emp.raw.nik) || ''),
         name: emp.name,
         role: emp.role,
         gradeLevel: emp.gradeLevel,
@@ -872,7 +874,8 @@ export default function PayrollValidationDashboard() {
 
     const headers = [
       'NO',
-      payrollCollar === 'loyalis' ? 'NIY' : 'NIK',
+      ...(payrollCollar === 'loyalis' ? ['NIY'] : []),
+      'NIK',
       'NAMA',
       payrollCollar === 'loyalis' ? 'DEPARTEMEN / UNIT' : 'JABATAN',
       'GOLONGAN',
@@ -891,7 +894,8 @@ export default function PayrollValidationDashboard() {
     rowsData.forEach(row => {
       const dataRow: any[] = [
         row.no,
-        row.nik_niy,
+        ...(payrollCollar === 'loyalis' ? [row.niy] : []),
+        row.nik,
         row.name,
         row.role,
         row.gradeLevel,
@@ -918,6 +922,7 @@ export default function PayrollValidationDashboard() {
 
     const totalRow: any[] = [
       '',
+      ...(payrollCollar === 'loyalis' ? [''] : []),
       '',
       'JUMLAH',
       '',
