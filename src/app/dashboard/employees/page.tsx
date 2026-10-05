@@ -2083,6 +2083,7 @@ export default function EmployeesPage() {
         return {
           'ID Pegawai': getEmpId(emp),
           'Nama Lengkap': getEmpName(emp),
+          'NIK': emp.personal_info?.nik ? String(emp.personal_info.nik) : '',
           'NIPY / NIY Presensi': getEmpNipy(emp),
           'NPWP': emp.personal_info?.tax_id_npwp || '',
           'Status': getEmpIsActive(emp) ? 'Aktif' : 'Non-Aktif',

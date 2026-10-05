@@ -417,8 +417,7 @@ export default function EmployeePayslipPage() {
       formula: '(Masa Kerja, Ketentuan Internal)',
       bullets: [
         'Ditentukan oleh Masa Kerja dan ketentuan internal lembaga yang berlaku',
-        'Masa Kerja dihitung dari tanggal pengakuan masa kerja atau tanggal mulai bekerja',
-        'Dicocokkan secara otomatis dengan Matriks Gaji yang berlaku',
+        'Masa Kerja untuk Gaji Pokok dihitung berdasarkan Tanggal Diakui',
       ],
     },
     {
@@ -2130,7 +2129,7 @@ export default function EmployeePayslipPage() {
                                 {item.id === 'gapok' && (
                                   <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
                                     <DocRow label="Masa Kerja" value={`${userVariables.years} Tahun`} />
-                                    <DocRow label="Tgl Pengakuan" value={userVariables.baseDate ? new Date(userVariables.baseDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : '-'} />
+                                    <DocRow label="Tanggal Diakui" value={userVariables.baseDate ? new Date(userVariables.baseDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : '-'} />
                                     <DocRow label="Gaji Pokok" value={formatIDR(userVariables.gapokVal)} highlight />
                                   </div>
                                 )}
