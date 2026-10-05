@@ -105,7 +105,11 @@ import {
   type CostSafePlaceSuggestion,
   useCostSafePlaceAutocomplete,
 } from '@/hooks/useCostSafePlaceAutocomplete';
-import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
+import {
+  authenticatedJson,
+  createFinancialRequestId,
+  propagateUraianToSlips,
+} from '@/lib/payroll/client';
 import { pekaryaPayrollPeriodForDate, pekaryaPayrollWindow } from '@/lib/payroll/pekaryaSpj';
 import { syncActivityToPayslip } from '@/utils/payslipSync';
 import {
@@ -1173,6 +1177,57 @@ function DriverJourneysContent() {
     return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
   }, [periodToken]);
 
+  // ── Payroll Period Closure State ──
+  const [closedPeriods, setClosedPeriods] = useState<Set<string>>(new Set());
+
+  const periodKeysString = useMemo(() => {
+    const payrollWindow = pekaryaPayrollWindow(periodToken);
+    const set = new Set<string>([periodToken, ...payrollWindow.sourceMonths]);
+    for (const report of Object.values(reportsByJourneyId)) {
+      const p = report.payrollPeriod || (report.activityDate ? pekaryaPayrollPeriodForDate(report.activityDate) : '');
+      if (p) set.add(p);
+    }
+    return Array.from(set).sort().join(',');
+  }, [periodToken, reportsByJourneyId]);
+
+  useEffect(() => {
+    if (!periodKeysString) return;
+    const periods = periodKeysString.split(',').filter(Boolean);
+    const closedMap = new Map<string, boolean>();
+
+    const unsubs = periods.map((p) => {
+      return onSnapshot(
+        doc(db, 'PayrollPeriods', p),
+        (snap) => {
+          closedMap.set(p, snap.data()?.attendanceStatus === 'closed');
+          const next = new Set<string>();
+          closedMap.forEach((isClosed, periodKey) => {
+            if (isClosed) next.add(periodKey);
+          });
+          setClosedPeriods(next);
+        },
+        () => {
+          closedMap.set(p, false);
+        }
+      );
+    });
+
+    return () => {
+      unsubs.forEach((unsub) => unsub());
+    };
+  }, [periodKeysString]);
+
+  const isReportPeriodClosed = useCallback(
+    (report: DriverAuditReport | null | undefined) => {
+      if (!report) return false;
+      const period =
+        report.payrollPeriod ||
+        (report.activityDate ? pekaryaPayrollPeriodForDate(report.activityDate) : '');
+      return period ? closedPeriods.has(period) : false;
+    },
+    [closedPeriods]
+  );
+
   // Keep the open audit dialog in sync with live report edits without losing
   // the auditor's in-progress form (the dialog re-seeds only on id change).
   const openAuditReport = auditReport
@@ -1182,6 +1237,7 @@ function DriverJourneysContent() {
   // ── Approve a driver's SPJ after auditing it ──
   const handleApproveSopirAudit = async (driverReview: DriverReviewPayload) => {
     if (!auditReport || !user) return;
+    const isReEdit = auditReport.status === 'approved';
     setActionLoading(true);
     try {
       await authenticatedJson('/api/pekarya/activities/review', {
@@ -1189,23 +1245,42 @@ function DriverJourneysContent() {
         body: JSON.stringify({
           requestId: createFinancialRequestId('driver_review'),
           action: 'approve_driver',
-          reason: 'Audit dan persetujuan perjalanan oleh Kepala SatKer',
+          reason: isReEdit
+            ? 'Pembaruan audit perjalanan dinas oleh Admin / Kepala SatKer'
+            : 'Audit dan persetujuan perjalanan oleh Kepala SatKer',
           items: [{ reportId: auditReport.id, driverReview }],
         }),
       });
       await loadFuelBalances();
 
+      const baseText = isReEdit
+        ? `Perubahan laporan perjalanan dinas ${auditReport.employeeName} berhasil disimpan.`
+        : `Laporan perjalanan dinas ${auditReport.employeeName} berhasil diaudit dan disetujui.`;
       setMessage({
         type: 'success',
-        text: `Laporan perjalanan dinas ${auditReport.employeeName} berhasil diaudit dan disetujui.`,
+        text: baseText,
       });
       setAuditReport(null);
       try {
+        const period =
+          auditReport.payrollPeriod ||
+          pekaryaPayrollPeriodForDate(auditReport.activityDate);
         await syncActivityToPayslip(
           db,
           auditReport.employeeId,
-          pekaryaPayrollPeriodForDate(auditReport.activityDate),
+          period,
         );
+        const propagationNote = await propagateUraianToSlips({
+          scope: 'pekarya',
+          period,
+          jobCategory: 'SOPIR',
+        });
+        if (propagationNote) {
+          setMessage({
+            type: 'success',
+            text: `${baseText}${propagationNote}`,
+          });
+        }
       } catch (syncErr) {
         console.error('Error syncing payslip in handleApproveSopirAudit:', syncErr);
       }
@@ -1884,19 +1959,31 @@ function DriverJourneysContent() {
                                   const report = reportsByJourneyId[j.id];
                                   if (!report) return null;
                                   const isPending = report.status === 'pending';
+                                  const canEditApproved = report.status === 'approved' && !isReportPeriodClosed(report);
                                   return (
                                     <Button
                                       variant="ghost"
                                       size="sm"
                                       onClick={() => setAuditReport(report)}
-                                      className={`h-8 px-2.5 text-[10px] font-extrabold rounded-sm cursor-pointer border ${isPending
-                                        ? 'text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100'
-                                        : 'text-slate-500 bg-slate-50 border-slate-200 hover:bg-slate-100'
-                                        }`}
-                                      title={isPending ? 'Audit & setujui SPJ perjalanan' : 'Lihat detail audit SPJ'}
+                                      className={`h-8 px-2.5 text-[10px] font-extrabold rounded-sm cursor-pointer border ${
+                                        isPending || canEditApproved
+                                          ? 'text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100'
+                                          : 'text-slate-500 bg-slate-50 border-slate-200 hover:bg-slate-100'
+                                      }`}
+                                      title={
+                                        isPending
+                                          ? 'Audit & setujui SPJ perjalanan'
+                                          : canEditApproved
+                                            ? 'Edit SPJ perjalanan (periode payroll masih terbuka)'
+                                            : 'Lihat detail audit SPJ'
+                                      }
                                     >
-                                      <ClipboardCheck className="w-3.5 h-3.5 mr-1" />
-                                      {isPending ? 'Audit SPJ' : 'Detail SPJ'}
+                                      {canEditApproved ? (
+                                        <Pencil className="w-3.5 h-3.5 mr-1" />
+                                      ) : (
+                                        <ClipboardCheck className="w-3.5 h-3.5 mr-1" />
+                                      )}
+                                      {isPending ? 'Audit SPJ' : canEditApproved ? 'Edit SPJ' : 'Detail SPJ'}
                                     </Button>
                                   );
                                 })()}
@@ -3146,6 +3233,7 @@ function DriverJourneysContent() {
       {/* ── Driver (Sopir) SPJ Audit & Edit Modal ─────────────────────────── */}
       <DriverJourneyAuditDialog
         report={openAuditReport}
+        periodOpen={openAuditReport ? !isReportPeriodClosed(openAuditReport) : undefined}
         onOpenChange={(open) => { if (!open) setAuditReport(null); }}
         actionLoading={actionLoading}
         onApprove={handleApproveSopirAudit}

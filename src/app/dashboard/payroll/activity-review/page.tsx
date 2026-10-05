@@ -86,6 +86,7 @@ import {
 import { db } from '@/lib/firebase';
 import {
   collection,
+  doc,
   documentId,
   getDocs,
   query,
@@ -624,6 +625,57 @@ function ActivityReviewPageContent() {
   const [activities, setActivities] = useState<ActivityReport[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // ── Payroll Period Closure State ──
+  const [closedPeriods, setClosedPeriods] = useState<Set<string>>(new Set());
+
+  const periodKeysString = useMemo(() => {
+    const payrollWindow = pekaryaPayrollWindow(periodToken);
+    const set = new Set<string>([periodToken, ...payrollWindow.sourceMonths]);
+    for (const act of activities) {
+      const p = act.payrollPeriod || (act.activityDate ? pekaryaPayrollPeriodForDate(act.activityDate) : '');
+      if (p) set.add(p);
+    }
+    return Array.from(set).sort().join(',');
+  }, [periodToken, activities]);
+
+  useEffect(() => {
+    if (!periodKeysString) return;
+    const periods = periodKeysString.split(',').filter(Boolean);
+    const closedMap = new Map<string, boolean>();
+
+    const unsubs = periods.map((p) => {
+      return onSnapshot(
+        doc(db, 'PayrollPeriods', p),
+        (snap) => {
+          closedMap.set(p, snap.data()?.attendanceStatus === 'closed');
+          const next = new Set<string>();
+          closedMap.forEach((isClosed, periodKey) => {
+            if (isClosed) next.add(periodKey);
+          });
+          setClosedPeriods(next);
+        },
+        () => {
+          closedMap.set(p, false);
+        }
+      );
+    });
+
+    return () => {
+      unsubs.forEach((unsub) => unsub());
+    };
+  }, [periodKeysString]);
+
+  const isActivityPeriodClosed = useCallback(
+    (activity: ActivityReport | null | undefined) => {
+      if (!activity) return false;
+      const period =
+        activity.payrollPeriod ||
+        (activity.activityDate ? pekaryaPayrollPeriodForDate(activity.activityDate) : '');
+      return period ? closedPeriods.has(period) : false;
+    },
+    [closedPeriods]
+  );
+
   // ── UI State ──
   const [statusFilter, setStatusFilter] = useState(initialStatus);
   const [reportTypeFilter, setReportTypeFilter] = useState<
@@ -692,6 +744,10 @@ function ActivityReviewPageContent() {
   // The audit form itself lives in <DriverJourneyAuditDialog>, shared with the
   // Driver Journeys page so both entry points settle pay identically.
   const [auditActivity, setAuditActivity] = useState<ActivityReport | null>(null);
+  const openAuditActivity = useMemo(() => {
+    if (!auditActivity) return null;
+    return activities.find((a) => a.id === auditActivity.id) ?? auditActivity;
+  }, [activities, auditActivity]);
   const [selectedExifImage, setSelectedExifImage] = useState<{ url: string; title: string; activityDate?: string; auditMetadata?: PhotoAuditMetadata | null } | null>(null);
 
   // ── Satpam Shift Audit State ──
@@ -725,6 +781,7 @@ function ActivityReviewPageContent() {
 
   const handleApproveSopirAudit = async (driverReview: DriverReviewPayload) => {
     if (!auditActivity || !user) return;
+    const isReEdit = auditActivity.status === 'approved';
     setActionLoading(true);
     try {
       await authenticatedJson('/api/pekarya/activities/review', {
@@ -732,20 +789,36 @@ function ActivityReviewPageContent() {
         body: JSON.stringify({
           requestId: createFinancialRequestId('driver_review'),
           action: 'approve_driver',
-          reason: 'Audit dan persetujuan perjalanan oleh Kepala SatKer',
+          reason: isReEdit
+            ? 'Pembaruan audit perjalanan dinas oleh Admin / Kepala SatKer'
+            : 'Audit dan persetujuan perjalanan oleh Kepala SatKer',
           items: [{ reportId: auditActivity.id, driverReview }],
         }),
       });
 
-      setSuccessMsg(`Laporan perjalanan dinas ${auditActivity.employeeName} berhasil diaudit dan disetujui.`);
+      const baseSuccessMsg = isReEdit
+        ? `Perubahan laporan perjalanan dinas ${auditActivity.employeeName} berhasil disimpan.`
+        : `Laporan perjalanan dinas ${auditActivity.employeeName} berhasil diaudit dan disetujui.`;
+      setSuccessMsg(baseSuccessMsg);
       setAuditActivity(null);
       fetchActivities();
       try {
+        const period =
+          auditActivity.payrollPeriod ||
+          pekaryaPayrollPeriodForDate(auditActivity.activityDate);
         await syncActivityToPayslip(
           db,
           auditActivity.employeeId,
-          pekaryaPayrollPeriodForDate(auditActivity.activityDate),
+          period,
         );
+        const propagationNote = await propagateUraianToSlips({
+          scope: 'pekarya',
+          period,
+          jobCategory: 'SOPIR',
+        });
+        if (propagationNote) {
+          setSuccessMsg(`${baseSuccessMsg}${propagationNote}`);
+        }
       } catch (syncErr) {
         console.error('Error syncing payslip in handleApproveSopirAudit:', syncErr);
       }
@@ -3522,13 +3595,30 @@ function ActivityReviewPageContent() {
                                   </>
                                 )}
                                 {activity.jobCategory === 'SOPIR' && activity.status !== 'pending' && (
-                                  <Button
-                                    size="sm"
-                                    onClick={() => handleOpenAuditSopir(activity)}
-                                    className="h-7 px-2.5 rounded-sm bg-slate-50 text-slate-600 hover:bg-slate-100 font-bold text-[11px] border border-slate-200 cursor-pointer"
-                                  >
-                                    Lihat Detail
-                                  </Button>
+                                  activity.status === 'approved' && !isActivityPeriodClosed(activity) ? (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => handleOpenAuditSopir(activity)}
+                                      className="h-7 px-2.5 rounded-sm bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 font-bold text-[11px] cursor-pointer"
+                                      title="Edit laporan perjalanan dinas (periode payroll masih terbuka)"
+                                    >
+                                      <Edit2 className="w-3 h-3 mr-1" />
+                                      Edit
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => handleOpenAuditSopir(activity)}
+                                      className="h-7 px-2.5 rounded-sm bg-slate-50 text-slate-600 hover:bg-slate-100 font-bold text-[11px] border border-slate-200 cursor-pointer"
+                                      title={
+                                        activity.status === 'approved'
+                                          ? 'Periode payroll sudah ditutup; lihat detail perjalanan'
+                                          : 'Lihat detail laporan perjalanan dinas'
+                                      }
+                                    >
+                                      Lihat Detail
+                                    </Button>
+                                  )
                                 )}
                                 {profile?.role === 'super_admin' &&
                                   activity.status !== 'pending' && (
@@ -4304,7 +4394,8 @@ function ActivityReviewPageContent() {
 
       {/* ── Driver (Sopir) Audit & Edit Modal ─────────────────────────── */}
       <DriverJourneyAuditDialog
-        report={auditActivity}
+        report={openAuditActivity}
+        periodOpen={openAuditActivity ? !isActivityPeriodClosed(openAuditActivity) : undefined}
         onOpenChange={(open) => { if (!open) setAuditActivity(null); }}
         actionLoading={actionLoading}
         onApprove={handleApproveSopirAudit}

@@ -250,8 +250,10 @@ export interface DriverReviewPayload {
 }
 
 interface DriverJourneyAuditDialogProps {
-  /** Open when non-null. The audit form is editable only while status is `pending`. */
+  /** Open when non-null. The audit form is editable while status is `pending` or when approved and period is open. */
   report: DriverAuditReport | null;
+  /** Explicit period openness state. When omitted, the dialog queries Firestore directly. */
+  periodOpen?: boolean;
   onOpenChange: (open: boolean) => void;
   actionLoading: boolean;
   onApprove: (payload: DriverReviewPayload) => void | Promise<void>;
@@ -366,6 +368,7 @@ function auditRoundTripRouteKey(
 
 export function DriverJourneyAuditDialog({
   report,
+  periodOpen: periodOpenProp,
   onOpenChange,
   actionLoading,
   onApprove,
@@ -432,39 +435,36 @@ export function DriverJourneyAuditDialog({
   // A confirmed journey may be reopened for edits only while its payroll
   // period is still accepting input. `null` means "checking" so the form
   // stays locked until we actually know, rather than briefly flashing editable.
-  const [periodOpen, setPeriodOpen] = useState<boolean | null>(null);
+  const [fetchedPeriodOpen, setFetchedPeriodOpen] = useState<boolean | null>(null);
+  const periodOpen = periodOpenProp !== undefined ? periodOpenProp : fetchedPeriodOpen;
+
   useEffect(() => {
+    if (periodOpenProp !== undefined) return;
     if (!report || report.status !== 'approved') {
-      setPeriodOpen(null);
+      setFetchedPeriodOpen(null);
       return;
     }
     let cancelled = false;
     const period =
       report.payrollPeriod ||
       pekaryaPayrollPeriodForDate(report.dateStart || report.activityDate);
-    setPeriodOpen(null);
+    setFetchedPeriodOpen(null);
     getDoc(doc(db, 'PayrollPeriods', period))
       .then((snapshot) => {
         if (cancelled) return;
-        setPeriodOpen(snapshot.data()?.attendanceStatus !== 'closed');
+        setFetchedPeriodOpen(snapshot.data()?.attendanceStatus !== 'closed');
       })
-      .catch(() => {
-        if (!cancelled) setPeriodOpen(false);
+      .catch((err) => {
+        console.warn('Could not read PayrollPeriods, treating as open:', err);
+        if (!cancelled) setFetchedPeriodOpen(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [report?.id, report?.status, report?.payrollPeriod, report?.dateStart, report?.activityDate]);
+  }, [periodOpenProp, report?.id, report?.status, report?.payrollPeriod, report?.dateStart, report?.activityDate]);
 
-  // Hold/procure-release fuel accumulation settles against a shared vehicle
-  // balance the instant it is first approved (see the "Mode terkunci setelah
-  // klaim" badge below); only standard-direct cash reimbursement can be
-  // safely recomputed after the fact.
-  const isFuelLockedForReEdit =
-    isFuelProcurementMode(report?.fuelProcurementMode) &&
-    report?.fuelProcurementMode !== DEFAULT_FUEL_PROCUREMENT_MODE;
   const canReEditConfirmed =
-    report?.status === 'approved' && periodOpen === true && !isFuelLockedForReEdit;
+    report?.status === 'approved' && periodOpen === true;
   const isEditable = report?.status === 'pending' || canReEditConfirmed;
   const canDecline = report?.status === 'pending';
 
@@ -1397,11 +1397,9 @@ export function DriverJourneyAuditDialog({
             >
               {canReEditConfirmed
                 ? 'Perjalanan ini sudah dikonfirmasi. Periode payroll masih terbuka, sehingga masih bisa diedit dan disimpan ulang.'
-                : isFuelLockedForReEdit
-                  ? 'Perjalanan ini memakai akumulasi BBM yang sudah final saat diklaim; gunakan proses koreksi resmi untuk mengubahnya.'
-                  : periodOpen === false
-                    ? 'Periode payroll perjalanan ini sudah ditutup; data terkunci dan tidak dapat diedit lagi.'
-                    : 'Memeriksa status periode payroll…'}
+                : periodOpen === false
+                  ? 'Periode payroll perjalanan ini sudah ditutup; data terkunci dan tidak dapat diedit lagi.'
+                  : 'Memeriksa status periode payroll…'}
             </div>
           )}
 

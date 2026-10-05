@@ -469,6 +469,80 @@ export function releaseFuelReservation(
   return transitionReservation(context, reservation, 'release', reason, journeyId);
 }
 
+export function rollbackCommittedFuelReservation(
+  context: FuelLedgerContext,
+  reservation: FuelReservationRecord,
+  reason: string,
+  journeyId?: string,
+  realizedExpenditure?: number,
+): FuelReservationRecord {
+  if (reservation.fuelReservationState !== 'committed') {
+    return reservation;
+  }
+  if (reservation.fuelProcurementMode === 'standard_direct') {
+    return {
+      ...reservation,
+      fuelReservationState: 'released',
+    };
+  }
+  const vehicleName = reservation.fuelReservationVehicleName;
+  assertAccumulationVehicle(vehicleName);
+  const balance = context.balances.get(vehicleName) || emptyBalance(vehicleName);
+  const before = { ...balance };
+  let eventAmount = reservation.heldFuelAmount || reservation.procuredAccumulatedAmount;
+
+  if (reservation.fuelProcurementMode === 'hold_accumulate') {
+    balance.accumulatedHoldAmount -= reservation.heldFuelAmount;
+    balance.availableBalance += reservation.heldFuelAmount;
+  } else {
+    const spent =
+      typeof realizedExpenditure === 'number' &&
+      Number.isFinite(realizedExpenditure) &&
+      realizedExpenditure > 0
+        ? Math.ceil(realizedExpenditure)
+        : reservation.procuredAccumulatedAmount;
+    balance.accumulatedHoldAmount += reservation.procuredAccumulatedAmount;
+    balance.availableBalance -= spent;
+    eventAmount = spent;
+  }
+
+  balance.schemaVersion = CURRENT_FUEL_LEDGER_VERSION;
+  assertBalanceInvariant(balance, { allowNegativeAvailable: true });
+  context.balances.set(vehicleName, balance);
+
+  const eventType =
+    reservation.fuelProcurementMode === 'hold_accumulate'
+      ? 'release_hold'
+      : 'release_release';
+
+  queueEvent(
+    context,
+    vehicleName,
+    {
+      eventId: `${reservation.fuelReservationId}__rollback`,
+      eventType,
+      journeyId,
+      reservationId: reservation.fuelReservationId,
+      reservationVersion: reservation.fuelReservationVersion,
+      mode: reservation.fuelProcurementMode,
+      amount: eventAmount,
+      availableDelta: balance.availableBalance - before.availableBalance,
+      pendingHoldDelta: balance.pendingHoldAmount - before.pendingHoldAmount,
+      accumulatedHoldDelta: balance.accumulatedHoldAmount - before.accumulatedHoldAmount,
+      pendingReleaseDelta: balance.pendingReleaseAmount - before.pendingReleaseAmount,
+      reason,
+      actor: context.actor,
+    },
+    before,
+    balance,
+  );
+
+  return {
+    ...reservation,
+    fuelReservationState: 'released',
+  };
+}
+
 /**
  * Atomically reconciles a journey's prior reservation with a new vehicle/mode
  * selection. This is used by authorization and audit corrections: the old

@@ -7,6 +7,7 @@ import {
   getBalanceFromContext,
   reconcileFuelReservation,
   releaseFuelReservation,
+  rollbackCommittedFuelReservation,
   reservationFields,
   reservationFromJourney,
   reserveFuel,
@@ -511,3 +512,74 @@ test('flagged reservations round-trip through the journey document', async () =>
   assert.equal(parsed!.fuelReservationBalanceFlagged, true);
   assert.equal(parsed!.fuelReservationBalanceShortfall, 5_000);
 });
+
+test('rollbackCommittedFuelReservation restores vehicle balance for hold_accumulate and allows re-reservation', async () => {
+  const context = await createContext({
+    'Suzuki XL7': { vehicleName: 'Suzuki XL7', availableBalance: 300_000, accumulatedHoldAmount: 0 },
+  });
+  const reservation = reserveFuel(context, {
+    journeyId: 'JRN-RE-EDIT',
+    reservationId: 'FUEL-RE-EDIT',
+    vehicleName: 'Suzuki XL7',
+    mode: 'hold_accumulate',
+    baseFuelAllowance: 100_000,
+    reason: 'Initial reservation',
+  });
+  const committed = commitFuelReservation(context, reservation, 'JRN-RE-EDIT');
+  assert.equal(committed.fuelReservationState, 'committed');
+  assert.deepEqual(getBalanceFromContext(context, 'Suzuki XL7'), {
+    vehicleName: 'Suzuki XL7',
+    availableBalance: 200_000,
+    pendingHoldAmount: 0,
+    accumulatedHoldAmount: 100_000,
+    pendingReleaseAmount: 0,
+    schemaVersion: 2,
+    updatedAt: undefined,
+    updatedBy: undefined,
+    updatedByName: undefined,
+  });
+
+  // Rollback the committed reservation
+  const rolledBack = rollbackCommittedFuelReservation(
+    context,
+    committed,
+    'Edit ulang perjalanan',
+    'JRN-RE-EDIT',
+  );
+  assert.equal(rolledBack.fuelReservationState, 'released');
+  assert.deepEqual(getBalanceFromContext(context, 'Suzuki XL7'), {
+    vehicleName: 'Suzuki XL7',
+    availableBalance: 300_000,
+    pendingHoldAmount: 0,
+    accumulatedHoldAmount: 0,
+    pendingReleaseAmount: 0,
+    schemaVersion: 2,
+    updatedAt: undefined,
+    updatedBy: undefined,
+    updatedByName: undefined,
+  });
+
+  // Re-reserve with new amount (e.g. 150_000)
+  const newReservation = reserveFuel(context, {
+    journeyId: 'JRN-RE-EDIT',
+    reservationId: 'FUEL-RE-EDIT-2',
+    vehicleName: 'Suzuki XL7',
+    mode: 'hold_accumulate',
+    baseFuelAllowance: 150_000,
+    reason: 'Re-audit reservation',
+  });
+  const newCommitted = commitFuelReservation(context, newReservation, 'JRN-RE-EDIT');
+  assert.equal(newCommitted.fuelReservationState, 'committed');
+  assert.deepEqual(getBalanceFromContext(context, 'Suzuki XL7'), {
+    vehicleName: 'Suzuki XL7',
+    availableBalance: 150_000,
+    pendingHoldAmount: 0,
+    accumulatedHoldAmount: 150_000,
+    pendingReleaseAmount: 0,
+    schemaVersion: 2,
+    updatedAt: undefined,
+    updatedBy: undefined,
+    updatedByName: undefined,
+  });
+});
+

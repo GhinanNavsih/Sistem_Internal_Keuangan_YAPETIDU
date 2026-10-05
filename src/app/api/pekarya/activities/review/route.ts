@@ -32,6 +32,7 @@ import {
   createFuelLedgerContext,
   flushFuelLedger,
   releaseFuelReservation,
+  rollbackCommittedFuelReservation,
   reservationFields,
   reservationFromJourney,
   reserveFuel,
@@ -365,7 +366,10 @@ export async function POST(request: NextRequest) {
       const now = admin.firestore.FieldValue.serverTimestamp();
       const hasDriverJourney = reports.some(
         (report, index) =>
-          String(report.jobCategory || '') === 'SOPIR' && Boolean(journeySnapshots[index]?.exists),
+          String(report.jobCategory || '') === 'SOPIR' &&
+          (Boolean(journeySnapshots[index]?.exists) ||
+            Boolean(report.journeyId) ||
+            Boolean(report.fuelReservationId)),
       );
       const fuelContext = hasDriverJourney
         ? await createFuelLedgerContext(
@@ -397,24 +401,11 @@ export async function POST(request: NextRequest) {
         }
         // A confirmed SOPIR journey may be re-audited while its payroll
         // period is still open (assertPeriodAcceptsInput below enforces
-        // that). Standard-direct fuel reimbursement never touches the
-        // accumulation ledger, so it is safe to recompute; hold/procure
-        // modes are settled against a shared vehicle balance the moment
-        // they are first approved and cannot be un-committed here.
+        // that). Fuel reservations are reconciled/rolled back safely.
         const isDriverReEdit =
           command.action === 'approve_driver' &&
           category === 'SOPIR' &&
           before.status === 'approved';
-        if (
-          isDriverReEdit &&
-          isFuelProcurementMode(before.fuelProcurementMode) &&
-          before.fuelProcurementMode !== DEFAULT_FUEL_PROCUREMENT_MODE
-        ) {
-          throw new HttpError(
-            409,
-            `Laporan ${item.reportId} memakai akumulasi BBM yang sudah final; gunakan proses koreksi resmi untuk mengubahnya.`,
-          );
-        }
         if (before.status !== 'pending' && !isDriverReEdit) {
           throw new HttpError(409, `Laporan ${item.reportId} sudah pernah direview.`);
         }
@@ -546,7 +537,7 @@ export async function POST(request: NextRequest) {
                 : Math.ceil(review.distanceKm * rate);
           const existingReservation = authorizedJourney
             ? reservationFromJourney(authorizedJourney)
-            : null;
+            : reservationFromJourney(before);
           let finalReservation: FuelReservationRecord = existingReservation || {
             fuelReservationVersion: CURRENT_FUEL_RESERVATION_VERSION,
             fuelReservationId: `FUEL-${before.journeyId || item.reportId}-REVIEW-${command.requestId}`,
@@ -571,6 +562,18 @@ export async function POST(request: NextRequest) {
           );
           if (
             fuelContext &&
+            isDriverReEdit &&
+            existingReservation?.fuelReservationState === 'committed'
+          ) {
+            finalReservation = rollbackCommittedFuelReservation(
+              fuelContext,
+              existingReservation,
+              'Rollback reservasi BBM saat edit ulang perjalanan',
+              journeyId,
+              before.fuelFee || authorizedJourney?.fuelFee,
+            );
+          } else if (
+            fuelContext &&
             existingReservation?.fuelReservationState === 'reserved' &&
             mustRebuildReservation
           ) {
@@ -586,7 +589,7 @@ export async function POST(request: NextRequest) {
               throw new HttpError(409, 'Ledger saldo BBM tidak tersedia untuk audit perjalanan.');
             }
             const reservedReservation =
-              existingReservation?.fuelReservationState === 'reserved' && !mustRebuildReservation
+              existingReservation?.fuelReservationState === 'reserved' && !mustRebuildReservation && !isDriverReEdit
                 ? existingReservation
                 : reserveFuel(fuelContext, {
                     journeyId,
@@ -594,7 +597,9 @@ export async function POST(request: NextRequest) {
                     vehicleName: review.vehicleType,
                     mode: fuelProcurementMode,
                     baseFuelAllowance: auditedBaseFuelAllowance,
-                    reason: 'Reservasi ulang BBM berdasarkan hasil audit perjalanan',
+                    reason: isDriverReEdit
+                      ? 'Reservasi ulang BBM berdasarkan hasil edit perjalanan'
+                      : 'Reservasi ulang BBM berdasarkan hasil audit perjalanan',
                   });
             const approvedFuelExpenditure = fuelProcurementMode === 'procure_release'
               ? Math.ceil(review.actualFuelExpenditure)
@@ -616,7 +621,12 @@ export async function POST(request: NextRequest) {
               journeyId,
               approvedFuelExpenditure,
             );
-          } else if (fuelContext && existingReservation?.fuelReservationState === 'reserved') {
+          } else if (
+            fuelContext &&
+            (existingReservation?.fuelReservationState === 'reserved' ||
+              existingReservation?.fuelReservationState === 'committed' ||
+              isDriverReEdit)
+          ) {
             finalReservation = {
               ...finalReservation,
               fuelReservationState: 'released',
