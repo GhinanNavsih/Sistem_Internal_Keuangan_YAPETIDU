@@ -318,6 +318,17 @@ function auditPointToMapValue(loc: DriverJourneyLocation | null, address: string
   return trimmed || null;
 }
 
+// Google Maps link for one stop, so the auditor can check where a single
+// point really is without opening the whole route.
+function buildGoogleMapsPlaceUrl(
+  loc: DriverJourneyLocation | null,
+  address: string,
+): string | null {
+  const value = auditPointToMapValue(loc, address);
+  if (!value) return null;
+  return `https://www.google.com/maps/search/?${new URLSearchParams({ api: '1', query: value }).toString()}`;
+}
+
 // Builds a Google Maps directions deep link so the auditor can visually
 // replicate the exact route (origin + waypoints + destination, in order)
 // with one click, instead of re-entering each stop manually.
@@ -1706,6 +1717,7 @@ export function DriverJourneyAuditDialog({
                         const isFixedNode = idx <= 1;
                         const label = idx === 0 ? 'Titik Keberangkatan' : idx === 1 ? 'Tujuan Utama' : `Tujuan Tambahan #${idx - 1}`;
                         const emoji = idx === 0 ? '🏫' : idx === 1 ? '🎯' : '📍';
+                        const placeUrl = buildGoogleMapsPlaceUrl(auditPointLocations[idx] ?? null, pt);
                         return (
                           <div key={idx} className="relative flex items-start justify-between gap-2.5 text-xs">
                             <div className={`absolute -left-[20px] top-1 w-3 h-3 rounded-full border-2 border-white shadow-sm ${isFixedNode ? 'bg-indigo-600' : 'bg-teal-500'}`} />
@@ -1714,9 +1726,21 @@ export function DriverJourneyAuditDialog({
                                 {label}
                               </span>
                               {pt ? (
-                                <div className="font-extrabold text-black truncate" title={pt}>
-                                  {emoji} {pt.split(',')[0]}
-                                </div>
+                                placeUrl ? (
+                                  <a
+                                    href={placeUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="block font-extrabold text-black truncate hover:text-indigo-700 hover:underline cursor-pointer"
+                                    title={`${pt} — buka di Google Maps`}
+                                  >
+                                    {emoji} {pt.split(',')[0]}
+                                  </a>
+                                ) : (
+                                  <div className="font-extrabold text-black truncate" title={pt}>
+                                    {emoji} {pt.split(',')[0]}
+                                  </div>
+                                )
                               ) : (
                                 <div className="text-xs font-bold text-slate-400 italic">
                                   Belum memilih lokasi
