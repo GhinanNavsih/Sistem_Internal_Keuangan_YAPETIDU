@@ -31,7 +31,7 @@ type ResponseData = {
   notifications?: { id: string; unitId: string; academicYear: string; monthIndex: number; title: string; message: string; readAt?: unknown; at?: unknown }[];
 };
 type Tab = 'ringkasan' | 'jurnal' | 'buku_besar' | 'neraca_saldo' | 'laba_rugi' | 'arus_kas' | 'neraca' | 'tahunan' | 'audit' | 'pengaturan';
-type DraftLine = { accountCode: string; debit: string; credit: string };
+type DraftLine = { accountCode: string; description: string; debit: string; credit: string };
 
 const tabs: { id: Tab; label: string }[] = [
   { id: 'ringkasan', label: 'Ringkasan' }, { id: 'jurnal', label: 'Jurnal' }, { id: 'buku_besar', label: 'Buku Besar' },
@@ -62,9 +62,7 @@ const selectItem = 'min-h-9 rounded-md px-3 py-1.5 text-sm text-slate-700 focus:
 const cashFlowItems = { OPERATING: 'Operasional', INVESTING: 'Investasi', FINANCING: 'Pendanaan' };
 const normalBalanceItems = { DEBIT: 'Debet', CREDIT: 'Kredit' };
 const reportTargetItems = { BALANCE_SHEET: 'Neraca', INCOME_STATEMENT: 'Laba Rugi' };
-// A one-line entry is balanced against KAS automatically: money typed in Debet is a Pengeluaran, in Kredit a Penerimaan.
-const DEFAULT_CASH_CODE = '10000';
-const emptyLine = (): DraftLine => ({ accountCode: '', debit: '', credit: '' });
+const emptyLine = (): DraftLine => ({ accountCode: '', description: '', debit: '', credit: '' });
 const cell = 'border-b border-slate-100 px-3 py-2 text-right tabular-nums';
 const leftCell = 'border-b border-slate-100 px-3 py-2 text-left';
 
@@ -98,9 +96,8 @@ export default function SatkerFinancePage() {
   const [reviewNote, setReviewNote] = useState('');
   const [voucherDate, setVoucherDate] = useState(localToday);
   const [voucherId, setVoucherId] = useState(() => crypto.randomUUID());
-  const [description, setDescription] = useState('');
-  const [cashFlowSection, setCashFlowSection] = useState('OPERATING');
-  const [lines, setLines] = useState<DraftLine[]>([emptyLine()]);
+  const [cashFlowChoice, setCashFlowChoice] = useState<string | null>(null);
+  const [lines, setLines] = useState<DraftLine[]>([emptyLine(), emptyLine()]);
   const [receipt, setReceipt] = useState<File | null>(null);
   const [receiptPreview, setReceiptPreview] = useState('');
   const [ledgerCode, setLedgerCode] = useState('10000');
@@ -120,14 +117,16 @@ export default function SatkerFinancePage() {
   const draftDebit = lines.reduce((sum, line) => sum + amountNumber(line.debit), 0);
   const draftCredit = lines.reduce((sum, line) => sum + amountNumber(line.credit), 0);
   const oneSided = (line: DraftLine) => (amountNumber(line.debit) > 0) !== (amountNumber(line.credit) > 0);
-  const draftValid = !!description.trim() && (lines.length === 1
-    ? !!lines[0].accountCode && lines[0].accountCode !== DEFAULT_CASH_CODE && oneSided(lines[0])
-    : lines.every((line) => line.accountCode && oneSided(line)) && draftDebit > 0 && draftDebit === draftCredit);
-  const draftTouchesCash = lines.length > 1 && lines.some((line) => postable.find((account) => account.code === line.accountCode)?.cashEquivalent);
+  // The entry's own description is its first filled-in line description; every line keeps its own as well.
+  const entryDescription = lines.map((line) => line.description.trim()).find(Boolean) || '';
+  const draftValid = !!entryDescription && lines.every((line) => line.accountCode && oneSided(line)) && draftDebit > 0 && draftDebit === draftCredit;
+  const draftAccounts = lines.map((line) => postable.find((account) => account.code === line.accountCode));
+  const draftCashChange = lines.reduce((sum, line, index) => sum + (draftAccounts[index]?.cashEquivalent ? amountNumber(line.debit) - amountNumber(line.credit) : 0), 0);
+  // Follows the account the cash is exchanged for (its catalog classification) until the user picks one.
+  const cashFlowSection = cashFlowChoice ?? draftAccounts.find((account) => account && !account.cashEquivalent && account.cashFlowSection)?.cashFlowSection ?? 'OPERATING';
   const unitItems = [...(canReadAll ? [{ value: 'ALL', label: 'Konsolidasi seluruh SatKer' }] : []), ...(data?.units.map((unit) => ({ value: unit.id, label: unit.name })) || [])];
   const periodItems = [{ value: 'ANNUAL', label: 'Tahunan (Sep–Agu)' }, ...months.map((item) => ({ value: String(item.monthIndex), label: `${item.period}. ${monthNames[item.monthIndex - 1]} ${item.year}` }))];
   const accountItems = postable.map((account) => ({ value: account.code, label: `${account.code} · ${account.name}` }));
-  const entryAccountItems = lines.length > 1 ? accountItems : accountItems.filter((item) => item.value !== DEFAULT_CASH_CODE);
   const allAccountItems = data?.accounts.map((account) => ({ value: account.code, label: `${account.code} · ${account.name || '(belum bernama)'}` })) || [];
 
   const load = useCallback(async (silent = false) => {
@@ -177,12 +176,12 @@ export default function SatkerFinancePage() {
       receiptDataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(receipt); });
     }
     const targetMonth = Number(voucherDate.slice(5, 7));
-    const [only] = lines;
-    const voucher = lines.length === 1
-      ? { kind: amountNumber(only.debit) > 0 ? 'EXPENSE' : 'INFLOW', accountCode: only.accountCode, paymentAccountCode: DEFAULT_CASH_CODE, amount: amountNumber(only.debit) || amountNumber(only.credit) }
-      : { kind: 'ADVANCED', cashFlowSection, lines: lines.map((line) => ({ accountCode: line.accountCode, debit: amountNumber(line.debit), credit: amountNumber(line.credit) })) };
-    const result = await post('POST_ENTRY', { entryId: voucherId, monthIndex: targetMonth, date: voucherDate, description, ...voucher, receiptDataUrl });
-    if (result) { setVoucherId(crypto.randomUUID()); setDescription(''); setReceipt(null); setLines([emptyLine()]); }
+    const result = await post('POST_ENTRY', {
+      entryId: voucherId, monthIndex: targetMonth, date: voucherDate, description: entryDescription, kind: 'ADVANCED', cashFlowSection,
+      lines: lines.map((line) => ({ accountCode: line.accountCode, description: line.description.trim(), debit: amountNumber(line.debit), credit: amountNumber(line.credit) })),
+      receiptDataUrl,
+    });
+    if (result) { setVoucherId(crypto.randomUUID()); setReceipt(null); setCashFlowChoice(null); setLines([emptyLine(), emptyLine()]); }
   };
 
   const viewReceipt = async (entryId: string) => {
@@ -248,7 +247,7 @@ export default function SatkerFinancePage() {
       if (period > targetPeriod) continue;
       for (const line of entry.lines.filter((item) => item.accountCode === ledgerCode)) {
         balance += line.debit - line.credit;
-        if (month === 'ANNUAL' || period === targetPeriod) rows.push({ date: entry.date, id: entry.id, description: entry.description, debit: line.debit, credit: line.credit, balance });
+        if (month === 'ANNUAL' || period === targetPeriod) rows.push({ date: entry.date, id: entry.id, description: line.description || entry.description, debit: line.debit, credit: line.credit, balance });
       }
       if (period < targetPeriod && month !== 'ANNUAL') beginning = balance;
     }
@@ -301,10 +300,10 @@ export default function SatkerFinancePage() {
               {lines.map((line, index) => <tr key={index}>
                 {index === 0 && <td rowSpan={lines.length + 1} className="border-b border-slate-200 px-3 py-2"><input type="date" aria-label="Tanggal transaksi" className={field} value={voucherDate} onChange={(event) => setVoucherDate(event.target.value)} /></td>}
                 <td className="px-3 py-1.5"><div className="flex items-center gap-1">
-                  <SearchSelect aria-label={`Akun baris ${index + 1}`} placeholder="Cari kode / nama akun" options={entryAccountItems} value={line.accountCode} onValueChange={(value) => setLines((current) => current.map((item, i) => i === index ? { ...item, accountCode: value } : item))} />
-                  {lines.length > 1 && <button type="button" aria-label={`Hapus baris ${index + 1}`} className={`${lightButton} !px-2`} onClick={() => setLines((current) => { const next = current.filter((_, i) => i !== index); return next.length === 1 && next[0].accountCode === DEFAULT_CASH_CODE ? [{ ...next[0], accountCode: '' }] : next; })}>×</button>}
+                  <SearchSelect aria-label={`Akun baris ${index + 1}`} placeholder="Cari kode / nama akun" options={accountItems} value={line.accountCode} onValueChange={(value) => setLines((current) => current.map((item, i) => i === index ? { ...item, accountCode: value } : item))} />
+                  {lines.length > 2 && <button type="button" aria-label={`Hapus baris ${index + 1}`} className={`${lightButton} !px-2`} onClick={() => setLines((current) => current.filter((_, i) => i !== index))}>×</button>}
                 </div></td>
-                {index === 0 && <td rowSpan={lines.length + 1} className="border-b border-slate-200 px-3 py-2"><input aria-label="Uraian transaksi" className={field} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Tujuan pembayaran / penerimaan" /></td>}
+                <td className="px-3 py-1.5"><input aria-label={`Uraian baris ${index + 1}`} className={field} value={line.description} maxLength={300} onChange={(event) => setLines((current) => current.map((item, i) => i === index ? { ...item, description: event.target.value } : item))} placeholder="Uraian" /></td>
                 <td className="px-3 py-1.5"><CurrencyInput className={`${field} text-right`} aria-label={`Debet baris ${index + 1}`} value={amountNumber(line.debit)} onValue={(value) => setLines((current) => current.map((item, i) => i === index ? { ...item, debit: amountText(value) } : item))} /></td>
                 <td className="px-3 py-1.5"><CurrencyInput className={`${field} text-right`} aria-label={`Kredit baris ${index + 1}`} value={amountNumber(line.credit)} onValue={(value) => setLines((current) => current.map((item, i) => i === index ? { ...item, credit: amountText(value) } : item))} /></td>
                 {index === 0 && <td rowSpan={lines.length + 1} className="border-b border-slate-200 px-3 py-2"><div className="flex flex-col items-start gap-2">
@@ -313,20 +312,29 @@ export default function SatkerFinancePage() {
                 </div></td>}
               </tr>)}
               <tr>
-                <td className="border-b border-slate-200 px-3 py-1.5"><button type="button" className={lightButton} disabled={lines.length >= 30} onClick={() => setLines((current) => [...current, emptyLine()])}>Tambah baris</button>
-                  {draftTouchesCash && <div className="mt-2 text-xs font-medium text-slate-500"><span id="voucher-cashflow-label">Klasifikasi arus kas</span><Select items={cashFlowItems} value={cashFlowSection} onValueChange={(value) => value && setCashFlowSection(value)}><SelectTrigger aria-labelledby="voucher-cashflow-label" className={selectTrigger}><SelectValue /></SelectTrigger><SelectContent className={selectContent}><SelectItem className={selectItem} value="OPERATING">Operasional</SelectItem><SelectItem className={selectItem} value="INVESTING">Investasi</SelectItem><SelectItem className={selectItem} value="FINANCING">Pendanaan</SelectItem></SelectContent></Select></div>}</td>
-                <td className="border-b border-slate-200 px-3 py-1.5 text-right text-xs tabular-nums text-slate-600">{lines.length > 1 ? money(draftDebit) : ''}</td>
-                <td className="border-b border-slate-200 px-3 py-1.5 text-right text-xs tabular-nums text-slate-600">{lines.length > 1 ? money(draftCredit) : ''}</td>
+                <td className="border-b border-slate-200 px-3 py-1.5"><button type="button" className={lightButton} disabled={lines.length >= 30} onClick={() => setLines((current) => {
+                  // The new line starts with whatever amount makes Debet equal Kredit.
+                  const gap = current.reduce((sum, line) => sum + amountNumber(line.debit) - amountNumber(line.credit), 0);
+                  return [...current, { ...emptyLine(), debit: gap < 0 ? String(-gap) : '', credit: gap > 0 ? String(gap) : '' }];
+                })}>Tambah baris</button></td>
+                <td className="border-b border-slate-200 px-3 py-1.5 text-xs text-slate-500">
+                  {draftCashChange !== 0 && <div className="font-medium"><span id="voucher-cashflow-label">Klasifikasi arus kas</span><Select items={cashFlowItems} value={cashFlowSection} onValueChange={(value) => value && setCashFlowChoice(value)}><SelectTrigger aria-labelledby="voucher-cashflow-label" className={selectTrigger}><SelectValue /></SelectTrigger><SelectContent className={selectContent}><SelectItem className={selectItem} value="OPERATING">Operasional</SelectItem><SelectItem className={selectItem} value="INVESTING">Investasi</SelectItem><SelectItem className={selectItem} value="FINANCING">Pendanaan</SelectItem></SelectContent></Select></div>}
+                  {draftDebit !== draftCredit && <p className="mt-1 text-amber-700">Belum seimbang · selisih {money(Math.abs(draftDebit - draftCredit))}</p>}
+                </td>
+                <td className="border-b border-slate-200 px-3 py-1.5 text-right text-xs tabular-nums text-slate-600">{money(draftDebit)}</td>
+                <td className="border-b border-slate-200 px-3 py-1.5 text-right text-xs tabular-nums text-slate-600">{money(draftCredit)}</td>
               </tr>
             </tbody>}
             {data.entries?.map((entry) => <tbody key={entry.id} className="align-top">{entry.lines.map((line, index) => {
             const last = index === entry.lines.length - 1;
             const rule = last ? 'border-b border-slate-100' : '';
             const span = entry.lines.length;
+            // Entries posted with a uraian on each line show them row by row; older ones and reversals show one for the whole entry.
+            const perLine = entry.kind !== 'REVERSAL' && entry.lines.some((item) => item.description);
             return <tr key={index}>
               {index === 0 && <td rowSpan={span} className={leftCell}>{entry.date}</td>}
               <td className={`px-3 py-2 text-left ${rule}`}>{line.accountCode} · {line.accountName}</td>
-              {index === 0 && <td rowSpan={span} className={`${leftCell} font-semibold`}>{entry.description}</td>}
+              {perLine ? <td className={`px-3 py-2 text-left ${rule}`}>{line.description}</td> : index === 0 ? <td rowSpan={span} className={`${leftCell} font-semibold`}>{entry.description}</td> : null}
               <td className={`px-3 py-2 text-right tabular-nums ${rule}`}>{line.debit ? money(line.debit) : ''}</td>
               <td className={`px-3 py-2 text-right tabular-nums ${rule}`}>{line.credit ? money(line.credit) : ''}</td>
               {index === 0 && <td rowSpan={span} className={leftCell}><div className="flex flex-col items-start gap-1">{entry.hasReceipt && <button className="text-accent-700 hover:underline" onClick={() => void viewReceipt(entry.id)}>Lihat bukti</button>}{canEdit && unitId !== 'ALL' && entry.kind !== 'REVERSAL' && data.year?.status !== 'CLOSED' && <button className="text-red-700 hover:underline" onClick={() => { const reason = window.prompt('Alasan pembalikan jurnal:'); if (reason?.trim()) void post('REVERSE_ENTRY', { sourceEntryId: entry.id, monthIndex: Number(voucherDate.slice(5, 7)), date: voucherDate, description: reason }); }}>Buat jurnal pembalik</button>}</div></td>}

@@ -13,7 +13,7 @@ export type FinancialAccount = {
   cashFlowSection: CashFlowSection | null;
   revision?: number;
 };
-export type JournalLine = { accountCode: string; accountName: string; debit: number; credit: number };
+export type JournalLine = { accountCode: string; accountName: string; debit: number; credit: number; description?: string };
 export type JournalEntry = {
   id: string;
   satkerId: string;
@@ -97,10 +97,10 @@ export function buildVoucher(
   const date = typeof raw.date === 'string' ? raw.date : '';
   if (!description || description.length > 500) throw new Error('Uraian transaksi wajib diisi (maksimal 500 karakter).');
   if (!['EXPENSE', 'INFLOW', 'TRANSFER', 'ADVANCED'].includes(String(kind))) throw new Error('Jenis voucher tidak valid.');
-  const line = (code: unknown, debit: number, credit: number): JournalLine => {
+  const line = (code: unknown, debit: number, credit: number, lineDescription = ''): JournalLine => {
     const account = byCode.get(String(code));
     if (!account) throw new Error(`Kode akun ${String(code)} tidak dapat diposting.`);
-    return { accountCode: account.code, accountName: account.name, debit, credit };
+    return { accountCode: account.code, accountName: account.name, debit, credit, ...(lineDescription ? { description: lineDescription } : {}) };
   };
   let lines: JournalLine[];
   if (kind === 'ADVANCED') {
@@ -111,7 +111,9 @@ export function buildVoucher(
       const debit = amount(value.debit, true);
       const credit = amount(value.credit, true);
       if ((debit > 0) === (credit > 0)) throw new Error('Setiap baris jurnal harus memiliki tepat satu sisi bernilai positif.');
-      return line(value.accountCode, debit, credit);
+      const lineDescription = typeof value.description === 'string' ? value.description.trim() : '';
+      if (lineDescription.length > 300) throw new Error('Uraian baris maksimal 300 karakter.');
+      return line(value.accountCode, debit, credit, lineDescription);
     });
   } else {
     const total = amount(raw.amount);

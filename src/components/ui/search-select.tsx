@@ -73,7 +73,7 @@ export function SearchSelect({
       <Combobox.Portal>
         <Combobox.Positioner sideOffset={4} align="start" className="isolate z-50">
           <Combobox.Popup className="max-h-72 w-max min-w-(--anchor-width) max-w-[28rem] overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 text-slate-700 shadow-lg">
-            <Combobox.Empty className="px-3 py-2 text-sm text-slate-500">{emptyText}</Combobox.Empty>
+            <Combobox.Empty className="px-3 py-2 text-sm text-slate-500 empty:hidden">{emptyText}</Combobox.Empty>
             <Combobox.List>
               {(option: SearchSelectOption) => (
                 <Combobox.Item

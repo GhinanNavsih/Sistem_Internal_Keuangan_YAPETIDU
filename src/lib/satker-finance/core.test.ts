@@ -32,6 +32,20 @@ test('a penerimaan may credit any postable account except the cash account it is
   assert.throws(() => entry('same', '2026-09-02', { kind: 'INFLOW', accountCode: '10000', paymentAccountCode: '10000', amount: 1 }), /harus berbeda/);
 });
 
+test('a batch of expense lines balanced by one KAS credit keeps each line\'s own uraian', () => {
+  const batch = entry('batch', '2026-09-03', {
+    kind: 'ADVANCED', description: 'Ongkos tukang dll/Suhadi/S1', cashFlowSection: 'OPERATING',
+    lines: [
+      { accountCode: '52101', description: 'Ongkos tukang dll/Suhadi/S1', debit: 2_212_500, credit: 0 },
+      { accountCode: '52104', description: 'Doorprize ahad sehat/S2', debit: 188_400, credit: 0 },
+      { accountCode: '10000', description: 'Pengeluaran BU', debit: 0, credit: 2_400_900 },
+    ],
+  });
+  assert.deepEqual(batch.lines.map((line) => line.description), ['Ongkos tukang dll/Suhadi/S1', 'Doorprize ahad sehat/S2', 'Pengeluaran BU']);
+  assert.equal(batch.totalAmount, 2_400_900);
+  assert.throws(() => entry('long', '2026-09-03', { kind: 'ADVANCED', description: 'x', cashFlowSection: 'OPERATING', lines: [{ accountCode: '52101', description: 'x'.repeat(301), debit: 1, credit: 0 }, { accountCode: '10000', debit: 0, credit: 1 }] }), /maksimal 300/);
+});
+
 test('September-August fiscal calendar and real dates are enforced', () => {
   assert.deepEqual(fiscalMonths(academicYear).map((month) => month.monthIndex), [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8]);
   assert.equal(academicYearFor(new Date('2027-01-15T00:00:00Z')), academicYear);
