@@ -17,7 +17,6 @@ import { LogOut, ArrowLeft } from 'lucide-react';
 import { collection, getDocs, doc, getDoc, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { MONTHS_ID } from '@/utils/rekapConfig';
-import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
 import UraianNavToggles from '@/components/UraianNavToggles';
 import { AttendanceImportStatusBanner } from '@/components/AttendanceImportStatusBanner';
 import { defaultPayrollPeriodToken, previousPayrollPeriodToken } from '@/lib/payroll/domain';
@@ -354,13 +353,9 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
       <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
 
-      {/* Show full GlobalHeader only for super_admin; SatKer Pekarya/Loyalis gets its own top nav bar */}
+      {/* Super Admin retains the page header; SatKer heads navigate from the shared sidebar. */}
       {profile.role === 'super_admin' ? (
         <GlobalHeader />
-      ) : (profile.role === 'satker_head' || profile.role === 'satker_head_loyalis') ? (
-        <Suspense fallback={null}>
-          <SatkerPekaryaNavBar />
-        </Suspense>
       ) : null}
 
       <div className="p-6 lg:p-8 pb-24 lg:pb-32 space-y-8 relative z-10">

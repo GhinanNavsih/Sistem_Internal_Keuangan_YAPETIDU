@@ -21,7 +21,6 @@ import GlobalHeader from '@/components/GlobalHeader';
 import EmployeeNavigationMenu from '@/components/EmployeeNavigationMenu';
 import FacilityReportRepairForm from '@/components/FacilityReportRepairForm';
 import { FacilityReportRowsSkeleton } from '@/components/FacilityReportsSkeleton';
-import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
 import UraianNavToggles from '@/components/UraianNavToggles';
 import { ImageExifViewer } from '@/components/ImageExifViewer';
 import { Badge } from '@/components/ui/badge';
@@ -574,10 +573,6 @@ function FacilityReportReviewContent() {
 
       {profile?.role === 'super_admin' ? (
         <GlobalHeader />
-      ) : profile?.role === 'satker_head' ? (
-        <Suspense fallback={null}>
-          <SatkerPekaryaNavBar />
-        </Suspense>
       ) : null}
 
       <div className="relative z-10 w-full space-y-5 px-3 py-4 sm:space-y-6 sm:p-6 lg:p-8">

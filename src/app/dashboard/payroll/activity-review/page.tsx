@@ -6,7 +6,6 @@ import GlobalHeader from '@/components/GlobalHeader';
 import UraianNavToggles from '@/components/UraianNavToggles';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
 import { ImageExifViewer } from '@/components/ImageExifViewer';
 import {
   isSatpamLemburSendiriAllowed,
@@ -2525,10 +2524,6 @@ function ActivityReviewPageContent() {
       {/* ── Top Navigation ─────────────────────────────────────────── */}
       {profile?.role === 'super_admin' ? (
         <GlobalHeader />
-      ) : profile?.role === 'satker_head' ? (
-        <Suspense fallback={null}>
-          <SatkerPekaryaNavBar />
-        </Suspense>
       ) : null}
 
       <div className="p-6 lg:p-8 space-y-6 relative z-10">

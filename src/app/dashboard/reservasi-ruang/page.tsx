@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Building2,
@@ -16,7 +16,6 @@ import {
   UserRound,
   ZoomIn,
 } from 'lucide-react';
-import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
 import VenueReservationDialog from '@/components/venue/VenueReservationDialog';
 import { Button } from '@/components/ui/button';
 import {
@@ -131,8 +130,6 @@ function byDateAndTime(left: ReservationView, right: ReservationView): number {
 function ReservationsContent() {
   const { profile: realProfile, activeProfile } = useAuth();
   const profile = activeProfile || realProfile;
-  const isLoyalisHead = profile?.role === 'satker_head_loyalis';
-
   const [reservations, setReservations] = useState<ReservationView[]>([]);
   const [viewerIsSuperAdmin, setViewerIsSuperAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -326,13 +323,6 @@ function ReservationsContent() {
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 font-sans text-slate-800">
       <div className="pointer-events-none absolute right-0 top-0 hidden h-[600px] w-[600px] rounded-full bg-indigo-100/40 blur-[120px] sm:block" />
-
-      {/* Kepala SatKer have no sidebar; their top bar is their navigation. */}
-      {isLoyalisHead && (
-        <Suspense fallback={null}>
-          <SatkerPekaryaNavBar />
-        </Suspense>
-      )}
 
       <div className="relative z-10 w-full space-y-5 px-3 py-4 sm:space-y-6 sm:p-6 lg:p-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">

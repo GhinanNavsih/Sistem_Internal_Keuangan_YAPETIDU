@@ -5,7 +5,6 @@ import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import GlobalHeader from '@/components/GlobalHeader';
-import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
 import UraianNavToggles from '@/components/UraianNavToggles';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -1620,9 +1619,7 @@ function DriverJourneysContent() {
     <div className="min-h-screen bg-slate-50">
       {profile?.role === 'super_admin' ? (
         <GlobalHeader />
-      ) : (
-        <SatkerPekaryaNavBar />
-      )}
+      ) : null}
 
       <div className="p-4 sm:p-6 lg:p-8 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

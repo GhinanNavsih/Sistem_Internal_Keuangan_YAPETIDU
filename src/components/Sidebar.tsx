@@ -3,12 +3,13 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import { canReserveVenues } from '@/lib/payroll/roles';
 import { VENUE_RESERVATION_PATH } from '@/lib/venueReservation';
 import { VENUE_INSPECTION_PATH } from '@/lib/venueInspection';
+import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
 import { Button } from '@/components/ui/button';
 import AccountSwitcher from '@/components/AccountSwitcher';
 import {
@@ -21,6 +22,9 @@ import {
   ClipboardCheck,
   Coins,
   BarChart3,
+  Compass,
+  ScanLine,
+  Wrench,
   LogOut,
   Menu,
   X,
@@ -30,12 +34,27 @@ import {
 
 const SIDEBAR_COLLAPSED_KEY = 'yapetidu_sidebar_collapsed';
 
+type SidebarMenuItem = {
+  name: string;
+  path: string;
+  icon: React.ElementType;
+  exact?: boolean;
+  activePattern?: string;
+  startsGroup?: boolean;
+};
+
 export default function Sidebar() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { profile, activeProfile } = useAuth();
   const requestLogout = useConfirmLogout();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const now = new Date();
+  const monthParam = searchParams.get('month');
+  const yearParam = searchParams.get('year');
+  const currentMonth = monthParam || String(now.getMonth() + 1);
+  const currentYear = yearParam || String(now.getFullYear());
 
   const currentProfile = activeProfile || profile;
 
@@ -52,7 +71,12 @@ export default function Sidebar() {
     setIsMobileOpen(false);
   }, [pathname]);
 
-  if (!currentProfile || !['super_admin', 'finance_verifier'].includes(currentProfile.role)) {
+  if (!currentProfile || ![
+    'super_admin',
+    'finance_verifier',
+    'satker_head',
+    'satker_head_loyalis',
+  ].includes(currentProfile.role)) {
     return null;
   }
 
@@ -64,11 +88,21 @@ export default function Sidebar() {
     });
   };
 
-  const now = new Date();
-  const currentMonth = now.getMonth() + 1;
-  const currentYear = now.getFullYear();
+  const permittedCategories = (currentProfile.permittedCategories || []).map((item) =>
+    item.trim().toUpperCase(),
+  );
+  const withPeriod = (query: string) => {
+    const periodQuery = monthParam && yearParam
+      ? `month=${encodeURIComponent(monthParam)}&year=${encodeURIComponent(yearParam)}`
+      : '';
+    const mergedQuery = [periodQuery, query].filter(Boolean).join('&');
+    return mergedQuery ? `?${mergedQuery}` : '';
+  };
+  const canSeeFacility =
+    permittedCategories.includes('KEBERSIHAN') || permittedCategories.includes('TEKNISI');
+  const canSeeJourneys = permittedCategories.includes('SOPIR');
 
-  const menuItems = [
+  const adminMenuItems: SidebarMenuItem[] = [
     {
       name: 'Payroll Bulanan',
       path: '/dashboard/payroll',
@@ -105,8 +139,7 @@ export default function Sidebar() {
       icon: FileSpreadsheet
     },
     {
-      // Books rooms in SIMPEL UNIPDU. Kepala SatKer Loyalis reach the same page
-      // from their own top bar (SatkerPekaryaNavBar) — they get no sidebar.
+      // Books rooms in SIMPEL UNIPDU.
       name: 'Reservasi Ruang',
       path: VENUE_RESERVATION_PATH,
       icon: CalendarCheck
@@ -133,13 +166,91 @@ export default function Sidebar() {
       icon: BarChart3,
       activePattern: '/dashboard/payroll/pekarya-dashboard'
     }
-  ].filter(item => {
-    if (item.path === VENUE_RESERVATION_PATH) return canReserveVenues(currentProfile.role);
-    if (currentProfile.role === 'super_admin') return true;
-    return item.path === '/dashboard/payroll' || item.path === '/dashboard/satker-finance';
-  });
+  ];
 
-  const getIsActive = (item: typeof menuItems[0]) => {
+  const loyalisMenuItems: SidebarMenuItem[] = [
+    {
+      name: 'Pengajuan Anggaran',
+      path: `/dashboard/payroll/uraian/proposal-kegiatan${withPeriod('')}`,
+      icon: FileSpreadsheet,
+      activePattern: '/dashboard/payroll/uraian/proposal-kegiatan',
+    },
+    {
+      name: 'Vakasi Tambahan',
+      path: `/dashboard/payroll/uraian/vakasi-loyalis${withPeriod('')}`,
+      icon: Banknote,
+      activePattern: '/dashboard/payroll/uraian/vakasi-loyalis',
+    },
+    {
+      name: 'Pelaporan Kegiatan',
+      path: `/dashboard/payroll/uraian/pelaporan-kegiatan${withPeriod('')}`,
+      icon: ClipboardCheck,
+      activePattern: '/dashboard/payroll/uraian/pelaporan-kegiatan',
+    },
+    {
+      name: 'Keuangan SatKer',
+      path: '/dashboard/satker-finance',
+      icon: BarChart3,
+      activePattern: '/dashboard/satker-finance',
+    },
+    ...(canReserveVenues(currentProfile.role)
+      ? [{
+          name: 'Reservasi Ruang',
+          path: VENUE_RESERVATION_PATH,
+          icon: CalendarCheck,
+          activePattern: VENUE_RESERVATION_PATH,
+        }]
+      : []),
+  ];
+
+  const pekaryaMenuItems: SidebarMenuItem[] = [
+    {
+      name: 'Review Kegiatan',
+      path: `/dashboard/payroll/activity-review?month=${currentMonth}&year=${currentYear}`,
+      icon: ClipboardCheck,
+      activePattern: '/dashboard/payroll/activity-review',
+    },
+    ...(canSeeFacility
+      ? [{
+          name: 'Kondisi Fasilitas',
+          path: '/dashboard/payroll/facility-reports',
+          icon: Wrench,
+          activePattern: '/dashboard/payroll/facility-reports',
+        }]
+      : []),
+    ...(canSeeJourneys
+      ? [{
+          name: 'Pre-Otorisasi',
+          path: `/dashboard/payroll/driver-journeys?month=${currentMonth}&year=${currentYear}`,
+          icon: Compass,
+          activePattern: '/dashboard/payroll/driver-journeys',
+        }]
+      : []),
+    {
+      name: 'Presensi Pekarya',
+      path: `/dashboard/payroll/uraian/presensi-pekarya${withPeriod(`category=${encodeURIComponent(ALL_BLUE_COLLAR_CATEGORY)}`)}`,
+      icon: Users,
+      activePattern: '/dashboard/payroll/uraian/presensi-pekarya',
+    },
+    {
+      name: 'Rekap Uraian',
+      path: `/dashboard/payroll/uraian/rekap-pekarya${withPeriod('')}`,
+      icon: ScanLine,
+      activePattern: '/dashboard/payroll/uraian/rekap-pekarya',
+    },
+  ];
+
+  const menuItems: SidebarMenuItem[] = currentProfile.role === 'satker_head_loyalis'
+    ? loyalisMenuItems
+    : currentProfile.role === 'satker_head'
+      ? pekaryaMenuItems
+      : adminMenuItems.filter(item => {
+        if (item.path === VENUE_RESERVATION_PATH) return canReserveVenues(currentProfile.role);
+        if (currentProfile.role === 'super_admin') return true;
+        return item.path === '/dashboard/payroll' || item.path === '/dashboard/satker-finance';
+      });
+
+  const getIsActive = (item: SidebarMenuItem) => {
     if (item.exact) {
       return pathname === item.path;
     }
@@ -220,11 +331,15 @@ export default function Sidebar() {
   );
 
   const roleLabel =
-    currentProfile?.role === 'super_admin'
+    currentProfile.role === 'super_admin'
       ? 'Super Admin'
-      : currentProfile?.role === 'finance_verifier'
+      : currentProfile.role === 'finance_verifier'
         ? 'Badan Keuangan'
-        : currentProfile?.role || 'Pengguna';
+        : currentProfile.role === 'satker_head_loyalis'
+          ? currentProfile.satkerName?.trim() || 'SatKer Loyalis'
+          : currentProfile.role === 'satker_head'
+            ? 'Kepala SatKer Pekarya'
+            : currentProfile.role || 'Pengguna';
 
   return (
     <>

@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { DashboardDataProvider } from '@/lib/DashboardDataContext';
 import { BulkEmailProvider } from '@/lib/BulkEmailContext';
@@ -12,7 +13,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <DashboardDataProvider>
         <BulkEmailProvider>
           <div className="flex flex-col md:flex-row min-h-screen">
-            <Sidebar />
+            <Suspense fallback={null}>
+              <Sidebar />
+            </Suspense>
             <main className="flex-1 min-h-screen overflow-x-hidden">
               {children}
             </main>
@@ -23,6 +26,5 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     </ProtectedRoute>
   );
 }
-
 
 
