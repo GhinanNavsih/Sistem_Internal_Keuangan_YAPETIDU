@@ -200,7 +200,7 @@ export async function GET(request: NextRequest) {
     const actor = await requireAuthenticatedProfile(request);
     requireRole(actor, ['super_admin']);
     const snapshot = await adminDb.collection('users').get();
-    const users = snapshot.docs.map((document) => ({
+    const users = snapshot.docs.map((document): { uid: string } & Record<string, unknown> => ({
       uid: document.id,
       ...document.data(),
     }));
