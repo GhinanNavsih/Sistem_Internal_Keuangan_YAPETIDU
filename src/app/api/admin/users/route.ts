@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import admin, { adminAuth, adminDb } from '@/lib/firebase-admin';
-import { isUserRole, UserRole } from '@/lib/payroll/roles';
+import { employeeCollectionForId, normalizeEmployeeId } from '@/lib/accountGroups';
+import { EMPLOYEE_LINK_ROLES, isEmployeeLinkRole, isUserRole, UserRole } from '@/lib/payroll/roles';
 import {
   errorResponse,
   HttpError,
@@ -8,14 +9,9 @@ import {
   requireRole,
 } from '@/lib/server/auth';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
+import { linkedAccountUidsByUid } from '@/lib/server/linkedAccounts';
 
 export const dynamic = 'force-dynamic';
-
-const EMPLOYEE_LINK_ROLES: readonly UserRole[] = [
-  'honorer',
-  'loyalis',
-  'ketua_shift_satpam',
-];
 
 interface UserInput {
   email?: string;
@@ -25,10 +21,12 @@ interface UserInput {
   permittedCategories: string[];
   linkedEmployeeId?: string;
   /**
-   * Keeps this account out of name-based role switching (see `@/lib/accountGroups`).
-   * Undefined when the request did not send it, so an edit keeps the stored value.
+   * The employee this account belongs to, which links it to the person's other
+   * accounts for role switching (see `@/lib/accountGroups`). Undefined when the
+   * request did not send it (an edit keeps the stored value), null to clear it.
+   * Ignored for employee-linked roles, which always use `linkedEmployeeId`.
    */
-  accountGroupExcluded?: boolean;
+  personEmployeeId?: string | null;
 }
 
 function errorCode(error: unknown): string | undefined {
@@ -56,8 +54,19 @@ function parseUserInput(raw: unknown, requirePassword: boolean): UserInput {
   if (value.email !== undefined && typeof value.email !== 'string') {
     throw new HttpError(400, 'Alamat email tidak valid.');
   }
-  if (value.accountGroupExcluded !== undefined && typeof value.accountGroupExcluded !== 'boolean') {
-    throw new HttpError(400, 'Pengaturan penggabungan akun tidak valid.');
+  let personEmployeeId: string | null | undefined;
+  if (value.personEmployeeId === undefined) {
+    personEmployeeId = undefined;
+  } else if (
+    value.personEmployeeId === null ||
+    (typeof value.personEmployeeId === 'string' && !value.personEmployeeId.trim())
+  ) {
+    personEmployeeId = null;
+  } else {
+    personEmployeeId = normalizeEmployeeId(value.personEmployeeId);
+    if (!personEmployeeId) {
+      throw new HttpError(400, 'ID pegawai untuk ganti peran tidak valid.');
+    }
   }
   if (
     EMPLOYEE_LINK_ROLES.includes(value.role) &&
@@ -76,9 +85,37 @@ function parseUserInput(raw: unknown, requirePassword: boolean): UserInput {
     ),
     linkedEmployeeId:
       typeof value.linkedEmployeeId === 'string' ? value.linkedEmployeeId.trim() : undefined,
-    accountGroupExcluded:
-      typeof value.accountGroupExcluded === 'boolean' ? value.accountGroupExcluded : undefined,
+    personEmployeeId,
   };
+}
+
+/**
+ * The `personEmployeeId` to store: none for Super Admin (never linked), the
+ * linked employee for employee-linked roles, otherwise what was sent, or the
+ * stored value when nothing was sent.
+ */
+function personEmployeeIdToSave(input: UserInput, stored: unknown): string | null {
+  if (input.role === 'super_admin') return null;
+  if (isEmployeeLinkRole(input.role)) return normalizeEmployeeId(input.linkedEmployeeId);
+  if (input.personEmployeeId === undefined) return normalizeEmployeeId(stored);
+  return input.personEmployeeId;
+}
+
+/**
+ * A newly chosen employee must exist. Several accounts may name the same one.
+ * Employee-linked roles are already checked by `assertEmployeeLink`.
+ */
+async function assertPersonEmployee(
+  input: UserInput,
+  id: string | null,
+  stored: unknown,
+): Promise<void> {
+  if (!id || isEmployeeLinkRole(input.role) || id === normalizeEmployeeId(stored)) return;
+  const collection = employeeCollectionForId(id);
+  const snapshot = collection ? await adminDb.collection(collection).doc(id).get() : null;
+  if (!snapshot?.exists) {
+    throw new HttpError(409, 'Data pegawai untuk ganti peran tidak ditemukan.');
+  }
 }
 
 async function assertEmployeeLink(
@@ -120,11 +157,18 @@ export async function GET(request: NextRequest) {
     const actor = await requireAuthenticatedProfile(request);
     requireRole(actor, ['super_admin']);
     const snapshot = await adminDb.collection('users').get();
+    const users = snapshot.docs.map((document) => ({
+      uid: document.id,
+      ...document.data(),
+    }));
+    // Which accounts each one can switch to, decided as a switch would, so the
+    // page never re-implements the rules.
+    const linkedUids = await linkedAccountUidsByUid(users);
     return Response.json(
       {
-        users: snapshot.docs.map((document) => ({
-          uid: document.id,
-          ...document.data(),
+        users: users.map((user) => ({
+          ...user,
+          linkedAccountUids: linkedUids.get(user.uid) || [],
         })),
       },
       { headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' } },
@@ -144,6 +188,8 @@ export async function POST(request: NextRequest) {
       throw new HttpError(400, 'Alamat email wajib diisi.');
     }
     await assertEmployeeLink(input);
+    const personEmployeeId = personEmployeeIdToSave(input, null);
+    await assertPersonEmployee(input, personEmployeeId, null);
 
     const userRecord = await adminAuth.createUser({
       email: input.email,
@@ -159,7 +205,7 @@ export async function POST(request: NextRequest) {
       role: input.role,
       permittedCategories: input.permittedCategories,
       linkedEmployeeId: input.linkedEmployeeId || null,
-      accountGroupExcluded: input.accountGroupExcluded === true,
+      personEmployeeId,
       disabled: false,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       createdByUid: actor.uid,
@@ -178,7 +224,7 @@ export async function POST(request: NextRequest) {
           email: input.email,
           role: input.role,
           linkedEmployeeId: input.linkedEmployeeId || null,
-          accountGroupExcluded: profile.accountGroupExcluded,
+          personEmployeeId,
         },
       }),
     );
@@ -229,6 +275,8 @@ export async function PUT(request: NextRequest) {
     if (uid === actor.uid && input.role !== 'super_admin') {
       throw new HttpError(409, 'Super Administrator tidak dapat menurunkan perannya sendiri.');
     }
+    const personEmployeeId = personEmployeeIdToSave(input, before.personEmployeeId);
+    await assertPersonEmployee(input, personEmployeeId, before.personEmployeeId);
 
     try {
       await adminAuth.updateUser(uid, {
@@ -251,7 +299,7 @@ export async function PUT(request: NextRequest) {
       role: input.role,
       permittedCategories: input.permittedCategories,
       linkedEmployeeId: input.linkedEmployeeId || null,
-      accountGroupExcluded: input.accountGroupExcluded ?? before.accountGroupExcluded === true,
+      personEmployeeId,
       disabled: before.disabled === true,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedByUid: actor.uid,
@@ -274,13 +322,13 @@ export async function PUT(request: NextRequest) {
             email: currentSnapshot.data()?.email || null,
             role: currentSnapshot.data()?.role || null,
             linkedEmployeeId: currentSnapshot.data()?.linkedEmployeeId || null,
-            accountGroupExcluded: currentSnapshot.data()?.accountGroupExcluded === true,
+            personEmployeeId: currentSnapshot.data()?.personEmployeeId || null,
           },
           after: {
             email: after.email,
             role: after.role,
             linkedEmployeeId: after.linkedEmployeeId,
-            accountGroupExcluded: after.accountGroupExcluded,
+            personEmployeeId: after.personEmployeeId,
           },
         }),
       );

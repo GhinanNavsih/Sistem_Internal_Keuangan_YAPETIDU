@@ -1,42 +1,44 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  employeeCollectionForId,
   findLinkedAccounts,
   isGroupableAccount,
   linkedAccountsByUid,
-  personKey,
+  normalizeEmployeeId,
+  resolvePersonEmployeeId,
   type GroupableAccount,
 } from './accountGroups';
 
 const indahPekarya: GroupableAccount = {
   uid: 'u-biroumum',
   email: 'biroumum@unipdu.ac.id',
-  displayName: 'Indah Wahyuni, SS',
   role: 'satker_head',
+  personEmployeeId: 'Loyalis_045',
 };
 const indahLoyalis: GroupableAccount = {
   uid: 'u-indah',
   email: 'indahwahyuni@staf.unipdu.ac.id',
-  displayName: 'Indah Wahyuni, SS',
   role: 'loyalis',
+  personEmployeeId: 'Loyalis_045',
 };
 const indahSatkerLoyalis: GroupableAccount = {
   uid: 'u-psa',
   email: 'psa@unipdu.ac.id',
-  displayName: 'Indah Wahyuni, SS',
   role: 'satker_head_loyalis',
+  personEmployeeId: 'Loyalis_045',
 };
 const someoneElse: GroupableAccount = {
   uid: 'u-other',
   email: 'other@unipdu.ac.id',
-  displayName: 'Siti Rofiah',
   role: 'loyalis',
+  personEmployeeId: 'Loyalis_046',
 };
 const indahAccounts = [indahPekarya, indahLoyalis, indahSatkerLoyalis, someoneElse];
 
 const uids = (accounts: readonly GroupableAccount[]) => accounts.map((account) => account.uid);
 
-test('the three accounts of one person find each other, never themselves', () => {
+test('accounts naming the same employee find each other, never themselves', () => {
   assert.deepEqual(uids(findLinkedAccounts(indahLoyalis, indahAccounts)), ['u-biroumum', 'u-psa']);
   assert.deepEqual(uids(findLinkedAccounts(indahPekarya, indahAccounts)), ['u-psa', 'u-indah']);
   assert.deepEqual(uids(findLinkedAccounts(someoneElse, indahAccounts)), []);
@@ -49,33 +51,30 @@ test('linked accounts are listed in role order, then by email', () => {
   ]);
 });
 
-test('titles, degrees, case, spacing, dots and apostrophes do not split a person', () => {
-  const key = personKey('Indah Wahyuni, SS');
-  assert.equal(key, 'indah wahyuni');
-  assert.equal(personKey('Indah Wahyuni'), key);
-  assert.equal(personKey('INDAH  WAHYUNI, S.S'), key);
-  assert.equal(personKey('Dr. Indah Wahyuni SS'), key);
-  assert.equal(personKey('M. Ali Nawawi, SE., MM'), personKey('M Ali Nawawi'));
-  assert.equal(personKey("Siti Rofi'ah, A. Md."), personKey('Siti Rofiah'));
+test('a different employee is a different person, whatever the names say', () => {
+  const namesake = { uid: 'u-namesake', role: 'satker_head', personEmployeeId: 'BC_201' };
+  assert.deepEqual(uids(findLinkedAccounts(indahLoyalis, [...indahAccounts, namesake])), [
+    'u-biroumum',
+    'u-psa',
+  ]);
+  assert.deepEqual(findLinkedAccounts(namesake, [...indahAccounts, namesake]), []);
 });
 
-test('a different spelling is a different person', () => {
-  assert.notEqual(personKey('Muhamad Zaki'), personKey('Muhammad Zaki'));
+test('an account that names no employee never links', () => {
+  for (const personEmployeeId of [undefined, null, '', '   ', 42, 'Loyalis/045']) {
+    const unlinked = { uid: 'u-none', role: 'satker_head', personEmployeeId };
+    assert.equal(isGroupableAccount(unlinked), false, String(personEmployeeId));
+    assert.deepEqual(findLinkedAccounts(unlinked, [unlinked, indahLoyalis]), []);
+  }
 });
 
-test('a one-word or missing name never links', () => {
-  assert.equal(personKey('Admin'), null);
-  assert.equal(personKey('Gus Sunan'), null);
-  assert.equal(personKey(''), null);
-  assert.equal(personKey(undefined), null);
-
-  const first = { uid: 'a', displayName: 'Sunan', role: 'satker_head' };
-  const second = { uid: 'b', displayName: 'Sunan', role: 'loyalis' };
-  assert.deepEqual(findLinkedAccounts(first, [first, second]), []);
+test('ids are compared trimmed', () => {
+  const padded = { ...indahPekarya, personEmployeeId: ' Loyalis_045 ' };
+  assert.deepEqual(uids(findLinkedAccounts(padded, [padded, indahLoyalis])), ['u-indah']);
 });
 
 test('Super Admin accounts never link, in either direction', () => {
-  const admin = { uid: 'u-admin', displayName: 'Indah Wahyuni', role: 'super_admin' };
+  const admin = { uid: 'u-admin', role: 'super_admin', personEmployeeId: 'Loyalis_045' };
   const accounts = [...indahAccounts, admin];
   assert.equal(isGroupableAccount(admin), false);
   assert.deepEqual(findLinkedAccounts(admin, accounts), []);
@@ -89,13 +88,6 @@ test('a disabled account never links', () => {
   assert.deepEqual(findLinkedAccounts(disabled, accounts), []);
 });
 
-test('an account opted out of grouping neither sees nor is seen', () => {
-  const optedOut = { ...indahPekarya, accountGroupExcluded: true };
-  const accounts = [optedOut, indahLoyalis, indahSatkerLoyalis];
-  assert.deepEqual(uids(findLinkedAccounts(indahLoyalis, accounts)), ['u-psa']);
-  assert.deepEqual(findLinkedAccounts(optedOut, accounts), []);
-});
-
 test('an account with an unknown role never links', () => {
   const broken = { ...indahPekarya, role: 'user' };
   assert.equal(isGroupableAccount(broken), false);
@@ -103,8 +95,40 @@ test('an account with an unknown role never links', () => {
 });
 
 test('a retired role id still links as its successor', () => {
-  const legacy = { uid: 'u-legacy', displayName: 'Indah Wahyuni', role: 'employee_admin' };
+  const legacy = { uid: 'u-legacy', role: 'employee_admin', personEmployeeId: 'Loyalis_045' };
   assert.deepEqual(uids(findLinkedAccounts(indahLoyalis, [legacy, indahLoyalis])), ['u-legacy']);
+});
+
+test('accounts naming a converted Pekarya record stay with the person', () => {
+  // BC_061 was converted to Loyalis_301: the login account moved to the new id,
+  // a second account of the same person still names the closed record.
+  const successors = new Map([['BC_061', 'Loyalis_301']]);
+  const convertedAccount = { uid: 'u-converted', role: 'loyalis', personEmployeeId: 'Loyalis_301' };
+  const headAccount = { uid: 'u-head', role: 'satker_head', personEmployeeId: 'BC_061' };
+  const accounts = [convertedAccount, headAccount];
+
+  assert.deepEqual(uids(findLinkedAccounts(convertedAccount, accounts, successors)), ['u-head']);
+  assert.deepEqual(uids(findLinkedAccounts(headAccount, accounts, successors)), ['u-converted']);
+  assert.deepEqual(findLinkedAccounts(headAccount, accounts), [], 'without the map they differ');
+});
+
+test('successor chains are followed, and a loop cannot hang', () => {
+  assert.equal(resolvePersonEmployeeId('BC_1', new Map([['BC_1', 'BC_2'], ['BC_2', 'Loyalis_3']])), 'Loyalis_3');
+  assert.equal(resolvePersonEmployeeId('Loyalis_9', new Map([['BC_1', 'Loyalis_3']])), 'Loyalis_9');
+  const looped = resolvePersonEmployeeId('BC_1', new Map([['BC_1', 'BC_2'], ['BC_2', 'BC_1']]));
+  assert.ok(looped === 'BC_1' || looped === 'BC_2');
+  assert.equal(resolvePersonEmployeeId(null), null);
+});
+
+test('employee ids map to their collection by prefix', () => {
+  assert.equal(employeeCollectionForId('Loyalis_045'), 'Employees_Loyalis');
+  assert.equal(employeeCollectionForId('WC_002'), 'Employees_WhiteCollar');
+  assert.equal(employeeCollectionForId('BC_061'), 'Employees_BlueCollar');
+  assert.equal(employeeCollectionForId(' BC_061 '), 'Employees_BlueCollar');
+  assert.equal(employeeCollectionForId('Loyalis/045'), null, 'never a nested path');
+  assert.equal(employeeCollectionForId(''), null);
+  assert.equal(employeeCollectionForId(undefined), null);
+  assert.equal(normalizeEmployeeId(' Loyalis_045 '), 'Loyalis_045');
 });
 
 test('the Users page map covers every linked account and skips lone ones', () => {

@@ -100,6 +100,20 @@ export function normalizeUserRole(value: unknown): UserRole | null {
   return null;
 }
 
+/**
+ * Accounts of these roles belong to one employee record (`linkedEmployeeId`),
+ * whose own data they act on: payslip, leave, activity reports.
+ */
+export const EMPLOYEE_LINK_ROLES: readonly UserRole[] = [
+  'honorer',
+  'loyalis',
+  'ketua_shift_satpam',
+];
+
+export function isEmployeeLinkRole(role: UserRole | null | undefined): boolean {
+  return !!role && EMPLOYEE_LINK_ROLES.includes(role);
+}
+
 /** How each role is named to people: the Users table, the sidebar and the role switcher. */
 export const USER_ROLE_LABELS: Readonly<Record<UserRole, string>> = {
   super_admin: 'Super Admin',

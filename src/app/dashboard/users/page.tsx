@@ -6,7 +6,6 @@ import GlobalHeader from '@/components/GlobalHeader';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { getRoleHomePath } from '@/lib/roleHome';
-import { linkedAccountsByUid } from '@/lib/accountGroups';
 import { useAuth } from '@/lib/AuthContext';
 import {
   Card,
@@ -20,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { SearchSelect, type SearchSelectOption } from '@/components/ui/search-select';
 import {
   Table,
   TableBody,
@@ -64,7 +64,7 @@ import { usePayrollCacheInvalidation } from '@/lib/queries/hooks';
 import { collection, getDocsFromServer } from 'firebase/firestore';
 import { SUPPORTED_CATEGORIES } from '@/utils/rekapConfig';
 import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
-import { getUserRoleLabel, normalizeUserRole, UserRole } from '@/lib/payroll/roles';
+import { getUserRoleLabel, isEmployeeLinkRole, normalizeUserRole, UserRole } from '@/lib/payroll/roles';
 
 interface ManagedUser {
   uid: string;
@@ -75,7 +75,10 @@ interface ManagedUser {
   linkedEmployeeId?: string;
   createdAt?: string;
   disabled?: boolean;
-  accountGroupExcluded?: boolean;
+  /** The employee this account belongs to; accounts naming the same one can switch roles. */
+  personEmployeeId?: string | null;
+  /** Accounts this one can switch to, as decided by the server. */
+  linkedAccountUids?: string[];
 }
 
 interface CleaningEmployee {
@@ -91,6 +94,64 @@ interface DropdownEmployee {
   detail?: string;
   category?: string;
   email?: string;
+}
+
+/**
+ * Which employee an account belongs to. Accounts naming the same employee can
+ * switch between each other's roles ("Ganti Peran"). Employee-linked roles
+ * always use their linked employee; Super Admin never links.
+ */
+function PersonEmployeeField({
+  id,
+  role,
+  value,
+  onChange,
+  options,
+  labelClassName,
+}: {
+  id: string;
+  role: UserRole;
+  value: string;
+  onChange: (value: string) => void;
+  options: SearchSelectOption[];
+  labelClassName: string;
+}) {
+  if (role === 'super_admin') return null;
+  return (
+    <div>
+      <Label htmlFor={id} className={labelClassName}>Pegawai (untuk ganti peran)</Label>
+      {isEmployeeLinkRole(role) ? (
+        <p className="text-xs text-slate-500 leading-relaxed">
+          Otomatis: pegawai yang dihubungkan ke akun ini.
+        </p>
+      ) : (
+        <>
+          <SearchSelect
+            id={id}
+            placeholder="Cari nama pegawai…"
+            options={options}
+            value={value}
+            onValueChange={onChange}
+            className="h-[42px] rounded-sm border-slate-200"
+          />
+          <div className="mt-1 flex items-start justify-between gap-3">
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Akun yang memilih pegawai yang sama bisa saling berganti peran tanpa login ulang.
+            </p>
+            {value && (
+              <button
+                type="button"
+                onClick={() => onChange('')}
+                className="shrink-0 text-[11px] font-semibold text-slate-500 hover:text-rose-600 cursor-pointer"
+              >
+                Kosongkan
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 export default function UserManagementPage() {
@@ -171,7 +232,7 @@ export default function UserManagementPage() {
   const [newRole, setNewRole] = useState<UserRole>('satker_head');
   const [newPermitted, setNewPermitted] = useState<string[]>([]);
   const [newLinkedEmployeeId, setNewLinkedEmployeeId] = useState('');
-  const [newAccountGroupExcluded, setNewAccountGroupExcluded] = useState(false);
+  const [newPersonEmployeeId, setNewPersonEmployeeId] = useState('');
   const [newEmployeeSearchText, setNewEmployeeSearchText] = useState('');
   const [showNewEmployeeSuggestions, setShowNewEmployeeSuggestions] = useState(false);
 
@@ -185,7 +246,7 @@ export default function UserManagementPage() {
   const [editRole, setEditRole] = useState<UserRole>('satker_head');
   const [editPermitted, setEditPermitted] = useState<string[]>([]);
   const [editLinkedEmployeeId, setEditLinkedEmployeeId] = useState('');
-  const [editAccountGroupExcluded, setEditAccountGroupExcluded] = useState(false);
+  const [editPersonEmployeeId, setEditPersonEmployeeId] = useState('');
   const [editEmployeeSearchText, setEditEmployeeSearchText] = useState('');
   const [showEditEmployeeSuggestions, setShowEditEmployeeSuggestions] = useState(false);
 
@@ -332,8 +393,33 @@ export default function UserManagementPage() {
     });
   }, [users, searchQuery]);
 
-  // Accounts that share a Nama Lengkap and can switch between each other ("Ganti Peran").
-  const linkedByUid = useMemo(() => linkedAccountsByUid(users), [users]);
+  // For each row, the accounts it can switch to ("Ganti Peran").
+  const usersByUid = useMemo(() => new Map(users.map((item) => [item.uid, item])), [users]);
+
+  // The employee an account belongs to (`personEmployeeId`), chosen from the
+  // active employees. A stored id that is no longer in that list (left, or a
+  // Pekarya converted to Loyalis) still gets a label, so it never looks unset.
+  const personEmployeeOptions = useMemo<SearchSelectOption[]>(
+    () =>
+      allEmployees.map((emp) => ({
+        value: emp.id,
+        label: `${emp.name} — ${emp.type === 'Pekarya' ? `Pekarya ${emp.detail}` : `Loyalis ${emp.detail}`} (${emp.id})`,
+      })),
+    [allEmployees],
+  );
+  const personEmployeeOptionsWith = (currentId: string): SearchSelectOption[] => {
+    if (!currentId || personEmployeeOptions.some((option) => option.value === currentId)) {
+      return personEmployeeOptions;
+    }
+    const inactive = cleaningEmployees.find((emp) => emp.id === currentId);
+    return [
+      {
+        value: currentId,
+        label: inactive ? `${inactive.name} — tidak aktif (${currentId})` : currentId,
+      },
+      ...personEmployeeOptions,
+    ];
+  };
 
   // Handle multi-category selection toggle for NEW user
   const handleToggleNewPermitted = (cat: string) => {
@@ -388,7 +474,7 @@ export default function UserManagementPage() {
           role: newRole,
           permittedCategories: (newRole === 'honorer' || newRole === 'loyalis' || newRole === 'ketua_shift_satpam') ? (newLinkedEmployeeId ? [allEmployees.find(e => e.id === newLinkedEmployeeId)?.detail || ''] : []) : newPermitted,
           linkedEmployeeId: (newRole === 'honorer' || newRole === 'loyalis' || newRole === 'ketua_shift_satpam') ? newLinkedEmployeeId : undefined,
-          accountGroupExcluded: newAccountGroupExcluded,
+          personEmployeeId: newPersonEmployeeId || null,
         }),
       });
 
@@ -429,7 +515,7 @@ export default function UserManagementPage() {
       setNewRole('satker_head');
       setNewPermitted([]);
       setNewLinkedEmployeeId('');
-      setNewAccountGroupExcluded(false);
+      setNewPersonEmployeeId('');
       setNewEmployeeSearchText('');
       setNewTeamNumber('1');
       setNewTeamMembers([]);
@@ -455,7 +541,7 @@ export default function UserManagementPage() {
     setEditRole(u.role);
     setEditPermitted(u.permittedCategories || []);
     setEditLinkedEmployeeId(u.linkedEmployeeId || '');
-    setEditAccountGroupExcluded(u.accountGroupExcluded === true);
+    setEditPersonEmployeeId(u.personEmployeeId || '');
 
     // Find the employee in cleaningEmployees
     const matchedEmp = cleaningEmployees.find(emp => emp.id === u.linkedEmployeeId);
@@ -510,7 +596,7 @@ export default function UserManagementPage() {
           role: editRole,
           permittedCategories: (editRole === 'honorer' || editRole === 'loyalis' || editRole === 'ketua_shift_satpam') ? (editLinkedEmployeeId ? [allEmployees.find(e => e.id === editLinkedEmployeeId)?.detail || ''] : []) : editPermitted,
           linkedEmployeeId: (editRole === 'honorer' || editRole === 'loyalis' || editRole === 'ketua_shift_satpam') ? editLinkedEmployeeId : undefined,
-          accountGroupExcluded: editAccountGroupExcluded,
+          personEmployeeId: editPersonEmployeeId || null,
         }),
       });
 
@@ -556,7 +642,13 @@ export default function UserManagementPage() {
                 role: editRole,
                 permittedCategories: updatedCategories,
                 linkedEmployeeId: (editRole === 'honorer' || editRole === 'loyalis' || editRole === 'ketua_shift_satpam') ? editLinkedEmployeeId : undefined,
-                accountGroupExcluded: editAccountGroupExcluded,
+                // Mirrors what the server stores; the refresh below replaces it.
+                personEmployeeId:
+                  editRole === 'super_admin'
+                    ? null
+                    : isEmployeeLinkRole(editRole)
+                      ? editLinkedEmployeeId || null
+                      : editPersonEmployeeId || null,
               }
             : u
         )
@@ -727,6 +819,7 @@ export default function UserManagementPage() {
                                     key={emp.id}
                                     onMouseDown={() => {
                                       setNewDisplayName(emp.name);
+                                      setNewPersonEmployeeId(emp.id);
                                       if (emp.email) {
                                         setNewEmail(emp.email);
                                       }
@@ -744,6 +837,14 @@ export default function UserManagementPage() {
                           )}
                         </div>
                       </div>
+                      <PersonEmployeeField
+                        id="newPersonEmployee"
+                        role={newRole}
+                        value={newPersonEmployeeId}
+                        onChange={setNewPersonEmployeeId}
+                        options={personEmployeeOptionsWith(newPersonEmployeeId)}
+                        labelClassName="text-xs font-semibold text-slate-500 block mb-1.5"
+                      />
                       <div>
                         <Label htmlFor="email" className="text-xs font-semibold text-slate-500">Alamat Email</Label>
                         <div className="relative mt-1">
@@ -829,25 +930,6 @@ export default function UserManagementPage() {
                         {newRole === 'loyalis' && <span className="text-xs text-slate-600 leading-relaxed block">Akun untuk karyawan Loyalis (white collar) yang hanya dapat mengakses halaman slip gaji. Harus dihubungkan ke data pegawai.</span>}
                         {newRole === 'ketua_shift_satpam' && <span className="text-xs text-slate-600 leading-relaxed block">Akun untuk Ketua Shift SATPAM. Memiliki wewenang untuk melaporkan kegiatan harian seluruh anggota shift regunya.</span>}
                       </div>
-
-                      {newRole !== 'super_admin' && (
-                        <div className="mt-3 flex items-start gap-2.5">
-                          <Checkbox
-                            id="new-account-group-excluded"
-                            checked={newAccountGroupExcluded}
-                            onCheckedChange={(checked) => setNewAccountGroupExcluded(checked === true)}
-                            className="mt-0.5"
-                          />
-                          <div>
-                            <Label htmlFor="new-account-group-excluded" className="text-xs font-semibold text-slate-700 cursor-pointer">
-                              Jangan gabungkan dengan akun bernama sama
-                            </Label>
-                            <p className="text-[11px] text-slate-500 leading-relaxed mt-1">
-                              Akun dengan Nama Lengkap yang sama bisa saling berganti peran tanpa login ulang. Centang bila nama ini milik orang yang berbeda.
-                            </p>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   </div>
 
@@ -1272,7 +1354,10 @@ export default function UserManagementPage() {
                   <TableBody>
                     {filteredUsers.map((u) => {
                       const isMe = u.email === user?.email;
-                      const linkedAccounts = linkedByUid.get(u.uid) || [];
+                      const linkedAccounts = (u.linkedAccountUids || []).flatMap((uid) => {
+                        const account = usersByUid.get(uid);
+                        return account ? [account] : [];
+                      });
 
                       return (
                         <TableRow key={u.uid} className="border-slate-50 hover:bg-slate-50/40 transition-colors">
@@ -1303,11 +1388,6 @@ export default function UserManagementPage() {
                                       .join('\n')}`}
                                   >
                                     Bisa ganti peran ke {linkedAccounts.length} akun lain
-                                  </span>
-                                )}
-                                {u.accountGroupExcluded && u.role !== 'super_admin' && (
-                                  <span className="text-[10px] font-semibold text-slate-400 block mt-0.5">
-                                    Tidak digabung dengan akun bernama sama
                                   </span>
                                 )}
                               </div>
@@ -1516,6 +1596,7 @@ export default function UserManagementPage() {
                                 key={emp.id}
                                 onMouseDown={() => {
                                   setEditDisplayName(emp.name);
+                                  setEditPersonEmployeeId(emp.id);
                                   setShowEditNameSuggestions(false);
                                 }}
                                 className="p-3 text-xs font-bold text-slate-700 hover:bg-indigo-50/50 cursor-pointer transition-colors"
@@ -1530,6 +1611,15 @@ export default function UserManagementPage() {
                       )}
                     </div>
                   </div>
+
+                  <PersonEmployeeField
+                    id="editPersonEmployee"
+                    role={editRole}
+                    value={editPersonEmployeeId}
+                    onChange={setEditPersonEmployeeId}
+                    options={personEmployeeOptionsWith(editPersonEmployeeId)}
+                    labelClassName="text-xs font-semibold text-slate-600 block mb-1.5"
+                  />
 
                   {/* Alamat Email Input */}
                   <div>
@@ -1599,25 +1689,6 @@ export default function UserManagementPage() {
                     {editRole === 'loyalis' && <span>Akun khusus karyawan Loyalis untuk melihat slip gaji digital mandiri.</span>}
                     {editRole === 'ketua_shift_satpam' && <span>Dapat melaporkan shift kehadiran harian seluruh anggota regunya.</span>}
                   </div>
-
-                  {editRole !== 'super_admin' && (
-                    <div className="flex items-start gap-2.5">
-                      <Checkbox
-                        id="edit-account-group-excluded"
-                        checked={editAccountGroupExcluded}
-                        onCheckedChange={(checked) => setEditAccountGroupExcluded(checked === true)}
-                        className="mt-0.5"
-                      />
-                      <div>
-                        <Label htmlFor="edit-account-group-excluded" className="text-xs font-semibold text-slate-700 cursor-pointer">
-                          Jangan gabungkan dengan akun bernama sama
-                        </Label>
-                        <p className="text-[11px] text-slate-500 leading-relaxed mt-1">
-                          Akun dengan Nama Lengkap yang sama bisa saling berganti peran tanpa login ulang. Centang bila nama ini milik orang yang berbeda.
-                        </p>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
 

@@ -4,20 +4,23 @@
  *
  * One person often holds several accounts, one per role (e.g. a Kepala SatKer
  * Pekarya account, a Kepala SatKer Loyalis account and their own Karyawan
- * Loyalis account). Nothing but the name ties them together: SatKer accounts
- * carry no `linkedEmployeeId`. So accounts are grouped by Nama Lengkap
- * (`displayName`) with titles and degrees ignored, under these limits:
- *   - a name of one word never links, since it is too likely to be shared;
- *   - Super Admin accounts never link, in either direction;
- *   - a disabled account never links;
- *   - Super Admin can set `accountGroupExcluded` on an account (two different
- *     people with the same name), which takes it out of every group.
+ * Loyalis account). Each account names the employee it belongs to in
+ * `personEmployeeId`: Super Admin sets it on the Users page, and for honorer,
+ * loyalis and ketua shift accounts it is always their `linkedEmployeeId`.
+ * Accounts naming the same employee are one person.
+ *
+ * A name never links accounts: two people can share one, and one person's name
+ * can be written two ways. Never linked, in either direction: Super Admin
+ * accounts, disabled accounts, and accounts that name no employee.
+ *
+ * A Pekarya converted to Loyalis gets a new employee id. `successors` maps the
+ * closed `BC_NNN` record to the `Loyalis_NNN` the person moved to, so accounts
+ * that still name the old record stay with the person.
  *
  * Firebase-free so it can be unit-tested. The server re-runs it before every
  * switch (`@/lib/server/linkedAccounts`), so a stale list in the browser can
  * only lead to a refused switch, never to someone else's account.
  */
-import { normalizeName } from './payroll/employeeNames';
 import { normalizeUserRole, USER_ROLES, type UserRole } from './payroll/roles';
 
 /** What the browser is told about one of the person's other accounts. */
@@ -33,28 +36,55 @@ export interface LinkedAccountSummary {
 export interface GroupableAccount {
   uid: string;
   email?: unknown;
-  displayName?: unknown;
   role?: unknown;
   disabled?: unknown;
-  accountGroupExcluded?: unknown;
+  personEmployeeId?: unknown;
 }
 
-const MIN_NAME_WORDS = 2;
+/** A closed employee id → the id the same person continues under. */
+export type EmployeeSuccessors = ReadonlyMap<string, string>;
+
+export type EmployeeCollectionName =
+  | 'Employees_BlueCollar'
+  | 'Employees_Loyalis'
+  | 'Employees_WhiteCollar';
+
+const EMPLOYEE_ID_PATTERN = /^[A-Za-z0-9_-]{1,100}$/;
+
+/** A trimmed employee id that is safe to use as a document id, or null. */
+export function normalizeEmployeeId(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const id = value.trim();
+  return EMPLOYEE_ID_PATTERN.test(id) ? id : null;
+}
 
 /**
- * The person a name points at: `normalizeName` (titles and degrees dropped,
- * lowercase) with dots read as spaces and apostrophes dropped, so "M. Ali" and
- * "M Ali" or "Rofi'ah" and "Rofiah" agree. Null when there is no usable name.
+ * The collection an employee id lives in, read from its prefix the way
+ * `getEmployeeById` does: `Loyalis_…`, `WC_…`, and everything else (`BC_…`) is
+ * a Pekarya record. Null for something that cannot be a document id.
  */
-export function personKey(displayName: unknown): string | null {
-  if (typeof displayName !== 'string') return null;
-  const key = normalizeName(displayName)
-    .replace(/\./g, ' ')
-    .replace(/['’`]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!key || key.split(' ').length < MIN_NAME_WORDS) return null;
-  return key;
+export function employeeCollectionForId(value: unknown): EmployeeCollectionName | null {
+  const id = normalizeEmployeeId(value);
+  if (!id) return null;
+  if (id.startsWith('Loyalis_')) return 'Employees_Loyalis';
+  if (id.startsWith('WC_')) return 'Employees_WhiteCollar';
+  return 'Employees_BlueCollar';
+}
+
+const MAX_SUCCESSOR_HOPS = 5;
+
+/** The employee id the person is known by today: `id`, or where it moved to. */
+export function resolvePersonEmployeeId(
+  value: unknown,
+  successors: EmployeeSuccessors = new Map(),
+): string | null {
+  let id = normalizeEmployeeId(value);
+  for (let hop = 0; id && hop < MAX_SUCCESSOR_HOPS; hop += 1) {
+    const next = normalizeEmployeeId(successors.get(id));
+    if (!next || next === id) break;
+    id = next;
+  }
+  return id;
 }
 
 export function isGroupableAccount(account: GroupableAccount): boolean {
@@ -63,9 +93,18 @@ export function isGroupableAccount(account: GroupableAccount): boolean {
     !!role &&
     role !== 'super_admin' &&
     account.disabled !== true &&
-    account.accountGroupExcluded !== true &&
-    personKey(account.displayName) !== null
+    normalizeEmployeeId(account.personEmployeeId) !== null
   );
+}
+
+/** The person an account belongs to, or null when it never links. */
+export function accountPersonKey(
+  account: GroupableAccount,
+  successors: EmployeeSuccessors = new Map(),
+): string | null {
+  return isGroupableAccount(account)
+    ? resolvePersonEmployeeId(account.personEmployeeId, successors)
+    : null;
 }
 
 function roleOrder(role: unknown): number {
@@ -82,21 +121,20 @@ function compareAccounts(left: GroupableAccount, right: GroupableAccount): numbe
 }
 
 /**
- * The person's other accounts: same name key, each groupable. Empty when `self`
- * is not groupable itself (Super Admin, disabled, opted out, one-word name).
+ * The person's other accounts, in role order. Empty when `self` does not link
+ * (Super Admin, disabled, or no employee).
  */
 export function findLinkedAccounts<T extends GroupableAccount>(
   self: GroupableAccount,
   accounts: readonly T[],
+  successors: EmployeeSuccessors = new Map(),
 ): T[] {
-  if (!isGroupableAccount(self)) return [];
-  const key = personKey(self.displayName);
+  const key = accountPersonKey(self, successors);
+  if (!key) return [];
   return accounts
     .filter(
       (account) =>
-        account.uid !== self.uid &&
-        isGroupableAccount(account) &&
-        personKey(account.displayName) === key,
+        account.uid !== self.uid && accountPersonKey(account, successors) === key,
     )
     .sort(compareAccounts);
 }
@@ -108,11 +146,12 @@ export function findLinkedAccounts<T extends GroupableAccount>(
  */
 export function linkedAccountsByUid<T extends GroupableAccount>(
   accounts: readonly T[],
+  successors: EmployeeSuccessors = new Map(),
 ): Map<string, T[]> {
   const groups = new Map<string, T[]>();
   for (const account of accounts) {
-    if (!isGroupableAccount(account)) continue;
-    const key = personKey(account.displayName)!;
+    const key = accountPersonKey(account, successors);
+    if (!key) continue;
     const group = groups.get(key);
     if (group) group.push(account);
     else groups.set(key, [account]);

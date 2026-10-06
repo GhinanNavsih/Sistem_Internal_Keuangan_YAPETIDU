@@ -1,8 +1,8 @@
 /**
  * Server side of "Ganti Peran": finds the signed-in person's other accounts and
  * hands out a session for one of them. Which accounts belong together is
- * decided by `@/lib/accountGroups`; this file only reads `users` and mints the
- * token.
+ * decided by `@/lib/accountGroups` (the employee each account names); this file
+ * reads `users` and the employee records' conversion links, and mints the token.
  *
  * Every role check in SAKU (Firestore and Storage rules, `requireAuthenticatedProfile`)
  * reads `users/{token uid}`, so a switch is a real sign-in as the other uid, the
@@ -12,23 +12,80 @@
  */
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
 import {
+  employeeCollectionForId,
   findLinkedAccounts,
+  isGroupableAccount,
+  linkedAccountsByUid,
+  normalizeEmployeeId,
+  type EmployeeSuccessors,
   type GroupableAccount,
   type LinkedAccountSummary,
 } from '@/lib/accountGroups';
+import { readConversionFromLink, readConversionToLink } from '@/lib/employeeConversion';
 import { normalizeUserRole } from '@/lib/payroll/roles';
 import { HttpError, type AuthenticatedProfile } from '@/lib/server/auth';
 
+const ACCOUNT_FIELDS = [
+  'email',
+  'displayName',
+  'role',
+  'permittedCategories',
+  'disabled',
+  'personEmployeeId',
+] as const;
+
 interface StoredAccount extends GroupableAccount {
+  displayName?: unknown;
   permittedCategories?: unknown;
 }
 
-async function loadAccounts(): Promise<StoredAccount[]> {
-  const snapshot = await adminDb
-    .collection('users')
-    .select('email', 'displayName', 'role', 'permittedCategories', 'disabled', 'accountGroupExcluded')
-    .get();
-  return snapshot.docs.map((document) => ({ uid: document.id, ...document.data() }));
+/** The named employee records, read with only their `conversion` field, keyed by id. */
+async function readConversions(ids: Iterable<string>): Promise<Map<string, unknown>> {
+  const refs = [...new Set(ids)].flatMap((id) => {
+    const collection = employeeCollectionForId(id);
+    return collection ? [adminDb.collection(collection).doc(id)] : [];
+  });
+  const records = new Map<string, unknown>();
+  for (let offset = 0; offset < refs.length; offset += 100) {
+    const snapshots = await adminDb.getAll(...refs.slice(offset, offset + 100), {
+      fieldMask: ['conversion'],
+    });
+    for (const snapshot of snapshots) {
+      if (snapshot.exists) records.set(snapshot.id, snapshot.data());
+    }
+  }
+  return records;
+}
+
+/**
+ * Where each converted Pekarya record that `accounts` name moved to. Only
+ * those records are read.
+ */
+export async function loadEmployeeSuccessors(
+  accounts: readonly GroupableAccount[],
+): Promise<EmployeeSuccessors> {
+  const pekaryaIds = accounts.flatMap((account) => {
+    const id = isGroupableAccount(account) ? normalizeEmployeeId(account.personEmployeeId) : null;
+    return id && employeeCollectionForId(id) === 'Employees_BlueCollar' ? [id] : [];
+  });
+  const successors = new Map<string, string>();
+  for (const [id, record] of await readConversions(pekaryaIds)) {
+    const movedTo = readConversionToLink(record);
+    if (movedTo) successors.set(id, movedTo.toEmployeeId);
+  }
+  return successors;
+}
+
+/** For the Users page: the uids each account can switch to, decided as a switch would. */
+export async function linkedAccountUidsByUid(
+  accounts: readonly GroupableAccount[],
+): Promise<Map<string, string[]>> {
+  const successors = await loadEmployeeSuccessors(accounts);
+  const result = new Map<string, string[]>();
+  for (const [uid, linked] of linkedAccountsByUid(accounts, successors)) {
+    result.set(uid, linked.map((account) => account.uid));
+  }
+  return result;
 }
 
 function toSummary(account: StoredAccount): LinkedAccountSummary {
@@ -44,11 +101,48 @@ function toSummary(account: StoredAccount): LinkedAccountSummary {
   };
 }
 
-/** The caller's other accounts, in role order. Empty for Super Admin or an opted-out account. */
+/**
+ * The caller's other accounts, in role order. Empty for Super Admin, a disabled
+ * account, or an account that names no employee.
+ *
+ * Reads only what can belong to the person: the employee ids that stand for
+ * them (the one the account names, the Loyalis record a converted Pekarya
+ * record moved to, and the Pekarya record a converted Loyalis record came
+ * from), then the accounts naming one of those ids.
+ */
 export async function listLinkedAccounts(uid: string): Promise<LinkedAccountSummary[]> {
-  const accounts = await loadAccounts();
-  const self = accounts.find((account) => account.uid === uid);
-  return self ? findLinkedAccounts(self, accounts).map(toSummary) : [];
+  const selfSnapshot = await adminDb.collection('users').doc(uid).get();
+  if (!selfSnapshot.exists) return [];
+  const self: StoredAccount = { uid, ...selfSnapshot.data() };
+  const ownId = isGroupableAccount(self) ? normalizeEmployeeId(self.personEmployeeId) : null;
+  if (!ownId) return [];
+
+  const successors = new Map<string, string>();
+  const personIds = new Set([ownId]);
+  const ownRecord = (await readConversions([ownId])).get(ownId);
+  const movedTo = readConversionToLink(ownRecord);
+  const currentId = movedTo?.toEmployeeId ?? ownId;
+  if (movedTo) {
+    successors.set(ownId, currentId);
+    personIds.add(currentId);
+  }
+  const currentRecord = movedTo ? (await readConversions([currentId])).get(currentId) : ownRecord;
+  const cameFrom = readConversionFromLink(currentRecord);
+  if (cameFrom) {
+    successors.set(cameFrom.fromEmployeeId, currentId);
+    personIds.add(cameFrom.fromEmployeeId);
+  }
+
+  const candidates = await adminDb
+    .collection('users')
+    .where('personEmployeeId', 'in', [...personIds])
+    .select(...ACCOUNT_FIELDS)
+    .get();
+  const accounts: StoredAccount[] = candidates.docs.map((document) => ({
+    uid: document.id,
+    ...document.data(),
+  }));
+  return findLinkedAccounts(self, accounts, successors).map(toSummary);
 }
 
 function errorCode(error: unknown): string | undefined {

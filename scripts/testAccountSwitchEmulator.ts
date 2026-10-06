@@ -61,6 +61,8 @@ async function main() {
     const body = await response.json();
     return body.accounts as { uid: string; role: string; email: string }[];
   };
+  const linkedUids = async (authorization: string) =>
+    (await listLinked(authorization)).map((account) => account.uid);
   const requestSwitch = (authorization: string, body: unknown) =>
     switchRoute.POST(
       new NextRequest('http://localhost/api/auth/switch-account', {
@@ -70,53 +72,82 @@ async function main() {
       }),
     );
 
-  // One person (Indah) with three accounts, plus the near misses.
+  // Employee records. Loyalis_046 shares Indah's name but is someone else;
+  // BC_061 was converted to Loyalis_301.
+  await adminDb.doc('Employees_Loyalis/Loyalis_045').set({
+    personal_info: { name: 'Indah Wahyuni, SS', status: 'AKTIF' },
+  });
+  await adminDb.doc('Employees_Loyalis/Loyalis_046').set({
+    personal_info: { name: 'Indah Wahyuni', status: 'AKTIF' },
+  });
+  await adminDb.doc('Employees_BlueCollar/BC_061').set({
+    name: 'Ahmad Fauzi',
+    employment: { status: 'inactive', jobCategory: 'SOPIR' },
+    conversion: { toCollection: 'Employees_Loyalis', toEmployeeId: 'Loyalis_301', effectivePeriod: '2026-10' },
+  });
+  await adminDb.doc('Employees_Loyalis/Loyalis_301').set({
+    personal_info: { name: 'Ahmad Fauzi', status: 'AKTIF' },
+    conversion: { fromCollection: 'Employees_BlueCollar', fromEmployeeId: 'BC_061', effectivePeriod: '2026-10' },
+  });
+
+  // Indah's three accounts, plus the near misses.
   const pekaryaHead = await signUp('biroumum@example.test');
   const loyalisHead = await signUp('psa@example.test');
   const loyalisSelf = await signUp('indah@example.test');
   const namesake = await signUp('namesake@example.test');
+  const unlinked = await signUp('unlinked@example.test');
   const superAdmin = await signUp('super@example.test');
   const disabled = await signUp('disabled@example.test');
   const otherPerson = await signUp('siti@example.test');
+  const convertedSelf = await signUp('ahmad@example.test');
+  const convertedHead = await signUp('ahmad-head@example.test');
 
-  await adminDb.doc(`users/${pekaryaHead.uid}`).set({
+  const seed = (uid: string, profile: Record<string, unknown>) =>
+    adminDb.doc(`users/${uid}`).set({ permittedCategories: [], disabled: false, ...profile });
+  await seed(pekaryaHead.uid, {
     email: 'biroumum@example.test', displayName: 'Indah Wahyuni, SS', role: 'satker_head',
-    permittedCategories: ['SOPIR'], disabled: false,
+    permittedCategories: ['SOPIR'], personEmployeeId: 'Loyalis_045',
   });
-  await adminDb.doc(`users/${loyalisHead.uid}`).set({
-    email: 'psa@example.test', displayName: 'Indah Wahyuni, SS', role: 'satker_head_loyalis',
-    permittedCategories: [], disabled: false,
+  await seed(loyalisHead.uid, {
+    email: 'psa@example.test', displayName: 'Indah W.', role: 'satker_head_loyalis',
+    personEmployeeId: 'Loyalis_045',
   });
-  await adminDb.doc(`users/${loyalisSelf.uid}`).set({
+  await seed(loyalisSelf.uid, {
     email: 'indah@example.test', displayName: 'INDAH WAHYUNI, S.S', role: 'loyalis',
-    permittedCategories: ['BIRO UMUM'], linkedEmployeeId: 'Loyalis_001', disabled: false,
+    linkedEmployeeId: 'Loyalis_045', personEmployeeId: 'Loyalis_045',
   });
-  await adminDb.doc(`users/${namesake.uid}`).set({
-    email: 'namesake@example.test', displayName: 'Indah Wahyuni', role: 'satker_head',
-    permittedCategories: ['TEKNISI'], disabled: false, accountGroupExcluded: true,
+  await seed(namesake.uid, {
+    email: 'namesake@example.test', displayName: 'Indah Wahyuni, SS', role: 'satker_head',
+    permittedCategories: ['TEKNISI'], personEmployeeId: 'Loyalis_046',
   });
-  await adminDb.doc(`users/${superAdmin.uid}`).set({
+  await seed(unlinked.uid, {
+    email: 'unlinked@example.test', displayName: 'Indah Wahyuni, SS', role: 'satker_head',
+  });
+  await seed(superAdmin.uid, {
     email: 'super@example.test', displayName: 'Indah Wahyuni', role: 'super_admin',
-    permittedCategories: [], disabled: false,
+    personEmployeeId: 'Loyalis_045',
   });
-  await adminDb.doc(`users/${disabled.uid}`).set({
+  await seed(disabled.uid, {
     email: 'disabled@example.test', displayName: 'Indah Wahyuni, SS', role: 'finance_verifier',
-    permittedCategories: [], disabled: true,
+    personEmployeeId: 'Loyalis_045', disabled: true,
   });
-  await adminDb.doc(`users/${otherPerson.uid}`).set({
+  await seed(otherPerson.uid, {
     email: 'siti@example.test', displayName: 'Siti Rofiah', role: 'loyalis',
-    permittedCategories: [], linkedEmployeeId: 'Loyalis_002', disabled: false,
+    linkedEmployeeId: 'Loyalis_002', personEmployeeId: 'Loyalis_002',
+  });
+  await seed(convertedSelf.uid, {
+    email: 'ahmad@example.test', displayName: 'Ahmad Fauzi', role: 'loyalis',
+    linkedEmployeeId: 'Loyalis_301', personEmployeeId: 'Loyalis_301',
+  });
+  await seed(convertedHead.uid, {
+    email: 'ahmad-head@example.test', displayName: 'Ahmad F.', role: 'satker_head',
+    personEmployeeId: 'BC_061',
   });
 
-  // 1. Each of Indah's accounts lists the other two, in role order.
-  assert.deepEqual(
-    (await listLinked(pekaryaHead.authorization)).map((account) => account.uid),
-    [loyalisHead.uid, loyalisSelf.uid],
-  );
-  assert.deepEqual(
-    (await listLinked(loyalisSelf.authorization)).map((account) => account.uid),
-    [pekaryaHead.uid, loyalisHead.uid],
-  );
+  // 1. Accounts naming the same employee list each other, in role order, even
+  //    under differently written names.
+  assert.deepEqual(await linkedUids(pekaryaHead.authorization), [loyalisHead.uid, loyalisSelf.uid]);
+  assert.deepEqual(await linkedUids(loyalisSelf.authorization), [pekaryaHead.uid, loyalisHead.uid]);
   const listed = await listLinked(loyalisHead.authorization);
   assert.deepEqual(
     listed.map(({ uid, role, email }) => ({ uid, role, email })),
@@ -125,10 +156,16 @@ async function main() {
       { uid: loyalisSelf.uid, role: 'loyalis', email: 'indah@example.test' },
     ],
   );
-  // Opted out, Super Admin and an unrelated person see nobody.
-  assert.deepEqual(await listLinked(namesake.authorization), []);
-  assert.deepEqual(await listLinked(superAdmin.authorization), []);
-  assert.deepEqual(await listLinked(otherPerson.authorization), []);
+  // A same-name account of another employee, an account naming no employee,
+  // Super Admin and an unrelated person see nobody.
+  assert.deepEqual(await linkedUids(namesake.authorization), []);
+  assert.deepEqual(await linkedUids(unlinked.authorization), []);
+  assert.deepEqual(await linkedUids(superAdmin.authorization), []);
+  assert.deepEqual(await linkedUids(otherPerson.authorization), []);
+  // An account still naming the closed Pekarya record of a converted employee
+  // stays with the person, in both directions.
+  assert.deepEqual(await linkedUids(convertedHead.authorization), [convertedSelf.uid]);
+  assert.deepEqual(await linkedUids(convertedSelf.authorization), [convertedHead.uid]);
 
   // 2. A switch returns a session for the other account, and is audited.
   const switched = await requestSwitch(pekaryaHead.authorization, { targetUid: loyalisSelf.uid });
@@ -142,13 +179,13 @@ async function main() {
   assert.equal(session.claims.user_id, loyalisSelf.uid, 'the new session belongs to the target account');
   assert.equal(session.claims.switchedFrom, pekaryaHead.uid);
   // The new session is accepted by every protected route, as the target account.
-  assert.deepEqual(
-    (await listLinked(session.authorization)).map((account) => account.uid),
-    [pekaryaHead.uid, loyalisHead.uid],
-  );
-  // ...and can switch onward (and back).
+  assert.deepEqual(await linkedUids(session.authorization), [pekaryaHead.uid, loyalisHead.uid]);
+  // ...and can switch onward.
   const onward = await requestSwitch(session.authorization, { targetUid: loyalisHead.uid });
   assert.equal(onward.status, 200, await onward.clone().text());
+  // The converted employee's pair switches too.
+  const convertedSwitch = await requestSwitch(convertedHead.authorization, { targetUid: convertedSelf.uid });
+  assert.equal(convertedSwitch.status, 200, await convertedSwitch.clone().text());
 
   const audits = await adminDb
     .collection('audit_logs')
@@ -161,13 +198,14 @@ async function main() {
   assert.equal(firstAudit.targetUid, loyalisSelf.uid);
   assert.equal(firstAudit.actorRole, 'satker_head');
   assert.equal(firstAudit.targetRole, 'loyalis');
-  assert.equal(audits.size, 2);
+  assert.equal(audits.size, 3);
 
   // 3. Anything outside the person's own accounts is refused.
   for (const [target, status, why] of [
     [otherPerson.uid, 403, 'another person'],
-    [namesake.uid, 403, 'an opted-out namesake'],
-    [superAdmin.uid, 403, 'a Super Admin namesake'],
+    [namesake.uid, 403, 'a same-name account of another employee'],
+    [unlinked.uid, 403, 'a same-name account naming no employee'],
+    [superAdmin.uid, 403, 'a Super Admin naming the same employee'],
     [disabled.uid, 403, 'a disabled account'],
     ['no-such-uid', 403, 'an unknown uid'],
     [pekaryaHead.uid, 400, 'the current account'],
@@ -177,7 +215,9 @@ async function main() {
   }
   assert.equal((await requestSwitch(pekaryaHead.authorization, {})).status, 400);
   const fromSuperAdmin = await requestSwitch(superAdmin.authorization, { targetUid: pekaryaHead.uid });
-  assert.equal(fromSuperAdmin.status, 403, 'Super Admin cannot switch by name');
+  assert.equal(fromSuperAdmin.status, 403, 'Super Admin never switches');
+  const fromUnlinked = await requestSwitch(unlinked.authorization, { targetUid: pekaryaHead.uid });
+  assert.equal(fromUnlinked.status, 403, 'a same name alone is not a link');
   const unauthenticated = await switchRoute.POST(
     new NextRequest('http://localhost/api/auth/switch-account', {
       method: 'POST',
@@ -204,7 +244,23 @@ async function main() {
   });
   assert.equal(fromImpersonation.status, 409, await fromImpersonation.clone().text());
 
-  // 5. The Users page keeps the opt-out when an edit does not send it, and can lift it.
+  // 5. The Users page: the list shows who links to whom, decided as a switch would.
+  const usersList = await usersRoute.GET(
+    new NextRequest('http://localhost/api/admin/users', {
+      headers: { authorization: superAdmin.authorization },
+    }),
+  );
+  assert.equal(usersList.status, 200, await usersList.clone().text());
+  const listedUsers = (await usersList.json()).users as { uid: string; linkedAccountUids: string[] }[];
+  const linkedOnPage = (uid: string) => listedUsers.find((item) => item.uid === uid)?.linkedAccountUids;
+  assert.deepEqual(linkedOnPage(pekaryaHead.uid), [loyalisHead.uid, loyalisSelf.uid]);
+  assert.deepEqual(linkedOnPage(convertedHead.uid), [convertedSelf.uid]);
+  assert.deepEqual(linkedOnPage(namesake.uid), []);
+  assert.deepEqual(linkedOnPage(superAdmin.uid), []);
+
+  // 6. Saving an account: the employee is kept when not sent, can be changed
+  //    and cleared, must exist, and follows the linked employee for
+  //    employee-linked roles. Super Admin never keeps one.
   const editNamesake = (extra: Record<string, unknown>) =>
     usersRoute.PUT(
       new NextRequest('http://localhost/api/admin/users', {
@@ -213,53 +269,75 @@ async function main() {
         body: JSON.stringify({
           uid: namesake.uid,
           email: 'namesake@example.test',
-          displayName: 'Indah Wahyuni',
+          displayName: 'Indah Wahyuni, SS',
           role: 'satker_head',
           permittedCategories: ['TEKNISI'],
           ...extra,
         }),
       }),
     );
-  const keptOptOut = await editNamesake({});
-  assert.equal(keptOptOut.status, 200, await keptOptOut.clone().text());
-  assert.equal((await adminDb.doc(`users/${namesake.uid}`).get()).data()?.accountGroupExcluded, true);
-  assert.deepEqual(await listLinked(namesake.authorization), []);
+  const storedPerson = async (uid: string) =>
+    (await adminDb.doc(`users/${uid}`).get()).data()?.personEmployeeId;
 
-  const liftedOptOut = await editNamesake({ accountGroupExcluded: false });
-  assert.equal(liftedOptOut.status, 200, await liftedOptOut.clone().text());
-  assert.equal((await adminDb.doc(`users/${namesake.uid}`).get()).data()?.accountGroupExcluded, false);
-  assert.ok(
-    (await listLinked(pekaryaHead.authorization)).some((account) => account.uid === namesake.uid),
-    'lifting the opt-out links the account again',
-  );
+  const kept = await editNamesake({});
+  assert.equal(kept.status, 200, await kept.clone().text());
+  assert.equal(await storedPerson(namesake.uid), 'Loyalis_046', 'an edit without the field keeps it');
 
-  const invalidFlag = await editNamesake({ accountGroupExcluded: 'yes' });
-  assert.equal(invalidFlag.status, 400);
+  const moved = await editNamesake({ personEmployeeId: 'Loyalis_045' });
+  assert.equal(moved.status, 200, await moved.clone().text());
+  assert.equal(await storedPerson(namesake.uid), 'Loyalis_045');
+  assert.ok((await linkedUids(pekaryaHead.authorization)).includes(namesake.uid));
 
-  const created = await usersRoute.POST(
-    new NextRequest('http://localhost/api/admin/users', {
-      method: 'POST',
-      headers: { authorization: superAdmin.authorization, 'content-type': 'application/json' },
-      body: JSON.stringify({
-        email: 'new-namesake@example.test',
-        password: 'password123',
-        displayName: 'Indah Wahyuni',
-        role: 'satker_head',
-        permittedCategories: ['KEBERSIHAN'],
-        accountGroupExcluded: true,
+  const cleared = await editNamesake({ personEmployeeId: null });
+  assert.equal(cleared.status, 200, await cleared.clone().text());
+  assert.equal(await storedPerson(namesake.uid), null);
+  assert.ok(!(await linkedUids(pekaryaHead.authorization)).includes(namesake.uid));
+
+  assert.equal((await editNamesake({ personEmployeeId: 'Loyalis_999' })).status, 409, 'unknown employee');
+  assert.equal((await editNamesake({ personEmployeeId: 'Loyalis/045' })).status, 400, 'not an id');
+  assert.equal((await editNamesake({ personEmployeeId: 45 })).status, 400, 'not a string');
+
+  const promoted = await editNamesake({ role: 'super_admin', personEmployeeId: 'Loyalis_045' });
+  assert.equal(promoted.status, 200, await promoted.clone().text());
+  assert.equal(await storedPerson(namesake.uid), null, 'Super Admin never names an employee');
+
+  const createAccount = (body: Record<string, unknown>) =>
+    usersRoute.POST(
+      new NextRequest('http://localhost/api/admin/users', {
+        method: 'POST',
+        headers: { authorization: superAdmin.authorization, 'content-type': 'application/json' },
+        body: JSON.stringify({ password: 'password123', permittedCategories: [], ...body }),
       }),
-    }),
-  );
-  assert.equal(created.status, 201, await created.clone().text());
-  const createdUid = (await created.json()).user.uid as string;
-  assert.equal((await adminDb.doc(`users/${createdUid}`).get()).data()?.accountGroupExcluded, true);
-  assert.ok(
-    !(await listLinked(pekaryaHead.authorization)).some((account) => account.uid === createdUid),
-    'an account created with the opt-out never links',
+    );
+  const newHead = await createAccount({
+    email: 'new-head@example.test',
+    displayName: 'Bu Indah',
+    role: 'satker_head',
+    permittedCategories: ['KEBERSIHAN'],
+    personEmployeeId: 'Loyalis_045',
+  });
+  assert.equal(newHead.status, 201, await newHead.clone().text());
+  const newHeadUid = (await newHead.json()).user.uid as string;
+  assert.equal(await storedPerson(newHeadUid), 'Loyalis_045');
+  assert.ok((await linkedUids(pekaryaHead.authorization)).includes(newHeadUid));
+
+  const newLoyalis = await createAccount({
+    email: 'other-indah@example.test',
+    displayName: 'Indah Wahyuni',
+    role: 'loyalis',
+    linkedEmployeeId: 'Loyalis_046',
+    personEmployeeId: 'Loyalis_045',
+  });
+  assert.equal(newLoyalis.status, 201, await newLoyalis.clone().text());
+  const newLoyalisUid = (await newLoyalis.json()).user.uid as string;
+  assert.equal(
+    await storedPerson(newLoyalisUid),
+    'Loyalis_046',
+    'an employee-linked account always belongs to its linked employee',
   );
 
   console.log(
-    'Account switch emulator integration passed: linked lists, switch session + claims, onward switch, audit, refusals (other person, opt-out, Super Admin, disabled in Firestore and Auth, self, unauthenticated), impersonation guard, and opt-out save/lift.',
+    'Account switch emulator integration passed: linked lists by employee (incl. converted Pekarya), switch session + claims, onward switch, audit, refusals (another person, same-name other employee, no employee, Super Admin, disabled in Firestore and Auth, self, unauthenticated), impersonation guard, Users list links, and employee save/keep/clear/validate.',
   );
 }
 
