@@ -194,6 +194,8 @@ export function eligibleFamilyMetrics(metrics: FamilyAllowanceMetrics | null | u
   return result;
 }
 
+export type EligibleFamilyMetrics = ReturnType<typeof eligibleFamilyMetrics>;
+
 /** Use month end so enrollment counts in its month and graduation stops it. */
 export function familyAllowancePeriodDate(period?: string | Date): string {
   const token = period instanceof Date

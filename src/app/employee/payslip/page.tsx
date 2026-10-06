@@ -55,7 +55,8 @@ import {
 } from '@/lib/payroll/payrollTax';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import { authenticatedJson } from '@/lib/payroll/client';
-import { eligibleFamilyMetrics, familyAllowancePercentage, familyAllowancePeriodDate, synchronizeFamilyAllowanceEarnings } from '@/lib/payroll/familyAllowance';
+import { synchronizeFamilyAllowanceEarnings } from '@/lib/payroll/familyAllowance';
+import { explainFamilyAllowance, readFamilyAllowanceSnapshot, type FamilyAllowanceExplanation } from '@/lib/payroll/familyAllowanceSnapshot';
 import { activityBelongsToPayrollPeriod } from '@/lib/payroll/pekaryaSpj';
 import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
 import {
@@ -682,6 +683,7 @@ export default function EmployeePayslipPage() {
   const [pekaryaHistoryMonth, setPekaryaHistoryMonth] = useState(false);
   const [confirmedSlip, setConfirmedSlip] = useState<any | null>(null);
   const [isConfirmed, setIsConfirmed] = useState(false);
+  const [savedFamilyAllowance, setSavedFamilyAllowance] = useState<FamilyAllowanceExplanation | null>(null);
   const [loading, setLoading] = useState(true);
   const [pekaryaPreviewError, setPekaryaPreviewError] = useState<string | null>(null);
   const [pekaryaPreviewReloadToken, setPekaryaPreviewReloadToken] = useState(0);
@@ -889,6 +891,7 @@ export default function EmployeePayslipPage() {
       try {
         if (cancelled) return;
         setLoading(true);
+        setSavedFamilyAllowance(null);
         setEmployeeData(null);
         setConfirmedSlip(null);
         setIsConfirmed(false);
@@ -1195,12 +1198,15 @@ export default function EmployeePayslipPage() {
                 bonusDeduction?: unknown;
               };
               vakasiEvents?: unknown;
+              familyAllowance?: FamilyAllowanceExplanation | null;
             }>(
               `/api/employee/loyalis-payslip?${payslipParams.toString()}`,
             );
 
             fallbackEarnings = normalizeSlipFields(payslipResult.earnings);
             fallbackDeductions = normalizeSlipFields(payslipResult.deductions);
+            if (cancelled) return;
+            setSavedFamilyAllowance(payslipResult.familyAllowance || null);
 
             // Cooperative data lives in the separate Koperasi project and is
             // already loaded through the employee-scoped queries above. Merge
@@ -1574,8 +1580,15 @@ export default function EmployeePayslipPage() {
     const baseDate = employeeData.dateRecognized || employeeData.joinDate;
     const years = baseDate ? calculateYearsOfService(baseDate, targetDate) : 0;
 
-    const famMetrics = eligibleFamilyMetrics(employeeData.family_allowance_metrics, familyAllowancePeriodDate(targetDate));
-    const familyPct = familyAllowancePercentage(famMetrics);
+    const family = explainFamilyAllowance(
+      earnings,
+      isConfirmed
+        ? readFamilyAllowanceSnapshot(confirmedSlip?.lockedSnapshot?.familyAllowanceSnapshot, periodToken) || savedFamilyAllowance?.metrics
+        : employeeData.family_allowance_metrics,
+      periodToken,
+    );
+    const famMetrics = family.metrics;
+    const familyPct = family.percentage;
 
     const positions = employeeData.employment_profile?.structural_positions || [];
 
@@ -1603,13 +1616,7 @@ export default function EmployeePayslipPage() {
     return {
       years,
       baseDate,
-      spouseCount: famMetrics.spouse_count,
-      sd: famMetrics.children_sd,
-      sltp: famMetrics.children_sltp,
-      slta: famMetrics.children_slta,
-      s1: famMetrics.children_s1,
-      s2: famMetrics.children_s2,
-      pt: famMetrics.children_pt,
+      familyMetrics: famMetrics,
       familyPct,
       positions,
       gapokVal,
@@ -1629,7 +1636,7 @@ export default function EmployeePayslipPage() {
       userCreditScore,
       kepangkationDesignation: kepangkatanDesignation
     };
-  }, [employeeData, targetDate, earnings, deductions, kepangkatanDesignations]);
+  }, [employeeData, targetDate, periodToken, earnings, deductions, kepangkatanDesignations, isConfirmed, confirmedSlip, savedFamilyAllowance]);
 
   const DocRow = ({ label, value, highlight, tone = 'positive' }: {
     label: string;
@@ -1669,7 +1676,7 @@ export default function EmployeePayslipPage() {
       isLoyalis: isLoyalis,
       niy: employeeData.personal_info?.employee_id_niy || '',
       npwp: employeeData.personal_info?.tax_id_npwp || '',
-      familyMetrics: eligibleFamilyMetrics(employeeData.family_allowance_metrics, familyAllowancePeriodDate(targetDate)),
+      familyMetrics: userVariables?.familyMetrics || undefined,
       gradeLevel: employeeData.gradeLevel,
       yearsOfService: userVariables?.years,
       baseDate: userVariables?.baseDate,
@@ -2135,8 +2142,10 @@ export default function EmployeePayslipPage() {
                                 )}
                                 {item.id === 'keluarga' && (
                                   <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
-                                    <DocRow label="Tanggungan Suami/Istri" value={`${userVariables.spouseCount} orang (${userVariables.spouseCount * 5}%)`} />
-                                    <DocRow label="Tanggungan Anak (SD/SLTP/SLTA/S1/S2)" value={`${userVariables.sd}/${userVariables.sltp}/${userVariables.slta}/${userVariables.s1}/${userVariables.s2} orang${userVariables.pt > userVariables.s1 + userVariables.s2 ? ` (+${userVariables.pt - userVariables.s1 - userVariables.s2} PT lama)` : ''}`} />
+                                    {userVariables.familyMetrics && <>
+                                      <DocRow label="Tanggungan Suami/Istri" value={`${userVariables.familyMetrics.spouse_count} orang (${userVariables.familyMetrics.spouse_count * 5}%)`} />
+                                      <DocRow label="Tanggungan Anak (SD/SLTP/SLTA/S1/S2)" value={`${userVariables.familyMetrics.children_sd}/${userVariables.familyMetrics.children_sltp}/${userVariables.familyMetrics.children_slta}/${userVariables.familyMetrics.children_s1}/${userVariables.familyMetrics.children_s2} orang${userVariables.familyMetrics.children_pt > userVariables.familyMetrics.children_s1 + userVariables.familyMetrics.children_s2 ? ` (+${userVariables.familyMetrics.children_pt - userVariables.familyMetrics.children_s1 - userVariables.familyMetrics.children_s2} PT lama)` : ''}`} />
+                                    </>}
                                     <DocRow label="Persentase Total" value={`${(userVariables.familyPct * 100).toFixed(1)}%`} />
                                     <DocRow label="Tunjangan Keluarga" value={formatIDR(userVariables.tunjKeluargaVal)} highlight />
                                   </div>

@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf';
 import type { MoneyField } from '@/lib/payroll/domain';
 import { LOGO_YAPETIDU_BASE64, LOGO_UNIPDU_BASE64 } from './logoConstants';
 import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
+import { explainFamilyAllowance } from '@/lib/payroll/familyAllowanceSnapshot';
 
 /** Alias of the canonical MoneyField; see slipBuilders.SlipField. */
 export type PaySlipField = MoneyField;
@@ -196,8 +197,9 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
     // T. Keluarga
     leftRows.push({ type: 'heading', label: 'T. KELUARGA' });
 
-    if (data.familyMetrics) {
-      const m = data.familyMetrics;
+    const family = explainFamilyAllowance(data.earnings, data.familyMetrics, '');
+    if (family.metrics) {
+      const m = family.metrics;
       const gapokStr = formatIDR(gapokVal);
 
       // Spouse
@@ -260,11 +262,8 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
         amount: ptAmt
       });
     } else {
-      leftRows.push({ type: 'family-sub', label: 'ISTRI/SUAMI', countText: '-', pctText: '-', baseText: '-', amount: 0 });
-      leftRows.push({ type: 'family-sub', label: 'ANAK S/D SD', countText: '-', pctText: '-', baseText: '-', amount: 0 });
-      leftRows.push({ type: 'family-sub', label: 'ANAK : SLTP', countText: '-', pctText: '-', baseText: '-', amount: 0 });
-      leftRows.push({ type: 'family-sub', label: 'ANAK : SLTA', countText: '-', pctText: '-', baseText: '-', amount: 0 });
-      leftRows.push({ type: 'family-sub', label: 'ANAK : PT', countText: '-', pctText: '-', baseText: '-', amount: 0 });
+      const savedFamily = data.earnings.find(field => ['T. KELUARGA', 'TUNJANGAN KELUARGA'].includes(field.label.trim().toUpperCase()));
+      leftRows.push({ type: 'item', label: 'TUNJANGAN KELUARGA', amount: savedFamily?.amount || 0 });
     }
 
     // T. Fungsional
@@ -935,13 +934,8 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
       payGiven: e.amount
     }));
   }
-  const famMetrics = data.familyMetrics || {
-    spouse_count: 0,
-    children_sd: 0,
-    children_sltp: 0,
-    children_slta: 0,
-    children_pt: 0
-  };
+  const family = explainFamilyAllowance(earnings, data.familyMetrics, '');
+  const famMetrics = family.metrics;
 
   const ensureSpace = (height: number, pageTitle = 'LAMPIRAN: PANDUAN & PERHITUNGAN PENERIMAAN GAJI') => {
     if (y + height > pageHeight - bottomMargin) {
@@ -1099,9 +1093,11 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
           'Suami/Istri: 5% (maks 1) | Anak SD: 5% | Anak SLTP: 7.5% | Anak SLTA: 10% | Anak S1/S2: 12.5%.'
         ],
         params: [
-          { label: 'Tanggungan Suami/Istri', val: `${famMetrics.spouse_count} orang (5%)` },
-          { label: 'Tanggungan Anak (SD/SLTP/SLTA/S1/S2)', val: `${famMetrics.children_sd}/${famMetrics.children_sltp}/${famMetrics.children_slta}/${famMetrics.children_s1 || 0}/${famMetrics.children_s2 || 0} orang${famMetrics.children_pt > (famMetrics.children_s1 || 0) + (famMetrics.children_s2 || 0) ? ` (+${famMetrics.children_pt - (famMetrics.children_s1 || 0) - (famMetrics.children_s2 || 0)} PT lama)` : ''}` },
-          { label: 'Persentase Total', val: `${(((famMetrics.spouse_count * 0.05) + (famMetrics.children_sd * 0.05) + (famMetrics.children_sltp * 0.075) + (famMetrics.children_slta * 0.1) + (famMetrics.children_pt * 0.125)) * 100).toFixed(1)}%` },
+          ...(famMetrics ? [
+            { label: 'Tanggungan Suami/Istri', val: `${famMetrics.spouse_count} orang (${famMetrics.spouse_count * 5}%)` },
+            { label: 'Tanggungan Anak (SD/SLTP/SLTA/S1/S2)', val: `${famMetrics.children_sd}/${famMetrics.children_sltp}/${famMetrics.children_slta}/${famMetrics.children_s1}/${famMetrics.children_s2} orang${famMetrics.children_pt > famMetrics.children_s1 + famMetrics.children_s2 ? ` (+${famMetrics.children_pt - famMetrics.children_s1 - famMetrics.children_s2} PT lama)` : ''}` },
+          ] : []),
+          { label: 'Persentase Total', val: `${(family.percentage * 100).toFixed(1)}%` },
           { label: 'Tunjangan Keluarga', val: formatIDR(tunjKeluargaVal), highlight: true }
         ]
       },

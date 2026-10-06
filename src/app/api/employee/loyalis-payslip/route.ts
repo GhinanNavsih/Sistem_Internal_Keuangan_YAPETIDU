@@ -23,6 +23,7 @@ import {
   requireAuthenticatedProfile,
 } from '@/lib/server/auth';
 import { applyApprovedLoyalisDayCreditsToPresence } from '@/lib/server/annualPaidLeave';
+import { resolveSavedFamilyAllowance } from '@/lib/server/familyAllowanceSnapshot';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,10 +86,10 @@ export async function GET(request: NextRequest) {
     const targetDate = new Date(year, month - 1, 1);
     const periodKey = `${year}_${String(month).padStart(2, '0')}`;
 
-    const employeeSnapshot = await adminDb
-      .collection('Employees_Loyalis')
-      .doc(employeeId)
-      .get();
+    const [employeeSnapshot, savedSlipSnapshot] = await Promise.all([
+      adminDb.collection('Employees_Loyalis').doc(employeeId).get(),
+      adminDb.collection('PayrollSlipStates').doc(`${periodKey}_${employeeId}`).get(),
+    ]);
     if (!employeeSnapshot.exists) {
       throw new HttpError(404, 'Data karyawan Loyalis tidak ditemukan.');
     }
@@ -97,6 +98,10 @@ export async function GET(request: NextRequest) {
       id: employeeSnapshot.id,
       ...employeeSnapshot.data(),
     };
+    const familyAllowance = await resolveSavedFamilyAllowance(employeeSnapshot, savedSlipSnapshot, period).catch(error => {
+      console.warn('Unable to read the historical family allowance breakdown:', error);
+      return null;
+    });
 
     const [
       matrixRows,
@@ -230,6 +235,7 @@ export async function GET(request: NextRequest) {
         presence: presenceAmounts,
         presenceInfo,
         vakasiEvents: vakasiTambahanList,
+        familyAllowance,
       },
       { headers: { 'Cache-Control': 'no-store' } },
     );

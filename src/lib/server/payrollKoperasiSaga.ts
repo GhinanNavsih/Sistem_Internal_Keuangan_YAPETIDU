@@ -6,6 +6,7 @@ import { recalculateSlipTaxes } from '@/lib/payroll/payrollTax';
 import { canVerifyPayroll } from '@/lib/payroll/roles';
 import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
 import { synchronizeFamilyAllowanceEarnings } from '@/lib/payroll/familyAllowance';
+import { createFamilyAllowanceSnapshot } from '@/lib/payroll/familyAllowanceSnapshot';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import { AuthenticatedProfile, HttpError } from '@/lib/server/auth';
 import {
@@ -369,6 +370,12 @@ export async function verifyAndLockWithKoperasi(
       earnings,
       deductions,
       taxes,
+      ...(loyalisSnapshot.exists ? {
+        familyAllowanceSnapshot: createFamilyAllowanceSnapshot(
+          loyalisSnapshot.data()?.family_allowance_metrics,
+          command.period,
+        ),
+      } : {}),
       ...totals,
       koperasiInstallmentPlan: plan,
       koperasiProgressionReceipt: receipt,
