@@ -35,8 +35,11 @@ function parseCommand(raw: unknown): Command {
     throw new HttpError(400, 'Kategori lama dan baru wajib berbeda.');
   }
   const effectiveFrom = String(value.effectiveFrom || '');
-  if (effectiveFrom !== jakartaToday() || !/^\d{4}-(0[1-9]|1[0-2])-01$/.test(effectiveFrom)) {
-    throw new HttpError(409, 'Ubah kategori pada tanggal 1 periode payroll yang baru. Tanggal efektif harus hari ini di Jakarta.');
+  if (!/^\d{4}-(0[1-9]|1[0-2])-01$/.test(effectiveFrom)) {
+    throw new HttpError(409, 'Tanggal efektif harus tanggal 1 suatu bulan payroll.');
+  }
+  if (effectiveFrom < `${jakartaToday().slice(0, 7)}-01`) {
+    throw new HttpError(409, 'Tanggal efektif tidak boleh sebelum tanggal 1 bulan berjalan di Jakarta.');
   }
   return {
     employeeId,

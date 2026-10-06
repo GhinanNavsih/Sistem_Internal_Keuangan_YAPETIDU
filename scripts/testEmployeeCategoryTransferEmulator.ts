@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server';
 
 const PROJECT = 'demo-category-transfer';
 const FIXED_OCTOBER_FIRST = '2026-10-01T03:00:00.000Z';
+const FIXED_OCTOBER_SIXTH = '2026-10-06T03:00:00.000Z';
 
 async function signUp(email: string) {
   const response = await fetch(
@@ -83,37 +84,50 @@ async function main() {
     reportKind: 'satpam_shift_assignment', shiftType: 'Lembur Cover', status: 'approved', approvedAmount: 50_000,
   });
 
-  const request = (requestId: string, replacementEmployeeId?: string) => POST(new NextRequest(
+  const request = (
+    requestId: string,
+    replacementEmployeeId?: string,
+    effectiveFrom = '2026-10-01',
+    employeeId = 'BC_061',
+  ) => POST(new NextRequest(
     'http://localhost/api/admin/employee-category-transfers',
     {
       method: 'POST',
       headers: { authorization: administrator.authorization, 'content-type': 'application/json' },
       body: JSON.stringify({
-        employeeId: 'BC_061', fromCategory: 'SATPAM', toCategory: 'KEBERSIHAN',
-        effectiveFrom: '2026-10-01', replacementEmployeeId, requestId,
+        employeeId, fromCategory: 'SATPAM', toCategory: 'KEBERSIHAN',
+        effectiveFrom, replacementEmployeeId, requestId,
       }),
     },
   ));
 
-  // The real clock is before 1 October; this write must wait for that date.
-  assert.equal((await request('transfer-before-date', 'BC_010')).status, 409);
-
   const OriginalDate = Date;
   const originalVerifyIdToken = adminAuth.verifyIdToken;
-  // The Auth emulator issued a real 29 September token. Avoid making that
-  // token appear expired while the server clock is fixed at 1 October.
-  adminAuth.verifyIdToken = async () => ({ uid: administrator.uid } as
-    Awaited<ReturnType<typeof adminAuth.verifyIdToken>>);
-  globalThis.Date = new Proxy(OriginalDate, {
-    construct(target, args) {
-      return Reflect.construct(target, args.length ? args : [FIXED_OCTOBER_FIRST]);
-    },
-    get(target, property) {
-      if (property === 'now') return () => OriginalDate.parse(FIXED_OCTOBER_FIRST);
-      return Reflect.get(target, property);
-    },
-  }) as DateConstructor;
-  try {
+  // The Auth emulator issued a real-clock token. Avoid making that token
+  // appear expired while the server clock is fixed to a test date.
+  const withClock = async (fixedIso: string, run: () => Promise<void>) => {
+    adminAuth.verifyIdToken = async () => ({ uid: administrator.uid } as
+      Awaited<ReturnType<typeof adminAuth.verifyIdToken>>);
+    globalThis.Date = new Proxy(OriginalDate, {
+      construct(target, args) {
+        return Reflect.construct(target, args.length ? args : [fixedIso]);
+      },
+      get(target, property) {
+        if (property === 'now') return () => OriginalDate.parse(fixedIso);
+        return Reflect.get(target, property);
+      },
+    }) as DateConstructor;
+    try {
+      await run();
+    } finally {
+      globalThis.Date = OriginalDate;
+      adminAuth.verifyIdToken = originalVerifyIdToken;
+    }
+  };
+  await withClock(FIXED_OCTOBER_FIRST, async () => {
+    // Only a 1st is accepted, and never one before the current Jakarta month.
+    assert.equal((await request('transfer-mid-month', 'BC_010', '2026-10-15')).status, 409);
+    assert.equal((await request('transfer-past-month', 'BC_010', '2026-09-01')).status, 409);
     assert.equal((await request('transfer-no-replacement')).status, 409);
     await adminDb.doc('ActivityReports/oct-old-category').set({
       employeeId: 'BC_061', period: '2026-10', jobCategory: 'SATPAM', status: 'pending',
@@ -126,10 +140,7 @@ async function main() {
     const repeat = await request('transfer-valid-001', 'BC_010');
     assert.equal(repeat.status, 200);
     assert.equal((await repeat.json()).idempotent, true);
-  } finally {
-    globalThis.Date = OriginalDate;
-    adminAuth.verifyIdToken = originalVerifyIdToken;
-  }
+  });
 
   const [employee, team, linkedUser, septemberReports, audit] = await Promise.all([
     adminDb.doc('Employees_BlueCollar/BC_061').get(),
@@ -158,7 +169,32 @@ async function main() {
     },
   );
   assert.equal(ordinaryEdit.status, 200, await ordinaryEdit.text());
-  console.log('Category transfer emulator passed: date gate, replacement, target-period conflict, history, September earnings, idempotency, audit, and direct-write rule.');
+  // Backdating to the 1st of the current month, and scheduling a future 1st,
+  // for Satpam who are in no shift team.
+  for (const id of ['BC_070', 'BC_071']) {
+    await adminDb.doc(`Employees_BlueCollar/${id}`).set({
+      name: `${id} test`,
+      employment: { status: 'active', jobCategory: 'SATPAM', startDate: '2024-11-01' },
+      flags: { isActive: true, isPayrollEligible: true },
+    });
+  }
+  await withClock(FIXED_OCTOBER_SIXTH, async () => {
+    const backdated = await request('transfer-backdate', undefined, '2026-10-01', 'BC_070');
+    assert.equal(backdated.status, 200, await backdated.text());
+    const future = await request('transfer-future', undefined, '2026-11-01', 'BC_071');
+    assert.equal(future.status, 200, await future.text());
+    assert.equal((await request('transfer-future-mid', undefined, '2026-11-15', 'BC_071')).status, 409);
+  });
+  const [backdatedEmployee, futureEmployee] = await Promise.all([
+    adminDb.doc('Employees_BlueCollar/BC_070').get(),
+    adminDb.doc('Employees_BlueCollar/BC_071').get(),
+  ]);
+  const { jobCategoryForPayrollPeriod } = await import('../src/lib/payroll/blueCollarCategory');
+  assert.equal(jobCategoryForPayrollPeriod(backdatedEmployee.data()!, '2026-09'), 'SATPAM');
+  assert.equal(jobCategoryForPayrollPeriod(backdatedEmployee.data()!, '2026-10'), 'KEBERSIHAN');
+  assert.equal(jobCategoryForPayrollPeriod(futureEmployee.data()!, '2026-10'), 'SATPAM');
+  assert.equal(jobCategoryForPayrollPeriod(futureEmployee.data()!, '2026-11'), 'KEBERSIHAN');
+  console.log('Category transfer emulator passed: date gate (1st only, no past months, backdate to this month, future 1st), replacement, target-period conflict, history, September earnings, idempotency, audit, and direct-write rule.');
 }
 
 main().catch((error) => {

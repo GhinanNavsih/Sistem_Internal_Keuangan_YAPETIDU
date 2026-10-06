@@ -277,6 +277,8 @@ const formatDateOnly = (value: string): string =>
       })
     : '-';
 
+const currentMonthFirstInJakarta = (): string => `${jakartaToday().slice(0, 7)}-01`;
+
 const jakartaToday = (): string =>
   new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Jakarta',
@@ -839,7 +841,7 @@ export default function EmployeesPage() {
   const [editingEmployee, setEditingEmployee] = useState<any | null>(null);
   const initialBlueFormDataRef = useRef<any | null>(null);
   const categoryTransferRequestIdRef = useRef<string | null>(null);
-  const [categoryEffectiveFrom, setCategoryEffectiveFrom] = useState(todayInJakarta);
+  const [categoryEffectiveFrom, setCategoryEffectiveFrom] = useState(currentMonthFirstInJakarta);
   const [replacementEmployeeId, setReplacementEmployeeId] = useState('');
   const satpamTeamsQuery = useSatpamShiftTeams(
     isDialogOpen && activeTab === 'blue' && editingEmployee?.employment?.jobCategory === 'SATPAM',
@@ -1226,7 +1228,7 @@ export default function EmployeesPage() {
       return;
     }
     setEditingEmployee(emp);
-    setCategoryEffectiveFrom(todayInJakarta());
+    setCategoryEffectiveFrom(currentMonthFirstInJakarta());
     setReplacementEmployeeId('');
     categoryTransferRequestIdRef.current = null;
     setFocusChildId(childId || null);
@@ -3904,7 +3906,7 @@ export default function EmployeesPage() {
                             onChange={(event) => setCategoryEffectiveFrom(event.target.value)}
                           />
                           <p className="text-xs text-amber-900">
-                            Simpan pada tanggal 1 bulan payroll yang baru. Riwayat bulan sebelumnya tetap memakai kategori lama. Simpan perubahan data lain secara terpisah.
+                            Pilih tanggal 1 bulan ini (berlaku surut) atau tanggal 1 bulan depan. Riwayat bulan sebelumnya tetap memakai kategori lama. Bila tanggal 1 bulan depan, profil dan akun langsung berpindah kategori sementara slip bulan ini tetap memakai kategori lama. Simpan perubahan data lain secara terpisah.
                           </p>
                           {editingEmployee.employment?.jobCategory === 'SATPAM' &&
                             formData.employment?.jobCategory !== 'SATPAM' &&
