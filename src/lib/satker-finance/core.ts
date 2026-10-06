@@ -3,6 +3,9 @@ import workbookAccounts from './accounts.json';
 export type AccountType = 'AKTIVA' | 'HUTANG' | 'MODAL' | 'TERIMA' | 'KELUAR';
 export type CashFlowSection = 'OPERATING' | 'INVESTING' | 'FINANCING';
 export type FinancialAccount = {
+  /** Stable ledger identity, separate from the unit-editable display code. */
+  id?: string;
+  localAccountId?: string;
   code: string;
   name: string;
   type: AccountType;
@@ -13,7 +16,7 @@ export type FinancialAccount = {
   cashFlowSection: CashFlowSection | null;
   revision?: number;
 };
-export type JournalLine = { accountCode: string; accountName: string; debit: number; credit: number; description?: string };
+export type JournalLine = { accountCode: string; accountNumber?: string; accountName: string; debit: number; credit: number; description?: string };
 export type JournalEntry = {
   id: string;
   satkerId: string;
@@ -36,6 +39,7 @@ export type OpeningBalances = Record<string, { debit: number; credit: number }>;
 
 export const DEFAULT_ACCOUNTS: FinancialAccount[] = workbookAccounts as FinancialAccount[];
 export const CASH_FLOW_SECTIONS: CashFlowSection[] = ['OPERATING', 'INVESTING', 'FINANCING'];
+export const accountId = (account: FinancialAccount) => account.id || account.code;
 
 export function fiscalMonths(academicYear: string) {
   const match = /^(\d{4})-(\d{4})$/.exec(academicYear);
@@ -72,12 +76,12 @@ function amount(value: unknown, allowZero = false) {
 }
 
 export function validateOpeningBalances(opening: OpeningBalances, accounts: FinancialAccount[]) {
-  const byCode = new Map(accounts.map((account) => [account.code, account]));
+  const byCode = new Map(accounts.map((account) => [accountId(account), account]));
   let debit = 0;
   let credit = 0;
   for (const [code, balance] of Object.entries(opening)) {
     const account = byCode.get(code);
-    if (!account?.postable || account.reportTarget !== 'BALANCE_SHEET') throw new Error(`Kode akun saldo awal ${code} tidak tersedia untuk neraca.`);
+    if (!account?.postable || account.reportTarget !== 'BALANCE_SHEET') throw new Error(`Kode akun saldo awal ${account?.code || code} tidak tersedia untuk neraca.`);
     amount(balance.debit, true);
     amount(balance.credit, true);
     if (balance.debit && balance.credit) throw new Error(`Saldo awal ${code} harus berada pada satu sisi.`);
@@ -91,7 +95,7 @@ export function validateOpeningBalances(opening: OpeningBalances, accounts: Fina
 export function buildVoucher(
   raw: Record<string, unknown>, accounts: FinancialAccount[],
 ): Pick<JournalEntry, 'kind' | 'description' | 'date' | 'lines' | 'totalAmount' | 'cashFlowSection'> {
-  const byCode = new Map(accounts.filter((account) => account.postable).map((account) => [account.code, account]));
+  const byCode = new Map(accounts.filter((account) => account.postable).map((account) => [accountId(account), account]));
   const kind = raw.kind;
   const description = typeof raw.description === 'string' ? raw.description.trim() : '';
   const date = typeof raw.date === 'string' ? raw.date : '';
@@ -100,7 +104,7 @@ export function buildVoucher(
   const line = (code: unknown, debit: number, credit: number, lineDescription = ''): JournalLine => {
     const account = byCode.get(String(code));
     if (!account) throw new Error(`Kode akun ${String(code)} tidak dapat diposting.`);
-    return { accountCode: account.code, accountName: account.name, debit, credit, ...(lineDescription ? { description: lineDescription } : {}) };
+    return { accountCode: accountId(account), accountNumber: account.code, accountName: account.name, debit, credit, ...(lineDescription ? { description: lineDescription } : {}) };
   };
   let lines: JournalLine[];
   if (kind === 'ADVANCED') {
@@ -121,14 +125,14 @@ export function buildVoucher(
     const source = byCode.get(String(raw.paymentAccountCode));
     if (!account) throw new Error(`Kode akun ${String(raw.accountCode)} tidak dapat diposting.`);
     if (!source) throw new Error(`Kode akun ${String(raw.paymentAccountCode)} tidak dapat diposting.`);
-    if (account.code === source.code) throw new Error('Akun transaksi dan sumber/tujuan kas harus berbeda.');
+    if (accountId(account) === accountId(source)) throw new Error('Akun transaksi dan sumber/tujuan kas harus berbeda.');
     if (!source.cashEquivalent) throw new Error('Sumber/tujuan pembayaran harus akun kas atau bank.');
     if (kind === 'TRANSFER' && !account.cashEquivalent) throw new Error('Transfer harus antar akun kas/bank.');
     lines = kind === 'INFLOW'
-      ? [line(source.code, total, 0), line(account.code, 0, total)]
+      ? [line(accountId(source), total, 0), line(accountId(account), 0, total)]
       : kind === 'TRANSFER'
-        ? [line(account.code, total, 0), line(source.code, 0, total)]
-        : [line(account.code, total, 0), line(source.code, 0, total)];
+        ? [line(accountId(account), total, 0), line(accountId(source), 0, total)]
+        : [line(accountId(account), total, 0), line(accountId(source), 0, total)];
   }
   const totalDebit = lines.reduce((sum, item) => sum + item.debit, 0);
   const totalCredit = lines.reduce((sum, item) => sum + item.credit, 0);
@@ -159,12 +163,13 @@ export function buildFinancialStatements(args: {
   const months = fiscalMonths(args.academicYear);
   const targetPeriod = args.monthIndex === 'ANNUAL' ? 12 : months.find((month) => month.monthIndex === args.monthIndex)?.period;
   if (!targetPeriod) throw new Error('Bulan laporan tidak valid.');
-  const accountMap = new Map(args.accounts.map((account) => [account.code, account]));
+  const accountMap = new Map(args.accounts.map((account) => [accountId(account), account]));
   validateOpeningBalances(args.opening, args.accounts);
   const openingSigned = new Map<string, number>();
   for (const account of args.accounts) {
-    const balance = args.opening[account.code];
-    openingSigned.set(account.code, (balance?.debit ?? 0) - (balance?.credit ?? 0));
+    const id = accountId(account);
+    const balance = args.opening[id];
+    openingSigned.set(id, (balance?.debit ?? 0) - (balance?.credit ?? 0));
   }
   const periodOf = new Map(months.map((month) => [`${month.year}-${String(month.monthIndex).padStart(2, '0')}`, month.period]));
   const movements = new Map<string, { debit: number; credit: number }>();
@@ -200,19 +205,20 @@ export function buildFinancialStatements(args: {
   }
   for (const month of monthlyIncome) month.surplus = month.income - month.expense;
   const rows = args.accounts.filter((account) => account.postable).map((account) => {
-    const movement = movements.get(account.code) ?? { debit: 0, credit: 0 };
-    const signed = (openingSigned.get(account.code) ?? 0) + movement.debit - movement.credit;
+    const id = accountId(account);
+    const movement = movements.get(id) ?? { debit: 0, credit: 0 };
+    const signed = (openingSigned.get(id) ?? 0) + movement.debit - movement.credit;
     return {
       account,
-      openingDebit: args.opening[account.code]?.debit ?? 0,
-      openingCredit: args.opening[account.code]?.credit ?? 0,
+      openingDebit: args.opening[accountId(account)]?.debit ?? 0,
+      openingCredit: args.opening[accountId(account)]?.credit ?? 0,
       debitMovement: movement.debit,
       creditMovement: movement.credit,
       endingDebit: Math.max(signed, 0),
       endingCredit: Math.max(-signed, 0),
     };
   });
-  const cashOpening = args.accounts.filter((account) => account.cashEquivalent).reduce((sum, account) => sum + (openingSigned.get(account.code) ?? 0), 0);
+  const cashOpening = args.accounts.filter((account) => account.cashEquivalent).reduce((sum, account) => sum + (openingSigned.get(accountId(account)) ?? 0), 0);
   const endingCash = rows.filter((row) => row.account.cashEquivalent).reduce((sum, row) => sum + row.endingDebit - row.endingCredit, 0);
   const cashFlowChange = cashFlows.OPERATING + cashFlows.INVESTING + cashFlows.FINANCING;
   const income = args.monthIndex === 'ANNUAL' ? monthlyIncome.reduce((sum, month) => sum + month.income, 0) : monthlyIncome[targetPeriod - 1].income;
@@ -238,8 +244,8 @@ export function buildFinancialStatements(args: {
   }
   const incomeRows = rows.filter((row) => row.account.reportTarget === 'INCOME_STATEMENT').map((row) => ({
     ...row,
-    debitMovement: args.monthIndex === 'ANNUAL' ? row.debitMovement : periodMovements.get(row.account.code)?.debit ?? 0,
-    creditMovement: args.monthIndex === 'ANNUAL' ? row.creditMovement : periodMovements.get(row.account.code)?.credit ?? 0,
+    debitMovement: args.monthIndex === 'ANNUAL' ? row.debitMovement : periodMovements.get(accountId(row.account))?.debit ?? 0,
+    creditMovement: args.monthIndex === 'ANNUAL' ? row.creditMovement : periodMovements.get(accountId(row.account))?.credit ?? 0,
   }));
   const balanceRows = rows.filter((row) => row.account.reportTarget === 'BALANCE_SHEET');
   const incomeDebit = incomeRows.reduce((sum, row) => sum + row.endingDebit, 0);

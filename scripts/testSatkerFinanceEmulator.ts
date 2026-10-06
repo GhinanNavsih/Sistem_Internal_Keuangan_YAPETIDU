@@ -25,6 +25,8 @@ async function main() {
   const { GET, POST } = await import('../src/app/api/satker-finance/route');
   const { GET: verify } = await import('../src/app/api/satker-finance/verify/route');
   const { GET: receiptGet } = await import('../src/app/api/satker-finance/receipt/route');
+  const { adminStorage } = await import('../src/lib/firebase-admin');
+  const adminStorageFileExists = async (path: string) => (await adminStorage.bucket().file(path).exists())[0];
   const bak = await signUp('bak@example.test');
   const head = await signUp('head@example.test');
   const secretary = await signUp('secretary@example.test');
@@ -124,6 +126,107 @@ async function main() {
   await succeeds(await invoke(bak, { ...base, action: 'BAK_REVISE', monthIndex: 10, expectedRevision: 1, note: 'Lampiran biaya belum lengkap.' }));
   await succeeds(await invoke(secretary, { ...base, action: 'POST_ENTRY', entryId: 'voucher-oct-002', monthIndex: 10, date: '2026-10-03', kind: 'EXPENSE', accountCode: '54101', paymentAccountCode: '10000', amount: 50, description: 'Biaya bank' }));
   assert.equal((await invoke(secretary, { ...base, action: 'REVERSE_ENTRY', sourceEntryId: 'voucher-oct-002', monthIndex: 10, date: '2026-10-02', description: 'Tanggal koreksi salah' })).status, 400);
+
+  // Edit and delete: allowed only while the journal's month and every later month are open.
+  const yearDoc = adminDb.collection('SatkerFinancialYears').doc('puskomnet_2026-2027');
+  const entryDoc = (id: string) => yearDoc.collection('entries').doc(id);
+  const auditActions = async (action: string) => (await yearDoc.collection('audit').where('action', '==', action).get()).docs.map((doc) => doc.data());
+  const edit = (entryId: string, extra: Record<string, unknown> = {}) => ({
+    ...base, action: 'UPDATE_ENTRY', entryId, expectedRevision: 0, monthIndex: 10, date: '2026-10-01', description: 'Droping (dikoreksi)', cashFlowSection: 'OPERATING',
+    lines: [{ accountCode: '11001', description: 'Droping diterima', debit: 600, credit: 0 }, { accountCode: '41000', description: 'Droping diterima', debit: 0, credit: 600 }],
+    ...extra,
+  });
+  const remove = (entryId: string, extra: Record<string, unknown> = {}) => ({ ...base, action: 'DELETE_ENTRY', entryId, expectedRevision: 0, reason: 'Salah input', ...extra });
+  // September is approved, so its journal is sealed for good.
+  assert.equal((await invoke(secretary, edit('voucher-sep-001', { monthIndex: 9, date: '2026-09-02' }))).status, 409);
+  assert.equal((await invoke(secretary, remove('voucher-sep-001'))).status, 409);
+  assert.equal((await entryDoc('voucher-sep-001').get()).exists, true);
+  // Only the unit's own editors, and never a reviewer.
+  assert.equal((await invoke(outsider, edit('voucher-oct-001'))).status, 403);
+  assert.equal((await invoke(rector, edit('voucher-oct-001'))).status, 403);
+  assert.equal((await invoke(rector, remove('voucher-oct-001'))).status, 403);
+  // October is open again (revision requested): an edit validates like a posting does.
+  assert.equal((await invoke(secretary, edit('voucher-oct-001', { lines: [{ accountCode: '11001', debit: 600, credit: 0 }, { accountCode: '41000', debit: 0, credit: 500 }] }))).status, 400);
+  assert.equal((await invoke(secretary, edit('voucher-oct-001', { expectedRevision: 5 }))).status, 409);
+  assert.equal((await invoke(secretary, edit('voucher-oct-001', { expectedRevision: -1 }))).status, 400);
+  assert.equal((await invoke(secretary, edit('voucher-oct-001', { monthIndex: 9, date: '2026-09-20' }))).status, 409, 'cannot be moved into a sealed month');
+  assert.equal((await invoke(secretary, edit('voucher-oct-001', { date: '2026-11-02' }))).status, 400, 'date and month must agree');
+  assert.equal((await invoke(secretary, edit('voucher-missing-001'))).status, 404);
+  assert.equal((await invoke(secretary, remove('voucher-oct-001', { reason: '' }))).status, 400);
+  const yearBefore = (await yearDoc.get()).data()!;
+  await succeeds(await invoke(secretary, edit('voucher-oct-001')));
+  const edited = (await entryDoc('voucher-oct-001').get()).data()!;
+  assert.equal(edited.revision, 1);
+  assert.equal(edited.kind, 'ADVANCED');
+  assert.equal(edited.totalAmount, 600);
+  assert.equal(edited.lines[0].debit, 600);
+  assert.equal(edited.lines[0].description, 'Droping diterima');
+  assert.equal(edited.updatedBy, secretary.uid);
+  assert.equal(edited.createdBy, secretary.uid);
+  assert.equal((await yearDoc.get()).data()!.revision, yearBefore.revision + 1, 'a changed journal moves the year revision, so a report built meanwhile is refused');
+  assert.equal((await yearDoc.get()).data()!.entryCount, yearBefore.entryCount);
+  const updates = await auditActions('ENTRY_UPDATED');
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].details.before.totalAmount, 500);
+  assert.equal(updates[0].details.after.totalAmount, 600);
+  assert.equal(updates[0].actorRole, 'satker_finance_admin');
+  assert.equal((await invoke(secretary, edit('voucher-oct-001'))).status, 409, 'the same edit twice is refused: the journal is on revision 1 now');
+  // The same journal on its new revision, with a receipt photo added; without a photo the receipt stays.
+  await succeeds(await invoke(secretary, edit('voucher-oct-001', { expectedRevision: 1, receiptDataUrl })));
+  assert.equal((await succeeds(await read(head, { ...base, month: '10' }))).entries.find((item: { id: string }) => item.id === 'voucher-oct-001').hasReceipt, true);
+  const octReceipt = await receiptGet(new NextRequest(`http://localhost/api/satker-finance/receipt?${new URLSearchParams({ ...base, entryId: 'voucher-oct-001' })}`, { headers: { authorization: `Bearer ${head.token}` } }));
+  assert.equal(octReceipt.status, 200);
+  const receiptPath = (await entryDoc('voucher-oct-001').get()).data()!.receiptPath;
+  assert.match(receiptPath, /^satker-finance\/puskomnet\/2026-2027\/voucher-oct-001_/);
+  await succeeds(await invoke(secretary, edit('voucher-oct-001', { expectedRevision: 2, description: 'Droping (dikoreksi lagi)' })));
+  const reedited = (await entryDoc('voucher-oct-001').get()).data()!;
+  assert.equal(reedited.receiptPath, receiptPath);
+  assert.equal(reedited.revision, 3);
+  assert.equal(reedited.description, 'Droping (dikoreksi lagi)');
+  view = await succeeds(await read(head, { ...base, month: '10' }));
+  assert.equal(view.statements.incomeStatement.income, 600);
+  assert.equal(view.statements.trialBalance.difference, 0);
+  assert.equal(view.statements.cashFlow.reconciliationDelta, 0);
+  assert.equal(view.entries.find((item: { id: string }) => item.id === 'voucher-oct-001').revision, 3);
+  // Receipts may be any common photo or scan; the type comes from the bytes, not from what the browser declared.
+  const asDataUrl = (declared: string, ...parts: (number | string)[]) => `data:${declared};base64,${Buffer.from(parts.flatMap((part) => typeof part === 'number' ? [part] : [...part].map((char) => char.charCodeAt(0)))).toString('base64')}`;
+  const pdfReceipt = asDataUrl('application/octet-stream', '%PDF-1.4\n', '1 0 obj <<>> endobj');
+  const heicReceipt = asDataUrl('', 0, 0, 0, 24, 'ftypheic', 0, 0, 0, 0, 'mif1heic');
+  await succeeds(await invoke(secretary, edit('voucher-oct-001', { expectedRevision: 3, receiptDataUrl: pdfReceipt })));
+  const pdfResponse = await receiptGet(new NextRequest(`http://localhost/api/satker-finance/receipt?${new URLSearchParams({ ...base, entryId: 'voucher-oct-001' })}`, { headers: { authorization: `Bearer ${head.token}` } }));
+  assert.equal(pdfResponse.status, 200);
+  assert.equal(pdfResponse.headers.get('content-type'), 'application/pdf');
+  assert.match((await entryDoc('voucher-oct-001').get()).data()!.receiptPath, /\.pdf$/);
+  await succeeds(await invoke(secretary, edit('voucher-oct-001', { expectedRevision: 4, receiptDataUrl: heicReceipt })));
+  const heicResponse = await receiptGet(new NextRequest(`http://localhost/api/satker-finance/receipt?${new URLSearchParams({ ...base, entryId: 'voucher-oct-001' })}`, { headers: { authorization: `Bearer ${head.token}` } }));
+  assert.equal(heicResponse.headers.get('content-type'), 'image/heic');
+  assert.equal((await invoke(secretary, edit('voucher-oct-001', { expectedRevision: 5, receiptDataUrl: asDataUrl('image/png', 'MZ', 0x90, 0, 3, 0, 0, 0) }))).status, 400, 'a program renamed to .png is refused');
+  assert.equal((await invoke(secretary, edit('voucher-oct-001', { expectedRevision: 5, receiptDataUrl: 'hello' }))).status, 400);
+  assert.equal((await entryDoc('voucher-oct-001').get()).data()!.revision, 5, 'a refused receipt changes nothing');
+  // A journal and its reversal belong together: neither half is changed alone, a reversal can only be deleted.
+  const entriesBeforeScratch = (await yearDoc.get()).data()!.entryCount;
+  await succeeds(await invoke(secretary, { ...base, action: 'POST_ENTRY', entryId: 'voucher-oct-003', monthIndex: 10, date: '2026-10-04', kind: 'EXPENSE', accountCode: '54101', paymentAccountCode: '10000', amount: 20, description: 'Biaya sementara' }));
+  await succeeds(await invoke(secretary, { ...base, action: 'REVERSE_ENTRY', sourceEntryId: 'voucher-oct-003', monthIndex: 10, date: '2026-10-05', description: 'Salah catat' }));
+  assert.equal((await invoke(secretary, edit('voucher-oct-003'))).status, 409);
+  assert.equal((await invoke(secretary, remove('voucher-oct-003'))).status, 409);
+  assert.equal((await invoke(secretary, edit('reverse_voucher-oct-003'))).status, 409);
+  await succeeds(await invoke(secretary, remove('reverse_voucher-oct-003')));
+  assert.equal((await entryDoc('reverse_voucher-oct-003').get()).exists, false);
+  // With its reversal gone the journal can be deleted: it leaves the books but not the audit trail, nor its receipt photo.
+  await succeeds(await invoke(secretary, remove('voucher-oct-003', { reason: 'Biaya ternyata tidak terjadi' })));
+  assert.equal((await entryDoc('voucher-oct-003').get()).exists, false);
+  assert.equal((await yearDoc.get()).data()!.entryCount, entriesBeforeScratch, 'entryCount follows the live journals');
+  assert.equal((await invoke(secretary, remove('voucher-oct-003'))).status, 404, 'a journal that is gone cannot be deleted again');
+  const deletions = await auditActions('ENTRY_DELETED');
+  assert.equal(deletions.length, 2);
+  const deletion = deletions.find((item) => item.details.entryId === 'voucher-oct-003')!;
+  assert.equal(deletion.details.reason, 'Biaya ternyata tidak terjadi');
+  assert.equal(deletion.details.entry.totalAmount, 20);
+  assert.equal(deletion.details.entry.lines[0].accountCode, '54101');
+  assert.equal(deletion.actorRole, 'satker_finance_admin');
+  view = await succeeds(await read(head, { ...base, month: '10' }));
+  assert.equal(view.statements.incomeStatement.expense, 50, 'only the journals that remain are counted');
+  assert.ok((await adminStorageFileExists(receiptPath)), 'the receipt photo of an edited journal stays in Storage');
   await succeeds(await invoke(head, { ...base, action: 'SUBMIT_REPORT', monthIndex: 10 }));
   const revisions = await adminDb.collection('SatkerFinancialYears').doc('puskomnet_2026-2027').collection('reportRevisions').get();
   const octoberRevisions = revisions.docs.filter((doc) => doc.id.startsWith('10_'));

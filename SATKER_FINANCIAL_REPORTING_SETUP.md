@@ -35,6 +35,14 @@ before entering any historical balances or transactions.
 - SatKer editors post balanced vouchers and submit a month after the previous
   month has been approved. Submission locks that month and later submissions
   prevent backdated changes.
+- A posted journal can be edited or deleted from the journal history while its
+  month, and every month after it, is still open (no report yet, a draft, or a
+  revision BAK asked for). Edits and deletions keep the journal as it was in the
+  audit trail, a deletion needs a reason, and receipt photos are never removed
+  from Storage. Once a month is sent to BAK its journals are sealed, together
+  with the months before it, and are corrected with a reversing journal in an
+  open month instead. A journal and its reversal are only changed as a pair:
+  neither can be edited alone, and the reversal can be deleted to undo it.
 - Super Administrator checks the submitted report as BAK, then Rektorat
   approves it. Either reviewer can request a documented revision; prior
   submitted snapshots and audit entries remain available.

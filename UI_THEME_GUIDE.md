@@ -304,3 +304,18 @@ Nested records, workers lists, or action-rich tables.
   </table>
 </div>
 ```
+
+---
+
+### 10. File & Image Uploads
+Every feature that takes a photo or scan (receipts, proofs, attachments, ID photos) must accept **many kinds of image files, not a hand-picked few**. People attach what their phone or scanner gave them, and should never have to convert a file first.
+
+*   **Accept the whole list**: JPG/JPEG, PNG, WebP, GIF, BMP, AVIF, **HEIC/HEIF** (the default iPhone photo format), TIFF, and **PDF** (scans, bank and e-wallet receipts). Do not write a new list of MIME types by hand; use `src/lib/uploadFileTypes.ts`:
+    *   `UPLOAD_ACCEPT` goes in the `accept` attribute. It lists extensions as well as types, because browsers often report HEIC with no type at all.
+    *   `uploadFileProblem(file)` checks size (5 MB by default, `MAX_UPLOAD_BYTES`) and type in the browser. Run it as soon as the file is picked and show the message at once, not after submit.
+    *   `UPLOAD_TYPES_TEXT` is the wording for the hint under the picker.
+*   **The server decides by the file's own bytes**, never by the browser's declared type or the file name: `detectUploadFileType(bytes)` (a renamed `.exe` is refused, an empty or generic type is fine). Store and serve the *detected* type. Read data URLs with `parseBase64DataUrl`, which ignores the declared type.
+*   **Showing a stored file**: images and PDFs open in a preview; formats browsers cannot display (`inlinePreview: false`, i.e. HEIC/HEIF/TIFF outside Safari) show a short note and an **Unduh berkas** button. Never leave a broken image.
+*   **Picker pattern**: no raw `<input type="file">`. A hidden input, a neutral outline button ("Lampirkan bukti"), then the chosen file name with a small remove (x) button. Under it, one line of hint: what is optional, the accepted types, the size limit. Wording says "bukti" or "berkas", not "foto", since PDFs are allowed.
+*   **Never delete evidence**: replacing or removing an attachment keeps the old file in Storage and the audit trail points at it.
+*   Existing upload features that still list only JPG/PNG/WebP (for example the Ganti Libur and expense-report attachments) should move to the shared list when they are next changed.

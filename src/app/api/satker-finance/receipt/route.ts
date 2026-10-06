@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { adminStorage } from '@/lib/firebase-admin';
 import { errorResponse, HttpError, requireAuthenticatedProfile } from '@/lib/server/auth';
 import { getUnit, yearRef } from '@/lib/server/satkerFinance';
+import { uploadFileTypeFor } from '@/lib/uploadFileTypes';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,11 +22,12 @@ export async function GET(request: NextRequest) {
     const file = adminStorage.bucket().file(path);
     const [metadata] = await file.getMetadata();
     const contentType = metadata.contentType || 'application/octet-stream';
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(contentType)) throw new HttpError(409, 'Jenis bukti tidak valid.');
+    const type = uploadFileTypeFor(contentType);
+    if (!type) throw new HttpError(409, 'Jenis bukti tidak valid.');
     const [buffer] = await file.download();
     return new Response(new Uint8Array(buffer), { headers: {
-      'Content-Type': contentType,
-      'Content-Disposition': `inline; filename="bukti-${entryId}.${contentType.split('/')[1]}"`,
+      'Content-Type': type.mime,
+      'Content-Disposition': `inline; filename="bukti-${entryId}.${type.extension}"`,
       'Cache-Control': 'private, no-store, max-age=0',
       'X-Content-Type-Options': 'nosniff',
     } });

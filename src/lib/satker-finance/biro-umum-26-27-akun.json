@@ -1,0 +1,1720 @@
+{
+  "source": "Laporan Keuangan Biro Umum 26:27.xlsx · AKUN",
+  "accounts": [
+    {
+      "code": "10000",
+      "name": "KAS",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "11000",
+      "name": "BANK",
+      "type": "AKTIVA",
+      "normalBalance": null,
+      "reportTarget": null
+    },
+    {
+      "code": "11001",
+      "name": "Rek Satker BU 7253534267",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "11002",
+      "name": "Rek Unipdu 1003253879",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "12000",
+      "name": "PIUTANG",
+      "type": "AKTIVA",
+      "normalBalance": null,
+      "reportTarget": null
+    },
+    {
+      "code": "12001",
+      "name": "Piutang H. Harun Arrosyid, S.Pd.I",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "12002",
+      "name": "Piutang Ahmad Arif, S.AB",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "12003",
+      "name": "Piutang Indah Wahyuni, S.S",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "12004",
+      "name": "Pajak kendaraan",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "12005",
+      "name": "Piutang Muhammad wahyudi",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "12006",
+      "name": "Piutang Choirin",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "13000",
+      "name": "AKTIVA TETAP",
+      "type": "AKTIVA",
+      "normalBalance": null,
+      "reportTarget": null
+    },
+    {
+      "code": "13001",
+      "name": "- Tanah",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "13002",
+      "name": "- Gedung",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "13003",
+      "name": "- Kendaraan",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "13004",
+      "name": "- Sarana & Perlengkapan",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "13005",
+      "name": "- Alat-Alat Laboratorium",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "13011",
+      "name": "- Akum Dep Gedung",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "13012",
+      "name": "- Akum.Dep Kendaraan",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "13013",
+      "name": "- Akum.Dep.Sarana & Perlengkapan",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "13014",
+      "name": "- Akum Dep.Alat-Alat Laboratorium",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "20000",
+      "name": "HUTANG",
+      "type": "HUTANG",
+      "normalBalance": null,
+      "reportTarget": null
+    },
+    {
+      "code": "20001",
+      "name": "Hutang Lain-Lain",
+      "type": "HUTANG",
+      "normalBalance": "CREDIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "20002",
+      "name": "Hutang H. Harun Arrosyid, S.Pd.I",
+      "type": "HUTANG",
+      "normalBalance": "CREDIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "20003",
+      "name": "Hutang Ahmad Arif, S.AB",
+      "type": "HUTANG",
+      "normalBalance": "CREDIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "20004",
+      "name": "Hutang Indah Wahyuni, S.S",
+      "type": "HUTANG",
+      "normalBalance": "CREDIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "20005",
+      "name": "Hutang Muhammad wahyudi",
+      "type": "HUTANG",
+      "normalBalance": "CREDIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "20006",
+      "name": "Hutang Choirin",
+      "type": "HUTANG",
+      "normalBalance": "CREDIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "30000",
+      "name": "MODAL",
+      "type": "MODAL",
+      "normalBalance": "CREDIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "40000",
+      "name": "PENDAPATAN",
+      "type": "TERIMA",
+      "normalBalance": null,
+      "reportTarget": null
+    },
+    {
+      "code": "41000",
+      "name": "Dropping Universitas",
+      "type": "TERIMA",
+      "normalBalance": "CREDIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "42000",
+      "name": "Penerimaan Lain",
+      "type": "TERIMA",
+      "normalBalance": "CREDIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "42001",
+      "name": "Sewa gedung",
+      "type": "TERIMA",
+      "normalBalance": "CREDIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "42002",
+      "name": "Sewa kendaraan",
+      "type": "TERIMA",
+      "normalBalance": "CREDIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "50000",
+      "name": "PENGELUARAN",
+      "type": "KELUAR",
+      "normalBalance": null,
+      "reportTarget": null
+    },
+    {
+      "code": "51000",
+      "name": "PENGELUARAN YAYASAN",
+      "type": "KELUAR",
+      "normalBalance": null,
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51100",
+      "name": "BBM",
+      "type": "KELUAR",
+      "normalBalance": null,
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51101",
+      "name": "BBM - Fakultas Ilmu Kesehatan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51102",
+      "name": "BBM - Fakultas Agama Islam",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51103",
+      "name": "BBM - Fakultas Bisnis, Bahasa & Pendidikan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51104",
+      "name": "BBM - Fakultas Sains & Teknologi",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51105",
+      "name": "BBM - Fakultas",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51106",
+      "name": "BBM - Pascasarjana",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51107",
+      "name": "BBM - Rektorat",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51108",
+      "name": "BBM - Biro Administrasi Umum",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51109",
+      "name": "BBM - Biro Administrasi Akademik",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51110",
+      "name": "BBM - Biro Administrasi Keuangan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51111",
+      "name": "BBM - Biro Kepegawaian",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51112",
+      "name": "BBM - Biro Administrasi Kemahasiswaan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51113",
+      "name": "BBM - Pusat Jaminan Mutu",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51114",
+      "name": "BBM - Lab. Puskom",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51115",
+      "name": "BBM - Language Access Centre",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51116",
+      "name": "BBM - Pusat Studi Bahasa",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51117",
+      "name": "BBM - Pusat Studi Qur'an",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51118",
+      "name": "BBM - Pusat Studi Wanita",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51119",
+      "name": "BBM - Pusat Studi ASEAN",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51120",
+      "name": "BBM - Perpustakaan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51121",
+      "name": "BBM - Puskomnet",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51122",
+      "name": "BBM - LPPM",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51123",
+      "name": "BBM - PPL",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51124",
+      "name": "BBM - SPMB",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51125",
+      "name": "BBM - Islamic Center",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51126",
+      "name": "BBM - Keluarga",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51127",
+      "name": "BBM - Unipdu",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51128",
+      "name": "BBM - SD Plus",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51129",
+      "name": "BBM - RSUM",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51130",
+      "name": "BBM - BEM",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51131",
+      "name": "BBM - KPM",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51132",
+      "name": "BBM - Wisuda",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51133",
+      "name": "BBM - PHP",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51134",
+      "name": "BBM - Humas",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51135",
+      "name": "BBM - MKA",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51136",
+      "name": "BBM - Lain-Lain",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51200",
+      "name": "SARPRAS",
+      "type": "KELUAR",
+      "normalBalance": null,
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51201",
+      "name": "Sarpras - Fakultas Ilmu Kesehatan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51202",
+      "name": "Sarpras - Fakultas Agama Islam",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51203",
+      "name": "Sarpras - Fakultas Bisnis, Bahasa & Pendidikan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51204",
+      "name": "Sarpras - Fakultas Sains & Teknologi",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51205",
+      "name": "Sarpras - Fakultas",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51206",
+      "name": "Sarpras - Pascasarjana",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51207",
+      "name": "Sarpras - Rektorat",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51208",
+      "name": "Sarpras - Biro Administrasi Umum",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51209",
+      "name": "Sarpras - Biro Administrasi Akademik",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51210",
+      "name": "Sarpras - Biro Administrasi Keuangan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51211",
+      "name": "Sarpras - Biro Kepegawaian",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51212",
+      "name": "Sarpras - Biro Administrasi Kemahasiswaan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51213",
+      "name": "Sarpras - Pusat Jaminan Mutu",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51214",
+      "name": "Sarpras - Lab. Puskom",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51215",
+      "name": "Sarpras - Language Access Centre",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51216",
+      "name": "Sarpras - Pusat Studi Bahasa",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51217",
+      "name": "Sarpras - Pusat Studi Qur'an",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51218",
+      "name": "Sarpras - Pusat Studi Wanita",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51219",
+      "name": "Sarpras - Pusat Studi ASEAN",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51220",
+      "name": "Sarpras - Perpustakaan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51221",
+      "name": "Sarpras - Puskomnet",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51222",
+      "name": "Sarpras - LPPM",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51223",
+      "name": "Sarpras - PPL",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51224",
+      "name": "Sarpras - SPMB",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51225",
+      "name": "Sarpras - Islamic Center",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51226",
+      "name": "Sarpras - Keluarga",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51227",
+      "name": "Sarpras - Yayasan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51228",
+      "name": "Sarpras - SD Plus",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51229",
+      "name": "Sarpras - RSUM",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51230",
+      "name": "Sarpras - Kampus Utama",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51231",
+      "name": "Sarpras - Gelora",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51232",
+      "name": "Sarpras - Graha",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51233",
+      "name": "Sarpras - Pajak kendaraan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51300",
+      "name": "PERBAIKAN",
+      "type": "KELUAR",
+      "normalBalance": null,
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51301",
+      "name": "Perbaikan - Fakultas Ilmu Kesehatan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51302",
+      "name": "Perbaikan - Fakultas Agama Islam",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51303",
+      "name": "Perbaikan - Fakultas Bisnis,Bahasa & Pendidikan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51304",
+      "name": "Perbaikan - Fakultas Sains & Teknologi",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51305",
+      "name": "Perbaikan - Fakultas",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51306",
+      "name": "Perbaikan - Pascasarjana",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51307",
+      "name": "Perbaikan - Rektorat",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51308",
+      "name": "Perbaikan - Biro Administrasi Umum",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51309",
+      "name": "Perbaikan - Biro Administrasi Akademik",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51310",
+      "name": "Perbaikan - Biro Administrasi Keuangan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51311",
+      "name": "Perbaikan - Biro Kepegawaian",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51312",
+      "name": "Perbaikan - Biro Administrasi Kemahasiswaan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51313",
+      "name": "Perbaikan - Pusat Jaminan Mutu",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51314",
+      "name": "Perbaikan - Lab. Puskom",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51315",
+      "name": "Perbaikan - Language Access Centre",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51316",
+      "name": "Perbaikan - Pusat Studi Bahasa",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51317",
+      "name": "Perbaikan - Pusat Studi Qur'an",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51318",
+      "name": "Perbaikan - Pusat Studi Wanita",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51319",
+      "name": "Perbaikan - Pusat Studi ASEAN",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51320",
+      "name": "Perbaikan - Perpustakaan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51321",
+      "name": "Perbaikan - Puskomnet",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51322",
+      "name": "Perbaikan - LPPM",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51323",
+      "name": "Perbaikan - PPL",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51324",
+      "name": "Perbaikan - SPMB",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51325",
+      "name": "Perbaikan - Islamic Center",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51326",
+      "name": "Perbaikan - Yayasan Keluarga",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51327",
+      "name": "Perbaikan - Unipdu",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51328",
+      "name": "Perbaikan - SD Plus",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51329",
+      "name": "Perbaikan - RSUM",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51330",
+      "name": "Perbaikan - Kampus Utama",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51331",
+      "name": "Perbaikan - Gelora",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51332",
+      "name": "Perbaikan - Graha",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51400",
+      "name": "SERAGAM",
+      "type": "KELUAR",
+      "normalBalance": null,
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51401",
+      "name": "Seragam - Fakultas Ilmu Kesehatan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51402",
+      "name": "Seragam - Fakultas Agama Islam",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51403",
+      "name": "Seragam - Fakultas Bisnis, Bahasa & Pendidikan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51404",
+      "name": "Seragam - Fakultas Sains & Teknologi",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51405",
+      "name": "Seragam - Fakultas",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51406",
+      "name": "Seragam - Pascasarjana",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51407",
+      "name": "Seragam - Rektorat",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51408",
+      "name": "Seragam - Biro Administrasi Umum",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51409",
+      "name": "Seragam - Biro Administrasi Akademik",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51410",
+      "name": "Seragam - Biro Administrasi Keuangan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51411",
+      "name": "Seragam - Biro Kepegawaian",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51412",
+      "name": "Seragam - Biro Administrasi Kemahasiswaan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51413",
+      "name": "Seragam - Pusat Jaminan Mutu",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51414",
+      "name": "Seragam - Lab. Puskom",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51415",
+      "name": "Seragam - Language Access Centre",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51416",
+      "name": "Seragam - Pusat Studi Bahasa",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51417",
+      "name": "Seragam - Pusat Studi Qur'an",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51418",
+      "name": "Seragam - Pusat Studi Wanita",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51419",
+      "name": "Seragam - Pusat Studi ASEAN",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51420",
+      "name": "Seragam - Perpustakaan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51421",
+      "name": "Seragam - Puskomnet",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51422",
+      "name": "Seragam - LPPM",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51423",
+      "name": "Seragam - PPL",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51424",
+      "name": "Seragam - SPMB",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51425",
+      "name": "Seragam - Islamic Center",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51426",
+      "name": "Seragam - Keluarga",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51427",
+      "name": "Seragam - Unipdu",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51428",
+      "name": "Seragam - SD Plus",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52000",
+      "name": "PENGELUARAN UNIPDU",
+      "type": "KELUAR",
+      "normalBalance": null,
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52100",
+      "name": "ATK",
+      "type": "KELUAR",
+      "normalBalance": null,
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52101",
+      "name": "ATK - Fakultas Ilmu Kesehatan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52102",
+      "name": "ATK - Fakultas Agama Islam",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52103",
+      "name": "ATK - Fakultas Bisnis, Bahasa & Pendidikan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52104",
+      "name": "ATK - Fakultas Sains & Teknologi",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52105",
+      "name": "ATK - Fakultas",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52106",
+      "name": "ATK - Pascasarjana",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52107",
+      "name": "ATK - Rektorat",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52108",
+      "name": "ATK - Biro Administrasi Umum",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52109",
+      "name": "ATK - Biro Administrasi Akademik",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52110",
+      "name": "ATK - Biro Administrasi Keuangan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52111",
+      "name": "ATK - Biro Kepegawaian",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52112",
+      "name": "ATK - Biro Administrasi Kemahasiswaan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52113",
+      "name": "ATK - Pusat Jaminan Mutu",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52114",
+      "name": "ATK - Lab. Puskom",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52115",
+      "name": "ATK - Language Access Centre",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52116",
+      "name": "ATK - Pusat Studi Bahasa",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52117",
+      "name": "ATK - Pusat Studi Qur'an",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52118",
+      "name": "ATK - Pusat Studi Wanita",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52119",
+      "name": "ATK - Pusat Studi ASEAN",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52120",
+      "name": "ATK - Perpustakaan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52121",
+      "name": "ATK - Puskomnet",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52122",
+      "name": "ATK - LPPM",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52123",
+      "name": "ATK - PPL",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52124",
+      "name": "ATK - SPMB",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52125",
+      "name": "ATK - Islamic Center",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52126",
+      "name": "ATK - Keluarga",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52127",
+      "name": "ATK - Unipdu",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52128",
+      "name": "ATK - SD Plus",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52129",
+      "name": "ATK  -  Biaya admin bank",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52130",
+      "name": "BBM LGX",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52131",
+      "name": "BBM Elef",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52132",
+      "name": "BBM XL7",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52133",
+      "name": "BBL Inova hitam",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52134",
+      "name": "BBM Iniva matic",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52135",
+      "name": "BBM Bus",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52136",
+      "name": "BBM Viar",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52137",
+      "name": "E tol & parkir",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52141",
+      "name": "Ongkos tukang yayasan/ Unipdu",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52142",
+      "name": "Vakasi gabungan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52200",
+      "name": "KONSUMSI",
+      "type": "KELUAR",
+      "normalBalance": null,
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52201",
+      "name": "Konsumsi - Fakultas Ilmu Kesehatan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52202",
+      "name": "Konsumsi - Fakultas Agama Islam",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52203",
+      "name": "Konsumsi - Fakultas Bisnis ,Bahasa & Pendidikan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52204",
+      "name": "Konsumsi - Fakultas Sains & Teknologi",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52205",
+      "name": "Konsumsi - Fakultas",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52206",
+      "name": "Konsumsi - Pascasarjana",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52207",
+      "name": "Konsumsi - Rektorat",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52208",
+      "name": "Konsumsi - Biro Administrasi Umum",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52209",
+      "name": "Konsumsi - Biro Administrasi Akademik",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52210",
+      "name": "Konsumsi - Biro Administrasi Keuangan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52211",
+      "name": "Konsumsi - Biro Kepegawaian",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52212",
+      "name": "Konsumsi - Biro Administrasi Kemahasiswaan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52213",
+      "name": "Konsumsi - Pusat Jaminan Mutu",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52214",
+      "name": "Konsumsi - Lab. Puskom",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52215",
+      "name": "Konsumsi - Language Access Centre",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52216",
+      "name": "Konsumsi - Pusat Studi Bahasa",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52217",
+      "name": "Konsumsi - Pusat Studi Qur'an",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52218",
+      "name": "Konsumsi - Pusat Studi Wanita",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52219",
+      "name": "Konsumsi - Pusat Studi ASEAN",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52220",
+      "name": "Konsumsi - Perpustakaan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52221",
+      "name": "Konsumsi - Puskomnet",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52222",
+      "name": "Konsumsi - LPPM",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52223",
+      "name": "Konsumsi - PPL",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52224",
+      "name": "Konsumsi - SPMB",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52225",
+      "name": "Konsumsi - Islamic Center",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52226",
+      "name": "Konsumsi - Keluarga",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52227",
+      "name": "Konsumsi - Unipdu",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52228",
+      "name": "Konsumsi - SD Plus",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52229",
+      "name": "Uang makan sopir",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52230",
+      "name": "Doorprize ahad sehat",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52231",
+      "name": "MFA",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52232",
+      "name": "Perawatan kendaraan Ndalem",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "52233",
+      "name": "Perawatan kendaraan Unipdu",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "53000",
+      "name": "Akreditasi",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    }
+  ]
+}
