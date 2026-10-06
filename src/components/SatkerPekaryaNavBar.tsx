@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import { ClipboardCheck, ScanLine, LogOut, Compass, BarChart3, Banknote, CalendarCheck, FileText, UsersRound, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import AccountSwitcher from '@/components/AccountSwitcher';
 import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
 import { canReserveVenues } from '@/lib/payroll/roles';
 import { isVenueReservationPath, VENUE_RESERVATION_PATH } from '@/lib/venueReservation';
@@ -203,6 +204,7 @@ export default function SatkerPekaryaNavBar() {
               {profile?.role === 'satker_head_loyalis' ? 'Kepala SatKer Loyalis' : 'Kepala SatKer Pekarya'}
             </p>
           </div>
+          <AccountSwitcher className="rounded-sm border-slate-200 bg-white text-slate-700 hover:bg-slate-50 shadow-sm" />
           <Button
             variant="outline"
             size="sm"

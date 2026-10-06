@@ -9,6 +9,8 @@ export interface AuthenticatedProfile {
   displayName: string;
   linkedEmployeeId?: string;
   permittedCategories: string[];
+  /** Set when a Super Admin opened this session with "Login via Custom Token". */
+  impersonatedBy?: string;
 }
 
 export class HttpError extends Error {
@@ -62,6 +64,11 @@ export async function requireAuthenticatedProfile(
     permittedCategories: Array.isArray(profile.permittedCategories)
       ? profile.permittedCategories.filter((item): item is string => typeof item === 'string')
       : [],
+    // Only present when set, so a profile copied into a document never carries
+    // an undefined field.
+    ...(typeof decoded.impersonatedBy === 'string'
+      ? { impersonatedBy: decoded.impersonatedBy }
+      : {}),
   };
 }
 

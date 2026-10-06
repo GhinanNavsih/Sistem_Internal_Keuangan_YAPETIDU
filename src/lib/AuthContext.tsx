@@ -12,8 +12,9 @@ import {
 } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { doc, getDocFromCache, getDocFromServer } from 'firebase/firestore';
-import { LOYALIS_ADMIN_HOME_PATH, normalizeUserRole, UserRole } from '@/lib/payroll/roles';
-import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
+import { normalizeUserRole, UserRole } from '@/lib/payroll/roles';
+import { getRoleHomePath } from '@/lib/roleHome';
+import type { LinkedAccountSummary } from '@/lib/accountGroups';
 
 export interface UserProfile {
   uid: string;
@@ -51,6 +52,13 @@ interface AuthContextType {
   stopUiImpersonation: () => void;
   startCustomTokenImpersonation: (targetUid: string) => Promise<void>;
   stopCustomTokenImpersonation: () => Promise<void>;
+  /** The signed-in person's other accounts ("Ganti Peran"); empty when there are none. */
+  linkedAccounts: LinkedAccountSummary[];
+  /** The account being switched to, until the page reloads into it. */
+  switchingAccount: LinkedAccountSummary | null;
+  accountSwitchError: string | null;
+  switchAccount: (targetUid: string) => Promise<void>;
+  clearAccountSwitchError: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -137,6 +145,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [uiPreviewRevision, setUiPreviewRevision] = useState(0);
   const [impersonationSessionInfo, setImpersonationSessionInfo] = useState<ImpersonationSession | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadedLinkedAccounts, setLoadedLinkedAccounts] = useState<{
+    uid: string;
+    accounts: LinkedAccountSummary[];
+  } | null>(null);
+  const [switchingAccount, setSwitchingAccount] = useState<LinkedAccountSummary | null>(null);
+  const [accountSwitchError, setAccountSwitchError] = useState<string | null>(null);
   const authCallIdRef = useRef(0);
 
   // Restore stored impersonation state on mount
@@ -204,6 +218,95 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isCustomTokenImpersonating = !!impersonationSessionInfo;
 
   const activeProfile = isImpersonatingUi ? impersonatedUiProfile : profile;
+
+  // The person's other accounts, loaded once per signed-in account. Super Admin
+  // is never grouped, and a Super Admin impersonation session may not switch,
+  // so neither asks. The list is only for showing the menu: the server checks
+  // the link again on every switch.
+  const signedInUid = user?.uid ?? null;
+  const signedInRole = profile?.role ?? null;
+  const signedInName = profile?.displayName ?? null;
+  const mayLoadLinkedAccounts =
+    !!signedInUid &&
+    !!signedInRole &&
+    signedInRole !== 'super_admin' &&
+    uiPreviewHydrated &&
+    !isCustomTokenImpersonating;
+
+  useEffect(() => {
+    if (!mayLoadLinkedAccounts || !signedInUid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const currentUser = auth.currentUser;
+        if (!currentUser || currentUser.uid !== signedInUid) return;
+        const token = await currentUser.getIdToken();
+        const res = await fetch('/api/auth/linked-accounts', {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data.accounts)) {
+          setLoadedLinkedAccounts({ uid: signedInUid, accounts: data.accounts });
+        }
+      } catch (error) {
+        console.warn('Unable to load linked accounts:', error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // signedInRole and signedInName are listed so a renamed or re-roled account
+    // reloads its list.
+  }, [mayLoadLinkedAccounts, signedInUid, signedInRole, signedInName]);
+
+  const linkedAccounts =
+    mayLoadLinkedAccounts && loadedLinkedAccounts?.uid === signedInUid
+      ? loadedLinkedAccounts.accounts
+      : [];
+
+  const switchAccount = async (targetUid: string) => {
+    const target = linkedAccounts.find((account) => account.uid === targetUid);
+    const currentUser = auth.currentUser;
+    if (!target || !currentUser || switchingAccount) return;
+
+    setAccountSwitchError(null);
+    setSwitchingAccount(target);
+    try {
+      const token = await currentUser.getIdToken();
+      const res = await fetch('/api/auth/switch-account', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ targetUid }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || typeof data.customToken !== 'string') {
+        throw new Error(data.error || 'Gagal berpindah akun.');
+      }
+
+      await signInWithCustomToken(auth, data.customToken);
+      // A full page load, as after an impersonation, so caches filled for the
+      // previous role start empty and the route guard only sees the new one.
+      window.location.href = getRoleHomePath(data.targetProfile ?? target);
+    } catch (err) {
+      setSwitchingAccount(null);
+      const code =
+        typeof err === 'object' && err !== null && 'code' in err ? String(err.code) : '';
+      setAccountSwitchError(
+        code === 'auth/user-disabled'
+          ? 'Akun tujuan telah dinonaktifkan.'
+          : err instanceof Error
+            ? err.message
+            : 'Gagal berpindah akun.',
+      );
+    }
+  };
+
+  const clearAccountSwitchError = () => setAccountSwitchError(null);
 
   const startUiImpersonation = async (targetUser: UserProfile) => {
     const targetRole = normalizeUserRole(targetUser.role);
@@ -279,22 +382,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await signInWithCustomToken(auth, data.customToken);
 
       // Redirect target user to their appropriate role home page
-      const roleStr = normalizeUserRole(data.targetProfile.role);
-      if (roleStr === 'honorer' || roleStr === 'ketua_shift_satpam') {
-        window.location.href = getEmployeeActivitiesPath(data.targetProfile);
-      } else if (roleStr === 'loyalis') {
-        window.location.href = '/employee/payslip';
-      } else if (roleStr === 'satker_head') {
-        window.location.href = '/dashboard/payroll/activity-review';
-      } else if (roleStr === 'satker_head_loyalis') {
-        window.location.href = '/dashboard/payroll/uraian';
-      } else if (roleStr === 'satker_finance_admin' || roleStr === 'rector_finance') {
-        window.location.href = '/dashboard/satker-finance';
-      } else if (roleStr === 'loyalis_admin') {
-        window.location.href = LOYALIS_ADMIN_HOME_PATH;
-      } else {
-        window.location.href = '/dashboard/payroll';
-      }
+      window.location.href = getRoleHomePath(data.targetProfile);
     } catch (err: any) {
       localStorage.removeItem(CUSTOM_TOKEN_SESSION_KEY);
       setImpersonationSessionInfo(null);
@@ -396,6 +484,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         stopUiImpersonation,
         startCustomTokenImpersonation,
         stopCustomTokenImpersonation,
+        linkedAccounts,
+        switchingAccount,
+        accountSwitchError,
+        switchAccount,
+        clearAccountSwitchError,
       }}
     >
       {children}

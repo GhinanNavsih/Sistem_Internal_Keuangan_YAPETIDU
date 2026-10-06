@@ -4,6 +4,7 @@ import React, { useMemo, useCallback } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
+import AccountSwitcher from '@/components/AccountSwitcher';
 import {
   ScanLine,
   Banknote,
@@ -158,6 +159,10 @@ export default function UraianNavToggles() {
             </button>
           )}
         </div>
+        {/* Loyalis Admin has no sidebar or top bar, so its role switcher sits here. */}
+        {profile.role === 'loyalis_admin' && (
+          <AccountSwitcher label="always" className="h-9 rounded-sm border-slate-200 bg-white text-slate-700 shadow-sm" />
+        )}
       </div>
 
       {/* Row 2: Pekarya Pay Navigation */}

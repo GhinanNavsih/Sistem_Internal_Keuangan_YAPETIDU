@@ -5,7 +5,8 @@ import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import GlobalHeader from '@/components/GlobalHeader';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
+import { getRoleHomePath } from '@/lib/roleHome';
+import { linkedAccountsByUid } from '@/lib/accountGroups';
 import { useAuth } from '@/lib/AuthContext';
 import {
   Card,
@@ -63,7 +64,7 @@ import { usePayrollCacheInvalidation } from '@/lib/queries/hooks';
 import { collection, getDocsFromServer } from 'firebase/firestore';
 import { SUPPORTED_CATEGORIES } from '@/utils/rekapConfig';
 import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
-import { LOYALIS_ADMIN_HOME_PATH, normalizeUserRole, UserRole } from '@/lib/payroll/roles';
+import { getUserRoleLabel, normalizeUserRole, UserRole } from '@/lib/payroll/roles';
 
 interface ManagedUser {
   uid: string;
@@ -74,6 +75,7 @@ interface ManagedUser {
   linkedEmployeeId?: string;
   createdAt?: string;
   disabled?: boolean;
+  accountGroupExcluded?: boolean;
 }
 
 interface CleaningEmployee {
@@ -132,22 +134,7 @@ export default function UserManagementPage() {
       setPreviewingUid(targetUser.uid);
       const previewProfile = await startUiImpersonation(targetUser as any);
 
-      const roleStr = (previewProfile?.role || targetUser.role) as string;
-      if (roleStr === 'honorer' || roleStr === 'ketua_shift_satpam') {
-        router.push(getEmployeeActivitiesPath(previewProfile || targetUser));
-      } else if (roleStr === 'loyalis') {
-        router.push('/employee/payslip');
-      } else if (roleStr === 'satker_head') {
-        router.push('/dashboard/payroll/activity-review');
-      } else if (roleStr === 'satker_head_loyalis') {
-        router.push('/dashboard/payroll/uraian');
-      } else if (roleStr === 'satker_finance_admin' || roleStr === 'rector_finance') {
-        router.push('/dashboard/satker-finance');
-      } else if (roleStr === 'loyalis_admin') {
-        router.push(LOYALIS_ADMIN_HOME_PATH);
-      } else {
-        router.push('/dashboard/payroll');
-      }
+      router.push(getRoleHomePath(previewProfile || targetUser));
     } catch (error) {
       console.error('Unable to start UI preview:', error);
       setErrorMsg(error instanceof Error ? error.message : 'Gagal memulai Preview UI.');
@@ -184,6 +171,7 @@ export default function UserManagementPage() {
   const [newRole, setNewRole] = useState<UserRole>('satker_head');
   const [newPermitted, setNewPermitted] = useState<string[]>([]);
   const [newLinkedEmployeeId, setNewLinkedEmployeeId] = useState('');
+  const [newAccountGroupExcluded, setNewAccountGroupExcluded] = useState(false);
   const [newEmployeeSearchText, setNewEmployeeSearchText] = useState('');
   const [showNewEmployeeSuggestions, setShowNewEmployeeSuggestions] = useState(false);
 
@@ -197,6 +185,7 @@ export default function UserManagementPage() {
   const [editRole, setEditRole] = useState<UserRole>('satker_head');
   const [editPermitted, setEditPermitted] = useState<string[]>([]);
   const [editLinkedEmployeeId, setEditLinkedEmployeeId] = useState('');
+  const [editAccountGroupExcluded, setEditAccountGroupExcluded] = useState(false);
   const [editEmployeeSearchText, setEditEmployeeSearchText] = useState('');
   const [showEditEmployeeSuggestions, setShowEditEmployeeSuggestions] = useState(false);
 
@@ -343,6 +332,9 @@ export default function UserManagementPage() {
     });
   }, [users, searchQuery]);
 
+  // Accounts that share a Nama Lengkap and can switch between each other ("Ganti Peran").
+  const linkedByUid = useMemo(() => linkedAccountsByUid(users), [users]);
+
   // Handle multi-category selection toggle for NEW user
   const handleToggleNewPermitted = (cat: string) => {
     setNewPermitted(prev =>
@@ -396,6 +388,7 @@ export default function UserManagementPage() {
           role: newRole,
           permittedCategories: (newRole === 'honorer' || newRole === 'loyalis' || newRole === 'ketua_shift_satpam') ? (newLinkedEmployeeId ? [allEmployees.find(e => e.id === newLinkedEmployeeId)?.detail || ''] : []) : newPermitted,
           linkedEmployeeId: (newRole === 'honorer' || newRole === 'loyalis' || newRole === 'ketua_shift_satpam') ? newLinkedEmployeeId : undefined,
+          accountGroupExcluded: newAccountGroupExcluded,
         }),
       });
 
@@ -436,6 +429,7 @@ export default function UserManagementPage() {
       setNewRole('satker_head');
       setNewPermitted([]);
       setNewLinkedEmployeeId('');
+      setNewAccountGroupExcluded(false);
       setNewEmployeeSearchText('');
       setNewTeamNumber('1');
       setNewTeamMembers([]);
@@ -461,6 +455,7 @@ export default function UserManagementPage() {
     setEditRole(u.role);
     setEditPermitted(u.permittedCategories || []);
     setEditLinkedEmployeeId(u.linkedEmployeeId || '');
+    setEditAccountGroupExcluded(u.accountGroupExcluded === true);
 
     // Find the employee in cleaningEmployees
     const matchedEmp = cleaningEmployees.find(emp => emp.id === u.linkedEmployeeId);
@@ -515,6 +510,7 @@ export default function UserManagementPage() {
           role: editRole,
           permittedCategories: (editRole === 'honorer' || editRole === 'loyalis' || editRole === 'ketua_shift_satpam') ? (editLinkedEmployeeId ? [allEmployees.find(e => e.id === editLinkedEmployeeId)?.detail || ''] : []) : editPermitted,
           linkedEmployeeId: (editRole === 'honorer' || editRole === 'loyalis' || editRole === 'ketua_shift_satpam') ? editLinkedEmployeeId : undefined,
+          accountGroupExcluded: editAccountGroupExcluded,
         }),
       });
 
@@ -560,6 +556,7 @@ export default function UserManagementPage() {
                 role: editRole,
                 permittedCategories: updatedCategories,
                 linkedEmployeeId: (editRole === 'honorer' || editRole === 'loyalis' || editRole === 'ketua_shift_satpam') ? editLinkedEmployeeId : undefined,
+                accountGroupExcluded: editAccountGroupExcluded,
               }
             : u
         )
@@ -832,6 +829,25 @@ export default function UserManagementPage() {
                         {newRole === 'loyalis' && <span className="text-xs text-slate-600 leading-relaxed block">Akun untuk karyawan Loyalis (white collar) yang hanya dapat mengakses halaman slip gaji. Harus dihubungkan ke data pegawai.</span>}
                         {newRole === 'ketua_shift_satpam' && <span className="text-xs text-slate-600 leading-relaxed block">Akun untuk Ketua Shift SATPAM. Memiliki wewenang untuk melaporkan kegiatan harian seluruh anggota shift regunya.</span>}
                       </div>
+
+                      {newRole !== 'super_admin' && (
+                        <div className="mt-3 flex items-start gap-2.5">
+                          <Checkbox
+                            id="new-account-group-excluded"
+                            checked={newAccountGroupExcluded}
+                            onCheckedChange={(checked) => setNewAccountGroupExcluded(checked === true)}
+                            className="mt-0.5"
+                          />
+                          <div>
+                            <Label htmlFor="new-account-group-excluded" className="text-xs font-semibold text-slate-700 cursor-pointer">
+                              Jangan gabungkan dengan akun bernama sama
+                            </Label>
+                            <p className="text-[11px] text-slate-500 leading-relaxed mt-1">
+                              Akun dengan Nama Lengkap yang sama bisa saling berganti peran tanpa login ulang. Centang bila nama ini milik orang yang berbeda.
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1256,6 +1272,7 @@ export default function UserManagementPage() {
                   <TableBody>
                     {filteredUsers.map((u) => {
                       const isMe = u.email === user?.email;
+                      const linkedAccounts = linkedByUid.get(u.uid) || [];
 
                       return (
                         <TableRow key={u.uid} className="border-slate-50 hover:bg-slate-50/40 transition-colors">
@@ -1276,6 +1293,21 @@ export default function UserManagementPage() {
                                 {u.disabled && (
                                   <span className="text-[10px] font-bold text-rose-600 block mt-0.5">
                                     Dinonaktifkan — riwayat disimpan
+                                  </span>
+                                )}
+                                {linkedAccounts.length > 0 && (
+                                  <span
+                                    className="text-[10px] font-semibold text-indigo-600 block mt-0.5"
+                                    title={`Bisa berganti peran ke:\n${linkedAccounts
+                                      .map((account) => `${getUserRoleLabel(account.role)} — ${account.email}`)
+                                      .join('\n')}`}
+                                  >
+                                    Bisa ganti peran ke {linkedAccounts.length} akun lain
+                                  </span>
+                                )}
+                                {u.accountGroupExcluded && u.role !== 'super_admin' && (
+                                  <span className="text-[10px] font-semibold text-slate-400 block mt-0.5">
+                                    Tidak digabung dengan akun bernama sama
                                   </span>
                                 )}
                               </div>
@@ -1309,7 +1341,7 @@ export default function UserManagementPage() {
                               </Badge>
                             ) : (
                               <Badge variant="secondary" className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold px-2.5 py-0.5 rounded-sm border-none">
-                                Kepala SatKer Pekarya
+                                {getUserRoleLabel(u.role)}
                               </Badge>
                             )}
                           </TableCell>
@@ -1567,6 +1599,25 @@ export default function UserManagementPage() {
                     {editRole === 'loyalis' && <span>Akun khusus karyawan Loyalis untuk melihat slip gaji digital mandiri.</span>}
                     {editRole === 'ketua_shift_satpam' && <span>Dapat melaporkan shift kehadiran harian seluruh anggota regunya.</span>}
                   </div>
+
+                  {editRole !== 'super_admin' && (
+                    <div className="flex items-start gap-2.5">
+                      <Checkbox
+                        id="edit-account-group-excluded"
+                        checked={editAccountGroupExcluded}
+                        onCheckedChange={(checked) => setEditAccountGroupExcluded(checked === true)}
+                        className="mt-0.5"
+                      />
+                      <div>
+                        <Label htmlFor="edit-account-group-excluded" className="text-xs font-semibold text-slate-700 cursor-pointer">
+                          Jangan gabungkan dengan akun bernama sama
+                        </Label>
+                        <p className="text-[11px] text-slate-500 leading-relaxed mt-1">
+                          Akun dengan Nama Lengkap yang sama bisa saling berganti peran tanpa login ulang. Centang bila nama ini milik orang yang berbeda.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 

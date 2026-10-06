@@ -6,8 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { auth } from '@/lib/firebase';
 import { sendPasswordResetEmail } from 'firebase/auth';
-import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
-import { LOYALIS_ADMIN_HOME_PATH } from '@/lib/payroll/roles';
+import { getRoleHomePath } from '@/lib/roleHome';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -82,22 +81,7 @@ export default function LoginPage() {
   // Redirect if already authenticated
   useEffect(() => {
     if (!loading && user && profile) {
-      const roleStr = profile.role as string;
-      if (roleStr === 'honorer' || roleStr === 'ketua_shift_satpam') {
-        router.replace(getEmployeeActivitiesPath(profile));
-      } else if (roleStr === 'loyalis') {
-        router.replace('/employee/payslip');
-      } else if (roleStr === 'satker_head') {
-        router.replace('/dashboard/payroll/activity-review');
-      } else if (roleStr === 'satker_head_loyalis') {
-        router.replace('/dashboard/payroll/uraian');
-      } else if (roleStr === 'satker_finance_admin' || roleStr === 'rector_finance') {
-        router.replace('/dashboard/satker-finance');
-      } else if (roleStr === 'loyalis_admin') {
-        router.replace(LOYALIS_ADMIN_HOME_PATH);
-      } else {
-        router.replace('/dashboard/payroll');
-      }
+      router.replace(getRoleHomePath(profile));
     }
   }, [user, profile, loading, router]);
 

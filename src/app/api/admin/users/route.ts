@@ -24,6 +24,11 @@ interface UserInput {
   role: UserRole;
   permittedCategories: string[];
   linkedEmployeeId?: string;
+  /**
+   * Keeps this account out of name-based role switching (see `@/lib/accountGroups`).
+   * Undefined when the request did not send it, so an edit keeps the stored value.
+   */
+  accountGroupExcluded?: boolean;
 }
 
 function errorCode(error: unknown): string | undefined {
@@ -51,6 +56,9 @@ function parseUserInput(raw: unknown, requirePassword: boolean): UserInput {
   if (value.email !== undefined && typeof value.email !== 'string') {
     throw new HttpError(400, 'Alamat email tidak valid.');
   }
+  if (value.accountGroupExcluded !== undefined && typeof value.accountGroupExcluded !== 'boolean') {
+    throw new HttpError(400, 'Pengaturan penggabungan akun tidak valid.');
+  }
   if (
     EMPLOYEE_LINK_ROLES.includes(value.role) &&
     (typeof value.linkedEmployeeId !== 'string' || !value.linkedEmployeeId.trim())
@@ -68,6 +76,8 @@ function parseUserInput(raw: unknown, requirePassword: boolean): UserInput {
     ),
     linkedEmployeeId:
       typeof value.linkedEmployeeId === 'string' ? value.linkedEmployeeId.trim() : undefined,
+    accountGroupExcluded:
+      typeof value.accountGroupExcluded === 'boolean' ? value.accountGroupExcluded : undefined,
   };
 }
 
@@ -149,6 +159,7 @@ export async function POST(request: NextRequest) {
       role: input.role,
       permittedCategories: input.permittedCategories,
       linkedEmployeeId: input.linkedEmployeeId || null,
+      accountGroupExcluded: input.accountGroupExcluded === true,
       disabled: false,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       createdByUid: actor.uid,
@@ -167,6 +178,7 @@ export async function POST(request: NextRequest) {
           email: input.email,
           role: input.role,
           linkedEmployeeId: input.linkedEmployeeId || null,
+          accountGroupExcluded: profile.accountGroupExcluded,
         },
       }),
     );
@@ -239,6 +251,7 @@ export async function PUT(request: NextRequest) {
       role: input.role,
       permittedCategories: input.permittedCategories,
       linkedEmployeeId: input.linkedEmployeeId || null,
+      accountGroupExcluded: input.accountGroupExcluded ?? before.accountGroupExcluded === true,
       disabled: before.disabled === true,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedByUid: actor.uid,
@@ -261,11 +274,13 @@ export async function PUT(request: NextRequest) {
             email: currentSnapshot.data()?.email || null,
             role: currentSnapshot.data()?.role || null,
             linkedEmployeeId: currentSnapshot.data()?.linkedEmployeeId || null,
+            accountGroupExcluded: currentSnapshot.data()?.accountGroupExcluded === true,
           },
           after: {
             email: after.email,
             role: after.role,
             linkedEmployeeId: after.linkedEmployeeId,
+            accountGroupExcluded: after.accountGroupExcluded,
           },
         }),
       );

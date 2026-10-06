@@ -16,6 +16,7 @@ import {
 } from '@/lib/facilityReports';
 import { VENUE_INSPECTION_PATH } from '@/lib/venueInspection';
 import { Button } from '@/components/ui/button';
+import { AccountSwitchMenuItems } from '@/components/AccountSwitcher';
 import { FloatingSnackbar, type SnackbarMessage } from '@/components/ui/floating-snackbar';
 import {
   Banknote,
@@ -202,6 +203,7 @@ export default function EmployeeNavigationMenu() {
               </DropdownMenuItem>
             </>
           )}
+          <AccountSwitchMenuItems separatorBefore />
           <DropdownMenuSeparator />
           <DropdownMenuItem
             className="min-h-11 rounded-sm px-3.5 py-2.5 text-sm"

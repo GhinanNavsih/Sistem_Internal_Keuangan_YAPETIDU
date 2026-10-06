@@ -10,6 +10,7 @@ import { canReserveVenues } from '@/lib/payroll/roles';
 import { VENUE_RESERVATION_PATH } from '@/lib/venueReservation';
 import { VENUE_INSPECTION_PATH } from '@/lib/venueInspection';
 import { Button } from '@/components/ui/button';
+import AccountSwitcher from '@/components/AccountSwitcher';
 import {
   LayoutDashboard,
   UserCog,
@@ -302,6 +303,12 @@ export default function Sidebar() {
                     <span className="text-indigo-300 text-[10px]">{roleLabel}</span>
                   </span>
                 </div>
+                <AccountSwitcher
+                  label="none"
+                  side="right"
+                  align="end"
+                  className="w-10 h-10 rounded-xl border-slate-200"
+                />
                 <button
                   onClick={requestLogout}
                   className="flex items-center justify-center w-10 h-10 rounded-xl border border-slate-200 text-rose-500 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-all cursor-pointer"
@@ -326,6 +333,12 @@ export default function Sidebar() {
                     </p>
                   </div>
                 </div>
+                <AccountSwitcher
+                  label="always"
+                  side="top"
+                  align="start"
+                  className="w-full h-10 mb-2 rounded-xl border-slate-200 bg-white text-slate-700 shadow-sm font-bold"
+                />
                 <Button
                   variant="outline"
                   onClick={requestLogout}
@@ -426,6 +439,12 @@ export default function Sidebar() {
                   </p>
                 </div>
               </div>
+              <AccountSwitcher
+                label="always"
+                side="top"
+                align="start"
+                className="w-full h-9 mb-2 rounded-xl border-slate-200 bg-white text-slate-700 shadow-sm text-xs font-bold"
+              />
               <Button
                 variant="outline"
                 onClick={() => {

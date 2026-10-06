@@ -4,6 +4,7 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/AuthContext";
 import QueryProvider from "@/lib/queries/QueryProvider";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
+import { AccountSwitchStatus } from "@/components/AccountSwitcher";
 import { LogoutConfirmProvider } from "@/components/LogoutConfirmProvider";
 import Script from "next/script";
 
@@ -51,6 +52,7 @@ export default function RootLayout({
           <AuthProvider>
             <LogoutConfirmProvider>
               <ImpersonationBanner />
+              <AccountSwitchStatus />
               {children}
             </LogoutConfirmProvider>
           </AuthProvider>

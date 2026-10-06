@@ -100,6 +100,25 @@ export function normalizeUserRole(value: unknown): UserRole | null {
   return null;
 }
 
+/** How each role is named to people: the Users table, the sidebar and the role switcher. */
+export const USER_ROLE_LABELS: Readonly<Record<UserRole, string>> = {
+  super_admin: 'Super Admin',
+  finance_verifier: 'Badan Keuangan',
+  satker_head: 'Kepala SatKer Pekarya',
+  satker_head_loyalis: 'Kepala SatKer Loyalis',
+  satker_finance_admin: 'Sekretariat Keuangan SatKer',
+  rector_finance: 'Pengesah Keuangan Rektorat',
+  loyalis_admin: 'Loyalis Admin',
+  honorer: 'Honorer',
+  loyalis: 'Karyawan Loyalis',
+  ketua_shift_satpam: 'Ketua Shift SATPAM',
+};
+
+export function getUserRoleLabel(role: unknown): string {
+  const normalized = normalizeUserRole(role);
+  return normalized ? USER_ROLE_LABELS[normalized] : 'Pengguna';
+}
+
 export function canVerifyPayroll(role: UserRole): boolean {
   return role === 'finance_verifier' || role === 'super_admin';
 }

@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { useAuth } from '@/lib/AuthContext';
 import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
+import AccountSwitcher from '@/components/AccountSwitcher';
 import { academicYearFor, buildFinancialStatements, fiscalMonths, FinancialAccount, JournalEntry, OpeningBalances } from '@/lib/satker-finance/core';
 import type { FinancialUnit } from '@/lib/server/satkerFinance';
 import { CurrencyInput } from '@/components/ui/currency-input';
@@ -260,7 +261,7 @@ export default function SatkerFinancePage() {
       {/* This page has no shell top bar, so the title sits in the toolbar row instead of a banner. */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-base font-semibold text-slate-900">Buku keuangan satuan kerja</h1>
-        <div className="flex gap-2"><button className={`${lightButton} !px-2`} onClick={() => void load()} aria-label="Muat ulang" title="Muat ulang"><RefreshCw className="h-4 w-4" /></button>{['satker_finance_admin', 'rector_finance'].includes(visibleProfile?.role || '') && <button className={lightButton} onClick={requestLogout}>Keluar</button>}</div>
+        <div className="flex gap-2"><button className={`${lightButton} !px-2`} onClick={() => void load()} aria-label="Muat ulang" title="Muat ulang"><RefreshCw className="h-4 w-4" /></button>{['satker_finance_admin', 'rector_finance'].includes(visibleProfile?.role || '') && <><AccountSwitcher label="always" className="h-auto rounded-md border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50" /><button className={lightButton} onClick={requestLogout}>Keluar</button></>}</div>
       </div>
       <div className="flex flex-wrap items-end gap-3 border-b border-slate-200 pb-5">
         <div className="min-w-60 flex-1 text-xs font-medium text-slate-500"><span id="satker-unit-label">Satuan Kerja</span><Select items={unitItems} value={unitId || null} onValueChange={(value) => setUnitId(value || '')}><SelectTrigger aria-labelledby="satker-unit-label" className={selectTrigger}><SelectValue placeholder="Pilih SatKer" /></SelectTrigger><SelectContent className={selectContent}>{canReadAll && <SelectItem className={selectItem} value="ALL">Konsolidasi seluruh SatKer</SelectItem>}{data?.units.map((unit) => <SelectItem className={selectItem} key={unit.id} value={unit.id}>{unit.name}</SelectItem>)}</SelectContent></Select></div>

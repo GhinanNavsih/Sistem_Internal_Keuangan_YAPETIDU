@@ -114,6 +114,18 @@ Roles are defined in `src/lib/payroll/roles.ts` (`USER_ROLES`) and enforced by r
 
 Never re-derive the workflow locally (e.g. `permittedCategories[0] === 'SOPIR'`) — page-level access checks, nav-link visibility, and the route guard must all agree, or an employee gets a link that bounces them back or a page that silently renders empty. The retired `/employee/activities` and `/employee/activities/journey-report` URLs are listed in `RETIRED_EMPLOYEE_ACTIVITY_PATHS` and intentionally 404 rather than redirect.
 
+`getRoleHomePath(profile)` (`src/lib/roleHome.ts`) is the one role → landing-page map, used by login, account switching and both Super Admin preview/impersonation flows.
+
+### Switching between one person's accounts ("Ganti Peran")
+
+A person often holds one account per role (e.g. Kepala SatKer Pekarya + Kepala SatKer Loyalis + their own Karyawan Loyalis account). Accounts are linked **by Nama Lengkap** (`displayName`): `personKey` in `src/lib/accountGroups.ts` (pure, tested) is `normalizeName` with dots/apostrophes ignored. A name of one word, a Super Admin account (either direction), a disabled account, or one with `accountGroupExcluded: true` (Users page checkbox "Jangan gabungkan dengan akun bernama sama", for two different people sharing a name) never links. The Users page shows "Bisa ganti peran ke N akun lain" on linked rows.
+
+- **A switch is a real sign-in as the other uid**, since rules and `requireAuthenticatedProfile` all read `users/{token uid}`: `POST /api/auth/switch-account` re-derives the group server-side, refuses anything else (403), checks Auth-disabled, writes `audit_logs` `ACCOUNT_SWITCHED`, and returns a custom token (claim `switchedFrom`); the browser calls `signInWithCustomToken` and hard-navigates to the target's home. `GET /api/auth/linked-accounts` feeds the menu (clients cannot list `users`). Server code: `src/lib/server/linkedAccounts.ts`.
+- **Not inside Super Admin preview/impersonation**: hidden in both, and a session whose token carries `impersonatedBy` gets 409. So Super Admin cannot test it through "Login via Custom Token"; test with throwaway accounts that share a name.
+- **UI**: `AuthContext` loads `linkedAccounts` and exposes `switchAccount`; `src/components/AccountSwitcher.tsx` holds the "Ganti Peran" button (SatkerPekaryaNavBar, Sidebar, satker-finance header for its two finance roles, UraianNavToggles for Loyalis Admin), `AccountSwitchMenuItems` (inside EmployeeNavigationMenu) and `AccountSwitchStatus` (root layout: overlay while switching, error snackbar).
+- Uid-keyed data (`VenueReservationContacts`, `satkerFinancialNotifications`, `createdByUid`…) stays per account; nothing is merged.
+- **Test**: `npm run test:account-switch:integration` (Auth + Firestore emulators, project `demo-account-switch`; needs Java).
+
 ---
 
 ## Database Collections (Firestore)
@@ -132,7 +144,7 @@ Never re-derive the workflow locally (e.g. `permittedCategories[0] === 'SOPIR'`)
 
 **Payroll core**: `PayrollPeriods`, `PayrollSlipStates` (per-employee-per-period slip — holds the earnings/deductions/taxes money rows, not just a status; doc id `{period}_{employeeId}`, shape in `PayrollSlipStateDocument`. Writable statuses are draft/locked/payment_created/paid (`PayrollStatus`); `confirmed` is read-only legacy that `isImmutablePayrollStatus` and the employee payslip query still honour; `pending` is not a slip status — it belongs to `PayrollCorrectionRequests`), `PayrollPayments`, `PayrollLedgerEntries`, `PayrollDeliveryEvents` (email delivery idempotency), `PayrollHolidayCalendars`, `PayrollCorrectionRequests`, `PayrollHistoricalCorrections`, `PayrollKoperasiProgressions` (payroll↔Koperasi bridge saga state), `FinancialIdempotencyKeys`, `FinancialAuditLogs`.
 
-**Admin / auth / misc**: `users`, `EmpEditLog`, `admin_impersonation_sessions`, `audit_logs`, `reactivation_tokens`, `VenueReservationContacts` (server-only; one doc per account holding the WhatsApp number and unit name last used for a venue booking).
+**Admin / auth / misc**: `users` (one per login account; `accountGroupExcluded` opts it out of role switching, see "Ganti Peran" above), `EmpEditLog`, `admin_impersonation_sessions`, `audit_logs`, `reactivation_tokens`, `VenueReservationContacts` (server-only; one doc per account holding the WhatsApp number and unit name last used for a venue booking).
 
 **`Koperasi Unipdu` (secondary Firebase app)**: accessed via `secondaryApp`/`secondaryDb` (client) and `koperasiAdminDb()` in `src/lib/koperasi-admin.ts` (server, separate service-account credential). Collections: `simpanPinjam` (loan/savings records — writes go through `koperasiAdminDb()` only) and `users` (Koperasi-project member records, matched to primary-app employees via `koperasiAuthUid`).
 
@@ -242,7 +254,7 @@ Physical presence printouts are parsed via the [/api/parse-rekap](file:///Users/
 
 - **Run dev environment**: `npm run dev`
 - **Build application**: `npm run build`
-- **Test**: `npm test` (runs `tsx --test` over the payroll/server/util test suite directly); emulator integration tests: `test:kjm:integration`, `test:employee-conversion:integration`, `test:venue-inspection:integration`, `test:loyalis-auto-leave:integration`
+- **Test**: `npm test` (runs `tsx --test` over the payroll/server/util test suite directly); emulator integration tests: `test:kjm:integration`, `test:employee-conversion:integration`, `test:venue-inspection:integration`, `test:loyalis-auto-leave:integration`, `test:account-switch:integration`
 
 `scripts/` holds ~125 files; only the ones below are wired into `package.json`. The rest are ad hoc one-off migration/inspection scripts (`inspect*`, `check*`, `compare*`, `find*`, etc.) run directly via `tsx scripts/<file>.ts` — don't assume every script has an npm entry.
 

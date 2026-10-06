@@ -63,10 +63,28 @@ function DropdownMenuSeparator({ className, ...props }: MenuPrimitive.Separator.
   )
 }
 
+const DropdownMenuGroup = MenuPrimitive.Group
+
+/** A heading for a DropdownMenuGroup; must sit inside one. */
+function DropdownMenuLabel({ className, ...props }: MenuPrimitive.GroupLabel.Props) {
+  return (
+    <MenuPrimitive.GroupLabel
+      data-slot="dropdown-menu-label"
+      className={cn(
+        "px-2.5 pt-1.5 pb-1 text-[10px] font-bold tracking-wider text-slate-400 uppercase",
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
 export {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 }
