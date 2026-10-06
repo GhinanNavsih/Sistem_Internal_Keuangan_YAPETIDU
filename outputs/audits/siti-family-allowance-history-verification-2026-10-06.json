@@ -1,0 +1,93 @@
+{
+  "employeeId": "Loyalis_161",
+  "name": "Siti Roudhatul Jannah",
+  "readOnly": true,
+  "verifiedAt": "2026-10-06T03:30:15.642Z",
+  "beforeOctober6Reentry": {
+    "exists": true,
+    "readTime": "2026-10-06T02:40:00.000Z",
+    "updateTime": "2026-09-09T05:40:31.652Z",
+    "name": "Siti Roudhatul Jannah, S.ST.Keb., M.Tr.Keb.",
+    "metrics": {
+      "children_sd": 0,
+      "children_pt": 0,
+      "children_sltp": 0,
+      "children_slta": 0,
+      "spouse_count": 1
+    },
+    "auditUpdatedAt": "2026-09-09T05:40:31.388Z"
+  },
+  "afterOctober6Reentry": {
+    "readTime": "2026-10-06T02:43:00.000Z",
+    "createTime": "2026-05-20T13:48:52.050Z",
+    "updateTime": "2026-10-06T02:42:55.923Z",
+    "familyAllowanceMetrics": {
+      "children_pt": 0,
+      "children_sltp": 0,
+      "children_slta": 0,
+      "spouse_count": 1,
+      "children_sd": 2,
+      "dependents": [
+        {
+          "id": "c6eb11e6-777a-4212-ad88-21f6482095f9",
+          "child_id": "c6eb11e6-777a-4212-ad88-21f6482095f9",
+          "level": "SD",
+          "enrolled_at": "2020-02-22",
+          "birth_date": "2020-02-22"
+        },
+        {
+          "id": "97d81bd3-7d50-45af-9add-fdeee47350bc",
+          "child_id": "97d81bd3-7d50-45af-9add-fdeee47350bc",
+          "level": "SD",
+          "enrolled_at": "2022-04-26",
+          "birth_date": "2022-04-26"
+        }
+      ],
+      "children_s2": 0,
+      "children_s1": 0
+    },
+    "auditUpdatedAt": "2026-10-06T02:42:55.895Z"
+  },
+  "editAudit": {
+    "collection": "EmpEditLog",
+    "id": "IzA4BMhMEhz0NhiP1m2a",
+    "editedAt": "2026-10-06T09:42:54.451+07:00",
+    "loggedAt": "2026-10-06T02:42:58.940Z",
+    "childrenSdBefore": 0,
+    "childrenSdAfter": 2
+  },
+  "evidenceCoverage": {
+    "employeeEditLogsScanned": 455,
+    "earlierSitiEditLogsFound": 0,
+    "familyAllowanceRequestsFound": 0,
+    "matchingFirestoreCloudAuditEntriesFound": 0,
+    "firestoreBackupsFound": 0,
+    "pointInTimeRecoveryEnabled": false,
+    "versionRetentionSeconds": 3600
+  },
+  "findings": {
+    "october6ReentryConfirmed": true,
+    "childDataAbsentBeforeReentry": true,
+    "preReentryDocumentLastChangedAt": "2026-09-09T05:40:31.652Z",
+    "earlierSuccessfulSaveThenLossConfirmed": false,
+    "interpretation": "The server document at 09:40 WIB on 6 October had zero children and its last update was 9 September. Earlier form input cannot be ruled out. A successful family-data change on this same document between 9 September and 09:40 on 6 October is inconsistent with that server version. Input or overwrite before 9 September cannot be verified from the available history."
+  },
+  "codeFindings": [
+    {
+      "file": "src/app/dashboard/employees/page.tsx",
+      "line": 1675,
+      "finding": "Loyalis saves the form directly to Firestore without checking the latest profile revision."
+    },
+    {
+      "file": "src/app/dashboard/employees/page.tsx",
+      "line": 1805,
+      "finding": "Employee edit logs are written separately when pending changes are confirmed, rather than atomically with each profile save."
+    },
+    {
+      "file": "src/app/dashboard/employees/page.tsx",
+      "line": 1860,
+      "finding": "The cancellation workflow writes old values back to the employee record without a permanent employee edit log."
+    }
+  ],
+  "codeFindingsExplainActualIncident": false
+}
