@@ -10,6 +10,7 @@ import {
 } from '@/lib/server/auth';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import { linkedAccountUidsByUid } from '@/lib/server/linkedAccounts';
+import { ownUnitId, UNIT_COLLECTION } from '@/lib/server/satkerFinance';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +18,7 @@ interface UserInput {
   email?: string;
   password?: string;
   displayName?: string;
+  satkerName?: string;
   role: UserRole;
   permittedCategories: string[];
   linkedEmployeeId?: string;
@@ -32,6 +34,36 @@ interface UserInput {
 function errorCode(error: unknown): string | undefined {
   if (!error || typeof error !== 'object' || !('code' in error)) return undefined;
   return typeof error.code === 'string' ? error.code : undefined;
+}
+
+function normalizedSatkerName(value: unknown): string {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function effectiveSatkerName(
+  uid: string,
+  profile: Record<string, unknown>,
+  unit: Record<string, unknown> | undefined,
+): string {
+  const savedName = typeof profile.satkerName === 'string' ? profile.satkerName.trim() : '';
+  if (savedName) return savedName;
+  const editors = Array.isArray(unit?.editorUids) ? unit.editorUids : [];
+  const belongsToHead = unit?.autoProvisioned === true || editors.includes(uid);
+  const unitName = belongsToHead && typeof unit?.name === 'string' ? unit.name.trim() : '';
+  if (unitName) return unitName;
+  return typeof profile.displayName === 'string' ? profile.displayName.trim() : '';
+}
+
+async function assertSatkerNameAvailable(uid: string, name: string): Promise<void> {
+  const heads = await adminDb.collection('users').where('role', '==', 'satker_head_loyalis').get();
+  const peers = heads.docs.filter((head) => head.id !== uid);
+  const peerNames = await Promise.all(peers.map(async (head) => {
+    const unit = await adminDb.collection(UNIT_COLLECTION).doc(ownUnitId(head.id)).get();
+    return effectiveSatkerName(head.id, head.data(), unit.data());
+  }));
+  if (peerNames.some((peerName) => normalizedSatkerName(peerName) === normalizedSatkerName(name))) {
+    throw new HttpError(409, 'Nama SatKer Loyalis sudah digunakan akun lain. Pilih nama yang unik.');
+  }
 }
 
 function parseUserInput(raw: unknown, requirePassword: boolean): UserInput {
@@ -53,6 +85,16 @@ function parseUserInput(raw: unknown, requirePassword: boolean): UserInput {
   }
   if (value.email !== undefined && typeof value.email !== 'string') {
     throw new HttpError(400, 'Alamat email tidak valid.');
+  }
+  if (value.satkerName !== undefined && typeof value.satkerName !== 'string') {
+    throw new HttpError(400, 'Nama SatKer Loyalis tidak valid.');
+  }
+  const satkerName = typeof value.satkerName === 'string' ? value.satkerName.trim() : undefined;
+  if (satkerName && satkerName.length > 150) {
+    throw new HttpError(400, 'Nama SatKer Loyalis maksimal 150 karakter.');
+  }
+  if (!requirePassword && value.role === 'satker_head_loyalis' && !satkerName) {
+    throw new HttpError(400, 'Nama SatKer Loyalis wajib diisi.');
   }
   let personEmployeeId: string | null | undefined;
   if (value.personEmployeeId === undefined) {
@@ -79,6 +121,7 @@ function parseUserInput(raw: unknown, requirePassword: boolean): UserInput {
     email: typeof value.email === 'string' ? value.email.trim().toLowerCase() : undefined,
     password: typeof value.password === 'string' ? value.password : undefined,
     displayName: typeof value.displayName === 'string' ? value.displayName.trim() : '',
+    satkerName,
     role: value.role,
     permittedCategories: Array.from(
       new Set(value.permittedCategories.map((item) => item.trim()).filter(Boolean)),
@@ -164,10 +207,20 @@ export async function GET(request: NextRequest) {
     // Which accounts each one can switch to, decided as a switch would, so the
     // page never re-implements the rules.
     const linkedUids = await linkedAccountUidsByUid(users);
+    const satkerNames = new Map<string, string>();
+    await Promise.all(users.filter((user) => user.role === 'satker_head_loyalis').map(async (user) => {
+      const unit = await adminDb.collection(UNIT_COLLECTION).doc(ownUnitId(user.uid)).get();
+      satkerNames.set(user.uid, effectiveSatkerName(user.uid, user, unit.data()));
+    }));
     return Response.json(
       {
         users: users.map((user) => ({
           ...user,
+          ...(user.role === 'satker_head_loyalis'
+            ? { satkerName: satkerNames.get(user.uid) || '' }
+            : typeof user.satkerName === 'string'
+              ? { satkerName: user.satkerName }
+              : {}),
           linkedAccountUids: linkedUids.get(user.uid) || [],
         })),
       },
@@ -187,6 +240,9 @@ export async function POST(request: NextRequest) {
     if (!input.email) {
       throw new HttpError(400, 'Alamat email wajib diisi.');
     }
+    if (input.role === 'satker_head_loyalis' && input.satkerName) {
+      await assertSatkerNameAvailable('', input.satkerName);
+    }
     await assertEmployeeLink(input);
     const personEmployeeId = personEmployeeIdToSave(input, null);
     await assertPersonEmployee(input, personEmployeeId, null);
@@ -202,6 +258,9 @@ export async function POST(request: NextRequest) {
     const profile = {
       email: input.email,
       displayName: input.displayName || '',
+      ...(input.role === 'satker_head_loyalis' && input.satkerName
+        ? { satkerName: input.satkerName }
+        : {}),
       role: input.role,
       permittedCategories: input.permittedCategories,
       linkedEmployeeId: input.linkedEmployeeId || null,
@@ -225,6 +284,9 @@ export async function POST(request: NextRequest) {
           role: input.role,
           linkedEmployeeId: input.linkedEmployeeId || null,
           personEmployeeId,
+          ...(input.role === 'satker_head_loyalis' && input.satkerName
+            ? { satkerName: input.satkerName }
+            : {}),
         },
       }),
     );
@@ -277,6 +339,9 @@ export async function PUT(request: NextRequest) {
     }
     const personEmployeeId = personEmployeeIdToSave(input, before.personEmployeeId);
     await assertPersonEmployee(input, personEmployeeId, before.personEmployeeId);
+    if (input.role === 'satker_head_loyalis') {
+      await assertSatkerNameAvailable(uid, input.satkerName!);
+    }
 
     try {
       await adminAuth.updateUser(uid, {
@@ -296,6 +361,7 @@ export async function PUT(request: NextRequest) {
     const after = {
       email: input.email || before.email || '',
       displayName: input.displayName || '',
+      ...(input.role === 'satker_head_loyalis' ? { satkerName: input.satkerName! } : {}),
       role: input.role,
       permittedCategories: input.permittedCategories,
       linkedEmployeeId: input.linkedEmployeeId || null,
@@ -305,12 +371,58 @@ export async function PUT(request: NextRequest) {
       updatedByUid: actor.uid,
       schemaVersion: 2,
     };
+    const unitRef = adminDb.collection(UNIT_COLLECTION).doc(ownUnitId(uid));
+    const unitAuditRef = adminDb.collection('SatkerFinancialConfigAudit').doc();
     await adminDb.runTransaction(async (transaction) => {
-      const currentSnapshot = await transaction.get(userRef);
+      const [currentSnapshot, unitSnapshot] = await Promise.all([
+        transaction.get(userRef),
+        transaction.get(unitRef),
+      ]);
       if (!currentSnapshot.exists) {
         throw new HttpError(404, 'Profil pengguna tidak ditemukan.');
       }
+      const unitData = unitSnapshot.data();
+      if (input.role === 'satker_head_loyalis') {
+        const headsSnapshot = await transaction.get(
+          adminDb.collection('users').where('role', '==', 'satker_head_loyalis'),
+        );
+        const peers = headsSnapshot.docs.filter((head) => head.id !== uid);
+        const peerUnits = await Promise.all(peers.map((head) =>
+          transaction.get(adminDb.collection(UNIT_COLLECTION).doc(ownUnitId(head.id))),
+        ));
+        const peerNames = peers.map((head, index) =>
+          effectiveSatkerName(head.id, head.data(), peerUnits[index].data()),
+        );
+        if (peerNames.some((peerName) => normalizedSatkerName(peerName) === normalizedSatkerName(input.satkerName))) {
+          throw new HttpError(409, 'Nama SatKer Loyalis sudah digunakan akun lain. Pilih nama yang unik.');
+        }
+      }
       transaction.set(userRef, after, { merge: true });
+      const unitEditors = Array.isArray(unitData?.editorUids) ? unitData.editorUids : [];
+      const isHeadUnit = unitData?.autoProvisioned === true || unitEditors.includes(uid);
+      if (
+        input.role === 'satker_head_loyalis' &&
+        isHeadUnit &&
+        unitData?.name !== input.satkerName
+      ) {
+        const updatedUnit = {
+          name: input.satkerName,
+          revision: Number(unitData?.revision || 0) + 1,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedBy: actor.uid,
+        };
+        transaction.set(unitRef, updatedUnit, { merge: true });
+        transaction.create(unitAuditRef, {
+          action: 'UNIT_UPDATED',
+          target: unitRef.id,
+          before: unitData,
+          after: { ...unitData, ...updatedUnit },
+          reason: 'Perubahan nama SatKer Loyalis oleh Super Administrator',
+          actorUid: actor.uid,
+          actorRole: actor.role,
+          at: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
       transaction.create(
         newFinancialAuditRef(),
         buildFinancialAuditRecord(actor, {
@@ -323,12 +435,14 @@ export async function PUT(request: NextRequest) {
             role: currentSnapshot.data()?.role || null,
             linkedEmployeeId: currentSnapshot.data()?.linkedEmployeeId || null,
             personEmployeeId: currentSnapshot.data()?.personEmployeeId || null,
+            satkerName: currentSnapshot.data()?.satkerName || null,
           },
           after: {
             email: after.email,
             role: after.role,
             linkedEmployeeId: after.linkedEmployeeId,
             personEmployeeId: after.personEmployeeId,
+            ...(input.role === 'satker_head_loyalis' ? { satkerName: after.satkerName } : {}),
           },
         }),
       );

@@ -22,6 +22,7 @@ export interface UserProfile {
   role: UserRole;
   permittedCategories: string[];
   displayName?: string;
+  satkerName?: string;
   linkedEmployeeId?: string;
   disabled?: boolean;
 }

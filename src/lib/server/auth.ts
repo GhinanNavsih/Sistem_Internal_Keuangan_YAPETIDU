@@ -7,6 +7,8 @@ export interface AuthenticatedProfile {
   email: string | null;
   role: UserRole;
   displayName: string;
+  /** Optional, per-user SatKer name assigned by Super Admin. */
+  satkerName?: string;
   linkedEmployeeId?: string;
   permittedCategories: string[];
   /** Set when a Super Admin opened this session with "Login via Custom Token". */
@@ -59,6 +61,9 @@ export async function requireAuthenticatedProfile(
     email: decoded.email || null,
     role,
     displayName: String(profile.displayName || decoded.name || ''),
+    ...(typeof profile.satkerName === 'string' && profile.satkerName.trim()
+      ? { satkerName: profile.satkerName.trim().slice(0, 150) }
+      : {}),
     linkedEmployeeId:
       typeof profile.linkedEmployeeId === 'string' ? profile.linkedEmployeeId : undefined,
     permittedCategories: Array.isArray(profile.permittedCategories)

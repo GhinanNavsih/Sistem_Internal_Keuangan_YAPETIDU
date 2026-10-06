@@ -70,6 +70,7 @@ interface ManagedUser {
   uid: string;
   email: string;
   displayName?: string;
+  satkerName?: string;
   role: UserRole;
   permittedCategories: string[];
   linkedEmployeeId?: string;
@@ -242,6 +243,7 @@ export default function UserManagementPage() {
   // Edit User modal state
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
   const [editDisplayName, setEditDisplayName] = useState('');
+  const [editSatkerName, setEditSatkerName] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editRole, setEditRole] = useState<UserRole>('satker_head');
   const [editPermitted, setEditPermitted] = useState<string[]>([]);
@@ -537,6 +539,7 @@ export default function UserManagementPage() {
     setErrorMsg(null);
     setEditingUser(u);
     setEditDisplayName(u.displayName || '');
+    setEditSatkerName(u.satkerName || u.displayName || '');
     setEditEmail(u.email || '');
     setEditRole(u.role);
     setEditPermitted(u.permittedCategories || []);
@@ -577,6 +580,10 @@ export default function UserManagementPage() {
         return;
       }
     }
+    if (editRole === 'satker_head_loyalis' && !editSatkerName.trim()) {
+      setErrorMsg('Nama SatKer Loyalis wajib diisi.');
+      return;
+    }
     isActionLoadingRef.current = true;
     setActionLoading(true);
     setErrorMsg(null);
@@ -593,6 +600,7 @@ export default function UserManagementPage() {
           uid: editingUser.uid,
           email: editEmail,
           displayName: editDisplayName,
+          satkerName: editRole === 'satker_head_loyalis' ? editSatkerName.trim() : undefined,
           role: editRole,
           permittedCategories: (editRole === 'honorer' || editRole === 'loyalis' || editRole === 'ketua_shift_satpam') ? (editLinkedEmployeeId ? [allEmployees.find(e => e.id === editLinkedEmployeeId)?.detail || ''] : []) : editPermitted,
           linkedEmployeeId: (editRole === 'honorer' || editRole === 'loyalis' || editRole === 'ketua_shift_satpam') ? editLinkedEmployeeId : undefined,
@@ -638,6 +646,7 @@ export default function UserManagementPage() {
             ? {
                 ...u,
                 displayName: editDisplayName,
+                satkerName: editRole === 'satker_head_loyalis' ? editSatkerName.trim() : u.satkerName,
                 email: editEmail,
                 role: editRole,
                 permittedCategories: updatedCategories,
@@ -1674,6 +1683,24 @@ export default function UserManagementPage() {
                       <option value="ketua_shift_satpam">Ketua Shift SATPAM (Lapor Shift Regu)</option>
                     </select>
                   </div>
+
+                  {editRole === 'satker_head_loyalis' && (
+                    <div>
+                      <Label htmlFor="editSatkerName" className="text-xs font-semibold text-slate-600 block mb-1.5">Nama SatKer Loyalis</Label>
+                      <Input
+                        id="editSatkerName"
+                        value={editSatkerName}
+                        onChange={(e) => setEditSatkerName(e.target.value)}
+                        placeholder="Contoh: Unit Layanan Loyalis"
+                        maxLength={150}
+                        required
+                        className="rounded-sm border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/20 h-[42px] bg-white text-sm font-semibold"
+                      />
+                      <p className="mt-1 text-[11px] text-slate-500 leading-relaxed">
+                        Nama ini menjadi nama buku keuangan SatKer milik akun ini dan harus unik.
+                      </p>
+                    </div>
+                  )}
 
                   {/* Role Summary Badge */}
                   <div className="p-3.5 rounded-md bg-white border border-slate-200/80 text-xs leading-relaxed text-slate-600 space-y-1">
