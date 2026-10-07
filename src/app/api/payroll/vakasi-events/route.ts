@@ -2,13 +2,11 @@ import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
-import { assertRequestId, isImmutablePayrollStatus } from '@/lib/payroll/domain';
+import { assertRequestId } from '@/lib/payroll/domain';
 import { URAIAN_EDITOR_ROLES } from '@/lib/payroll/roles';
 import {
-  buildVakasiPekaryaProjectionInputs,
   isProposalLpjSandboxSource,
   isPayableVakasiTambahan,
-  VAKASI_PEKARYA_PROJECTION_SOURCE_KIND,
   vakasiWorkerCollection,
   type ResolvedVakasiWorker,
   type VakasiEmployeeCollection,
@@ -23,6 +21,13 @@ import {
   type AuthenticatedProfile,
 } from '@/lib/server/auth';
 import { assertPeriodAcceptsInput } from '@/lib/server/payrollPeriod';
+import {
+  assertVakasiSlipsEditable,
+  rememberVakasiOwnedLabels,
+  vakasiAffectedEmployeeIds,
+  vakasiProjectionQuery,
+  writeVakasiPekaryaProjections,
+} from '@/lib/server/vakasiEventWrite';
 import { POST as propagateVakasiRoute } from '@/app/api/payroll/vakasi-propagation/route';
 
 export const dynamic = 'force-dynamic';
@@ -355,20 +360,6 @@ function historicalWorker(
   };
 }
 
-function financialSignature(
-  worker: ResolvedVakasiWorker | undefined,
-  eventName: string,
-): string {
-  return worker
-    ? [
-        worker.employeeCollection,
-        worker.jobCategory || '',
-        worker.payGiven,
-        worker.employeeCollection === 'Employees_Loyalis' ? eventName : '',
-      ].join('|')
-    : '';
-}
-
 function statusForCommand(
   actor: AuthenticatedProfile,
   command: VakasiCommand,
@@ -484,9 +475,7 @@ export async function POST(request: NextRequest) {
         throw new HttpError(409, 'Periode kegiatan Vakasi tidak boleh diubah.');
       }
       const periodRef = adminDb.collection('PayrollPeriods').doc(period);
-      const projectionQuery = adminDb
-        .collection('KegiatanSpj')
-        .where('sourceVakasiEventId', '==', eventId);
+      const projectionQuery = vakasiProjectionQuery(eventId);
       const [periodSnapshot, existingProjectionSnapshot] = await Promise.all([
         transaction.get(periodRef),
         transaction.get(projectionQuery),
@@ -573,39 +562,20 @@ export async function POST(request: NextRequest) {
       const willBePayable = nextStatus === 'approved';
       const previousEventName = normalizedText(before?.eventName, 180);
       const currentEventName = snapshot?.eventName || previousEventName;
-      const previousById = new Map(previousWorkers.map((worker) => [worker.employeeId, worker]));
-      const currentById = new Map(currentWorkers.map((worker) => [worker.employeeId, worker]));
-      const affectedEmployeeIds = allEmployeeIds.filter((employeeId) => {
-        const previous = wasPayable ? previousById.get(employeeId) : undefined;
-        const current = willBePayable ? currentById.get(employeeId) : undefined;
-        return (
-          financialSignature(previous, previousEventName) !==
-          financialSignature(current, currentEventName)
-        );
+      const affectedEmployeeIds = vakasiAffectedEmployeeIds({
+        previousWorkers,
+        previousEventName,
+        wasPayable,
+        currentWorkers,
+        currentEventName,
+        willBePayable,
       });
-
-      if (affectedEmployeeIds.length > 0) {
-        const slipRefs = affectedEmployeeIds.map((employeeId) =>
-          adminDb
-            .collection('PayrollSlipStates')
-            .doc(`${period.replace('-', '_')}_${employeeId}`),
-        );
-        const slipSnapshots = await transaction.getAll(...slipRefs);
-        const immutableNames = slipSnapshots.flatMap((slipSnapshot, index) => {
-          if (!slipSnapshot.exists || !isImmutablePayrollStatus(slipSnapshot.data()?.status)) {
-            return [];
-          }
-          const employeeId = affectedEmployeeIds[index];
-          const directory = directories.get(employeeId);
-          return [directory?.employeeName || employeeId];
-        });
-        if (immutableNames.length > 0) {
-          throw new HttpError(
-            409,
-            `Perubahan ditolak karena slip penerima berikut sudah dikunci/dibayar: ${immutableNames.join(', ')}.`,
-          );
-        }
-      }
+      await assertVakasiSlipsEditable(
+        transaction,
+        period,
+        affectedEmployeeIds,
+        (employeeId) => directories.get(employeeId)?.employeeName || employeeId,
+      );
 
       const now = admin.firestore.FieldValue.serverTimestamp();
       const eventName = snapshot?.eventName || normalizedText(before?.eventName, 180);
@@ -625,29 +595,13 @@ export async function POST(request: NextRequest) {
           },
         ]),
       );
-      const ownedEarningLabelsByEmployee = Object.fromEntries(
-        Object.entries(
-          before?.ownedEarningLabelsByEmployee &&
-          typeof before.ownedEarningLabelsByEmployee === 'object'
-            ? before.ownedEarningLabelsByEmployee as Record<string, unknown>
-            : {},
-        ).flatMap(([employeeId, labels]) => {
-          const validLabels = Array.isArray(labels)
-            ? labels.filter((label): label is string => typeof label === 'string' && Boolean(label.trim()))
-            : [];
-          return validLabels.length > 0 ? [[employeeId, validLabels.slice(-20)]] : [];
-        }),
-      ) as Record<string, string[]>;
-      const rememberOwnedLabel = (worker: ResolvedVakasiWorker, label: string) => {
-        if (worker.employeeCollection !== 'Employees_Loyalis' || !label.trim()) return;
-        const labels = ownedEarningLabelsByEmployee[worker.employeeId] || [];
-        if (!labels.some((existing) => existing.trim().toLocaleLowerCase('id-ID') === label.trim().toLocaleLowerCase('id-ID'))) {
-          labels.push(label.trim());
-        }
-        ownedEarningLabelsByEmployee[worker.employeeId] = labels.slice(-20);
-      };
-      previousWorkers.forEach((worker) => rememberOwnedLabel(worker, previousEventName));
-      currentWorkers.forEach((worker) => rememberOwnedLabel(worker, eventName));
+      const ownedEarningLabelsByEmployee = rememberVakasiOwnedLabels({
+        before: before?.ownedEarningLabelsByEmployee,
+        previousWorkers,
+        previousEventName,
+        currentWorkers,
+        currentEventName: eventName,
+      });
       const after: Record<string, unknown> = {
         ...before,
         eventName,
@@ -695,63 +649,17 @@ export async function POST(request: NextRequest) {
         after.unapprovedBy = actor.uid;
       }
 
-      const desiredProjections = nextStatus === 'approved'
-        ? buildVakasiPekaryaProjectionInputs({
-            sourceVakasiEventId: eventId,
-            eventName,
-            period,
-            workers: currentWorkers,
-          })
-        : [];
-      const desiredProjectionIds = new Set(desiredProjections.map((projection) => projection.id));
-      const existingProjections = new Map(
-        existingProjectionSnapshot.docs.map((snapshot) => [snapshot.id, snapshot]),
-      );
-
-      for (const projection of desiredProjections) {
-        const projectionRef = adminDb.collection('KegiatanSpj').doc(projection.id);
-        const existing = existingProjections.get(projection.id);
-        const existingData = existing?.data() || null;
-        transaction.set(projectionRef, {
-          ...projection,
-          status: 'approved',
-          revision: Number(existingData?.revision || 0) + 1,
-          sourceVakasiRevision: after.revision,
-          approvedAt:
-            existingData?.status === 'approved' && existingData.approvedAt
-              ? existingData.approvedAt
-              : now,
-          approvedBy:
-            existingData?.status === 'approved' && existingData.approvedBy
-              ? existingData.approvedBy
-              : actor.uid,
-          createdAt: existingData?.createdAt || now,
-          createdBy: existingData?.createdBy || actor.uid,
-          updatedAt: now,
-          updatedBy: actor.uid,
-          schemaVersion: 3,
-        });
-      }
-
-      for (const projectionSnapshot of existingProjectionSnapshot.docs) {
-        if (desiredProjectionIds.has(projectionSnapshot.id)) continue;
-        const projectionData = projectionSnapshot.data();
-        transaction.set(
-          projectionSnapshot.ref,
-          {
-            status: 'voided',
-            sourceKind: VAKASI_PEKARYA_PROJECTION_SOURCE_KIND,
-            sourceVakasiEventId: eventId,
-            sourceVakasiRevision: after.revision,
-            revision: Number(projectionData.revision || 0) + 1,
-            voidedAt: now,
-            voidedBy: actor.uid,
-            updatedAt: now,
-            updatedBy: actor.uid,
-          },
-          { merge: true },
-        );
-      }
+      const pekaryaProjectionIds = writeVakasiPekaryaProjections(transaction, {
+        eventId,
+        eventName,
+        period,
+        workers: currentWorkers,
+        approved: nextStatus === 'approved',
+        eventRevision: Number(after.revision),
+        existingProjections: existingProjectionSnapshot,
+        actorUid: actor.uid,
+        now,
+      });
 
       transaction.set(eventRef, after);
       transaction.create(
@@ -767,7 +675,7 @@ export async function POST(request: NextRequest) {
           metadata: {
             resultingStatus: nextStatus,
             affectedEmployeeIds,
-            pekaryaProjectionIds: desiredProjections.map((projection) => projection.id),
+            pekaryaProjectionIds,
           },
         }),
       );
