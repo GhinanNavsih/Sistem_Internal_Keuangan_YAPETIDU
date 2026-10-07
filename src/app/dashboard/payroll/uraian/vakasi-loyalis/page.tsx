@@ -42,6 +42,8 @@ import CetakKegiatanLoyalisDialog from '@/components/CetakKegiatanLoyalisDialog'
 import { generateKegiatanLoyalisRecapPdf } from '@/utils/generateKegiatanLoyalisRecapPdf';
 import { generateKegiatanLoyalisRecapXlsx } from '@/utils/generateKegiatanLoyalisRecapXlsx';
 import { isProposalLpjSandboxSource } from '@/lib/payroll/vakasiTambahan';
+import { BANSOS_EVENT_SOURCE_KIND, isBansosKind } from '@/lib/payroll/bansos';
+import BansosEventPanel from '@/components/vakasi/BansosEventPanel';
 import {
   authenticatedJson,
   createFinancialRequestId,
@@ -164,6 +166,9 @@ export default function VakasiLoyalisPage() {
   // Lightbox for file preview
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
+  // A BanSos event (Ajuan Duka / Melahirkan) opens its own panel instead of the form.
+  const [selectedBansosEventId, setSelectedBansosEventId] = useState<string | null>(null);
+
   // Current event status
   const [currentEventStatus, setCurrentEventStatus] = useState<string | null>(null);
   const [currentEventReviewNote, setCurrentEventReviewNote] = useState<string | null>(null);
@@ -263,8 +268,14 @@ export default function VakasiLoyalisPage() {
 
   const filteredEvents = useMemo(() => {
     if (!filterDept) return existingEvents;
-    return existingEvents.filter(evt => evt.departmentUnit === filterDept);
+    // BanSos events belong to no unit, so they stay listed under any filter.
+    return existingEvents.filter(evt => evt.departmentUnit === filterDept || evt.sourceKind === BANSOS_EVENT_SOURCE_KIND);
   }, [existingEvents, filterDept]);
+
+  const selectedBansosEvent = useMemo(
+    () => existingEvents.find(evt => evt.id === selectedBansosEventId && evt.sourceKind === BANSOS_EVENT_SOURCE_KIND) || null,
+    [existingEvents, selectedBansosEventId],
+  );
 
   const sanitizeEventId = (name: string): string => {
     return name.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10);
@@ -927,6 +938,7 @@ export default function VakasiLoyalisPage() {
               {(!isReadOnly || profile?.role === 'super_admin') && (
                 <Button
                   onClick={() => {
+                    setSelectedBansosEventId(null);
                     setSelectedEventId(null);
                     setEventName('');
                     setIsEndOfMonth(false);
@@ -960,12 +972,36 @@ export default function VakasiLoyalisPage() {
             ) : (
               <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
                 {filteredEvents.map(evt => {
-                  const isActive = selectedEventId === evt.id;
+                  const isBansos = evt.sourceKind === BANSOS_EVENT_SOURCE_KIND;
+                  const isActive = isBansos ? selectedBansosEvent?.id === evt.id : !selectedBansosEvent && selectedEventId === evt.id;
                   const wCount = Object.keys(evt.eventWorkers || {}).length;
+                  if (isBansos) {
+                    const waiting = Number(evt.bansosCounts?.waiting || 0);
+                    const paid = Number(evt.bansosCounts?.paid || 0);
+                    return (
+                      <div
+                        key={evt.id}
+                        onClick={() => setSelectedBansosEventId(evt.id)}
+                        className={`p-4 rounded-md border transition-all duration-200 cursor-pointer ${getCardBgClass(waiting > 0 ? 'pending_review' : 'approved', isActive)}`}
+                      >
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="font-bold text-slate-800 text-xs line-clamp-1">{evt.eventName}</div>
+                          {waiting > 0 ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm border bg-amber-50 text-amber-700 border-amber-200">{waiting} menunggu</span>
+                          ) : getStatusBadge(paid > 0 ? 'approved' : 'draft')}
+                        </div>
+                        <div className="flex items-center justify-between mt-3 text-[10px] text-slate-400 font-medium">
+                          <span className="bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-sm text-rose-700 font-bold uppercase tracking-wider">BanSos</span>
+                          <span>{paid} Disetujui · {fmtRp(evt.totalPayout || 0)}</span>
+                        </div>
+                      </div>
+                    );
+                  }
                   return (
                     <div
                       key={evt.id}
                       onClick={() => {
+                        setSelectedBansosEventId(null);
                         setSelectedEventId(evt.id);
                         setEventName(evt.eventName);
                         setIsEndOfMonth(!!evt.isEndOfMonth);
@@ -1018,6 +1054,16 @@ export default function VakasiLoyalisPage() {
 
         {/* Right side form */}
         <div className="xl:col-span-8">
+          {selectedBansosEvent && isBansosKind(selectedBansosEvent.bansosKind) ? (
+            <BansosEventPanel
+              key={selectedBansosEvent.id}
+              period={selectedBansosEvent.period}
+              kind={selectedBansosEvent.bansosKind}
+              eventRevision={Number(selectedBansosEvent.revision || 0)}
+              canDecide={profile?.role === 'super_admin'}
+              onMessage={setMessage}
+            />
+          ) : (
           <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
             <div className="flex justify-between items-center pb-4 border-b border-slate-100">
               <div>
@@ -1432,6 +1478,7 @@ export default function VakasiLoyalisPage() {
               )}
             </div>
           </Card>
+          )}
         </div>
       </div>
 
