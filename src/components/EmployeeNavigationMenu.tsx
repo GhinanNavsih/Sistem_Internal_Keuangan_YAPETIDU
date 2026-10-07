@@ -26,6 +26,7 @@ import {
   ClipboardList,
   Compass,
   GraduationCap,
+  HandHeart,
   KeyRound,
   Loader2,
   Menu as MenuIcon,
@@ -138,6 +139,15 @@ export default function EmployeeNavigationMenu() {
             >
               <GraduationCap className="text-indigo-500" />
               Pengajuan T. Keluarga
+            </DropdownMenuItem>
+          )}
+          {(isLoyalis || isBlueCollarHonorer) && pathname !== '/employee/bansos' && (
+            <DropdownMenuItem
+              className="min-h-11 rounded-sm px-3.5 py-2.5 text-sm"
+              render={<Link href="/employee/bansos" />}
+            >
+              <HandHeart className="text-rose-500" />
+              Ajuan BanSos
             </DropdownMenuItem>
           )}
           {isSopir && pathname !== '/employee/driver-history' && (

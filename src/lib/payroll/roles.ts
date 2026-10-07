@@ -28,12 +28,13 @@ export const LEGACY_ROLE_ALIASES: Readonly<Record<string, UserRole>> = {
 /**
  * Admin Karyawan (stored as `loyalis_admin`) keeps master data of Loyalis and
  * Pekarya employees and runs Loyalis presence: the monthly import/calculator,
- * presence corrections and Loyalis leave. It may also read Pekarya presence
- * (review stays with Kepala SatKer and Super Admin). These are the only pages
- * the role may open; the first is its home.
+ * presence corrections and Loyalis leave. It verifies BanSos ajuan and may
+ * also read Pekarya presence (review stays with Kepala SatKer and Super
+ * Admin). These are the only pages the role may open; the first is its home.
  */
 export const LOYALIS_ADMIN_PATHS = [
   '/dashboard/employees',
+  '/dashboard/bansos',
   '/dashboard/payroll/uraian/presensi-loyalis-raw',
   '/dashboard/payroll/uraian/presensi-pekarya',
   '/dashboard/payroll/uraian/presence-corrections',

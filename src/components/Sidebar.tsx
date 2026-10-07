@@ -24,6 +24,7 @@ import {
   BarChart3,
   Clock,
   Compass,
+  HandHeart,
   ScanLine,
   Wrench,
   LogOut,
@@ -134,6 +135,13 @@ export default function Sidebar() {
       name: 'Koperasi',
       path: '/dashboard/payroll/koperasi',
       icon: Banknote
+    },
+    {
+      // Admin Karyawan verifies BanSos here; Super Admin only views it and
+      // decides its own side from the Vakasi Tambahan page.
+      name: 'Verifikasi BanSos',
+      path: '/dashboard/bansos',
+      icon: HandHeart
     },
     {
       name: 'Keuangan SatKer',
@@ -250,6 +258,12 @@ export default function Sidebar() {
       path: '/dashboard/employees',
       icon: Users,
       activePattern: '/dashboard/employees',
+    },
+    {
+      name: 'Verifikasi BanSos',
+      path: '/dashboard/bansos',
+      icon: HandHeart,
+      activePattern: '/dashboard/bansos',
     },
     {
       name: 'Presensi Loyalis',
