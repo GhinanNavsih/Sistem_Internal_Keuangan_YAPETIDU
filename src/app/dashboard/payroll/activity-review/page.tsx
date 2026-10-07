@@ -372,9 +372,13 @@ function calculateDefaultFee(
   let minutes = (eh * 60 + em) - (sh * 60 + sm);
   if (minutes < 0) minutes += 24 * 60;
 
+  const effectiveType = jobCategory === 'SATPAM' && (!activityType || activityType === 'Lainnya')
+    ? 'Piket'
+    : activityType;
+
   // Rate policy lives in the payroll library; activityDate picks the regime so a
   // pre-cutoff submission still prefills at the rate it was filed under.
-  return pekaryaSpjRateBasis(minutes, activityType, activityName, activityDate).amount;
+  return pekaryaSpjRateBasis(minutes, effectiveType, activityName, activityDate).amount;
 }
 
 function getStatusConfig(status: string) {

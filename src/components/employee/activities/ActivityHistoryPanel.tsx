@@ -102,7 +102,7 @@ function resolveCardHeaderUpah(activity: ActivityReport): CardHeaderUpah | null 
   const baseFee =
     activity.submittedFeeEstimate && activity.submittedFeeEstimate > 0
       ? activity.submittedFeeEstimate
-      : calculateDefaultFee(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName, activity.activityDate);
+      : calculateDefaultFee(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName, activity.activityDate, activity.jobCategory);
   const qualifies = !isFlat && cardActivityMinutes(activity.timeStart, activity.timeEnd) >= UANG_MAKAN_MIN_MINUTES;
 
   return {
@@ -494,7 +494,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                                     </span>
                                   ) : (
                                     (() => {
-                                      const breakdown = getActivityFeeBreakdown(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName, activity.activityDate);
+                                      const breakdown = getActivityFeeBreakdown(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName, activity.activityDate, activity.jobCategory);
                                       return breakdown && (
                                         <span className="text-xs text-emerald-600/70 font-medium">
                                           ({breakdown}{activity.hasUangMakan ? ' + Rp7.500 Uang Makan' : ''})
@@ -530,6 +530,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                                                     activity.activityType,
                                                     activity.activityName,
                                                     activity.activityDate,
+                                                    activity.jobCategory,
                                                   ))
                                                 : activity.fee,
                                             )}`}
@@ -576,7 +577,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                                 (() => {
                                   // Reuses headerUpah (computed once above) so the amount can never
                                   // read differently expanded than it does on the collapsed card.
-                                  const breakdown = getActivityFeeBreakdown(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName, activity.activityDate);
+                                  const breakdown = getActivityFeeBreakdown(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName, activity.activityDate, activity.jobCategory);
                                   const breakdownStr = breakdown
                                     ? (headerUpah?.hasUangMakan ? `(${breakdown} + *Rp7.500*)` : `(${breakdown})`)
                                     : '';

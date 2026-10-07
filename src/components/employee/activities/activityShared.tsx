@@ -314,7 +314,7 @@ export function padTime(time: string): string {
   return time;
 }
 
-export function calculateDefaultFee(timeStart: string, timeEnd: string, activityType?: string, activityName?: string, activityDate?: string): number {
+export function calculateDefaultFee(timeStart: string, timeEnd: string, activityType?: string, activityName?: string, activityDate?: string, jobCategory?: string): number {
   if (!timeStart || !timeEnd) {
     return activityType === 'Buang Sampah' || activityName === 'Buang Sampah'
       ? 5_000
@@ -322,13 +322,16 @@ export function calculateDefaultFee(timeStart: string, timeEnd: string, activity
   }
 
   try {
-    return calculateActivitySpjEstimate(timeStart, timeEnd, activityType, activityName, activityDate);
+    const effectiveType = jobCategory === 'SATPAM' && (!activityType || activityType === 'Lainnya')
+      ? 'Piket'
+      : activityType;
+    return calculateActivitySpjEstimate(timeStart, timeEnd, effectiveType, activityName, activityDate);
   } catch {
     return 0;
   }
 }
 
-export function getActivityFeeBreakdown(timeStart: string, timeEnd: string, activityType?: string, activityName?: string, activityDate?: string): string {
+export function getActivityFeeBreakdown(timeStart: string, timeEnd: string, activityType?: string, activityName?: string, activityDate?: string, jobCategory?: string): string {
   if (activityType === 'Buang Sampah' || activityName === 'Buang Sampah') {
     return 'Tarif Flat';
   }
@@ -343,7 +346,11 @@ export function getActivityFeeBreakdown(timeStart: string, timeEnd: string, acti
   let minutes = (eh * 60 + em) - (sh * 60 + sm);
   if (minutes < 0) minutes += 24 * 60;
 
-  const basis = pekaryaSpjRateBasis(minutes, activityType, activityName, activityDate);
+  const effectiveType = jobCategory === 'SATPAM' && (!activityType || activityType === 'Lainnya')
+    ? 'Piket'
+    : activityType;
+
+  const basis = pekaryaSpjRateBasis(minutes, effectiveType, activityName, activityDate);
   const rp = `Rp${basis.rate.toLocaleString('id-ID')}`;
 
   if (!basis.perMinute) {

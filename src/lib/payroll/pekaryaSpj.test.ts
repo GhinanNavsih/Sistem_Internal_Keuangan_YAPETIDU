@@ -17,6 +17,9 @@ import {
   satpamFoundItemFeeNeedsAdjustmentReason,
   sumApprovedActivitySpj,
   sumApprovedEventSpj,
+  SATPAM_SPJ_ACTIVITY_TYPES,
+  isSatpamSpjActivityType,
+  assertSatpamSpjActivityType,
 } from './pekaryaSpj';
 
 test('maps legacy cutoff, July transition, and calendar periods', () => {
@@ -404,3 +407,29 @@ test('historical paper SPJ applies only to Khoirul Anam and Pribadi', () => {
     false,
   );
 });
+
+test('Satpam personal SPJ classification is restricted to Piket and Standby and prices at Rp5.000/jam', () => {
+  assert.deepEqual(SATPAM_SPJ_ACTIVITY_TYPES, ['Piket', 'Standby']);
+  assert.equal(isSatpamSpjActivityType('Piket'), true);
+  assert.equal(isSatpamSpjActivityType('Standby'), true);
+  assert.equal(isSatpamSpjActivityType('Lainnya'), false);
+  assert.equal(isSatpamSpjActivityType("Ro'an"), false);
+  assert.equal(isSatpamSpjActivityType('Buang Sampah'), false);
+
+  assert.doesNotThrow(() => assertSatpamSpjActivityType('Piket'));
+  assert.doesNotThrow(() => assertSatpamSpjActivityType('Standby'));
+  assert.throws(
+    () => assertSatpamSpjActivityType('Lainnya'),
+    /Klasifikasi SPJ Satpam hanya boleh memilih Piket atau Standby/,
+  );
+
+  // Piket and Standby price at Rp5.000 / jam (with 1-hour minimum floor)
+  const ON = '2026-10-07';
+  assert.equal(calculateActivitySpjEstimate('08:00', '09:00', 'Piket', undefined, ON), 5_000);
+  assert.equal(calculateActivitySpjEstimate('08:00', '09:00', 'Standby', undefined, ON), 5_000);
+  assert.equal(calculateActivitySpjEstimate('08:00', '10:00', 'Piket', 'Pengamanan Acara', ON), 10_000);
+  assert.equal(calculateActivitySpjEstimate('08:00', '10:00', 'Standby', 'Standby Pos 1', ON), 10_000);
+  // Under 1 hour still pays 1 full hour (floor)
+  assert.equal(calculateActivitySpjEstimate('08:00', '08:30', 'Piket', undefined, ON), 5_000);
+});
+

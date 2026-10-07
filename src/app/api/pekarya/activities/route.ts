@@ -45,6 +45,7 @@ import {
   assertSatpamFoundItemPhotoCount,
   assertPekaryaActivityType,
   isPekaryaJobCategory,
+  isSatpamSpjActivityType,
   buildPekaryaActivityIdentity,
   calculateActivitySpjEstimate,
   pekaryaPayrollPeriodForDate,
@@ -713,6 +714,16 @@ export async function POST(request: NextRequest) {
         throw new HttpError(
           400,
           'SPJ pribadi Satpam wajib memiliki waktu selesai.',
+        );
+      }
+      if (
+        jobCategory === 'SATPAM' &&
+        !isPhotoOnlyReport &&
+        !isSatpamSpjActivityType(command.activityType)
+      ) {
+        throw new HttpError(
+          400,
+          'Klasifikasi SPJ Satpam hanya boleh memilih Piket atau Standby.',
         );
       }
       const identityAnomalies: string[] = [];

@@ -155,6 +155,7 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
     'PONTI',
   ].includes(userJobCategory);
   const isSopir = userJobCategory === 'SOPIR';
+  const isSatpam = userJobCategory === 'SATPAM';
   const supportsSpjProof = isKebersihan || userJobCategory === 'TEKNISI' || userJobCategory === 'SATPAM';
   const isKetuaShiftSatpam = (profile?.role as string) === 'ketua_shift_satpam';
 
@@ -892,8 +893,8 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
   // ── Form Handlers ──
   const resetForm = () => {
     activityRequestIdRef.current = null;
-    const defaultType = isKebersihan ? 'Piket' : 'Lainnya';
-    const defaultName = isKebersihan ? 'Piket' : (isSopir ? 'Perjalanan Dinas' : '');
+    const defaultType = isKebersihan || isSatpam ? 'Piket' : 'Lainnya';
+    const defaultName = isKebersihan || isSatpam ? 'Piket' : (isSopir ? 'Perjalanan Dinas' : '');
     setFormActivityType(defaultType);
     setFormName(defaultName);
     setFormCustomName('');
@@ -963,9 +964,19 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
     setEditingActivity(activity);
     const type = isKebersihan
       ? (activity.activityType || (['Piket', 'Standby', 'Ro\'an', 'Buang Sampah'].includes(cleanName) ? cleanName : 'Lainnya'))
-      : 'Lainnya';
+      : isSatpam
+        ? (activity.activityType === 'Standby' || cleanName.toLowerCase().startsWith('standby') ? 'Standby' : 'Piket')
+        : 'Lainnya';
     setFormActivityType(type as any);
-    if (type === 'Lainnya') {
+    if (isSatpam) {
+      if (cleanName !== 'Piket' && cleanName !== 'Standby') {
+        setFormCustomName(cleanName);
+        setFormName(cleanName);
+      } else {
+        setFormCustomName('');
+        setFormName(type);
+      }
+    } else if (type === 'Lainnya') {
       setFormCustomName(cleanName);
       setFormName(cleanName);
     } else {
@@ -3000,7 +3011,11 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
     }
 
     const routeSummary = isSopir ? ` (${formPoints.map(p => p.trim()).filter(Boolean).join(' → ')})` : '';
-    const finalActivityName = isSopir ? formName.trim().replace(/\s*\(.*\)\s*$/, '') + routeSummary : formName.trim();
+    const finalActivityName = isSopir
+      ? formName.trim().replace(/\s*\(.*\)\s*$/, '') + routeSummary
+      : isSatpam
+        ? (formCustomName.trim() || formActivityType)
+        : formName.trim();
 
     const driverFields = isSopir ? {
       tripType: formTripType,
@@ -3068,6 +3083,7 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
     userJobCategory,
     isKebersihan,
     isSopir,
+    isSatpam,
     supportsSpjProof,
     isKetuaShiftSatpam,
     myShiftTeam,

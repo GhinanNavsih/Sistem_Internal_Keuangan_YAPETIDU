@@ -45,6 +45,27 @@ export const PEKARYA_ACTIVITY_TYPES = [
 
 export type PekaryaActivityType = (typeof PEKARYA_ACTIVITY_TYPES)[number];
 
+export const SATPAM_SPJ_ACTIVITY_TYPES = ['Piket', 'Standby'] as const;
+
+export type SatpamSpjActivityType = (typeof SATPAM_SPJ_ACTIVITY_TYPES)[number];
+
+export function isSatpamSpjActivityType(
+  value: unknown,
+): value is SatpamSpjActivityType {
+  return (
+    typeof value === 'string' &&
+    (SATPAM_SPJ_ACTIVITY_TYPES as readonly string[]).includes(value)
+  );
+}
+
+export function assertSatpamSpjActivityType(
+  value: unknown,
+): asserts value is SatpamSpjActivityType {
+  if (!isSatpamSpjActivityType(value)) {
+    throw new Error('Klasifikasi SPJ Satpam hanya boleh memilih Piket atau Standby.');
+  }
+}
+
 export interface PekaryaActivityFinancialLike {
   id?: string;
   employeeId?: string;
