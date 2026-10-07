@@ -88,6 +88,7 @@ export async function GET(request: NextRequest) {
         'super_admin',
         'finance_verifier',
         'satker_head',
+        'loyalis_admin',
       ]);
     }
     const [snapshot, shiftRegistrations, periodSnapshot] = await Promise.all([

@@ -2,14 +2,12 @@
 
 import { bankDetailsDiffer, sakuBankDetails, type KoperasiEmployeeCollection } from '@/lib/koperasiMembers';
 
-import React, { Suspense, useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import GlobalHeader from '@/components/GlobalHeader';
-import UraianNavToggles from '@/components/UraianNavToggles';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import {
   Table,
   TableBody,
@@ -58,7 +56,6 @@ import {
   FileClock,
   History,
   ClipboardCheck,
-  LogOut,
   FileText,
   Building2,
   Plus,
@@ -588,7 +585,7 @@ function familyDependentDiffs(oldMetrics: FamilyAllowanceMetrics | undefined, ne
 const STRUCTURAL_POSITIONS_FIELD = 'employment_profile.structural_positions';
 
 /**
- * Loyalis Admin may not see what a position pays, but the raw diff of a
+ * Admin Karyawan may not see what a position pays, but the raw diff of a
  * structural_positions edit carries every entry's `allowance`. Collapse those
  * rows into a single names-only row (an unchanged list leaves none).
  */
@@ -649,7 +646,6 @@ function ConversionNote({ emp, tab }: { emp: unknown; tab: string }) {
 export default function EmployeesPage() {
   const router = useRouter();
   const { user, profile, loading: authLoading} = useAuth();
-  const requestLogout = useConfirmLogout();
   const { employeesLoyalis, employeesBlueCollar, gradeCodesBlue, gradeCodesWhite, loading: contextLoading, refreshData, kepangkatanAllowanceMap } = useDashboardData();
   const isLoyalisAdmin = profile?.role === 'loyalis_admin';
   const loyalisAdminLoyalisQuery = useEmployeesLoyalis(isLoyalisAdmin);
@@ -2220,7 +2216,7 @@ export default function EmployeesPage() {
                 Buat NIPY Pekarya
               </Button>
             )}
-            {/* Loyalis Admin is confined to LOYALIS_ADMIN_PATHS, so the salary matrix is not theirs to open */}
+            {/* Admin Karyawan is confined to LOYALIS_ADMIN_PATHS, so the salary matrix is not theirs to open */}
             {!isLoyalisAdmin && (
               <Link href="/dashboard/payroll/master">
                 <Button variant="outline" className="rounded-sm border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm px-4 cursor-pointer">
@@ -2231,27 +2227,8 @@ export default function EmployeesPage() {
             <Button onClick={handleOpenAdd} className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-200 px-6 cursor-pointer">
               <UserPlus className="w-4 h-4 mr-2" /> Tambah Pegawai
             </Button>
-            {isLoyalisAdmin && (
-              <Button
-                variant="outline"
-                onClick={requestLogout}
-                className="rounded-sm text-rose-600 border-slate-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-100 transition-all cursor-pointer flex items-center gap-2"
-              >
-                <LogOut className="w-4 h-4" />
-                Keluar
-              </Button>
-            )}
           </div>
         </div>
-
-        {/* Loyalis Admin has no sidebar; this row links its three pages together */}
-        {isLoyalisAdmin && (
-          <div className="mb-6">
-            <Suspense fallback={null}>
-              <UraianNavToggles />
-            </Suspense>
-          </div>
-        )}
 
         {/* Collar type tabs and Search Box */}
         <div className="flex items-center gap-4 mb-6">
@@ -3647,7 +3624,7 @@ export default function EmployeesPage() {
                       {(() => {
                         const positions = formData.employment_profile?.structural_positions || [];
                         const positionsWithIndex = positions.map((pos: any, idx: number) => ({ ...pos, originalIndex: idx }));
-                        // Loyalis Admin sees no pay, so the pay-ranked order (which would reveal it) is skipped for them.
+                        // Admin Karyawan sees no pay, so the pay-ranked order (which would reveal it) is skipped for them.
                         const sorted = isLoyalisAdmin
                           ? positionsWithIndex
                           : [...positionsWithIndex].sort((a: any, b: any) => (Number(b.allowance) || 0) - (Number(a.allowance) || 0));
@@ -3696,7 +3673,7 @@ export default function EmployeesPage() {
                       )}
                     </div>
 
-                    {/* Loyalis Admin picks from the existing positions (no free text, no pay); Super Admin can also define one */}
+                    {/* Admin Karyawan picks from the existing positions (no free text, no pay); Super Admin can also define one */}
                     {isLoyalisAdmin ? (
                       <StructuralPositionPicker
                         options={dbPositions.map(({ id, name, satker }) => ({ id, name, satker }))}

@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EMPLOYEE_ACTIVITY_PATHS } from './employeeActivities';
-import { LOYALIS_ADMIN_HOME_PATH } from './payroll/roles';
+import {
+  getUserRoleLabel,
+  isLoyalisAdminPath,
+  LOYALIS_ADMIN_HOME_PATH,
+} from './payroll/roles';
 import { getRoleHomePath } from './roleHome';
 
 test('each role lands on its own home page', () => {
@@ -33,4 +37,11 @@ test('honorer and ketua shift land on their own activity workflow', () => {
 test('a retired role id lands where its successor does', () => {
   assert.equal(getRoleHomePath({ role: 'employee_admin' }), LOYALIS_ADMIN_HOME_PATH);
   assert.equal(getRoleHomePath({ role: 'loyalis_presence_admin' }), LOYALIS_ADMIN_HOME_PATH);
+});
+
+test('Admin Karyawan (loyalis_admin) is named so and may open Presensi Pekarya', () => {
+  assert.equal(getUserRoleLabel('loyalis_admin'), 'Admin Karyawan');
+  assert.equal(getUserRoleLabel('employee_admin'), 'Admin Karyawan');
+  assert.equal(isLoyalisAdminPath('/dashboard/payroll/uraian/presensi-pekarya'), true);
+  assert.equal(isLoyalisAdminPath('/dashboard/payroll/uraian/rekap-pekarya'), false);
 });

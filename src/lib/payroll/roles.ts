@@ -26,13 +26,16 @@ export const LEGACY_ROLE_ALIASES: Readonly<Record<string, UserRole>> = {
 };
 
 /**
- * Loyalis Admin keeps master data of employees and runs Loyalis presence:
- * the monthly import/calculator, presence corrections and Loyalis leave.
- * These are the only pages the role may open; the first is its home.
+ * Admin Karyawan (stored as `loyalis_admin`) keeps master data of Loyalis and
+ * Pekarya employees and runs Loyalis presence: the monthly import/calculator,
+ * presence corrections and Loyalis leave. It may also read Pekarya presence
+ * (review stays with Kepala SatKer and Super Admin). These are the only pages
+ * the role may open; the first is its home.
  */
 export const LOYALIS_ADMIN_PATHS = [
   '/dashboard/employees',
   '/dashboard/payroll/uraian/presensi-loyalis-raw',
+  '/dashboard/payroll/uraian/presensi-pekarya',
   '/dashboard/payroll/uraian/presence-corrections',
 ] as const;
 
@@ -122,7 +125,7 @@ export const USER_ROLE_LABELS: Readonly<Record<UserRole, string>> = {
   satker_head_loyalis: 'Kepala SatKer Loyalis',
   satker_finance_admin: 'Sekretariat Keuangan SatKer',
   rector_finance: 'Pengesah Keuangan Rektorat',
-  loyalis_admin: 'Loyalis Admin',
+  loyalis_admin: 'Admin Karyawan',
   honorer: 'Honorer',
   loyalis: 'Karyawan Loyalis',
   ketua_shift_satpam: 'Ketua Shift SATPAM',

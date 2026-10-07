@@ -90,7 +90,7 @@ export default function ProtectedRoute({
             router.replace('/dashboard/payroll/uraian');
           }
         } else if (currentProfile.role === 'loyalis_admin') {
-          // Loyalis Admins may open employee master data and Loyalis presence only
+          // Admin Karyawan may open employee master data and Loyalis/Pekarya presence only
           if (!isLoyalisAdminPath(pathname)) {
             router.replace(LOYALIS_ADMIN_HOME_PATH);
           }

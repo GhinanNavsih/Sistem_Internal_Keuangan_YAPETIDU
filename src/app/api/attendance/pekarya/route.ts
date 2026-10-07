@@ -83,6 +83,7 @@ export async function GET(request: NextRequest) {
       'super_admin',
       'finance_verifier',
       'satker_head',
+      'loyalis_admin',
     ]);
     const period = queryValue(request, 'period');
     const category = queryValue(request, 'category').toUpperCase();

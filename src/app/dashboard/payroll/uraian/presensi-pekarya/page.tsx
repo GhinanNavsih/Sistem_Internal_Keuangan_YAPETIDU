@@ -1530,7 +1530,7 @@ export default function PekaryaAttendancePage() {
   // review endpoints themselves use, so the toggle never offers a tab that
   // would just come back empty/forbidden.
   const canViewSatpamCategory =
-    ['super_admin', 'finance_verifier'].includes(profile?.role || '') ||
+    ['super_admin', 'finance_verifier', 'loyalis_admin'].includes(profile?.role || '') ||
     Boolean(profile?.permittedCategories?.includes('SATPAM'));
   // Satpam is reviewed in this same list, so there is one view: every
   // blue-collar category together. An older link with ?category=SATPAM simply

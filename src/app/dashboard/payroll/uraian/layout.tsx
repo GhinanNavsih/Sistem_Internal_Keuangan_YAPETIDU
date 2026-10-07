@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useMemo, Suspense, useCallback } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import GlobalHeader from '@/components/GlobalHeader';
 import { Button } from '@/components/ui/button';
 import {
@@ -13,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select';
-import { LogOut, ArrowLeft } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { collection, getDocs, doc, getDoc, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { MONTHS_ID } from '@/utils/rekapConfig';
@@ -29,7 +28,6 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { profile} = useAuth();
-  const requestLogout = useConfirmLogout();
 
   // Read params or set defaults
   const month = parseInt(searchParams.get('month') || String(new Date().getMonth() + 1), 10);
@@ -140,7 +138,8 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
     if (!profile) return [];
     if (
       profile.role === 'super_admin' ||
-      profile.role === 'finance_verifier'
+      profile.role === 'finance_verifier' ||
+      profile.role === 'loyalis_admin'
     ) {
       return activeCategories;
     }
@@ -217,7 +216,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
 
     if (profile.role === 'loyalis_admin') {
       const params = new URLSearchParams(searchParams.toString());
-      if (activeTab !== 'presensi_loyalis_raw') {
+      if (activeTab !== 'presensi_loyalis_raw' && activeTab !== 'presensi_pekarya') {
         params.delete('category');
         router.replace(`/dashboard/payroll/uraian/presensi-loyalis-raw?${params.toString()}`);
       }
@@ -478,21 +477,11 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
               </Select>
             )}
 
-            {profile?.role === 'loyalis_admin' && (
-              <Button
-                variant="outline"
-                onClick={requestLogout}
-                className="rounded-sm text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 hover:border-rose-300 transition-all cursor-pointer flex items-center gap-2 shadow-sm"
-              >
-                <LogOut className="w-4 h-4" />
-                Keluar
-              </Button>
-            )}
           </div>
         </div>
 
-        {/* Tab Switcher for Super Admin & other roles */}
-        {profile && profile.role !== 'satker_head' && profile.role !== 'satker_head_loyalis' && (
+        {/* Tab Switcher for Super Admin & Badan Keuangan; the other roles navigate from the sidebar. */}
+        {profile && profile.role !== 'satker_head' && profile.role !== 'satker_head_loyalis' && profile.role !== 'loyalis_admin' && (
           <UraianNavToggles />
         )}
 

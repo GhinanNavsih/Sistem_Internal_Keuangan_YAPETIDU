@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
-import { canReserveVenues } from '@/lib/payroll/roles';
+import { canReserveVenues, getUserRoleLabel } from '@/lib/payroll/roles';
 import { VENUE_RESERVATION_PATH } from '@/lib/venueReservation';
 import { VENUE_INSPECTION_PATH } from '@/lib/venueInspection';
 import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
@@ -22,6 +22,7 @@ import {
   ClipboardCheck,
   Coins,
   BarChart3,
+  Clock,
   Compass,
   ScanLine,
   Wrench,
@@ -76,6 +77,7 @@ export default function Sidebar() {
     'finance_verifier',
     'satker_head',
     'satker_head_loyalis',
+    'loyalis_admin',
   ].includes(currentProfile.role)) {
     return null;
   }
@@ -240,15 +242,41 @@ export default function Sidebar() {
     },
   ];
 
+  // Admin Karyawan: employee master data, plus the two presence pages. The
+  // Loyalis one is the calculator and corrections page; Pekarya is read-only.
+  const employeeAdminMenuItems: SidebarMenuItem[] = [
+    {
+      name: 'Data Pegawai',
+      path: '/dashboard/employees',
+      icon: Users,
+      activePattern: '/dashboard/employees',
+    },
+    {
+      name: 'Presensi Loyalis',
+      path: `/dashboard/payroll/uraian/presensi-loyalis-raw${withPeriod('')}`,
+      icon: Clock,
+      activePattern: '/dashboard/payroll/uraian/presensi-loyalis-raw',
+    },
+    {
+      name: 'Presensi Pekarya',
+      path: `/dashboard/payroll/uraian/presensi-pekarya${withPeriod(`category=${encodeURIComponent(ALL_BLUE_COLLAR_CATEGORY)}`)}`,
+      icon: ScanLine,
+      activePattern: '/dashboard/payroll/uraian/presensi-pekarya',
+      startsGroup: true,
+    },
+  ];
+
   const menuItems: SidebarMenuItem[] = currentProfile.role === 'satker_head_loyalis'
     ? loyalisMenuItems
     : currentProfile.role === 'satker_head'
       ? pekaryaMenuItems
-      : adminMenuItems.filter(item => {
-        if (item.path === VENUE_RESERVATION_PATH) return canReserveVenues(currentProfile.role);
-        if (currentProfile.role === 'super_admin') return true;
-        return item.path === '/dashboard/payroll' || item.path === '/dashboard/satker-finance';
-      });
+      : currentProfile.role === 'loyalis_admin'
+        ? employeeAdminMenuItems
+        : adminMenuItems.filter(item => {
+          if (item.path === VENUE_RESERVATION_PATH) return canReserveVenues(currentProfile.role);
+          if (currentProfile.role === 'super_admin') return true;
+          return item.path === '/dashboard/payroll' || item.path === '/dashboard/satker-finance';
+        });
 
   const getIsActive = (item: SidebarMenuItem) => {
     if (item.exact) {
@@ -339,7 +367,9 @@ export default function Sidebar() {
           ? currentProfile.satkerName?.trim() || 'SatKer Loyalis'
           : currentProfile.role === 'satker_head'
             ? 'Kepala SatKer Pekarya'
-            : currentProfile.role || 'Pengguna';
+            : currentProfile.role === 'loyalis_admin'
+              ? getUserRoleLabel(currentProfile.role)
+              : currentProfile.role || 'Pengguna';
 
   return (
     <>

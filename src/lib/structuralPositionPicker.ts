@@ -1,5 +1,5 @@
 /**
- * Search rules for the Loyalis Admin's structural-position picker. The picker
+ * Search rules for the Admin Karyawan's structural-position picker. The picker
  * only ever sees id/name/satker: the allowance stays with the caller, so a role
  * that may not know what a position pays never has the amount in its props.
  */
