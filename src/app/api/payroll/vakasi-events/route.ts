@@ -4,6 +4,7 @@ import admin, { adminDb } from '@/lib/firebase-admin';
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { assertRequestId } from '@/lib/payroll/domain';
 import { URAIAN_EDITOR_ROLES } from '@/lib/payroll/roles';
+import { BANSOS_EVENT_SOURCE_KIND, isBansosEventId } from '@/lib/payroll/bansos';
 import {
   isProposalLpjSandboxSource,
   isPayableVakasiTambahan,
@@ -393,6 +394,9 @@ export async function POST(request: NextRequest) {
     if (eventId.startsWith('KJM_')) {
       throw new HttpError(409, 'KJM hanya dapat diubah melalui halaman Kelebihan Jam Mengajar.');
     }
+    if (isBansosEventId(eventId)) {
+      throw new HttpError(409, 'Ajuan BanSos diputuskan per ajuan dari panel BanSos, bukan dari formulir kegiatan.');
+    }
     const requestHash = createHash('sha256')
       .update(JSON.stringify(command))
       .digest('hex');
@@ -429,6 +433,9 @@ export async function POST(request: NextRequest) {
         : null;
       if (before?.sourceKind === 'kjm_import') {
         throw new HttpError(409, 'KJM hanya dapat diubah melalui halaman Kelebihan Jam Mengajar.');
+      }
+      if (before?.sourceKind === BANSOS_EVENT_SOURCE_KIND) {
+        throw new HttpError(409, 'Ajuan BanSos diputuskan per ajuan dari panel BanSos, bukan dari formulir kegiatan.');
       }
       if (before && isProposalLpjSandboxSource(before)) {
         throw new HttpError(409, 'Catatan LPJ sandbox tidak dapat diubah sebagai Vakasi payroll.');

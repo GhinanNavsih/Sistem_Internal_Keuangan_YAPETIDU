@@ -304,15 +304,19 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // KJM (KJM_*) and BanSos (BANSOS_*) events are server-owned: only their
+    // own API routes write them.
     match /VakasiTambahan/{docId} {
       allow read: if isFinanceRole() || roleIs('satker_head_loyalis');
       allow create: if (isFinanceVerifier() || isSuperAdmin() ||
         roleIs('satker_head_loyalis')) && createsOpenPeriodRecord() &&
-        !docId.matches('KJM_.*') && request.resource.data.get('sourceKind', '') != 'kjm_import';
+        !docId.matches('KJM_.*') && !docId.matches('BANSOS_.*') &&
+        !(request.resource.data.get('sourceKind', '') in ['kjm_import', 'bansos']);
       allow update: if (isFinanceVerifier() || isSuperAdmin() ||
         roleIs('satker_head_loyalis')) && updatesOpenPeriodRecord() &&
-        !docId.matches('KJM_.*') && resource.data.get('sourceKind', '') != 'kjm_import' &&
-        request.resource.data.get('sourceKind', '') != 'kjm_import';
+        !docId.matches('KJM_.*') && !docId.matches('BANSOS_.*') &&
+        !(resource.data.get('sourceKind', '') in ['kjm_import', 'bansos']) &&
+        !(request.resource.data.get('sourceKind', '') in ['kjm_import', 'bansos']);
       allow delete: if false;
     }
 
@@ -695,6 +699,11 @@ service cloud.firestore {
     // A Loyalis submits school proof and an employee admin reviews it through
     // authenticated APIs; clients cannot forge a decision or payroll change.
     match /FamilyAllowanceRequests/{requestId} {
+      allow read, write: if false;
+    }
+
+    // BanSos ajuan (Duka / Melahirkan) are read and written only by the API.
+    match /BansosRequests/{requestId} {
       allow read, write: if false;
     }
 
