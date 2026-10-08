@@ -7,9 +7,15 @@ import {
   type PresenceCorrectionType,
   type PresenceCorrectionRequest,
 } from '@/lib/payroll/presenceCorrections';
-import { calculateLoyalisDailyDuration } from '@/lib/payroll/loyalisPresenceWindow';
+import { recalculateLoyalisSummary } from '@/lib/payroll/loyalisPresenceSummary';
+import { periodCalendarFromData } from '@/lib/payroll/calendar';
+import { loyalisLogDateToIso } from '@/lib/payroll/loyalisAutoLeave';
 import { isImmutablePayrollStatus } from '@/lib/payroll/domain';
-import { assertPeriodAcceptsInput } from '@/lib/server/payrollPeriod';
+import {
+  annualCalendarRef,
+  annualDatesFrom,
+  assertPeriodAcceptsInput,
+} from '@/lib/server/payrollPeriod';
 import {
   type LoyalisPaidLeaveEntry,
   type LoyalisPaidLeaveDailyLog,
@@ -30,53 +36,6 @@ function parseClockTime(value: unknown, label: string): string {
     throw new HttpError(400, `${label} tidak valid.`);
   }
   return value;
-}
-
-function recalculateLoyalisSummary(
-  dailyLogs: LoyalisPaidLeaveDailyLog[],
-  expectedHours: number,
-) {
-  let totalWorkedMinutes = 0;
-  let activeDaysCount = 0;
-  let incompleteDaysCount = 0;
-  let absentDaysCount = 0;
-
-  const updatedLogs: LoyalisPaidLeaveDailyLog[] = dailyLogs.map((dayRow) => {
-    const status = String(dayRow['Jam kerja'] || '').trim().toUpperCase();
-    const inStr = dayRow['Scan masuk'] ? String(dayRow['Scan masuk']).trim() : '';
-    const outStr = dayRow['Scan pulang'] ? String(dayRow['Scan pulang']).trim() : '';
-
-    let dailyDuration = 0;
-    if (status === 'MASUK' || status === 'CUTI' || status === 'GANTI LIBUR') {
-      if (inStr && outStr) {
-        const duration = calculateLoyalisDailyDuration(inStr, outStr, expectedHours);
-        if (duration !== null && duration > 0) {
-          dailyDuration = duration;
-          totalWorkedMinutes += dailyDuration;
-          activeDaysCount += 1;
-        } else if (status === 'MASUK') {
-          incompleteDaysCount += 1;
-        }
-      } else if (status === 'MASUK') {
-        incompleteDaysCount += 1;
-      }
-    } else if (status === 'TIDAK HADIR') {
-      absentDaysCount += 1;
-    }
-
-    return {
-      ...dayRow,
-      duration: dailyDuration,
-    };
-  });
-
-  return {
-    minutes: totalWorkedMinutes,
-    activeDaysCount,
-    incompleteDaysCount,
-    absentDaysCount,
-    dailyLogs: updatedLogs,
-  };
 }
 
 function calculateStratum(
@@ -245,7 +204,8 @@ export async function POST(request: NextRequest) {
 
     const employeeId = currentReq.employeeId;
     const employeeName = currentReq.employeeName || employeeId;
-    const periodToken = date.slice(0, 7).replace('-', '_');
+    const period = date.slice(0, 7);
+    const periodToken = period.replace('-', '_');
 
     // Load LoyalisPresence document
     const presenceRef = adminDb.collection('LoyalisPresence').doc(periodToken);
@@ -313,6 +273,8 @@ export async function POST(request: NextRequest) {
         'Jam kerja': 'MASUK',
         'Scan masuk': checkIn,
         'Scan pulang': checkOut,
+        scanMasukAuto: type === 'tap_out' ? Boolean(dailyLogs[dayLogIdx].scanMasukAuto) : false,
+        scanPulangAuto: type === 'tap_in' ? Boolean(dailyLogs[dayLogIdx].scanPulangAuto) : false,
       };
     } else {
       dailyLogs.push({
@@ -320,33 +282,41 @@ export async function POST(request: NextRequest) {
         'Jam kerja': 'MASUK',
         'Scan masuk': checkIn,
         'Scan pulang': checkOut,
+        scanMasukAuto: false,
+        scanPulangAuto: false,
       });
     }
 
     dailyLogs.sort((a, b) => parseDateKey(a.Tanggal) - parseDateKey(b.Tanggal));
 
-    const summary = recalculateLoyalisSummary(dailyLogs, expectedHours);
-    const stratum = calculateStratum(summary.minutes, calcMode, workingDays, expectedHours);
-
-    const updatedEmployeeEntry: LoyalisPaidLeaveEntry = {
-      ...employeeEntry,
-      ...summary,
-      ...stratum,
-      isNotFoundInExcel: false,
-    };
-
     await adminDb.runTransaction(async (transaction) => {
-      const [latestRequest, latestPresence, period, slip] = await transaction.getAll(
-        requestRef, presenceRef, adminDb.doc(`PayrollPeriods/${date.slice(0, 7)}`),
+      const [latestRequest, latestPresence, periodSnapshot, slip, annualCalendar] = await transaction.getAll(
+        requestRef, presenceRef, adminDb.doc(`PayrollPeriods/${period}`),
         adminDb.doc(`PayrollSlipStates/${periodToken}_${employeeId}`),
+        annualCalendarRef(period),
       );
       if (latestRequest.data()?.status !== 'pending' || latestRequest.data()?.typeChangedTo ||
         !latestRequest.updateTime?.isEqual(requestSnap.updateTime!) ||
         !latestPresence.updateTime?.isEqual(presenceSnap.updateTime!)) {
         throw new HttpError(409, 'Pengajuan atau presensi berubah. Muat ulang sebelum menyetujui.');
       }
-      assertPeriodAcceptsInput(period.data());
+      assertPeriodAcceptsInput(periodSnapshot.data());
       if (isImmutablePayrollStatus(slip.data()?.status)) throw new HttpError(409, 'Slip sudah final; persetujuan tidak dapat diterapkan.');
+
+      // Recalculate against the same calendar and scan rules as the import
+      // page, inside the transaction so a concurrent calendar edit is retried.
+      const offDays = new Set(periodCalendarFromData(
+        period, periodSnapshot.data(), annualDatesFrom(annualCalendar),
+      ).premiumDates);
+      const summary = recalculateLoyalisSummary(
+        dailyLogs, expectedHours, (tanggal) => offDays.has(loyalisLogDateToIso(tanggal)),
+      );
+      const updatedEmployeeEntry: LoyalisPaidLeaveEntry = {
+        ...employeeEntry,
+        ...summary,
+        ...calculateStratum(summary.minutes, calcMode, workingDays, expectedHours),
+        isNotFoundInExcel: false,
+      };
       transaction.update(presenceRef, {
         [`entries.${employeeId}`]: updatedEmployeeEntry,
         updatedAt: now,

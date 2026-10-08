@@ -229,6 +229,125 @@ async function main() {
   });
   assert.equal(forged.status, 403);
   console.log('PASS closed periods, locked slips, approved submissions, insufficient quota/service, dates, conflicts and server-owned history');
+
+  // A correction must retain every other day's imported attendance, even when
+  // the scanner leaves Jam kerja blank or uses its own label. Verify the
+  // persisted month through the real authenticated approval handler.
+  const attendance = await fixture('correction');
+  await attendance.ref.update({ date: '2026-09-19' });
+  const day = (date: string, status: string, scanIn: string, scanOut: string) => ({
+    Tanggal: `${date}-09-2026`,
+    'Jam kerja': status,
+    'Scan masuk': scanIn,
+    'Scan pulang': scanOut,
+  });
+  await db.doc('PayrollPeriods/2026-09').set({
+    workCalendar: { revision: 1, premiumDates: ['2026-09-10'] },
+  });
+  const presenceRef = db.doc('LoyalisPresence/2026_09');
+  await presenceRef.set({ workingDays: 26, expectedHours: 6.5, entries: {
+    [attendance.employeeId]: {
+      employeeId: attendance.employeeId,
+      minutes: 1_956,
+      absenceMinutes: 8_184,
+      dailyLogs: [
+        { ...day('01', '', '07:11:44', '14:03:14'), sourceRowNumber: 101 },
+        day('02', 'Staff', '08:39:45', '14:24:00'),
+        day('03', '', '08:45:06', '16:39:33'),
+        { ...day('04', 'MASUK', '07:30', '14:00'), isOffDay: false },
+        day('05', 'Tidak Hadir', '07:30', '14:00'),
+        day('06', 'CUTI', '07:30', '14:00'),
+        day('07', 'GANTI LIBUR', '07:30', '14:00'),
+        day('08', '', '07:18:25', ''),
+        { ...day('09', '', '07:30', ''), scanPulangAuto: false },
+        { ...day('10', 'MASUK', '07:30', '14:00'), isOffDay: false },
+        day('19', 'Tidak Hadir', '', ''),
+        day('20', 'Tidak Hadir', '', ''),
+      ],
+    },
+  } }, { merge: true });
+  const savedAttendance = async () => (await presenceRef.get()).data()!.entries[attendance.employeeId];
+  const approval = { requestId: attendance.id, action: 'approve' };
+  const unchanged = await savedAttendance();
+  await call(correctionReview.POST, worker, approval, 403);
+  await db.doc(`PayrollSlipStates/2026_09_${attendance.employeeId}`).set({ status: 'locked' });
+  await call(correctionReview.POST, reviewer, approval, 409);
+  assert.deepEqual(await savedAttendance(), unchanged);
+  assert.equal((await attendance.ref.get()).data()!.status, 'pending');
+  await db.doc(`PayrollSlipStates/2026_09_${attendance.employeeId}`).delete();
+  await call(correctionReview.POST, reviewer, approval);
+  let saved = await savedAttendance();
+  const savedDay = (date: string) => saved.dailyLogs.find((row: { Tanggal: string }) => row.Tanggal === `${date}-09-2026`);
+  assert.equal(savedDay('01').duration, 390, 'blank-status scans must survive correction approval');
+  assert.equal(savedDay('01').sourceRowNumber, 101);
+  assert.equal(savedDay('02').duration, 321, 'scanner-specific labels remain payable');
+  assert.equal(savedDay('03').duration, 315);
+  assert.equal(savedDay('04').duration, 0, 'Friday scans never earn Loyalis attendance pay');
+  assert.equal(savedDay('04').isOffDay, true);
+  assert.equal(savedDay('05').duration, 0, 'explicit absences remain unpaid even with kept scans');
+  assert.equal(savedDay('06').duration, 390, 'annual leave remains credited');
+  assert.equal(savedDay('07').duration, 390, 'ganti libur remains credited');
+  assert.equal(savedDay('08').duration, 150, 'single scans use the same auto-fill as the import page');
+  assert.equal(savedDay('08').scanPulangAuto, true);
+  assert.equal(savedDay('09').duration, 0, 'an explicitly disabled auto-fill remains disabled');
+  assert.equal(savedDay('10').duration, 0, 'the current period calendar overrides old off-day flags');
+  assert.equal(saved.minutes, 2_346);
+  assert.equal(saved.absenceMinutes, 7_794);
+  assert.equal(saved.activeDaysCount, 7);
+  assert.equal(saved.incompleteDaysCount, 1);
+  assert.equal(saved.absentDaysCount, 2);
+  assert.equal(saved.offDayScannedCount, 2);
+  assert.equal(saved.offDayExcludedMinutes, 780);
+  await call(correctionReview.POST, reviewer, approval, 409);
+  assert.deepEqual(await savedAttendance(), saved, 'a repeat approval must not change the month');
+
+  const secondId = `second_${attendance.id}`;
+  await db.doc(`LoyalisPresenceCorrections/${secondId}`).set({
+    employeeId: attendance.employeeId, date: '2026-09-20', type: 'izin_resmi', status: 'pending',
+  });
+  await call(correctionReview.POST, reviewer, { requestId: secondId, action: 'approve' });
+  saved = await savedAttendance();
+  assert.equal(saved.minutes, 2_736, 'approving another date keeps the earlier credit and imported scans');
+  assert.equal(saved.absenceMinutes, 7_404);
+  assert.equal(savedDay('01').duration, 390);
+  assert.equal(savedDay('19').duration, 390);
+  assert.equal(savedDay('20').duration, 390);
+
+  const tapOutId = `tap_out_${attendance.id}`;
+  await db.doc(`LoyalisPresenceCorrections/${tapOutId}`).set({
+    employeeId: attendance.employeeId, date: '2026-09-08', type: 'tap_out',
+    checkOutTime: '14:00', status: 'pending',
+  });
+  await call(correctionReview.POST, reviewer, { requestId: tapOutId, action: 'approve' });
+  saved = await savedAttendance();
+  assert.equal(saved.minutes, 2_976);
+  assert.equal(savedDay('08').duration, 390);
+  assert.equal(savedDay('08').scanPulangAuto, false, 'an approved real scan replaces its automatic marker');
+
+  // Before a month is materialized, the annual calendar still excludes its
+  // national holidays. Once frozen, the period snapshot takes precedence.
+  await db.doc('PayrollPeriods/2026-09').delete();
+  await db.doc('PayrollHolidayCalendars/2026').set({ dates: ['2026-09-10'] });
+  const annualCalendarId = `annual_calendar_${attendance.id}`;
+  await db.doc(`LoyalisPresenceCorrections/${annualCalendarId}`).set({
+    employeeId: attendance.employeeId, date: '2026-09-19', type: 'izin_resmi', status: 'pending',
+  });
+  await call(correctionReview.POST, reviewer, { requestId: annualCalendarId, action: 'approve' });
+  saved = await savedAttendance();
+  assert.equal(saved.minutes, 2_976);
+  assert.equal(savedDay('10').duration, 0);
+  await db.doc('PayrollPeriods/2026-09').set({
+    workCalendar: { revision: 2, premiumDates: ['2026-09-04'] },
+  });
+  const frozenCalendarId = `frozen_calendar_${attendance.id}`;
+  await db.doc(`LoyalisPresenceCorrections/${frozenCalendarId}`).set({
+    employeeId: attendance.employeeId, date: '2026-09-19', type: 'izin_resmi', status: 'pending',
+  });
+  await call(correctionReview.POST, reviewer, { requestId: frozenCalendarId, action: 'approve' });
+  saved = await savedAttendance();
+  assert.equal(saved.minutes, 3_366);
+  assert.equal(savedDay('10').duration, 390, 'the frozen period calendar takes precedence over annual dates');
+  console.log('PASS correction approvals preserve imported scans, paid leave, auto-fill, calendars and immutable payroll guards');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });
