@@ -21,7 +21,6 @@ import {
   loyalisPresenceAmounts,
   loyalisPresenceOwnedPredicate,
   uraianOwnedEarningPredicate,
-  type LoyalisPresenceDocument,
 } from '@/lib/payroll/uraianPropagation';
 import {
   isSatpamLegacyBonusColumn,
@@ -35,7 +34,7 @@ import {
   requireRole,
   type AuthenticatedProfile,
 } from '@/lib/server/auth';
-import { applyApprovedLoyalisDayCreditsToPresence } from '@/lib/server/annualPaidLeave';
+import { loadEffectiveLoyalisPresence } from '@/lib/server/loyalisPresence';
 import { employeeInPayrollPeriod } from '@/lib/employeeConversion';
 
 export const dynamic = 'force-dynamic';
@@ -198,21 +197,10 @@ async function collectPekaryaTargets(command: PropagationCommand): Promise<SlipT
 
 /** Loyalis targets, built from the presence calculator's saved document. */
 async function collectLoyalisTargets(command: PropagationCommand): Promise<SlipTarget[]> {
-  const [canonicalPresenceSnapshot, legacyPresenceSnapshot, employeeSnapshot] = await Promise.all([
-    adminDb.collection('LoyalisPresence').doc(command.periodToken).get(),
-    // LoyalisPresence was historically stored with the payroll document key
-    // (YYYY_MM). Keep reading it while new commands use the canonical YYYY-MM
-    // period token, so existing attendance runs remain propagatable.
-    adminDb.collection('LoyalisPresence').doc(command.periodKey).get(),
+  const [presence, employeeSnapshot] = await Promise.all([
+    loadEffectiveLoyalisPresence(command.periodToken),
     adminDb.collection('Employees_Loyalis').get(),
   ]);
-  const presenceData = canonicalPresenceSnapshot.exists
-    ? canonicalPresenceSnapshot.data()
-    : legacyPresenceSnapshot.data();
-  const presence = await applyApprovedLoyalisDayCreditsToPresence(
-    command.periodToken,
-    (presenceData || null) as (LoyalisPresenceDocument & Record<string, unknown>) | null,
-  );
 
   const earningsOwned = loyalisPresenceOwnedPredicate('earnings');
   const deductionsOwned = loyalisPresenceOwnedPredicate('deductions');

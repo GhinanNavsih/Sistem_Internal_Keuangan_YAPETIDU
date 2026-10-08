@@ -44,4 +44,5 @@ test('Admin Karyawan (loyalis_admin) is named so and may open Presensi Pekarya',
   assert.equal(getUserRoleLabel('employee_admin'), 'Admin Karyawan');
   assert.equal(isLoyalisAdminPath('/dashboard/payroll/uraian/presensi-pekarya'), true);
   assert.equal(isLoyalisAdminPath('/dashboard/payroll/uraian/rekap-pekarya'), false);
+  assert.equal(isLoyalisAdminPath('/dashboard/payroll/uraian/senam-pagi'), true);
 });

@@ -28,14 +28,16 @@ export const LEGACY_ROLE_ALIASES: Readonly<Record<string, UserRole>> = {
 /**
  * Admin Karyawan (stored as `loyalis_admin`) keeps master data of Loyalis and
  * Pekarya employees and runs Loyalis presence: the monthly import/calculator,
- * presence corrections and Loyalis leave. It verifies BanSos ajuan and may
- * also read Pekarya presence (review stays with Kepala SatKer and Super
- * Admin). These are the only pages the role may open; the first is its home.
+ * presence corrections and Loyalis leave. It verifies BanSos ajuan, records
+ * Senam Pagi (which decides Bonus Triwulan) and may also read Pekarya presence
+ * (review stays with Kepala SatKer and Super Admin). These are the only pages
+ * the role may open; the first is its home.
  */
 export const LOYALIS_ADMIN_PATHS = [
   '/dashboard/employees',
   '/dashboard/bansos',
   '/dashboard/payroll/uraian/presensi-loyalis-raw',
+  '/dashboard/payroll/uraian/senam-pagi',
   '/dashboard/payroll/uraian/presensi-pekarya',
   '/dashboard/payroll/uraian/presence-corrections',
 ] as const;
@@ -89,6 +91,19 @@ export const VENUE_RESERVATION_ROLES: readonly UserRole[] = [
 
 export function canReserveVenues(role: UserRole | null | undefined): boolean {
   return !!role && VENUE_RESERVATION_ROLES.includes(role);
+}
+
+/**
+ * Who may record Senam Pagi attendance, and so move Bonus Triwulan. The page,
+ * both menus and `/api/payroll/senam-pagi` read this list.
+ */
+export const SENAM_PAGI_EDITOR_ROLES: readonly UserRole[] = [
+  'super_admin',
+  'loyalis_admin',
+];
+
+export function canRecordSenamPagi(role: UserRole | null | undefined): boolean {
+  return !!role && SENAM_PAGI_EDITOR_ROLES.includes(role);
 }
 
 export function isUserRole(value: unknown): value is UserRole {

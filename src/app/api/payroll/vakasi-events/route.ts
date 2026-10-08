@@ -5,6 +5,7 @@ import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { assertRequestId } from '@/lib/payroll/domain';
 import { URAIAN_EDITOR_ROLES } from '@/lib/payroll/roles';
 import { BANSOS_EVENT_SOURCE_KIND, isBansosEventId } from '@/lib/payroll/bansos';
+import { BONUS_TRIWULAN_SOURCE_KIND, isBonusTriwulanEventId } from '@/lib/payroll/bonusTriwulan';
 import {
   isProposalLpjSandboxSource,
   isPayableVakasiTambahan,
@@ -384,6 +385,9 @@ function reasonForCommand(command: VakasiCommand, status: VakasiStatus): string 
     : 'Rincian kegiatan Vakasi disimpan';
 }
 
+const BONUS_TRIWULAN_MANAGED_MESSAGE =
+  'Bonus Triwulan dihitung otomatis dari presensi dan Senam Pagi, bukan dari formulir kegiatan.';
+
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
@@ -396,6 +400,9 @@ export async function POST(request: NextRequest) {
     }
     if (isBansosEventId(eventId)) {
       throw new HttpError(409, 'Ajuan BanSos diputuskan per ajuan dari panel BanSos, bukan dari formulir kegiatan.');
+    }
+    if (isBonusTriwulanEventId(eventId)) {
+      throw new HttpError(409, BONUS_TRIWULAN_MANAGED_MESSAGE);
     }
     const requestHash = createHash('sha256')
       .update(JSON.stringify(command))
@@ -436,6 +443,9 @@ export async function POST(request: NextRequest) {
       }
       if (before?.sourceKind === BANSOS_EVENT_SOURCE_KIND) {
         throw new HttpError(409, 'Ajuan BanSos diputuskan per ajuan dari panel BanSos, bukan dari formulir kegiatan.');
+      }
+      if (before?.sourceKind === BONUS_TRIWULAN_SOURCE_KIND) {
+        throw new HttpError(409, BONUS_TRIWULAN_MANAGED_MESSAGE);
       }
       if (before && isProposalLpjSandboxSource(before)) {
         throw new HttpError(409, 'Catatan LPJ sandbox tidak dapat diubah sebagai Vakasi payroll.');

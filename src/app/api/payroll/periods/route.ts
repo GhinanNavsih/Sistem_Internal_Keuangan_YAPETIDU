@@ -30,6 +30,7 @@ import {
   pekaryaPublicationId,
 } from '@/lib/server/attendanceStore';
 import { syncSatpamDutyReconciliation } from '@/lib/server/satpamDutyPlan';
+import { bonusTriwulanCloseBlocker } from '@/lib/server/bonusTriwulan';
 import {
   hashKoperasiInstallmentPlan,
   KoperasiInstallmentPlan,
@@ -202,6 +203,12 @@ export async function POST(request: NextRequest) {
           409,
           'Presensi Loyalis belum diproses dari revisi import aktif.',
         );
+      }
+      // Senam Pagi must be recorded and the Bonus Triwulan payout current, or
+      // a change approved after the last save would never reach the slips.
+      const bonusTriwulanBlocker = await bonusTriwulanCloseBlocker(period);
+      if (bonusTriwulanBlocker) {
+        throw new HttpError(409, bonusTriwulanBlocker);
       }
       const missingNipy = identityData.identities.filter(
         (identity) =>

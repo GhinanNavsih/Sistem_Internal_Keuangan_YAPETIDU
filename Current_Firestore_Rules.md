@@ -304,19 +304,21 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // KJM (KJM_*) and BanSos (BANSOS_*) events are server-owned: only their
-    // own API routes write them.
+    // KJM (KJM_*), BanSos (BANSOS_*) and Bonus Triwulan (BONUS_TRIWULAN_*)
+    // events are server-owned: only their own API routes write them.
     match /VakasiTambahan/{docId} {
       allow read: if isFinanceRole() || roleIs('satker_head_loyalis');
       allow create: if (isFinanceVerifier() || isSuperAdmin() ||
         roleIs('satker_head_loyalis')) && createsOpenPeriodRecord() &&
         !docId.matches('KJM_.*') && !docId.matches('BANSOS_.*') &&
-        !(request.resource.data.get('sourceKind', '') in ['kjm_import', 'bansos']);
+        !docId.matches('BONUS_TRIWULAN_.*') &&
+        !(request.resource.data.get('sourceKind', '') in ['kjm_import', 'bansos', 'bonus_triwulan']);
       allow update: if (isFinanceVerifier() || isSuperAdmin() ||
         roleIs('satker_head_loyalis')) && updatesOpenPeriodRecord() &&
         !docId.matches('KJM_.*') && !docId.matches('BANSOS_.*') &&
-        !(resource.data.get('sourceKind', '') in ['kjm_import', 'bansos']) &&
-        !(request.resource.data.get('sourceKind', '') in ['kjm_import', 'bansos']);
+        !docId.matches('BONUS_TRIWULAN_.*') &&
+        !(resource.data.get('sourceKind', '') in ['kjm_import', 'bansos', 'bonus_triwulan']) &&
+        !(request.resource.data.get('sourceKind', '') in ['kjm_import', 'bansos', 'bonus_triwulan']);
       allow delete: if false;
     }
 
@@ -704,6 +706,15 @@ service cloud.firestore {
 
     // BanSos ajuan (Duka / Melahirkan) are read and written only by the API.
     match /BansosRequests/{requestId} {
+      allow read, write: if false;
+    }
+
+    // Senam Pagi roll calls and Bonus Triwulan results are read and written
+    // only by the API (/api/payroll/senam-pagi, /api/payroll/bonus-triwulan).
+    match /SenamPagi/{period} {
+      allow read, write: if false;
+    }
+    match /BonusTriwulan/{period} {
       allow read, write: if false;
     }
 
