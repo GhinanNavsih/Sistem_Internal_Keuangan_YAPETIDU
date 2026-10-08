@@ -44,6 +44,9 @@ import { generateKegiatanLoyalisRecapXlsx } from '@/utils/generateKegiatanLoyali
 import { isProposalLpjSandboxSource } from '@/lib/payroll/vakasiTambahan';
 import { BANSOS_EVENT_SOURCE_KIND, isBansosKind } from '@/lib/payroll/bansos';
 import BansosEventPanel from '@/components/vakasi/BansosEventPanel';
+import BonusTriwulanEventPanel from '@/components/vakasi/BonusTriwulanEventPanel';
+import { BONUS_TRIWULAN_SOURCE_KIND } from '@/lib/payroll/bonusTriwulan';
+import { canRecordSenamPagi } from '@/lib/payroll/roles';
 import {
   authenticatedJson,
   createFinancialRequestId,
@@ -268,12 +271,23 @@ export default function VakasiLoyalisPage() {
 
   const filteredEvents = useMemo(() => {
     if (!filterDept) return existingEvents;
-    // BanSos events belong to no unit, so they stay listed under any filter.
-    return existingEvents.filter(evt => evt.departmentUnit === filterDept || evt.sourceKind === BANSOS_EVENT_SOURCE_KIND);
+    // BanSos and Bonus Triwulan events belong to no unit, so they stay listed under any filter.
+    return existingEvents.filter(evt =>
+      evt.departmentUnit === filterDept ||
+      evt.sourceKind === BANSOS_EVENT_SOURCE_KIND ||
+      evt.sourceKind === BONUS_TRIWULAN_SOURCE_KIND,
+    );
   }, [existingEvents, filterDept]);
 
   const selectedBansosEvent = useMemo(
     () => existingEvents.find(evt => evt.id === selectedBansosEventId && evt.sourceKind === BANSOS_EVENT_SOURCE_KIND) || null,
+    [existingEvents, selectedBansosEventId],
+  );
+
+  // Bonus Triwulan shares the selection slot: like BanSos it replaces the
+  // event form, and it is only ever shown, never edited, here.
+  const selectedBonusTriwulanEvent = useMemo(
+    () => existingEvents.find(evt => evt.id === selectedBansosEventId && evt.sourceKind === BONUS_TRIWULAN_SOURCE_KIND) || null,
     [existingEvents, selectedBansosEventId],
   );
 
@@ -973,8 +987,28 @@ export default function VakasiLoyalisPage() {
               <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
                 {filteredEvents.map(evt => {
                   const isBansos = evt.sourceKind === BANSOS_EVENT_SOURCE_KIND;
-                  const isActive = isBansos ? selectedBansosEvent?.id === evt.id : !selectedBansosEvent && selectedEventId === evt.id;
+                  const isBonusTriwulan = evt.sourceKind === BONUS_TRIWULAN_SOURCE_KIND;
+                  const isActive = isBansos || isBonusTriwulan
+                    ? selectedBansosEventId === evt.id
+                    : !selectedBansosEvent && !selectedBonusTriwulanEvent && selectedEventId === evt.id;
                   const wCount = Object.keys(evt.eventWorkers || {}).length;
+                  if (isBonusTriwulan) {
+                    return (
+                      <div
+                        key={evt.id}
+                        onClick={() => setSelectedBansosEventId(evt.id)}
+                        className={`p-4 rounded-md border transition-all duration-200 cursor-pointer ${getCardBgClass(wCount > 0 ? 'approved' : 'draft', isActive)}`}
+                      >
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="font-bold text-slate-800 text-xs line-clamp-1">{evt.eventName}</div>
+                          <span className="text-[10px] font-medium text-slate-500">Otomatis</span>
+                        </div>
+                        <div className="flex items-center justify-end mt-3 text-[10px] text-slate-400 font-medium">
+                          <span>{wCount} Pegawai · {fmtRp(evt.totalPayout || 0)}</span>
+                        </div>
+                      </div>
+                    );
+                  }
                   if (isBansos) {
                     const waiting = Number(evt.bansosCounts?.waiting || 0);
                     const paid = Number(evt.bansosCounts?.paid || 0);
@@ -1054,7 +1088,14 @@ export default function VakasiLoyalisPage() {
 
         {/* Right side form */}
         <div className="xl:col-span-8">
-          {selectedBansosEvent && isBansosKind(selectedBansosEvent.bansosKind) ? (
+          {selectedBonusTriwulanEvent ? (
+            <BonusTriwulanEventPanel
+              key={selectedBonusTriwulanEvent.id}
+              period={selectedBonusTriwulanEvent.period}
+              workers={selectedBonusTriwulanEvent.eventWorkers || {}}
+              showSenamPagiLink={canRecordSenamPagi(profile?.role) || profile?.role === 'finance_verifier'}
+            />
+          ) : selectedBansosEvent && isBansosKind(selectedBansosEvent.bansosKind) ? (
             <BansosEventPanel
               key={selectedBansosEvent.id}
               period={selectedBansosEvent.period}

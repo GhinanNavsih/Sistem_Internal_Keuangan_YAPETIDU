@@ -177,6 +177,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
     if (pathname.includes('/proposal-kegiatan')) return 'proposal_kegiatan';
     if (pathname.includes('/pelaporan-kegiatan')) return 'pelaporan_kegiatan';
     if (pathname.includes('/presensi-loyalis-raw')) return 'presensi_loyalis_raw';
+    if (pathname.includes('/senam-pagi')) return 'senam_pagi';
     if (pathname.includes('/spj-pekarya')) return 'kegiatan_spj';
     return '';
   }, [pathname]);
@@ -196,6 +197,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
       tab === 'proposal_kegiatan' ||
       tab === 'pelaporan_kegiatan' ||
       tab === 'presensi_loyalis_raw' ||
+      tab === 'senam_pagi' ||
       tab === 'driver-journeys'
     ) {
       params.delete('category');
@@ -216,7 +218,11 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
 
     if (profile.role === 'loyalis_admin') {
       const params = new URLSearchParams(searchParams.toString());
-      if (activeTab !== 'presensi_loyalis_raw' && activeTab !== 'presensi_pekarya') {
+      if (
+        activeTab !== 'presensi_loyalis_raw' &&
+        activeTab !== 'presensi_pekarya' &&
+        activeTab !== 'senam_pagi'
+      ) {
         params.delete('category');
         router.replace(`/dashboard/payroll/uraian/presensi-loyalis-raw?${params.toString()}`);
       }
@@ -299,6 +305,8 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
         return 'Vakasi Tambahan (Loyalis)';
       case 'presensi_loyalis_raw':
         return 'Kalkulator Presensi Loyalis';
+      case 'senam_pagi':
+        return 'Senam Pagi & Bonus Triwulan';
       case 'proposal_kegiatan':
         return 'Pengajuan Anggaran Event';
       case 'pelaporan_kegiatan':
@@ -322,6 +330,8 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
         return 'Kelola pembayaran kegiatan variabel loyalis bulanan';
       case 'presensi_loyalis_raw':
         return 'Hitung strata dan bonus presensi loyalis';
+      case 'senam_pagi':
+        return 'Catat kehadiran Senam Pagi dan tinjau Bonus Triwulan Loyalis';
       case 'proposal_kegiatan':
         return 'Buat dan ajukan proposal anggaran kegiatan loyalis sebelum pelaksanaan';
       case 'pelaporan_kegiatan':
@@ -382,7 +392,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
             <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v, 10))}>
               <SelectTrigger className="w-56 bg-white shadow-sm border-slate-200 rounded-sm font-semibold hover:border-indigo-300 transition-all">
                 <SelectValue>
-                  {activeTab === 'kjm' || activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis_raw' || activeTab === 'pelaporan_kegiatan' ? (
+                  {activeTab === 'kjm' || activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis_raw' || activeTab === 'senam_pagi' || activeTab === 'pelaporan_kegiatan' ? (
                     `${MONTHS_ID[month - 1]} (1 – ${new Date(year, month, 0).getDate()} ${MONTHS_ID[month - 1].slice(0, 3)})`
                   ) : (
                     year > 2026 || (year === 2026 && month > 7) ? (
@@ -418,7 +428,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
                       <SelectItem key={val} value={String(val)}>
                         <div className="flex flex-col py-0.5">
                           <span className="font-semibold">{m}</span>
-                          {activeTab === 'kjm' || activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis_raw' || activeTab === 'pelaporan_kegiatan' ? (
+                          {activeTab === 'kjm' || activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis_raw' || activeTab === 'senam_pagi' || activeTab === 'pelaporan_kegiatan' ? (
                             <span className="text-[11px] text-slate-400">1 – {lastDay} {m}</span>
                           ) : (
                             year > 2026 || (year === 2026 && val > 7) ? (

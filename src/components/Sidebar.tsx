@@ -10,6 +10,7 @@ import { canReserveVenues, getUserRoleLabel } from '@/lib/payroll/roles';
 import { VENUE_RESERVATION_PATH } from '@/lib/venueReservation';
 import { VENUE_INSPECTION_PATH } from '@/lib/venueInspection';
 import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
+import { SENAM_PAGI_PATH } from '@/lib/payroll/bonusTriwulan';
 import { Button } from '@/components/ui/button';
 import AccountSwitcher from '@/components/AccountSwitcher';
 import {
@@ -25,6 +26,7 @@ import {
   Clock,
   Compass,
   HandHeart,
+  PersonStanding,
   ScanLine,
   Wrench,
   LogOut,
@@ -144,6 +146,13 @@ export default function Sidebar() {
       icon: HandHeart
     },
     {
+      // Admin Karyawan records it; Super Admin can too. Decides Bonus Triwulan.
+      name: 'Senam Pagi',
+      path: SENAM_PAGI_PATH,
+      icon: PersonStanding,
+      activePattern: SENAM_PAGI_PATH
+    },
+    {
       name: 'Keuangan SatKer',
       path: '/dashboard/satker-finance',
       icon: FileSpreadsheet
@@ -252,6 +261,7 @@ export default function Sidebar() {
 
   // Admin Karyawan: employee master data, plus the two presence pages. The
   // Loyalis one is the calculator and corrections page; Pekarya is read-only.
+  // Senam Pagi sits with Loyalis presence: together they decide Bonus Triwulan.
   const employeeAdminMenuItems: SidebarMenuItem[] = [
     {
       name: 'Data Pegawai',
@@ -270,6 +280,12 @@ export default function Sidebar() {
       path: `/dashboard/payroll/uraian/presensi-loyalis-raw${withPeriod('')}`,
       icon: Clock,
       activePattern: '/dashboard/payroll/uraian/presensi-loyalis-raw',
+    },
+    {
+      name: 'Senam Pagi',
+      path: `${SENAM_PAGI_PATH}${withPeriod('')}`,
+      icon: PersonStanding,
+      activePattern: SENAM_PAGI_PATH,
     },
     {
       name: 'Presensi Pekarya',
@@ -298,7 +314,11 @@ export default function Sidebar() {
     }
     if (item.activePattern) {
       if (item.activePattern === '/dashboard/payroll/uraian') {
-        return pathname.startsWith('/dashboard/payroll/uraian') || pathname.startsWith('/dashboard/payroll/activity-review');
+        // Senam Pagi has its own Super Admin menu item.
+        return (
+          (pathname.startsWith('/dashboard/payroll/uraian') && !pathname.startsWith(SENAM_PAGI_PATH)) ||
+          pathname.startsWith('/dashboard/payroll/activity-review')
+        );
       }
       return pathname.startsWith(item.activePattern);
     }

@@ -59,6 +59,7 @@ import {
   createFinancialRequestId,
   propagateUraianToSlips,
 } from '@/lib/payroll/client';
+import { BONUS_TRIWULAN_START_PERIOD } from '@/lib/payroll/bonusTriwulan';
 
 import Link from 'next/link';
 import { generatePresensiLoyalisXlsx } from '@/utils/generatePresensiLoyalisXlsx';
@@ -2048,12 +2049,31 @@ export default function PresensiLoyalisRawPage() {
         propagationNote = ' Namun slip gaji belum diperbarui — buka Payroll › Refresh Massal.';
       }
 
+      // Strata decide Bonus Triwulan together with Senam Pagi, so the payout
+      // follows every presence save. Missing Senam Pagi is not an error here;
+      // the Senam Pagi page shows it.
+      let bonusTriwulanNote = '';
+      if (periodToken >= BONUS_TRIWULAN_START_PERIOD) {
+        try {
+          await authenticatedJson('/api/payroll/bonus-triwulan', {
+            method: 'POST',
+            body: JSON.stringify({
+              period: periodToken,
+              requestId: createFinancialRequestId('bonus_triwulan'),
+            }),
+          });
+        } catch (bonusError) {
+          console.error('Gagal menghitung ulang Bonus Triwulan:', bonusError);
+          bonusTriwulanNote = ' Namun Bonus Triwulan belum diperbarui — buka Senam Pagi › Bonus Triwulan › Hitung ulang.';
+        }
+      }
+
       // The propagation above updates only eligible draft slips. Verified,
       // locked, and paid slips remain immutable and receive drift notices.
 
       setMessage({
         type: 'success',
-        text: `Data bonus presensi berhasil disimpan.${autoLeaveNote}${propagationNote} Tabel tetap dapat diubah — klik Simpan Data Presensi lagi untuk memperbarui data tersimpan.`,
+        text: `Data bonus presensi berhasil disimpan.${autoLeaveNote}${propagationNote}${bonusTriwulanNote} Tabel tetap dapat diubah — klik Simpan Data Presensi lagi untuk memperbarui data tersimpan.`,
       });
       // The working table stays open after a save so the admin can keep
       // correcting rows without re-entering edit mode; every subsequent save
