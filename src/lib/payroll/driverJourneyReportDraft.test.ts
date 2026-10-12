@@ -83,6 +83,17 @@ test('incomplete drafts retain successful uploads and explicit cleared inputs', 
   assert.equal(payload.endPoint, '');
 });
 
+test('draft preserves activity name input and falls back to empty string when omitted', () => {
+  const payloadWithActivity = driverJourneyReportDraftPayload({
+    ...reportDraftFixture,
+    activityName: 'Mengantar Gus Ufik ke Surabaya',
+  });
+  assert.equal(payloadWithActivity.activityName, 'Mengantar Gus Ufik ke Surabaya');
+
+  const payloadDefault = driverJourneyReportDraftPayload(reportDraftFixture);
+  assert.equal(payloadDefault.activityName, '');
+});
+
 test('an acknowledged or older local draft cannot replace newer database progress', () => {
   assert.equal(isLocalJourneyReportDraftNewer(100, 100), false);
   assert.equal(isLocalJourneyReportDraftNewer(100, 200), false);

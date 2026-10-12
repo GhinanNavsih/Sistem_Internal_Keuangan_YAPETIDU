@@ -83,8 +83,6 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
     isPiketActiveToday,
     activePiketStationName,
     showSelfPiketSpjModal,
-    selfPiketActivityName,
-    setSelfPiketActivityName,
     selfPiketVehicleName,
     setSelfPiketVehicleName,
     selfPiketFuelProcurementMode,
@@ -474,33 +472,17 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                 <span>Anda masih memiliki tugas perjalanan aktif yang belum selesai dilaporkan. Selesaikan laporan perjalanan aktif terlebih dahulu sebelum membuat SPJ baru.</span>
               </div>
             )}
-            {/* Nama Kegiatan & Tanggal Perjalanan */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="md:col-span-2 space-y-1.5">
-                <Label htmlFor="selfPiketActivityName" className="text-xs font-bold text-slate-600 uppercase tracking-wider">
-                  Nama Kegiatan / Keperluan
-                </Label>
-                <Input
-                  id="selfPiketActivityName"
-                  placeholder="Contoh: Mengantar Gus Ufik ke Surabaya"
-                  value={selfPiketActivityName}
-                  onChange={(e) => setSelfPiketActivityName(e.target.value)}
-                  required
-                  className="rounded-sm border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs sm:text-sm h-10 px-3 font-semibold"
-                />
-              </div>
-
-              <div className="md:col-span-1 space-y-1.5">
-                <Label className="text-xs font-bold text-slate-600 uppercase tracking-wider">
-                  Tanggal Perjalanan
-                </Label>
-                <Input
-                  type="date"
-                  value={getTodayDateString('Asia/Jakarta')}
-                  disabled
-                  className="rounded-sm border-slate-200 bg-slate-50 font-bold text-xs h-10 px-3 cursor-not-allowed"
-                />
-              </div>
+            {/* Tanggal Perjalanan */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+                Tanggal Perjalanan
+              </Label>
+              <Input
+                type="date"
+                value={getTodayDateString('Asia/Jakarta')}
+                disabled
+                className="rounded-sm border-slate-200 bg-slate-50 font-bold text-xs h-10 px-3 cursor-not-allowed"
+              />
             </div>
 
             {/* Foto Bukti Keberangkatan */}
@@ -675,7 +657,6 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                   creatingPiketSpj ||
                   selfPiketProofUploading ||
                   !selfPiketProofPhoto ||
-                  !selfPiketActivityName.trim() ||
                   myClaimedJourneys.length > 0
                 }
                 className="rounded-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-xs px-6 h-10 gap-2 shadow-md shadow-emerald-200 cursor-pointer disabled:opacity-50"

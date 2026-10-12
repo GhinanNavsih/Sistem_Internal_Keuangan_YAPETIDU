@@ -1246,6 +1246,7 @@ export async function POST(request: NextRequest) {
           period: payrollPeriod,
           payrollPeriod,
           activityDocId: reportId,
+          activityName: command.activityName,
           activityDate: command.activityDate,
           timeStart: command.timeStart,
           timeEnd: command.timeEnd,
@@ -1304,6 +1305,7 @@ export async function POST(request: NextRequest) {
           draftMainDestinations: admin.firestore.FieldValue.delete(),
           draftMainDestinationLocations: admin.firestore.FieldValue.delete(),
           draftEndPoint: admin.firestore.FieldValue.delete(),
+          draftActivityName: admin.firestore.FieldValue.delete(),
         };
         journeyUpdate.fuelReceiptEvidence = shouldClearFuelReceiptEvidence
           ? admin.firestore.FieldValue.delete()

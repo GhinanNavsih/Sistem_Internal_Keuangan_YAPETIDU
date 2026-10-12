@@ -2,6 +2,7 @@ import type { PhotoEvidence } from '../photoEvidence';
 import type { DriverJourneyLocation } from './driverJourney';
 
 export interface DriverJourneyReportDraftState {
+  activityName?: string;
   formDate: string;
   formDateEnd: string;
   formIsMultiDay: boolean;
@@ -33,6 +34,7 @@ export function driverJourneyReportDraftPayload(state: DriverJourneyReportDraftS
   const fuelUrls = state.formFuelReceiptUrls.filter(Boolean);
   const tollUrls = state.formTollReceiptUrls.filter(Boolean);
   return {
+    activityName: typeof state.activityName === 'string' ? state.activityName : '',
     date: state.formDate,
     dateEnd: state.formIsMultiDay ? state.formDateEnd : state.formDate,
     isMultiDay: state.formIsMultiDay,

@@ -497,10 +497,6 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
 
   const handleCreateSelfPiketSpj = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selfPiketActivityName.trim()) {
-      alert('Mohon lengkapi nama kegiatan.');
-      return;
-    }
     if (!selfPiketProofPhoto) {
       alert('Mohon ambil foto bukti sebelum mengotorisasi perjalanan.');
       return;
@@ -523,7 +519,7 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
         method: 'POST',
         body: JSON.stringify({
           action: 'create_self',
-          activityName: selfPiketActivityName.trim(),
+          activityName: selfPiketActivityName.trim() || 'Perjalanan Dinas',
           vehicleName: selfPiketVehicleName,
           fuelProcurementMode: mode,
           authorizationProofPhoto: selfPiketProofPhoto,

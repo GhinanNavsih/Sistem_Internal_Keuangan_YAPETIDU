@@ -314,6 +314,9 @@ function JourneyReportContent() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Form states
+  const [formActivityName, setFormActivityName] = useState('');
+  const [showActivityNameDialog, setShowActivityNameDialog] = useState(false);
+  const [activityNameDraft, setActivityNameDraft] = useState('');
   const [formDate, setFormDate] = useState('');
   const [formTimeStart, setFormTimeStart] = useState('');
   const [formTimeEnd, setFormTimeEnd] = useState('');
@@ -549,6 +552,13 @@ function JourneyReportContent() {
           const authorizedDeparture = normalizedReportData.departureLockedToAuthorization === true
             ? jakartaClockTimeFrom(reportData.authorizedAt)
             : null;
+          const rawDraftActivity = localDraft?.activityName ?? reportData.draftActivityName;
+          const baseSavedActivity = String(reportData.activityName || '').split(' (')[0].trim();
+          const initialActivityName = rawDraftActivity !== undefined
+            ? rawDraftActivity
+            : (baseSavedActivity && baseSavedActivity !== 'Perjalanan Dinas' ? baseSavedActivity : '');
+          setFormActivityName(initialActivityName);
+
           const initialDate =
             (authorizedDeparture ? jakartaDateFrom(reportData.authorizedAt) : null) ??
             localDraft?.formDate ??
@@ -973,6 +983,7 @@ function JourneyReportContent() {
   const draftAutosave = useJourneyReportDraft(
     activeReportingJourney?.id === draftLoadedJourneyId ? draftLoadedJourneyId : null,
     {
+      activityName: formActivityName,
       formDate,
       formDateEnd,
       formIsMultiDay,
@@ -1389,6 +1400,18 @@ function JourneyReportContent() {
       setMessage({ type: 'error', text: 'Akun Anda belum terhubung ke data Pegawai.' });
       return;
     }
+    if (!formActivityName.trim()) {
+      setMessage({ type: 'error', text: 'Nama kegiatan / keperluan perjalanan wajib diisi.' });
+      setActivityNameDraft('');
+      setShowActivityNameDialog(true);
+      return;
+    }
+    if (formActivityName.trim().length < 2) {
+      setMessage({ type: 'error', text: 'Nama kegiatan minimal 2 karakter.' });
+      setActivityNameDraft(formActivityName);
+      setShowActivityNameDialog(true);
+      return;
+    }
     if (!activeReportingJourney.startPoint?.trim() || currentMainDestinations.length === 0) {
       setMessage({ type: 'error', text: 'Titik awal dan minimal satu tujuan utama wajib diisi.' });
       return;
@@ -1593,7 +1616,7 @@ function JourneyReportContent() {
       const routeText = ` (${[startShort, ...currentMainDestinations.map((destination: string) => (
         destination.split(',')[0].trim()
       ))].join(' → ')})`;
-      let finalActivityName = ((activeReportingJourney.activityName || 'Perjalanan Sopir') + routeText).trim();
+      let finalActivityName = ((formActivityName.trim() || activeReportingJourney.activityName || 'Perjalanan Sopir') + routeText).trim();
       if (finalActivityName.length > 180) {
         finalActivityName = finalActivityName.slice(0, 177) + '...';
       }
@@ -2082,10 +2105,41 @@ function JourneyReportContent() {
 
           {/* ── Trip summary ─────────────────────────────────────────── */}
           <section className="space-y-3 py-5">
-            <h2 className="text-base font-semibold leading-snug text-slate-900">
-              {/* The stored name carries the route in brackets; the Rute rows show it. */}
-              {String(activeReportingJourney.activityName || '').split(' (')[0]}
-            </h2>
+            {formActivityName.trim() ? (
+              <div className="flex items-start justify-between gap-3">
+                <h2 className="text-base font-semibold leading-snug text-slate-900">
+                  {formActivityName.trim()}
+                </h2>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setActivityNameDraft(formActivityName);
+                    setShowActivityNameDialog(true);
+                  }}
+                  disabled={submitting}
+                  className="shrink-0 text-blue-600"
+                >
+                  Ubah
+                </Button>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                onClick={() => {
+                  setActivityNameDraft(formActivityName);
+                  setShowActivityNameDialog(true);
+                }}
+                disabled={submitting}
+                className="h-10 w-full border-dashed text-blue-600"
+              >
+                <Plus />
+                Tambah nama kegiatan
+              </Button>
+            )}
             <DetailList>
               <DetailRow label="Kendaraan">
                 {activeReportingJourney.vehicleName}
@@ -2643,6 +2697,69 @@ function JourneyReportContent() {
           </div>
 
         </form>
+
+        {/* Activity Name dialog */}
+        <Dialog
+          open={showActivityNameDialog}
+          onOpenChange={(open) => {
+            if (!open) setShowActivityNameDialog(false);
+          }}
+        >
+          <DialogContent showCloseButton={false} className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-base font-semibold text-slate-900">
+                Nama Kegiatan / Keperluan
+              </DialogTitle>
+            </DialogHeader>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const trimmed = activityNameDraft.trim();
+                if (!trimmed) return;
+                setFormActivityName(trimmed);
+                setShowActivityNameDialog(false);
+              }}
+              className="space-y-4"
+            >
+              <Field
+                label="Nama Kegiatan"
+                htmlFor="dialogActivityNameInput"
+                required
+                hint="Contoh: Mengantar Gus Ufik ke Surabaya, Ambil berkas di Jombang"
+              >
+                <Input
+                  id="dialogActivityNameInput"
+                  placeholder="Contoh: Mengantar Gus Ufik ke Surabaya"
+                  value={activityNameDraft}
+                  onChange={(e) => setActivityNameDraft(e.target.value)}
+                  autoFocus
+                  required
+                  className="h-10 text-sm font-semibold"
+                />
+              </Field>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  onClick={() => setShowActivityNameDialog(false)}
+                >
+                  Batal
+                </Button>
+                <Button
+                  type="submit"
+                  variant="accent"
+                  size="lg"
+                  disabled={!activityNameDraft.trim()}
+                >
+                  Simpan
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
 
         {/* Map location picker */}
         <Dialog

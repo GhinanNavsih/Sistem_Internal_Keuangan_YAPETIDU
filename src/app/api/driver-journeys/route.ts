@@ -554,7 +554,10 @@ export async function POST(request: NextRequest) {
 
     if (action === 'create_self') {
       requireSopirProfile(actor);
-      const activityName = stringField(body?.activityName, 'Nama kegiatan', 180);
+      const rawActivityName = typeof body?.activityName === 'string' ? body.activityName.trim() : '';
+      const activityName = rawActivityName
+        ? stringField(rawActivityName, 'Nama kegiatan', 180)
+        : 'Perjalanan Dinas';
       const authorizationProofPhoto = parseProofPhoto(body?.authorizationProofPhoto);
       try {
         assertPekaryaActivityProofUrl(authorizationProofPhoto.url, actor.linkedEmployeeId!);
@@ -1020,6 +1023,12 @@ export async function POST(request: NextRequest) {
       }
       const draft = body.draft as Record<string, unknown>;
       const draftData: Record<string, unknown> = {};
+      if (draft.activityName !== undefined) {
+        if (typeof draft.activityName !== 'string' || draft.activityName.length > 180) {
+          throw new HttpError(400, 'Nama kegiatan draft tidak valid.');
+        }
+        draftData.draftActivityName = draft.activityName.trim();
+      }
       if (draft.clientUpdatedAt !== undefined) {
         draftData.draftClientUpdatedAt = numberField(draft.clientUpdatedAt, 'Waktu perubahan draft', {
           min: 0, max: Number.MAX_SAFE_INTEGER, integer: true,
