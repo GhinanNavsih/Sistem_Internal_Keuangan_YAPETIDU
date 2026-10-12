@@ -58,7 +58,7 @@ import {
   CheckCheck,
   RotateCcw,
 } from 'lucide-react';
-import { collection, getDocs, doc, getDoc, setDoc, query, where, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, getDocsFromServer, doc, getDoc, setDoc, query, where, writeBatch } from 'firebase/firestore';
 import { db, secondaryDb } from '@/lib/firebase';
 import { useAuth } from '@/lib/AuthContext';
 import { useDashboardData } from '@/lib/DashboardDataContext';
@@ -106,6 +106,7 @@ import {
   vakasiWorkerCollection,
 } from '@/lib/payroll/vakasiTambahan';
 import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
+import { itemizePekaryaVakasiForExport, type PayrollVakasiSpjEvent } from '@/lib/payroll/payrollExcel';
 
 
 function SortIcon({ active, direction }: { active: boolean; direction: 'asc' | 'desc' | null }) {
@@ -816,8 +817,11 @@ export default function PayrollValidationDashboard() {
   const [selectedBulkRefreshEmployeeIds, setSelectedBulkRefreshEmployeeIds] = useState<Set<string>>(new Set());
   const [selectedBulkRefreshFields, setSelectedBulkRefreshFields] = useState<Record<string, Set<string>>>({});
 
-  const handleExportExcel = () => {
-    if (!requirePekaryaPreviews()) return;
+  const [exportingExcel, setExportingExcel] = useState(false);
+  const excelExportInFlight = useRef(false);
+
+  const handleExportExcel = async () => {
+    if (excelExportInFlight.current || !requirePekaryaPreviews()) return;
     const filteredEmployees = getFilteredAndSortedEmployees();
 
     if (filteredEmployees.length === 0) {
@@ -825,163 +829,185 @@ export default function PayrollValidationDashboard() {
       return;
     }
 
-    const allEarningLabelsSet = new Set<string>();
-    const allDeductionLabelsSet = new Set<string>();
+    excelExportInFlight.current = true;
+    setExportingExcel(true);
+    try {
+      const periodToken = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+      // Read the same approved SPJ projections used by the Pekarya payroll
+      // preview, so each Vakasi column represents money already included in SPJ.
+      const vakasiSpjEvents: PayrollVakasiSpjEvent[] = payrollCollar === 'loyalis'
+        ? []
+        : (await getDocsFromServer(query(collection(db, 'KegiatanSpj'), where('period', '==', periodToken))))
+            .docs.map(snapshot => ({ ...snapshot.data(), id: snapshot.id }));
 
-    const rowsData = filteredEmployees.map((emp, idx) => {
-      const years = calculateYearsOfService(emp.joinDate, targetDate);
-      const gapok = getPekaryaGapok(emp);
+      const allEarningLabelsSet = new Set<string>();
+      const allDeductionLabelsSet = new Set<string>();
 
-      const roleKey = emp.role;
-      const periodKey = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
-      const uraianDoc = uraianMap[`${periodKey}_${roleKey}`];
-      const uraianEntry = uraianDoc?.entries?.[emp.id];
+      const rowsData = filteredEmployees.map((emp, idx) => {
+        const freshData = buildFreshSlipData(emp);
+        const earningsList = payrollCollar === 'loyalis'
+          ? freshData.earnings
+          : itemizePekaryaVakasiForExport({
+              employeeId: emp.id,
+              jobCategory: emp.role,
+              period: periodToken,
+              earnings: freshData.earnings,
+              events: vakasiSpjEvents,
+            });
+        const deductionsList = freshData.deductions;
 
-      const freshData = buildFreshSlipData(emp);
-      const earningsList = freshData.earnings;
-      const deductionsList = freshData.deductions;
+        earningsList.forEach(e => allEarningLabelsSet.add(e.label));
+        deductionsList.forEach(d => allDeductionLabelsSet.add(d.label));
 
-      earningsList.forEach(e => allEarningLabelsSet.add(e.label));
-      deductionsList.forEach(d => allDeductionLabelsSet.add(d.label));
+        const totalEarnings = earningsList.reduce((sum, e) => sum + e.amount, 0);
+        const totalDeductions = deductionsList.reduce((sum, d) => sum + d.amount, 0);
+        const totalTax = (freshData.taxes || []).reduce((sum, t) => sum + t.amount, 0);
+        const netSalary = totalEarnings - totalDeductions - totalTax;
 
-      const totalEarnings = earningsList.reduce((sum, e) => sum + e.amount, 0);
-      const totalDeductions = deductionsList.reduce((sum, d) => sum + d.amount, 0);
-      const totalTax = (freshData.taxes || []).reduce((sum, t) => sum + t.amount, 0);
-      const netSalary = totalEarnings - totalDeductions - totalTax;
+        return {
+          no: idx + 1,
+          id: emp.id,
+          niy: payrollCollar === 'loyalis' ? String(emp.raw.personal_info?.employee_id_niy || '') : '',
+          // Text, so Excel keeps all 16 digits of a NIK.
+          nik: String((payrollCollar === 'loyalis' ? emp.raw.personal_info?.nik : emp.raw.nik) || ''),
+          name: emp.name,
+          role: emp.role,
+          gradeLevel: emp.gradeLevel,
+          joinDate: emp.joinDate ? new Date(emp.joinDate).toLocaleDateString('id-ID') : '',
+          status: emp.isActive ? 'AKTIF' : 'KELUAR',
+          earningsMap: earningsList.reduce((acc, curr) => ({ ...acc, [curr.label]: (acc[curr.label] || 0) + curr.amount }), {} as Record<string, number>),
+          deductionsMap: deductionsList.reduce((acc, curr) => ({ ...acc, [curr.label]: curr.amount }), {} as Record<string, number>),
+          totalEarnings,
+          totalDeductions,
+          totalTax,
+          netSalary
+        };
+      });
 
-      return {
-        no: idx + 1,
-        id: emp.id,
-        niy: payrollCollar === 'loyalis' ? String(emp.raw.personal_info?.employee_id_niy || '') : '',
-        // Text, so Excel keeps all 16 digits of a NIK.
-        nik: String((payrollCollar === 'loyalis' ? emp.raw.personal_info?.nik : emp.raw.nik) || ''),
-        name: emp.name,
-        role: emp.role,
-        gradeLevel: emp.gradeLevel,
-        joinDate: emp.joinDate ? new Date(emp.joinDate).toLocaleDateString('id-ID') : '',
-        status: emp.isActive ? 'AKTIF' : 'KELUAR',
-        earningsMap: earningsList.reduce((acc, curr) => ({ ...acc, [curr.label]: curr.amount }), {} as Record<string, number>),
-        deductionsMap: deductionsList.reduce((acc, curr) => ({ ...acc, [curr.label]: curr.amount }), {} as Record<string, number>),
-        totalEarnings,
-        totalDeductions,
-        totalTax,
-        netSalary
-      };
-    });
+      const earningLabels = Array.from(allEarningLabelsSet);
+      const deductionLabels = Array.from(allDeductionLabelsSet);
 
-    const earningLabels = Array.from(allEarningLabelsSet);
-    const deductionLabels = Array.from(allDeductionLabelsSet);
+      const headers = [
+        'NO',
+        ...(payrollCollar === 'loyalis' ? ['NIY'] : []),
+        'NIK',
+        'NAMA',
+        payrollCollar === 'loyalis' ? 'DEPARTEMEN / UNIT' : 'JABATAN',
+        'GOLONGAN',
+        'TANGGAL MASUK',
+        'STATUS',
+        ...earningLabels,
+        'TOTAL PENDAPATAN',
+        ...deductionLabels,
+        'TOTAL POTONGAN',
+        'TOTAL PAJAK',
+        'GAJI BERSIH'
+      ];
 
-    const headers = [
-      'NO',
-      ...(payrollCollar === 'loyalis' ? ['NIY'] : []),
-      'NIK',
-      'NAMA',
-      payrollCollar === 'loyalis' ? 'DEPARTEMEN / UNIT' : 'JABATAN',
-      'GOLONGAN',
-      'TANGGAL MASUK',
-      'STATUS',
-      ...earningLabels,
-      'TOTAL PENDAPATAN',
-      ...deductionLabels,
-      'TOTAL POTONGAN',
-      'TOTAL PAJAK',
-      'GAJI BERSIH'
-    ];
+      const dataRows: any[][] = [];
 
-    const dataRows: any[][] = [];
+      rowsData.forEach(row => {
+        const dataRow: any[] = [
+          row.no,
+          ...(payrollCollar === 'loyalis' ? [row.niy] : []),
+          row.nik,
+          row.name,
+          row.role,
+          row.gradeLevel,
+          row.joinDate,
+          row.status
+        ];
 
-    rowsData.forEach(row => {
-      const dataRow: any[] = [
-        row.no,
-        ...(payrollCollar === 'loyalis' ? [row.niy] : []),
-        row.nik,
-        row.name,
-        row.role,
-        row.gradeLevel,
-        row.joinDate,
-        row.status
+        earningLabels.forEach(label => {
+          dataRow.push(row.earningsMap[label] || 0);
+        });
+
+        dataRow.push(row.totalEarnings);
+
+        deductionLabels.forEach(label => {
+          dataRow.push(row.deductionsMap[label] || 0);
+        });
+
+        dataRow.push(row.totalDeductions);
+        dataRow.push(row.totalTax);
+        dataRow.push(row.netSalary);
+
+        dataRows.push(dataRow);
+      });
+
+      const totalRow: any[] = [
+        '',
+        ...(payrollCollar === 'loyalis' ? [''] : []),
+        '',
+        'JUMLAH',
+        '',
+        '',
+        '',
+        ''
       ];
 
       earningLabels.forEach(label => {
-        dataRow.push(row.earningsMap[label] || 0);
+        const sum = rowsData.reduce((acc, curr) => acc + (curr.earningsMap[label] || 0), 0);
+        totalRow.push(sum);
       });
 
-      dataRow.push(row.totalEarnings);
+      totalRow.push(rowsData.reduce((acc, curr) => acc + curr.totalEarnings, 0));
 
       deductionLabels.forEach(label => {
-        dataRow.push(row.deductionsMap[label] || 0);
+        const sum = rowsData.reduce((acc, curr) => acc + (curr.deductionsMap[label] || 0), 0);
+        totalRow.push(sum);
       });
 
-      dataRow.push(row.totalDeductions);
-      dataRow.push(row.totalTax);
-      dataRow.push(row.netSalary);
+      totalRow.push(rowsData.reduce((acc, curr) => acc + curr.totalDeductions, 0));
+      totalRow.push(rowsData.reduce((acc, curr) => acc + curr.totalTax, 0));
+      totalRow.push(rowsData.reduce((acc, curr) => acc + curr.netSalary, 0));
 
-      dataRows.push(dataRow);
-    });
+      const periodString = getPayrollPeriod(targetDate);
+      const title = payrollCollar === 'loyalis' ? 'LAPORAN PAYROLL STAF LOYALIS' : 'LAPORAN PAYROLL PEKARYA';
 
-    const totalRow: any[] = [
-      '',
-      ...(payrollCollar === 'loyalis' ? [''] : []),
-      '',
-      'JUMLAH',
-      '',
-      '',
-      '',
-      ''
-    ];
+      const worksheetData = [
+        [title],
+        [`PERIODE: ${periodString.toUpperCase()}`],
+        [],
+        headers,
+        ...dataRows,
+        [],
+        totalRow
+      ];
 
-    earningLabels.forEach(label => {
-      const sum = rowsData.reduce((acc, curr) => acc + (curr.earningsMap[label] || 0), 0);
-      totalRow.push(sum);
-    });
+      const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
 
-    totalRow.push(rowsData.reduce((acc, curr) => acc + curr.totalEarnings, 0));
-
-    deductionLabels.forEach(label => {
-      const sum = rowsData.reduce((acc, curr) => acc + (curr.deductionsMap[label] || 0), 0);
-      totalRow.push(sum);
-    });
-
-    totalRow.push(rowsData.reduce((acc, curr) => acc + curr.totalDeductions, 0));
-    totalRow.push(rowsData.reduce((acc, curr) => acc + curr.totalTax, 0));
-    totalRow.push(rowsData.reduce((acc, curr) => acc + curr.netSalary, 0));
-
-    const periodString = getPayrollPeriod(targetDate);
-    const title = payrollCollar === 'loyalis' ? 'LAPORAN PAYROLL STAF LOYALIS' : 'LAPORAN PAYROLL PEKARYA';
-    
-    const worksheetData = [
-      [title],
-      [`PERIODE: ${periodString.toUpperCase()}`],
-      [],
-      headers,
-      ...dataRows,
-      [],
-      totalRow
-    ];
-
-    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
-
-    const colWidths = headers.map((header, colIndex) => {
-      let maxLen = header.length;
-      worksheetData.forEach(r => {
-        if (r[colIndex] !== undefined && r[colIndex] !== null) {
-          const valStr = String(r[colIndex]);
-          if (valStr.length > maxLen) {
-            maxLen = valStr.length;
+      const colWidths = headers.map((header, colIndex) => {
+        let maxLen = header.length;
+        worksheetData.forEach(r => {
+          if (r[colIndex] !== undefined && r[colIndex] !== null) {
+            const valStr = String(r[colIndex]);
+            if (valStr.length > maxLen) {
+              maxLen = valStr.length;
+            }
           }
-        }
+        });
+        return { wch: maxLen + 3 };
       });
-      return { wch: maxLen + 3 };
-    });
-    worksheet['!cols'] = colWidths;
+      worksheet['!cols'] = colWidths;
 
-    const workbook = XLSX.utils.book_new();
-    const sheetName = payrollCollar === 'loyalis' ? 'Payroll Loyalis' : 'Payroll Pekarya';
-    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+      const workbook = XLSX.utils.book_new();
+      const sheetName = payrollCollar === 'loyalis' ? 'Payroll Loyalis' : 'Payroll Pekarya';
+      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
 
-    const filename = `Payroll_${sheetName.replace(/\s+/g, '_')}_${periodString.replace(/\s+/g, '_')}.xlsx`;
-    XLSX.writeFile(workbook, filename);
+      const filename = `Payroll_${sheetName.replace(/\s+/g, '_')}_${periodString.replace(/\s+/g, '_')}.xlsx`;
+      XLSX.writeFile(workbook, filename);
+    } catch (err) {
+      console.error('Failed to export payroll Excel:', err);
+      setNotification({
+        show: true,
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Gagal mengekspor payroll. Muat ulang dan coba lagi.',
+      });
+    } finally {
+      excelExportInFlight.current = false;
+      setExportingExcel(false);
+    }
   };
 
   const handleExportKebutuhanDanaGaji = () => {
@@ -3766,11 +3792,11 @@ export default function PayrollValidationDashboard() {
                 <button
                   type="button"
                   onClick={handleExportExcel}
-                  disabled={loading}
-                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  disabled={loading || exportingExcel}
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${loading || exportingExcel ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                  <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
-                  Ekspor Excel
+                  {exportingExcel ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 text-emerald-500" />}
+                  {exportingExcel ? 'Mengekspor...' : 'Ekspor Excel'}
                 </button>
               </div>
             </div>
