@@ -93,7 +93,7 @@ const createEmptyWorkerRow = (): WorkerRow => ({
   showDropdown: false,
 });
 
-export default function VakasiLoyalisPage() {
+export default function VakasiKaryawanPage() {
   const { profile } = useAuth();
   const searchParams = useSearchParams();
 

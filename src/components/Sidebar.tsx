@@ -195,10 +195,10 @@ export default function Sidebar() {
       activePattern: '/dashboard/payroll/uraian/proposal-kegiatan',
     },
     {
-      name: 'Vakasi Tambahan',
-      path: `/dashboard/payroll/uraian/vakasi-loyalis${withPeriod('')}`,
+      name: 'Vakasi Tambahan (Karyawan)',
+      path: `/dashboard/payroll/uraian/vakasi-karyawan${withPeriod('')}`,
       icon: Banknote,
-      activePattern: '/dashboard/payroll/uraian/vakasi-loyalis',
+      activePattern: '/dashboard/payroll/uraian/vakasi-karyawan',
     },
     {
       name: 'Pelaporan Kegiatan',

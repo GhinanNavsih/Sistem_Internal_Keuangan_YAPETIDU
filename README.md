@@ -16,8 +16,8 @@ Sistem penggajian dibagi menjadi beberapa modul utama:
 - **Rekap Uraian Pekarya (Blue Collar)**:
   - Dukungan pemindaian otomatis berbasis AI (**Gemini API**) untuk membaca dokumen rekap presensi (PDF/Gambar) dan menginput data secara otomatis ke dalam tabel.
   - Perhitungan otomatis untuk berbagai komponen (gaji harian, lembur, piket, potongan BPJS, koperasi, dll.).
-- **Vakasi Tambahan (Loyalis)**:
-  - Pengelolaan pembayaran kegiatan variabel bulanan bagi pegawai Loyalis.
+- **Vakasi Tambahan (Karyawan)**:
+  - Pengelolaan pembayaran kegiatan variabel bulanan bagi pegawai Loyalis dan Pekarya di `/dashboard/payroll/uraian/vakasi-karyawan`.
   - Alur kerja persetujuan terintegrasi (SatKer Loyalis mengunggah laporan resmi yang ditandatangani untuk ditinjau oleh Super Admin).
   - *Baru*: Filter unit kerja (department) untuk mempermudah Super Admin memantau daftar kegiatan.
 - **Kegiatan SPJ (Pekarya)**:

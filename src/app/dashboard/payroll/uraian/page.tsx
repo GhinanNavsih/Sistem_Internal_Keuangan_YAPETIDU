@@ -17,7 +17,7 @@ function RedirectContent() {
     const suffix = queryString ? `?${queryString}` : '';
 
     if (profile.role === 'satker_head_loyalis') {
-      router.replace(`/dashboard/payroll/uraian/vakasi-loyalis${suffix}`);
+      router.replace(`/dashboard/payroll/uraian/vakasi-karyawan${suffix}`);
     } else {
       // Default for super_admin and satker_head (Pekarya)
       router.replace(`/dashboard/payroll/uraian/rekap-pekarya${suffix}`);

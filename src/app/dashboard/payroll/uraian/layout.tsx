@@ -172,7 +172,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
   const activeTab = useMemo(() => {
     if (pathname.includes('/presensi-pekarya')) return 'presensi_pekarya';
     if (pathname.includes('/rekap-pekarya')) return 'presensi';
-    if (pathname.includes('/vakasi-loyalis')) return 'vakasi_loyalis';
+    if (pathname.includes('/vakasi-karyawan')) return 'vakasi_karyawan';
     if (pathname.includes('/kjm')) return 'kjm';
     if (pathname.includes('/proposal-kegiatan')) return 'proposal_kegiatan';
     if (pathname.includes('/pelaporan-kegiatan')) return 'pelaporan_kegiatan';
@@ -193,7 +193,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
   const getCleanParamsString = useCallback((tab: string) => {
     const params = new URLSearchParams(searchParams.toString());
     if (
-      tab === 'vakasi_loyalis' ||
+      tab === 'vakasi_karyawan' ||
       tab === 'proposal_kegiatan' ||
       tab === 'pelaporan_kegiatan' ||
       tab === 'presensi_loyalis_raw' ||
@@ -228,12 +228,12 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
       }
     } else if (profile.role === 'satker_head_loyalis') {
       if (
-        activeTab !== 'vakasi_loyalis' &&
+        activeTab !== 'vakasi_karyawan' &&
         activeTab !== 'pelaporan_kegiatan' &&
         activeTab !== 'proposal_kegiatan' &&
         activeTab !== 'presensi_loyalis_raw'
       ) {
-        router.replace(`/dashboard/payroll/uraian/vakasi-loyalis${getCleanParamsString('vakasi_loyalis')}`);
+        router.replace(`/dashboard/payroll/uraian/vakasi-karyawan${getCleanParamsString('vakasi_karyawan')}`);
       }
     } else if (
       profile.role !== 'super_admin' &&
@@ -301,8 +301,8 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
         return 'Rekap Uraian Pekarya';
       case 'presensi_pekarya':
         return 'Presensi Pekarya';
-      case 'vakasi_loyalis':
-        return 'Vakasi Tambahan (Loyalis)';
+      case 'vakasi_karyawan':
+        return 'Vakasi Tambahan (Karyawan)';
       case 'presensi_loyalis_raw':
         return 'Kalkulator Presensi Loyalis';
       case 'senam_pagi':
@@ -326,8 +326,8 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
         return 'Upload rekap PDF/Gambar untuk auto-input';
       case 'presensi_pekarya':
         return 'Tinjau scan NIPY, peringatan, koreksi, dan publikasi upah kehadiran';
-      case 'vakasi_loyalis':
-        return 'Kelola pembayaran kegiatan variabel loyalis bulanan';
+      case 'vakasi_karyawan':
+        return 'Kelola pembayaran kegiatan variabel bulanan untuk Loyalis dan Pekarya';
       case 'presensi_loyalis_raw':
         return 'Hitung strata dan bonus presensi loyalis';
       case 'senam_pagi':
@@ -392,7 +392,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
             <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v, 10))}>
               <SelectTrigger className="w-56 bg-white shadow-sm border-slate-200 rounded-sm font-semibold hover:border-indigo-300 transition-all">
                 <SelectValue>
-                  {activeTab === 'kjm' || activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis_raw' || activeTab === 'senam_pagi' || activeTab === 'pelaporan_kegiatan' ? (
+                  {activeTab === 'kjm' || activeTab === 'vakasi_karyawan' || activeTab === 'presensi_loyalis_raw' || activeTab === 'senam_pagi' || activeTab === 'pelaporan_kegiatan' ? (
                     `${MONTHS_ID[month - 1]} (1 – ${new Date(year, month, 0).getDate()} ${MONTHS_ID[month - 1].slice(0, 3)})`
                   ) : (
                     year > 2026 || (year === 2026 && month > 7) ? (
@@ -428,7 +428,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
                       <SelectItem key={val} value={String(val)}>
                         <div className="flex flex-col py-0.5">
                           <span className="font-semibold">{m}</span>
-                          {activeTab === 'kjm' || activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis_raw' || activeTab === 'senam_pagi' || activeTab === 'pelaporan_kegiatan' ? (
+                          {activeTab === 'kjm' || activeTab === 'vakasi_karyawan' || activeTab === 'presensi_loyalis_raw' || activeTab === 'senam_pagi' || activeTab === 'pelaporan_kegiatan' ? (
                             <span className="text-[11px] text-slate-400">1 – {lastDay} {m}</span>
                           ) : (
                             year > 2026 || (year === 2026 && val > 7) ? (

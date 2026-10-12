@@ -1,6 +1,16 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  async redirects() {
+    return [
+      {
+        // Preserve existing bookmarks and their payroll period query parameters.
+        source: '/dashboard/payroll/uraian/vakasi-loyalis',
+        destination: '/dashboard/payroll/uraian/vakasi-karyawan',
+        permanent: true,
+      },
+    ];
+  },
   experimental: {
     // Turbopack's dev persistent cache (.next/dev/cache/turbopack) has no
     // pruning, so it grows unbounded across a long-running/multi-day dev

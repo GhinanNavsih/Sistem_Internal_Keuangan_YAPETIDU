@@ -44,7 +44,7 @@ src/
 │   │       └── uraian/            # Blue-collar rekap module + subpages: pelaporan-kegiatan,
 │   │                              #   presence-corrections, presensi-loyalis(-raw), presensi-pekarya,
 │   │                              #   proposal-kegiatan, rekap-pekarya, senam-pagi, spj-pekarya,
-│   │                              #   vakasi-loyalis
+│   │                              #   vakasi-karyawan (vakasi-loyalis redirects here)
 │   ├── employee/                  # Employee/honorer portal: activities/{satpam,sopir,pekarya} (one
 │   │                              #   route per workflow; sopir/journey-report nested under sopir),
 │   │                              #   payslip, driver-history, leave, satpam-duty-plan, bansos,

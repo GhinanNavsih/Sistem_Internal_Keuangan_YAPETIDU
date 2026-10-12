@@ -36,7 +36,7 @@ export default function UraianNavToggles() {
   const activeTab = useMemo(() => {
     if (pathname.includes('/presensi-pekarya')) return 'presensi_pekarya';
     if (pathname.includes('/rekap-pekarya')) return 'presensi';
-    if (pathname.includes('/vakasi-loyalis')) return 'vakasi_loyalis';
+    if (pathname.includes('/vakasi-karyawan')) return 'vakasi_karyawan';
     if (pathname.includes('/kjm')) return 'kjm';
     if (pathname.includes('/proposal-kegiatan')) return 'proposal_kegiatan';
     if (pathname.includes('/pelaporan-kegiatan')) return 'pelaporan_kegiatan';
@@ -57,7 +57,7 @@ export default function UraianNavToggles() {
   const getCleanParamsString = useCallback((tab: string) => {
     const params = new URLSearchParams(searchParams.toString());
     if (
-      tab === 'vakasi_loyalis' || tab === 'kjm' ||
+      tab === 'vakasi_karyawan' || tab === 'kjm' ||
       tab === 'proposal_kegiatan' ||
       tab === 'pelaporan_kegiatan' ||
       tab === 'presensi_loyalis_raw' ||
@@ -119,11 +119,11 @@ export default function UraianNavToggles() {
                 Pengajuan Anggaran (Proposal)
               </button>
               <button
-                onClick={() => router.push(`/dashboard/payroll/uraian/vakasi-loyalis${getCleanParamsString('vakasi_loyalis')}`)}
-                className={btnCls(activeTab === 'vakasi_loyalis')}
+                onClick={() => router.push(`/dashboard/payroll/uraian/vakasi-karyawan${getCleanParamsString('vakasi_karyawan')}`)}
+                className={btnCls(activeTab === 'vakasi_karyawan')}
               >
                 <Banknote className="w-4 h-4" />
-                Vakasi Tambahan (Loyalis)
+                Vakasi Tambahan (Karyawan)
               </button>
               <button
                 onClick={() => router.push(`/dashboard/payroll/uraian/pelaporan-kegiatan${getCleanParamsString('pelaporan_kegiatan')}`)}
