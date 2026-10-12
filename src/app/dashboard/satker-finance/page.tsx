@@ -5,8 +5,14 @@ import Image from 'next/image';
 import { useAuth } from '@/lib/AuthContext';
 import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import AccountSwitcher from '@/components/AccountSwitcher';
-import { accountId as financialAccountId, academicYearFor, buildFinancialStatements, fiscalMonths, FinancialAccount, JournalEntry, OpeningBalances, type AccountType } from '@/lib/satker-finance/core';
+import {
+  accountId as financialAccountId, academicYearFor, buildFinancialStatements, cashFlowAllocation, CASH_FLOW_SECTIONS, defaultCashFlowSection,
+  fiscalMonths, FinancialAccount, groupNormalBalance, hasAbnormalBalance, JournalEntry, OpeningBalances, type AccountType, type CashFlowSection, type YearClosing,
+} from '@/lib/satker-finance/core';
 import { canCorrectByReversal, entryChangeBlocker, fiscalPeriod, lockedThroughPeriod, reversedEntryIds } from '@/lib/satker-finance/entryEditing';
+import type { FixedAsset } from '@/lib/satker-finance/depreciation';
+import type { BankReconciliation } from '@/lib/satker-finance/bankReconciliation';
+import { monthChecks, openingComesFromPreviousYear, type PreviousYearState } from '@/lib/satker-finance/monthControls';
 import type { FinancialUnit } from '@/lib/server/satkerFinance';
 import { UPLOAD_ACCEPT, UPLOAD_TYPES_TEXT, uploadFileProblem, uploadFileTypeFor, type UploadFileType } from '@/lib/uploadFileTypes';
 import { Button } from '@/components/ui/button';
@@ -14,6 +20,12 @@ import { CurrencyInput } from '@/components/ui/currency-input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { SearchSelect } from '@/components/ui/search-select';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import BankReconciliationPanel from '@/components/satker-finance/BankReconciliationPanel';
+import FixedAssetsPanel from '@/components/satker-finance/FixedAssetsPanel';
+import YearClosingPanel from '@/components/satker-finance/YearClosingPanel';
+import {
+  button, cashFlowItems, cell, CheckLine, dangerGhostButton, field, fmt, leftCell, lightButton, money, monthNames, Section, selectContent, selectItem, selectTrigger,
+} from '@/components/satker-finance/ui';
 import { Download, FileCheck2, FilePlus2, Loader2, Paperclip, Pencil, RefreshCw, Save, Trash2, X } from 'lucide-react';
 
 type Statements = ReturnType<typeof buildFinancialStatements>;
@@ -27,7 +39,10 @@ type Report = {
 };
 type ResponseData = {
   units: FinancialUnit[]; accounts: FinancialAccount[]; globalAccounts?: FinancialAccount[]; accountCatalogRevision?: number; accountCatalogSource?: string | null; editorUsers?: { uid: string; displayName: string; role: string }[];
-  unit?: FinancialUnit; year?: { status: string; revision: number; entryCount: number; openingBalances: OpeningBalances };
+  unit?: FinancialUnit;
+  year?: { status: string; revision: number; entryCount: number; openingBalances: OpeningBalances; openingSource?: 'MANUAL' | 'CARRIED_FORWARD'; openingCarriedFrom?: string | null;
+    closing?: (YearClosing & { equityAccountCode?: string; equityAccountName?: string }) | null };
+  fixedAssets?: FixedAsset[]; reconciliations?: BankReconciliation[]; previousYear?: PreviousYearState;
   statements?: Statements; monthlyTrial?: { monthIndex: number; year: number; period: number; rows: { id: string; code: string; debit: number; credit: number }[] }[];
   annualStatements?: Statements;
   entries?: EntryRecord[]; reports?: Report[]; events?: { id: string; action: string; actorUid: string; actorRole?: string; actorName?: string; at: unknown; details: Record<string, unknown> }[];
@@ -35,19 +50,19 @@ type ResponseData = {
   unitSummaries?: { unit: FinancialUnit; year: { status: string }; statements: Statements; report: Report | null }[];
   notifications?: { id: string; unitId: string; academicYear: string; monthIndex: number; title: string; message: string; readAt?: unknown; at?: unknown }[];
 };
-type Tab = 'ringkasan' | 'jurnal' | 'buku_besar' | 'neraca_saldo' | 'laba_rugi' | 'arus_kas' | 'neraca' | 'tahunan' | 'audit' | 'akun' | 'pengaturan';
+type Tab = 'ringkasan' | 'jurnal' | 'buku_besar' | 'neraca_saldo' | 'laba_rugi' | 'arus_kas' | 'neraca' | 'rekonsiliasi' | 'aset_tetap' | 'tahunan' | 'audit' | 'akun' | 'pengaturan';
 type DraftLine = { accountCode: string; description: string; debit: string; credit: string };
 
 const tabs: { id: Tab; label: string }[] = [
   { id: 'ringkasan', label: 'Ringkasan' }, { id: 'jurnal', label: 'Jurnal' }, { id: 'buku_besar', label: 'Buku Besar' },
   { id: 'neraca_saldo', label: 'Neraca Saldo' }, { id: 'laba_rugi', label: 'Laba Rugi' }, { id: 'arus_kas', label: 'Arus Kas' },
-  { id: 'neraca', label: 'Neraca' }, { id: 'tahunan', label: 'Neraca Lajur Tahunan' }, { id: 'audit', label: 'Jejak Audit' },
+  { id: 'neraca', label: 'Neraca' }, { id: 'rekonsiliasi', label: 'Rekonsiliasi Bank' }, { id: 'aset_tetap', label: 'Aset Tetap' },
+  { id: 'tahunan', label: 'Neraca Lajur Tahunan' }, { id: 'audit', label: 'Jejak Audit' },
   { id: 'akun', label: 'Akun' }, { id: 'pengaturan', label: 'Pengaturan' },
 ];
-const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+// Tabs about one unit's own book; the consolidated view has no register, reconciliation, or catalog of its own.
+const unitOnlyTabs: Tab[] = ['rekonsiliasi', 'aset_tetap', 'akun'];
 const localToday = () => { const date = new Date(); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; };
-const fmt = (value: number | undefined | null) => new Intl.NumberFormat('id-ID').format(value || 0);
-const money = (value: number | undefined | null) => `Rp ${fmt(value)}`;
 const dateText = (value: unknown) => {
   if (!value) return '—';
   if (typeof value === 'string') return value;
@@ -55,32 +70,16 @@ const dateText = (value: unknown) => {
   const seconds = raw._seconds ?? raw.seconds;
   return seconds ? new Date(seconds * 1000).toLocaleString('id-ID') : '—';
 };
-// Styling follows SIMPEL_UI_THEME.md: navy accent, slate neutrals, no shadows, no bold/uppercase.
-const field = 'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100';
-const button = 'inline-flex items-center justify-center gap-2 rounded-md bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-50';
-const lightButton = 'inline-flex items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50';
-const dangerGhostButton = 'inline-flex items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50';
-const selectTrigger = 'mt-1 h-9.5 w-full rounded-md border-slate-300 bg-white px-3 text-sm font-normal text-slate-700 shadow-none focus-visible:border-accent-500 focus-visible:ring-2 focus-visible:ring-accent-100';
-const selectContent = 'max-h-72 rounded-lg border border-slate-200 bg-white p-1 text-slate-700 shadow-lg';
-const selectItem = 'min-h-9 rounded-md px-3 py-1.5 text-sm text-slate-700 focus:bg-slate-50 focus:text-slate-900 data-highlighted:bg-slate-50 data-highlighted:text-slate-900';
-// Base UI's SelectValue shows the raw value once the list closes unless the Select is given `items` to look the label up in.
-const cashFlowItems = { OPERATING: 'Operasional', INVESTING: 'Investasi', FINANCING: 'Pendanaan' };
 const normalBalanceItems = { DEBIT: 'Debet', CREDIT: 'Kredit' };
 const reportTargetItems = { BALANCE_SHEET: 'Neraca', INCOME_STATEMENT: 'Laba Rugi' };
 const accountTypeItems: Record<AccountType, string> = { AKTIVA: 'Aktiva', HUTANG: 'Hutang', MODAL: 'Modal', TERIMA: 'Penerimaan', KELUAR: 'Pengeluaran' };
 const emptyLine = (): DraftLine => ({ accountCode: '', description: '', debit: '', credit: '' });
-const cell = 'border-b border-slate-100 px-3 py-2 text-right tabular-nums';
-const leftCell = 'border-b border-slate-100 px-3 py-2 text-left';
 
 // One status per record, shown as a dot plus text (never a filled pill).
 function Status({ status }: { status?: string }) {
   const dot = status === 'APPROVED' ? 'bg-green-500' : status === 'BAK_APPROVED' ? 'bg-accent-500' : status === 'SUBMITTED' ? 'bg-amber-500' : status === 'REVISION_REQUESTED' ? 'bg-red-500' : 'bg-slate-400';
   const label = status === 'APPROVED' ? 'Disahkan Rektorat' : status === 'BAK_APPROVED' ? 'Disetujui BAK' : status === 'SUBMITTED' ? 'Menunggu BAK' : status === 'REVISION_REQUESTED' ? 'Perlu revisi' : 'Draf';
   return <span className="inline-flex items-center gap-2 text-sm text-slate-700"><span className={`h-2 w-2 rounded-full ${dot}`} />{label}</span>;
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return <section className="rounded-lg border border-slate-200 bg-white p-5"><h2 className="mb-4 text-base font-semibold text-slate-900">{title}</h2>{children}</section>;
 }
 
 export default function SatkerFinancePage() {
@@ -102,12 +101,11 @@ export default function SatkerFinancePage() {
   const [reviewNote, setReviewNote] = useState('');
   const [voucherDate, setVoucherDate] = useState(localToday);
   const [voucherId, setVoucherId] = useState(() => crypto.randomUUID());
-  const [cashFlowChoice, setCashFlowChoice] = useState<string | null>(null);
   const [lines, setLines] = useState<DraftLine[]>([emptyLine(), emptyLine()]);
   const [receipt, setReceipt] = useState<File | null>(null);
   // The journal being edited in the form above the table, and the draft that was in the form before the edit began.
   const [editingEntry, setEditingEntry] = useState<EntryRecord | null>(null);
-  const draftBeforeEdit = useRef<{ lines: DraftLine[]; voucherDate: string; cashFlowChoice: string | null; receipt: File | null } | null>(null);
+  const draftBeforeEdit = useRef<{ lines: DraftLine[]; voucherDate: string; receipt: File | null } | null>(null);
   const composerRef = useRef<HTMLTableSectionElement>(null);
   const receiptInputRef = useRef<HTMLInputElement>(null);
   const [deletingEntry, setDeletingEntry] = useState<EntryRecord | null>(null);
@@ -120,7 +118,8 @@ export default function SatkerFinancePage() {
   const [accountEditCode, setAccountEditCode] = useState('');
   const [accountDraft, setAccountDraft] = useState({ name: '', normalBalance: 'DEBIT', reportTarget: 'BALANCE_SHEET', cashEquivalent: false, cashFlowSection: 'OPERATING' });
   const [unitAccountId, setUnitAccountId] = useState('');
-  const [unitAccountDraft, setUnitAccountDraft] = useState<{ code: string; name: string; type: AccountType; cashEquivalent: boolean }>({ code: '', name: '', type: 'AKTIVA', cashEquivalent: false });
+  const [unitAccountDraft, setUnitAccountDraft] = useState<{ code: string; name: string; type: AccountType; cashEquivalent: boolean; contra: boolean; cashFlowSection: CashFlowSection }>(
+    { code: '', name: '', type: 'AKTIVA', cashEquivalent: false, contra: false, cashFlowSection: 'OPERATING' });
   const [creatingUnitAccount, setCreatingUnitAccount] = useState(false);
   const unitAccountEditorRef = useRef<HTMLDivElement>(null);
   const isAdmin = profile?.role === 'super_admin';
@@ -145,10 +144,15 @@ export default function SatkerFinancePage() {
     : !lines.every(oneSided) ? 'Isi Debet atau Kredit (salah satu) di setiap baris.'
     : !entryDescription ? 'Isi uraian pada salah satu baris.'
     : draftDebit !== draftCredit ? 'Debet dan Kredit harus sama.' : '';
-  const draftAccounts = lines.map((line) => postable.find((account) => financialAccountId(account) === line.accountCode));
-  const draftCashChange = lines.reduce((sum, line, index) => sum + (draftAccounts[index]?.cashEquivalent ? amountNumber(line.debit) - amountNumber(line.credit) : 0), 0);
-  // Follows the account the cash is exchanged for (its catalog classification) until the user picks one.
-  const cashFlowSection = cashFlowChoice ?? draftAccounts.find((account) => account && !account.cashEquivalent && account.cashFlowSection)?.cashFlowSection ?? 'OPERATING';
+  // Where the draft's cash goes, split by each counter account's own classification; the server derives the same split.
+  const draftCashFlows = (() => {
+    const filled = lines.filter((line) => line.accountCode && (amountNumber(line.debit) || amountNumber(line.credit)))
+      .map((line) => ({ accountCode: line.accountCode, debit: amountNumber(line.debit), credit: amountNumber(line.credit) }));
+    try { return { flows: cashFlowAllocation(filled, postable), error: '' }; }
+    catch (cause) { return { flows: null, error: cause instanceof Error ? cause.message : 'Klasifikasi arus kas tidak lengkap.' }; }
+  })();
+  const draftCashFlowParts = draftCashFlows.flows ? CASH_FLOW_SECTIONS.filter((section) => draftCashFlows.flows![section] !== 0)
+    .map((section) => `${cashFlowItems[section]} ${draftCashFlows.flows![section] > 0 ? '+' : '−'}${money(Math.abs(draftCashFlows.flows![section]))}`) : [];
   const unitItems = [...(canReadAll ? [{ value: 'ALL', label: 'Konsolidasi seluruh SatKer' }] : []), ...(data?.units.map((unit) => ({ value: unit.id, label: unit.name })) || [])];
   const periodItems = [{ value: 'ANNUAL', label: 'Tahunan (Sep–Agu)' }, ...months.map((item) => ({ value: String(item.monthIndex), label: `${item.period}. ${monthNames[item.monthIndex - 1]} ${item.year}` }))];
   const accountItems = postable.map((account) => ({ value: financialAccountId(account), label: `${account.code} · ${account.name}` }));
@@ -217,7 +221,7 @@ export default function SatkerFinancePage() {
     if (saved) {
       setUnitAccountId('');
       setCreatingUnitAccount(false);
-      setUnitAccountDraft({ code: '', name: '', type: 'AKTIVA', cashEquivalent: false });
+      setUnitAccountDraft({ code: '', name: '', type: 'AKTIVA', cashEquivalent: false, contra: false, cashFlowSection: 'OPERATING' });
     }
   };
 
@@ -228,7 +232,6 @@ export default function SatkerFinancePage() {
     setEditingEntry(null);
     setVoucherId(crypto.randomUUID());
     setReceipt(draft?.receipt ?? null);
-    setCashFlowChoice(draft?.cashFlowChoice ?? null);
     setLines(draft?.lines ?? [emptyLine(), emptyLine()]);
     if (draft) setVoucherDate(draft.voucherDate);
   };
@@ -237,13 +240,12 @@ export default function SatkerFinancePage() {
 
   // Loads a posted journal into the form above the table. Journals posted with one uraian for the whole entry get it on every line.
   const startEdit = (entry: EntryRecord) => {
-    if (!editingEntry) draftBeforeEdit.current = { lines, voucherDate, cashFlowChoice, receipt };
+    if (!editingEntry) draftBeforeEdit.current = { lines, voucherDate, receipt };
     const sharedDescription = entry.lines.some((line) => line.description) ? '' : entry.description;
     setEditingEntry(entry);
     setVoucherId(crypto.randomUUID());
     setVoucherDate(entry.date);
     setReceipt(null);
-    setCashFlowChoice(entry.cashFlowSection);
     setLines(entry.lines.map((line) => ({ accountCode: line.accountCode, description: line.description || sharedDescription, debit: amountText(line.debit), credit: amountText(line.credit) })));
     setError(''); setSuccess('');
     window.requestAnimationFrame(() => composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
@@ -258,7 +260,7 @@ export default function SatkerFinancePage() {
     }
     const targetMonth = Number(voucherDate.slice(5, 7));
     const voucher = {
-      monthIndex: targetMonth, date: voucherDate, description: entryDescription, kind: 'ADVANCED', cashFlowSection,
+      monthIndex: targetMonth, date: voucherDate, description: entryDescription, kind: 'ADVANCED',
       lines: lines.map((line) => ({ accountCode: line.accountCode, description: line.description.trim(), debit: amountNumber(line.debit), credit: amountNumber(line.credit) })),
       receiptDataUrl,
     };
@@ -267,7 +269,7 @@ export default function SatkerFinancePage() {
       return;
     }
     const result = await post('POST_ENTRY', { entryId: voucherId, ...voucher });
-    if (result) { setVoucherId(crypto.randomUUID()); setReceipt(null); setCashFlowChoice(null); setLines([emptyLine(), emptyLine()]); }
+    if (result) { setVoucherId(crypto.randomUUID()); setReceipt(null); setLines([emptyLine(), emptyLine()]); }
   };
 
   const openDelete = (entry: EntryRecord) => { setError(''); setSuccess(''); setDeleteReason(''); setDeletingEntry(entry); };
@@ -282,10 +284,11 @@ export default function SatkerFinancePage() {
     }
   };
 
-  const viewReceipt = async (entryId: string) => {
+  // A journal's receipt, or a bank reconciliation's statement.
+  const viewReceipt = async (target: { entryId: string } | { reconciliationId: string }) => {
     if (!user) return;
     try {
-      const params = new URLSearchParams({ unitId, academicYear, entryId });
+      const params = new URLSearchParams({ unitId, academicYear, ...target });
       const response = await fetch(`/api/satker-finance/receipt?${params}`, { headers: { Authorization: `Bearer ${await user.getIdToken()}` } });
       if (!response.ok) throw new Error('Bukti tidak dapat dibuka.');
       if (receiptPreview) URL.revokeObjectURL(receiptPreview);
@@ -353,6 +356,23 @@ export default function SatkerFinancePage() {
     }
     return { beginning, ending: balance, rows };
   }, [data?.entries, data?.year?.openingBalances, ledgerCode, month, months]);
+  // The ledger keeps debit minus credit; it is shown in the account's normal direction, so a liability's balance reads positive.
+  const ledgerShown = (signed: number) => (selectedLedger?.normalBalance === 'CREDIT' && signed ? -signed : signed);
+  // The same checklist the server applies before a month's report goes to BAK.
+  const checks = useMemo(() => {
+    if (!data?.unit || unitId === 'ALL' || month === 'ANNUAL' || !statement || !data.year) return [];
+    return monthChecks({
+      academicYear, monthIndex: month, accounts: data.accounts, statements: statement, entries: data.entries || [], openingBalances: data.year.openingBalances,
+      previousYear: data.previousYear ?? null, assets: data.fixedAssets || [], reconciliations: data.reconciliations || [],
+    });
+  }, [data, unitId, month, statement, academicYear]);
+  const checksPass = checks.every((check) => check.ok);
+  const allApproved = months.every((item) => data?.reports?.some((report) => report.monthIndex === item.monthIndex && report.status === 'APPROVED'));
+  // A book whose previous year is in use gets its opening balance from that year's closing, never typed in.
+  const openingCarried = data?.year?.openingSource === 'CARRIED_FORWARD';
+  const openingAwaitsClosing = !openingCarried && openingComesFromPreviousYear(data?.previousYear ?? null);
+  // A sealed month (its report, or a later one, is with BAK or Rektorat) takes no reconciliation or depreciation changes.
+  const monthOpen = month !== 'ANNUAL' && (fiscalPeriod(academicYear, month) ?? 0) > lockedThrough;
 
   return <div className="min-h-screen bg-white text-slate-700">
     <div className="mx-auto max-w-[1600px] space-y-5 px-4 pt-6 pb-16 sm:px-8 sm:pt-8">
@@ -373,17 +393,27 @@ export default function SatkerFinancePage() {
       {loading && <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Memuat data keuangan...</div>}
       {!unitId && !loading && <Section title="Belum ada SatKer"><p className="text-sm text-slate-600">{isAdmin ? 'Buat SatKer pada tab Pengaturan untuk mulai menggunakan buku keuangan.' : 'BAK belum memberikan akses ke buku keuangan SatKer. Hubungi administrator.'}</p><button className={`${lightButton} mt-3`} onClick={() => setTab('pengaturan')}>Pengaturan</button></Section>}
       {data?.unit && <>
-      <nav className="flex gap-6 overflow-x-auto border-b border-slate-200" aria-label="Bagian pelaporan keuangan">{tabs.filter((item) => (item.id !== 'pengaturan' || isAdmin) && (item.id !== 'akun' || (canEdit && !!unitId && unitId !== 'ALL'))).map((item) => <button key={item.id} onClick={() => setTab(item.id)} aria-current={tab === item.id ? 'page' : undefined} className={`-mb-px shrink-0 border-b-2 px-1 py-2.5 text-sm ${tab === item.id ? 'border-accent-600 font-medium text-accent-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>{item.label}</button>)}</nav>
+      <nav className="flex gap-6 overflow-x-auto border-b border-slate-200" aria-label="Bagian pelaporan keuangan">{tabs.filter((item) => (item.id !== 'pengaturan' || isAdmin) && (item.id !== 'akun' || canEdit) && (!unitOnlyTabs.includes(item.id) || (!!unitId && unitId !== 'ALL'))).map((item) => <button key={item.id} onClick={() => setTab(item.id)} aria-current={tab === item.id ? 'page' : undefined} className={`-mb-px shrink-0 border-b-2 px-1 py-2.5 text-sm ${tab === item.id ? 'border-accent-600 font-medium text-accent-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>{item.label}</button>)}</nav>
         {tab === 'ringkasan' && statement && <div className="space-y-5">
           <dl className="grid grid-cols-2 gap-y-4 border-b border-slate-200 pb-5 xl:grid-cols-4 xl:divide-x xl:divide-slate-200">{[
             { label: 'Penerimaan', value: statement.incomeStatement.income }, { label: 'Pengeluaran', value: statement.incomeStatement.expense },
             { label: 'Surplus / defisit', value: statement.incomeStatement.surplus }, { label: 'Saldo kas & bank', value: statement.cashFlow.physicalCash },
           ].map((item) => <div key={item.label} className="xl:px-6 xl:first:pl-0"><dt className="text-xs text-slate-500">{item.label}</dt><dd className="mt-1 text-xl font-semibold tabular-nums text-slate-900">{money(item.value)}</dd></div>)}</dl>
+          {!!statement.abnormalBalances?.length && <Section title="Saldo tidak normal">
+            <p className="mb-2 text-sm text-slate-600">Akun berikut bersaldo di sisi yang berlawanan dengan pos saldonya, misalnya kas yang minus atau hutang yang bersaldo debet. Biasanya ini tanda salah akun atau salah sisi saat menjurnal; periksa Buku Besar akun tersebut.</p>
+            <ul className="space-y-1 text-sm">{statement.abnormalBalances.map((item) => <li key={item.account.code} className="flex flex-wrap justify-between gap-3 border-b border-slate-100 py-1.5"><span>{item.account.code} · {item.account.name} <span className="text-slate-500">(pos saldo {item.account.normalBalance === 'DEBIT' ? 'Debet' : 'Kredit'})</span></span><span className="tabular-nums text-amber-700">{item.side === 'DEBIT' ? 'Debet' : 'Kredit'} {money(item.amount)}</span></li>)}</ul>
+          </Section>}
           {unitId === 'ALL' && <Section title="Pemantauan seluruh SatKer"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>SatKer</th><th className={cell}>Penerimaan</th><th className={cell}>Pengeluaran</th><th className={cell}>Kas akhir</th><th className={leftCell}>Status</th></tr></thead><tbody>{data.unitSummaries?.map((item) => <tr key={item.unit.id}><td className={leftCell}><button className="font-semibold text-accent-700 hover:underline" onClick={() => selectUnit(item.unit.id)}>{item.unit.name}</button></td><td className={cell}>{money(item.statements.incomeStatement.income)}</td><td className={cell}>{money(item.statements.incomeStatement.expense)}</td><td className={cell}>{money(item.statements.cashFlow.physicalCash)}</td><td className={leftCell}>{month === 'ANNUAL' ? item.year.status : <Status status={item.report?.status} />}</td></tr>)}</tbody></table></div></Section>}
           <Section title="Perkembangan 12 bulan"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>Bulan</th><th className={cell}>Penerimaan</th><th className={cell}>Pengeluaran</th><th className={cell}>Surplus / Defisit</th><th className={cell}>Kas akhir</th><th className={leftCell}>Status</th></tr></thead><tbody>{(data.annualStatements || statement).monthlyIncome.map((item) => <tr key={item.period}><td className={leftCell}>{monthNames[item.monthIndex - 1]} {item.year}</td><td className={cell}>{money(item.income)}</td><td className={cell}>{money(item.expense)}</td><td className={cell}>{money(item.surplus)}</td><td className={cell}>{money(item.endingCash)}</td><td className={leftCell}>{unitId === 'ALL' ? '—' : <Status status={data.reports?.find((report) => report.monthIndex === item.monthIndex)?.status} />}</td></tr>)}</tbody></table></div></Section>
-          {unitId !== 'ALL' && month !== 'ANNUAL' && <Section title="Pengajuan & persetujuan"><div className="flex flex-wrap items-center gap-3"><Status status={status} /><span className="text-sm text-slate-600">Selisih neraca saldo: {money(statement.trialBalance.difference)} · Selisih kas: {money(statement.cashFlow.reconciliationDelta)}</span></div>
+          {unitId !== 'ALL' && month !== 'ANNUAL' && <Section title="Pengajuan & persetujuan"><div className="flex flex-wrap items-center gap-3"><Status status={status} /></div>
+            {['DRAFT', 'REVISION_REQUESTED'].includes(status) && <div className="mt-3"><p className="text-xs font-medium text-slate-500">Syarat sebelum laporan dikirim</p>
+              {checks.map((check) => <CheckLine key={check.id} ok={check.ok} label={check.label} detail={check.detail} />)}
+              {checks.some((check) => !check.ok && (check.id === 'bank' || check.id === 'depreciation')) && <div className="mt-1 flex gap-2">
+                {checks.some((check) => !check.ok && check.id === 'bank') && <button type="button" className={lightButton} onClick={() => setTab('rekonsiliasi')}>Buka Rekonsiliasi Bank</button>}
+                {checks.some((check) => !check.ok && check.id === 'depreciation') && <button type="button" className={lightButton} onClick={() => setTab('aset_tetap')}>Buka Aset Tetap</button>}
+              </div>}</div>}
             {selectedReport?.revisionNotes && <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">Catatan revisi: {selectedReport.revisionNotes}</p>}
-            <div className="mt-4 flex flex-wrap gap-2">{canEdit && ['DRAFT', 'REVISION_REQUESTED'].includes(status) && <button disabled={busy || !previousApproved || statement.trialBalance.difference !== 0 || statement.cashFlow.reconciliationDelta !== 0} className={button} onClick={() => void post('SUBMIT_REPORT', { monthIndex: month })}><FileCheck2 className="h-4 w-4" />Kirim laporan ke BAK</button>}
+            <div className="mt-4 flex flex-wrap gap-2">{canEdit && ['DRAFT', 'REVISION_REQUESTED'].includes(status) && <button disabled={busy || !previousApproved || !checksPass} className={button} onClick={() => void post('SUBMIT_REPORT', { monthIndex: month })}><FileCheck2 className="h-4 w-4" />Kirim laporan ke BAK</button>}
               {isAdmin && status === 'SUBMITTED' && <button disabled={busy} className={button} onClick={() => void post('BAK_APPROVE', { monthIndex: month, expectedRevision: selectedReport?.revision, note: reviewNote })}>Setujui sebagai Kepala BAK</button>}
               {profile?.role === 'rector_finance' && status === 'BAK_APPROVED' && <button disabled={busy} className={button} onClick={() => void post('RECTOR_APPROVE', { monthIndex: month, expectedRevision: selectedReport?.revision, note: reviewNote })}>Sahkan sebagai Rektorat</button>}
               {status === 'APPROVED' && <button className={lightButton} onClick={() => void downloadReport()}><Download className="h-4 w-4" />Unduh PDF resmi</button>}
@@ -392,7 +422,9 @@ export default function SatkerFinancePage() {
             {!previousApproved && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Laporan bulan sebelumnya harus disahkan lebih dahulu.</p>}
             <div className="mt-4 grid gap-2 text-xs text-slate-500 sm:grid-cols-3"><div>Disusun: {selectedReport?.submittedName || data.unit?.headName || '—'}<br />{dateText(selectedReport?.submittedAt)}</div><div>BAK: {selectedReport?.bakApprovedName || '—'}<br />{dateText(selectedReport?.bakApprovedAt)}</div><div>Rektorat: {selectedReport?.rectorApprovedName || '—'}<br />{dateText(selectedReport?.rectorApprovedAt)}</div></div>
           </Section>}
-          {isAdmin && unitId !== 'ALL' && month === 'ANNUAL' && <Section title="Penutupan tahun buku"><p className="mb-3 text-sm text-slate-600">Tahun buku dapat ditutup setelah 12 bulan disahkan Rektorat dan laporan tahunan rekonsiliasi.</p><button className={button} disabled={busy || data.year?.status === 'CLOSED'} onClick={() => void post('CLOSE_YEAR')}>{data.year?.status === 'CLOSED' ? 'Tahun buku ditutup' : 'Tutup tahun buku'}</button></Section>}
+          {unitId !== 'ALL' && month === 'ANNUAL' && data.year && <YearClosingPanel key={`${unitId}_${academicYear}`} accounts={data.accounts} openingBalances={data.year.openingBalances}
+            entries={data.entries || []} academicYear={academicYear} closing={data.year.closing ?? null} closed={data.year.status === 'CLOSED'} allApproved={allApproved}
+            isAdmin={isAdmin} busy={busy} post={post} />}
         </div>}
         {tab === 'jurnal' && <div className="space-y-5"><Section title="Riwayat jurnal"><div className="overflow-x-auto"><table className="w-full min-w-[960px] text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={`${leftCell} w-40`}>Tanggal</th><th className={`${leftCell} w-60 min-w-52`}>Akun</th><th className={`${leftCell} min-w-56`}>Uraian</th><th className={`${cell} w-44`}>Debet</th><th className={`${cell} w-44`}>Kredit</th><th className={`${leftCell} w-60 min-w-60`}>Aksi</th></tr></thead>
             {canPost && <tbody ref={composerRef} className="bg-slate-50 align-top">
@@ -425,7 +457,9 @@ export default function SatkerFinancePage() {
                   return [...current, { ...emptyLine(), debit: gap < 0 ? String(-gap) : '', credit: gap > 0 ? String(gap) : '' }];
                 })}>Tambah baris</button></td>
                 <td className="border-b border-slate-200 px-3 py-1.5 text-xs text-slate-500">
-                  {draftCashChange !== 0 && <div className="font-medium"><span id="voucher-cashflow-label">Klasifikasi arus kas</span><Select items={cashFlowItems} value={cashFlowSection} onValueChange={(value) => value && setCashFlowChoice(value)}><SelectTrigger aria-labelledby="voucher-cashflow-label" className={selectTrigger}><SelectValue /></SelectTrigger><SelectContent className={selectContent}><SelectItem className={selectItem} value="OPERATING">Operasional</SelectItem><SelectItem className={selectItem} value="INVESTING">Investasi</SelectItem><SelectItem className={selectItem} value="FINANCING">Pendanaan</SelectItem></SelectContent></Select></div>}
+                  {/* Classified by the counter accounts in the catalog, not chosen per journal. */}
+                  {!!draftCashFlowParts.length && <p className="font-medium text-slate-600" title="Mengikuti klasifikasi arus kas akun lawan di katalog akun">Arus kas: {draftCashFlowParts.join(' · ')}</p>}
+                  {draftCashFlows.error && <p className="text-amber-700">{draftCashFlows.error}</p>}
                   {draftDebit !== draftCredit && <p className="mt-1 text-amber-700">Belum seimbang · selisih {money(Math.abs(draftDebit - draftCredit))}</p>}
                 </td>
                 <td className="border-b border-slate-200 px-3 py-1.5 text-right text-xs tabular-nums text-slate-600">{money(draftDebit)}</td>
@@ -451,9 +485,10 @@ export default function SatkerFinancePage() {
               <td className={`px-3 py-2 text-right tabular-nums ${rule}`}>{line.debit ? money(line.debit) : ''}</td>
               <td className={`px-3 py-2 text-right tabular-nums ${rule}`}>{line.credit ? money(line.credit) : ''}</td>
               {index === 0 && <td rowSpan={span} className={leftCell}><div className="flex flex-col items-start gap-1.5">
-                {entry.hasReceipt && <button className="text-accent-700 hover:underline" onClick={() => void viewReceipt(entry.id)}>Lihat bukti</button>}
+                {entry.hasReceipt && <button className="text-accent-700 hover:underline" onClick={() => void viewReceipt({ entryId: entry.id })}>Lihat bukti</button>}
+                {entry.kind === 'DEPRECIATION' && <span className="text-xs text-slate-500">Dibuat dari daftar aset tetap</span>}
                 {canPost && !changeBlocker && <div className="flex items-center gap-1">
-                  {entry.kind !== 'REVERSAL' && <button type="button" className={`${lightButton} !px-2`} aria-label="Edit jurnal" title="Edit jurnal" disabled={busy || beingEdited} onClick={() => startEdit(entry)}><Pencil className="h-4 w-4" /></button>}
+                  {entry.kind !== 'REVERSAL' && entry.kind !== 'DEPRECIATION' && <button type="button" className={`${lightButton} !px-2`} aria-label="Edit jurnal" title="Edit jurnal" disabled={busy || beingEdited} onClick={() => startEdit(entry)}><Pencil className="h-4 w-4" /></button>}
                   <button type="button" className={`${dangerGhostButton} !px-2`} aria-label="Hapus jurnal" title="Hapus jurnal" disabled={busy} onClick={() => openDelete(entry)}><Trash2 className="h-4 w-4" /></button>
                 </div>}
                 {canPost && changeBlocker && sealedMonth && canCorrectByReversal({ entry, reversed, yearStatus: data.year?.status }) && <button className="text-red-700 hover:underline" title={`${changeBlocker} Koreksi dengan jurnal pembalik di bulan yang masih terbuka.`} onClick={() => { const reason = window.prompt('Alasan pembalikan jurnal:'); if (reason?.trim()) void post('REVERSE_ENTRY', { sourceEntryId: entry.id, monthIndex: Number(voucherDate.slice(5, 7)), date: voucherDate, description: reason }); }}>Buat jurnal pembalik</button>}
@@ -462,8 +497,8 @@ export default function SatkerFinancePage() {
             </tr>;
           })}</tbody>; })}</table>{!data.entries?.length && !canPost && <p className="p-4 text-sm text-slate-500">Belum ada transaksi.</p>}</div></Section>
         </div>}
-        {tab === 'buku_besar' && unitId !== 'ALL' && <Section title="Buku Besar"><div className="mb-4 max-w-lg text-xs font-medium text-slate-500"><span id="ledger-account-label">Akun</span><Select items={accountItems} value={ledgerCode} onValueChange={(value) => value && setLedgerCode(value)}><SelectTrigger aria-labelledby="ledger-account-label" className={selectTrigger}><SelectValue /></SelectTrigger><SelectContent className={selectContent}>{postable.map((account) => <SelectItem className={selectItem} key={financialAccountId(account)} value={financialAccountId(account)}>{account.code} · {account.name}</SelectItem>)}</SelectContent></Select></div><p className="mb-3 text-sm text-slate-600">Saldo awal periode {selectedLedger?.name}: {money(ledger.beginning)}</p><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>Tanggal</th><th className={leftCell}>Uraian</th><th className={cell}>Debet</th><th className={cell}>Kredit</th><th className={cell}>Saldo</th></tr></thead><tbody>{ledger.rows.map((row, index) => <tr key={`${row.id}-${index}`}><td className={leftCell}>{row.date}</td><td className={leftCell}>{row.description}</td><td className={cell}>{money(row.debit)}</td><td className={cell}>{money(row.credit)}</td><td className={cell}>{money(row.balance)}</td></tr>)}</tbody></table></div><p className="mt-3 text-sm font-semibold">Saldo akhir: {money(ledger.ending)} · {ledger.ending === ((statement?.rows.find((row) => financialAccountId(row.account) === ledgerCode)?.endingDebit || 0) - (statement?.rows.find((row) => financialAccountId(row.account) === ledgerCode)?.endingCredit || 0)) ? 'Alhamdulillah · sesuai neraca saldo' : 'Selisih dengan neraca saldo'}</p></Section>}
-        {tab === 'neraca_saldo' && statement && <div className="space-y-5"><Section title="Neraca Saldo"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>Kode</th><th className={leftCell}>Akun</th><th className={cell}>Saldo Debet</th><th className={cell}>Saldo Kredit</th></tr></thead><tbody>{statement.rows.map((row) => <tr key={row.account.code}><td className={leftCell}>{row.account.code}</td><td className={leftCell}>{row.account.name}</td><td className={cell}>{money(row.endingDebit)}</td><td className={cell}>{money(row.endingCredit)}</td></tr>)}</tbody><tfoot><tr className="bg-slate-50 font-semibold"><td colSpan={2} className={leftCell}>Total · Selisih {money(statement.trialBalance.difference)}</td><td className={cell}>{money(statement.trialBalance.debit)}</td><td className={cell}>{money(statement.trialBalance.credit)}</td></tr></tfoot></table></div></Section><Section title="Neraca Lajur Bulanan · Saldo Kumulatif"><div className="overflow-x-auto"><table className="w-full min-w-[1600px] text-xs"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell} rowSpan={2}>Akun</th>{data.monthlyTrial?.map((item) => <th className="border-b px-2 py-2 text-center" key={item.period} colSpan={2}>{monthNames[item.monthIndex - 1].slice(0, 3)} {item.year}</th>)}</tr><tr>{data.monthlyTrial?.map((item) => <FragmentPair key={item.period} />)}</tr></thead><tbody>{postable.map((account) => <tr key={account.code}><td className={leftCell}>{account.code} · {account.name}</td>{data.monthlyTrial?.map((item) => { const row = item.rows.find((value) => value.id === financialAccountId(account)); return <FragmentAmounts key={item.period} debit={row?.debit || 0} credit={row?.credit || 0} />; })}</tr>)}</tbody></table></div></Section></div>}
+        {tab === 'buku_besar' && unitId !== 'ALL' && <Section title="Buku Besar"><div className="mb-4 max-w-lg text-xs font-medium text-slate-500"><span id="ledger-account-label">Akun</span><Select items={accountItems} value={ledgerCode} onValueChange={(value) => value && setLedgerCode(value)}><SelectTrigger aria-labelledby="ledger-account-label" className={selectTrigger}><SelectValue /></SelectTrigger><SelectContent className={selectContent}>{postable.map((account) => <SelectItem className={selectItem} key={financialAccountId(account)} value={financialAccountId(account)}>{account.code} · {account.name}</SelectItem>)}</SelectContent></Select></div><p className="mb-3 text-sm text-slate-600">Saldo awal periode {selectedLedger?.name}: {money(ledgerShown(ledger.beginning))} · Pos saldo {selectedLedger?.normalBalance === 'CREDIT' ? 'Kredit' : 'Debet'}: saldo positif berarti saldo normal, minus berarti saldo di sisi sebaliknya.</p><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>Tanggal</th><th className={leftCell}>Uraian</th><th className={cell}>Debet</th><th className={cell}>Kredit</th><th className={cell}>Saldo ({selectedLedger?.normalBalance === 'CREDIT' ? 'K' : 'D'})</th></tr></thead><tbody>{ledger.rows.map((row, index) => <tr key={`${row.id}-${index}`}><td className={leftCell}>{row.date}</td><td className={leftCell}>{row.description}</td><td className={cell}>{money(row.debit)}</td><td className={cell}>{money(row.credit)}</td><td className={`${cell} ${ledgerShown(row.balance) < 0 ? 'text-amber-700' : ''}`}>{money(ledgerShown(row.balance))}</td></tr>)}</tbody></table></div><p className="mt-3 text-sm font-semibold">Saldo akhir: {money(ledgerShown(ledger.ending))} · {ledger.ending === ((statement?.rows.find((row) => financialAccountId(row.account) === ledgerCode)?.endingDebit || 0) - (statement?.rows.find((row) => financialAccountId(row.account) === ledgerCode)?.endingCredit || 0)) ? 'Alhamdulillah · sesuai neraca saldo' : 'Selisih dengan neraca saldo'}</p></Section>}
+        {tab === 'neraca_saldo' && statement && <div className="space-y-5"><Section title="Neraca Saldo"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>Kode</th><th className={leftCell}>Akun</th><th className={cell}>Saldo Debet</th><th className={cell}>Saldo Kredit</th></tr></thead><tbody>{statement.rows.map((row) => { const abnormal = hasAbnormalBalance(row.account, row.endingDebit, row.endingCredit); return <tr key={row.account.code} className={abnormal ? 'bg-amber-50' : ''}><td className={leftCell}>{row.account.code}</td><td className={leftCell}>{row.account.name}{abnormal && <span className="ml-2 text-xs text-amber-700">saldo tidak normal (pos {row.account.normalBalance === 'DEBIT' ? 'Debet' : 'Kredit'})</span>}</td><td className={cell}>{money(row.endingDebit)}</td><td className={cell}>{money(row.endingCredit)}</td></tr>; })}</tbody><tfoot><tr className="bg-slate-50 font-semibold"><td colSpan={2} className={leftCell}>Total · Selisih {money(statement.trialBalance.difference)}</td><td className={cell}>{money(statement.trialBalance.debit)}</td><td className={cell}>{money(statement.trialBalance.credit)}</td></tr></tfoot></table></div></Section><Section title="Neraca Lajur Bulanan · Saldo Kumulatif"><div className="overflow-x-auto"><table className="w-full min-w-[1600px] text-xs"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell} rowSpan={2}>Akun</th>{data.monthlyTrial?.map((item) => <th className="border-b px-2 py-2 text-center" key={item.period} colSpan={2}>{monthNames[item.monthIndex - 1].slice(0, 3)} {item.year}</th>)}</tr><tr>{data.monthlyTrial?.map((item) => <FragmentPair key={item.period} />)}</tr></thead><tbody>{postable.map((account) => <tr key={account.code}><td className={leftCell}>{account.code} · {account.name}</td>{data.monthlyTrial?.map((item) => { const row = item.rows.find((value) => value.id === financialAccountId(account)); return <FragmentAmounts key={item.period} debit={row?.debit || 0} credit={row?.credit || 0} />; })}</tr>)}</tbody></table></div></Section></div>}
         {tab === 'laba_rugi' && statement && <Section title={`Laba Rugi ${month === 'ANNUAL' ? 'Tahunan' : monthNames[month - 1]}`}><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>Akun</th><th className={cell}>Penerimaan</th><th className={cell}>Pengeluaran</th></tr></thead><tbody>{statement.incomeStatement.rows.map((row) => <tr key={row.account.code}><td className={leftCell}>{row.account.code} · {row.account.name}</td><td className={cell}>{row.account.type === 'TERIMA' ? money(row.creditMovement - row.debitMovement) : '—'}</td><td className={cell}>{row.account.type === 'KELUAR' ? money(row.debitMovement - row.creditMovement) : '—'}</td></tr>)}</tbody><tfoot><tr className="bg-slate-50 font-semibold"><td className={leftCell}>Jumlah</td><td className={cell}>{money(statement.incomeStatement.income)}</td><td className={cell}>{money(statement.incomeStatement.expense)}</td></tr><tr className="font-semibold"><td className={leftCell}>Surplus / Defisit</td><td colSpan={2} className={cell}>{money(statement.incomeStatement.surplus)}</td></tr></tfoot></table></div></Section>}
         {tab === 'arus_kas' && statement && <Section title="Laporan Arus Kas"><div className="max-w-3xl space-y-2 text-sm">{[
           ['Saldo awal kas dan setara kas', statement.cashFlow.openingCash], ['I. Aktivitas operasional', statement.cashFlow.OPERATING],
@@ -472,6 +507,10 @@ export default function SatkerFinancePage() {
           ['Saldo fisik akun kas/bank', statement.cashFlow.physicalCash], ['Selisih rekonsiliasi', statement.cashFlow.reconciliationDelta],
         ].map(([label, value]) => <div key={String(label)} className="flex justify-between border-b border-slate-100 py-2"><span>{label}</span><strong className="font-semibold tabular-nums">{money(Number(value))}</strong></div>)}</div></Section>}
         {tab === 'neraca' && statement && <Section title="Neraca"><div className="grid gap-5 md:grid-cols-2">{(['AKTIVA', 'HUTANG', 'MODAL'] as const).map((type) => <div key={type}><h3 className="mb-2 text-sm font-semibold text-slate-900">{type}</h3>{statement.balanceSheet.rows.filter((row) => row.account.type === type).map((row) => <div key={row.account.code} className="flex justify-between gap-3 border-b py-2 text-sm"><span>{row.account.code} · {row.account.name}</span><strong className="font-semibold tabular-nums">{money(type === 'AKTIVA' ? row.endingDebit - row.endingCredit : row.endingCredit - row.endingDebit)}</strong></div>)}</div>)}</div><div className="mt-4 rounded-lg bg-accent-50 p-4 text-sm font-medium text-accent-800">Aktiva {money(statement.balanceSheet.assets)} · Hutang {money(statement.balanceSheet.liabilities)} · Modal {money(statement.balanceSheet.equity)} · Surplus berjalan {money(statement.balanceSheet.accumulatedSurplus)}</div></Section>}
+        {tab === 'rekonsiliasi' && unitId !== 'ALL' && statement && <BankReconciliationPanel rows={statement.rows} reconciliations={data.reconciliations || []}
+          academicYear={academicYear} month={month} canPost={!!canPost && monthOpen} busy={busy} post={post} viewStatement={(reconciliationId) => void viewReceipt({ reconciliationId })} />}
+        {tab === 'aset_tetap' && unitId !== 'ALL' && statement && <FixedAssetsPanel accounts={data.accounts} assets={data.fixedAssets || []} entries={data.entries || []}
+          rows={statement.rows} academicYear={academicYear} month={month} canPost={!!canPost} canPostMonth={!!canPost && monthOpen} busy={busy} post={post} />}
         {tab === 'tahunan' && data.annualStatements && <Section title="Neraca Lajur Tahunan · 10 Kolom">
           <div className="overflow-x-auto"><table className="min-w-[1300px] w-full text-xs">
             <thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell} rowSpan={2}>Akun</th><th colSpan={2}>Saldo Awal</th><th colSpan={2}>Mutasi Tahunan</th><th colSpan={2}>Neraca Saldo</th><th colSpan={2}>Laba Rugi</th><th colSpan={2}>Neraca</th></tr><tr>{Array.from({ length: 5 }, (_, index) => <FragmentPair key={index} />)}</tr></thead>
@@ -487,21 +526,32 @@ export default function SatkerFinancePage() {
         {tab === 'akun' && canEdit && !!unitId && unitId !== 'ALL' && <Section title={`Akun ${data.unit?.name || 'SatKer'}`}>
           {data.accountCatalogSource && <p className="mb-2 text-sm text-slate-600">Daftar akun dasar diimpor dari {data.accountCatalogSource} dan hanya berlaku untuk buku ini.</p>}
           <p className="mb-4 text-sm text-slate-600">Nomor dan nama yang Anda ubah atau tambahkan di sini hanya berlaku untuk {data.unit?.name || 'SatKer'} ini. Perubahan tidak mengubah akun SatKer Loyalis lain.</p>
-          <div className="mb-3 flex justify-end"><button type="button" className={button} onClick={() => { setUnitAccountId(''); setCreatingUnitAccount(true); setUnitAccountDraft({ code: '', name: '', type: 'AKTIVA', cashEquivalent: false }); }}>Buat akun baru</button></div>
+          <div className="mb-3 flex justify-end"><button type="button" className={button} onClick={() => { setUnitAccountId(''); setCreatingUnitAccount(true); setUnitAccountDraft({ code: '', name: '', type: 'AKTIVA', cashEquivalent: false, contra: false, cashFlowSection: 'OPERATING' }); }}>Buat akun baru</button></div>
           {(creatingUnitAccount || unitAccountId) && <div ref={unitAccountEditorRef} className="mb-4 rounded-lg border border-accent-200 bg-accent-50/30 p-4">
             <h3 className="mb-3 text-sm font-semibold text-slate-900">{creatingUnitAccount ? 'Akun baru' : 'Ubah akun'}</h3>
             <div className="grid gap-3 md:grid-cols-2">
               <label className="text-xs font-medium text-slate-500">Nomor akun<input className={`${field} mt-1`} inputMode="numeric" maxLength={5} value={unitAccountDraft.code} onChange={(event) => setUnitAccountDraft((current) => ({ ...current, code: event.target.value.replace(/\D/g, '').slice(0, 5) }))} placeholder="contoh: 52199" /></label>
               <label className="text-xs font-medium text-slate-500">Nama akun<input className={`${field} mt-1`} maxLength={150} value={unitAccountDraft.name} onChange={(event) => setUnitAccountDraft((current) => ({ ...current, name: event.target.value }))} /></label>
-              {creatingUnitAccount && <><div className="text-xs font-medium text-slate-500"><span id="unit-account-type-label">Kelompok akun</span><Select items={Object.entries(accountTypeItems).map(([value, label]) => ({ value, label }))} value={unitAccountDraft.type} onValueChange={(value) => value && setUnitAccountDraft((current) => ({ ...current, type: value as AccountType, cashEquivalent: value === 'AKTIVA' ? current.cashEquivalent : false }))}><SelectTrigger aria-labelledby="unit-account-type-label" className={selectTrigger}><SelectValue /></SelectTrigger><SelectContent className={selectContent}>{Object.entries(accountTypeItems).map(([value, label]) => <SelectItem className={selectItem} key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>{unitAccountDraft.type === 'AKTIVA' && <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={unitAccountDraft.cashEquivalent} onChange={(event) => setUnitAccountDraft((current) => ({ ...current, cashEquivalent: event.target.checked }))} />Akun kas atau bank</label>}</>}
+              {creatingUnitAccount && <><div className="text-xs font-medium text-slate-500"><span id="unit-account-type-label">Kelompok akun</span><Select items={Object.entries(accountTypeItems).map(([value, label]) => ({ value, label }))} value={unitAccountDraft.type} onValueChange={(value) => value && setUnitAccountDraft((current) => ({ ...current, type: value as AccountType, cashEquivalent: value === 'AKTIVA' ? current.cashEquivalent : false, cashFlowSection: defaultCashFlowSection(value as AccountType, current.code) }))}><SelectTrigger aria-labelledby="unit-account-type-label" className={selectTrigger}><SelectValue /></SelectTrigger><SelectContent className={selectContent}>{Object.entries(accountTypeItems).map(([value, label]) => <SelectItem className={selectItem} key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>{unitAccountDraft.type === 'AKTIVA' && <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={unitAccountDraft.cashEquivalent} onChange={(event) => setUnitAccountDraft((current) => ({ ...current, cashEquivalent: event.target.checked, contra: event.target.checked ? false : current.contra }))} />Akun kas atau bank</label>}</>}
+              {/* Only the unit's own accounts carry these; the base catalog's are set by BAK. */}
+              {(creatingUnitAccount || unitAccountId.startsWith('custom_')) && !unitAccountDraft.cashEquivalent && <>
+                <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={unitAccountDraft.contra} onChange={(event) => setUnitAccountDraft((current) => ({ ...current, contra: event.target.checked }))} />Akun pengurang (kontra), pos saldo {groupNormalBalance(unitAccountDraft.type, unitAccountDraft.contra) === 'CREDIT' ? 'Kredit' : 'Debet'}</label>
+                <div className="text-xs font-medium text-slate-500"><span id="unit-account-cashflow-label">Klasifikasi arus kas</span><Select items={cashFlowItems} value={unitAccountDraft.cashFlowSection} onValueChange={(value) => value && setUnitAccountDraft((current) => ({ ...current, cashFlowSection: value as CashFlowSection }))}><SelectTrigger aria-labelledby="unit-account-cashflow-label" className={selectTrigger}><SelectValue /></SelectTrigger><SelectContent className={selectContent}>{CASH_FLOW_SECTIONS.map((section) => <SelectItem className={selectItem} key={section} value={section}>{cashFlowItems[section]}</SelectItem>)}</SelectContent></Select></div>
+              </>}
             </div>
-            <p className="mt-3 text-xs text-slate-500">Nomor akun harus terdiri dari 5 angka. Kelompok akun ditetapkan saat akun baru dibuat.</p>
+            <p className="mt-3 text-xs text-slate-500">Nomor akun harus terdiri dari 5 angka. Kelompok akun ditetapkan saat akun baru dibuat. Akun pengurang mengurangi kelompoknya, misalnya akumulasi penyusutan (Aktiva bersaldo Kredit). Klasifikasi arus kas menentukan ke bagian mana kas yang dibayar atau diterima lewat akun ini dicatat; perubahannya hanya berlaku untuk jurnal berikutnya.</p>
             <div className="mt-4 flex gap-2"><button type="button" className={button} disabled={busy || unitAccountDraft.code.length !== 5 || !unitAccountDraft.name.trim()} onClick={() => void saveUnitAccount()}>{creatingUnitAccount ? 'Buat akun' : 'Simpan perubahan'}</button><button type="button" className={lightButton} onClick={() => { setUnitAccountId(''); setCreatingUnitAccount(false); }}>Batal</button></div>
           </div>}
-          <div className="max-h-[32rem] overflow-auto"><table className="w-full text-sm"><thead className="sticky top-0 bg-white"><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>Nomor</th><th className={leftCell}>Nama akun</th><th className={leftCell}>Kelompok</th><th className={leftCell}>Aksi</th></tr></thead><tbody>{data.accounts.map((account) => <tr key={account.localAccountId || financialAccountId(account)}><td className={leftCell}>{account.code}</td><td className={leftCell}>{account.name || '—'}</td><td className={leftCell}>{accountTypeItems[account.type]}</td><td className={leftCell}><button type="button" className="text-accent-700 hover:underline" onClick={() => { setUnitAccountId(account.localAccountId || financialAccountId(account)); setCreatingUnitAccount(false); setUnitAccountDraft({ code: account.code, name: account.name, type: account.type, cashEquivalent: account.cashEquivalent }); }}>Ubah</button></td></tr>)}</tbody></table></div>
+          <div className="max-h-[32rem] overflow-auto"><table className="w-full text-sm"><thead className="sticky top-0 bg-white"><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>Nomor</th><th className={leftCell}>Nama akun</th><th className={leftCell}>Kelompok</th><th className={leftCell}>Pos saldo</th><th className={leftCell}>Arus kas</th><th className={leftCell}>Aksi</th></tr></thead><tbody>{data.accounts.map((account) => <tr key={account.localAccountId || financialAccountId(account)}><td className={leftCell}>{account.code}</td><td className={leftCell}>{account.name || '—'}</td><td className={leftCell}>{accountTypeItems[account.type]}</td>
+            <td className={leftCell}>{account.normalBalance ? normalBalanceItems[account.normalBalance] : '—'}{account.normalBalance && account.normalBalance !== groupNormalBalance(account.type) && <span className="text-xs text-slate-500"> (pengurang)</span>}</td>
+            <td className={leftCell}>{account.cashEquivalent ? 'Kas/bank' : account.cashFlowSection ? cashFlowItems[account.cashFlowSection] : '—'}</td>
+            <td className={leftCell}><button type="button" className="text-accent-700 hover:underline" onClick={() => { setUnitAccountId(account.localAccountId || financialAccountId(account)); setCreatingUnitAccount(false); setUnitAccountDraft({ code: account.code, name: account.name, type: account.type, cashEquivalent: account.cashEquivalent, contra: !!account.normalBalance && account.normalBalance !== groupNormalBalance(account.type), cashFlowSection: account.cashFlowSection || defaultCashFlowSection(account.type, account.code) }); }}>Ubah</button></td></tr>)}</tbody></table></div>
         </Section>}
         {tab === 'pengaturan' && isAdmin && <div className="space-y-5"><Section title="Unit SatKer & pengelola"><div className="grid gap-3 md:grid-cols-2"><label className="text-xs font-medium text-slate-500">ID unik<input className={`${field} mt-1`} value={unitDraft.id} onChange={(event) => setUnitDraft({ ...unitDraft, id: event.target.value })} placeholder="puskomnet" /></label><label className="text-xs font-medium text-slate-500">Nama SatKer<input className={`${field} mt-1`} value={unitDraft.name} onChange={(event) => setUnitDraft({ ...unitDraft, name: event.target.value })} /></label><label className="text-xs font-medium text-slate-500">Nama Kepala SatKer<input className={`${field} mt-1`} value={unitDraft.headName} onChange={(event) => setUnitDraft({ ...unitDraft, headName: event.target.value })} /></label><label className="text-xs font-medium text-slate-500">Nama sekretariat / bendahara<input className={`${field} mt-1`} value={unitDraft.adminName} onChange={(event) => setUnitDraft({ ...unitDraft, adminName: event.target.value })} /></label></div><p className="mt-4 text-xs font-medium text-slate-500">Akun yang boleh mencatat dan mengirim laporan unit ini</p><div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{data.editorUsers?.map((editor) => <label key={editor.uid} className="flex items-center gap-2 rounded-md border border-slate-100 p-2 text-sm"><input type="checkbox" checked={unitDraft.editorUids.includes(editor.uid)} onChange={(event) => setUnitDraft({ ...unitDraft, editorUids: event.target.checked ? [...unitDraft.editorUids, editor.uid] : unitDraft.editorUids.filter((uid) => uid !== editor.uid) })} />{editor.displayName} <span className="text-xs text-slate-400">{editor.role}</span></label>)}</div><div className="mt-4 flex gap-2"><button className={button} disabled={busy} onClick={() => void post('SAVE_UNIT', unitDraft)}>Simpan SatKer</button><button className={lightButton} onClick={() => setUnitDraft({ id: '', name: '', headName: '', adminName: '', editorUids: [], expectedRevision: 0 })}>Unit baru</button></div></Section>
-          {unitId !== 'ALL' && <Section title="Saldo awal 1 September"><p className="mb-3 text-sm text-slate-600">Saldo awal disetujui BAK dan harus seimbang. Terkunci setelah transaksi pertama.</p><div className="max-h-96 overflow-auto"><table className="w-full text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>Akun</th><th className={cell}>Debet</th><th className={cell}>Kredit</th></tr></thead><tbody>{postable.map((account) => <tr key={account.code}><td className={leftCell}>{account.code} · {account.name}</td>{(['debit', 'credit'] as const).map((side) => <td key={side} className={cell}><div className="ml-auto max-w-44"><CurrencyInput className={`${field} text-right`} aria-label={`${side === 'debit' ? 'Debet' : 'Kredit'} ${account.name}`} value={openingDraft[financialAccountId(account)]?.[side] || 0} onValue={(value) => setOpeningDraft((current) => ({ ...current, [financialAccountId(account)]: { debit: current[financialAccountId(account)]?.debit || 0, credit: current[financialAccountId(account)]?.credit || 0, [side]: value } }))} /></div></td>)}</tr>)}</tbody></table></div><p className="my-3 text-sm font-semibold">Total debet {money(Object.values(openingDraft).reduce((sum, item) => sum + item.debit, 0))} · kredit {money(Object.values(openingDraft).reduce((sum, item) => sum + item.credit, 0))}</p><button className={button} disabled={busy || !!data.year?.entryCount || data.year?.status === 'CLOSED'} onClick={() => void post('SAVE_OPENING', { openingBalances: openingDraft, expectedRevision: data.year?.revision || 0 })}>Simpan saldo awal</button></Section>}
+          {unitId !== 'ALL' && <Section title="Saldo awal 1 September"><p className="mb-3 text-sm text-slate-600">Saldo awal disetujui BAK dan harus seimbang. Terkunci setelah transaksi pertama. Hanya tahun pertama sebuah buku yang diisi di sini; tahun berikutnya mendapat saldo awal dari penutupan tahun sebelumnya.</p>
+            {openingCarried && <p className="mb-3 rounded-lg bg-green-50 p-3 text-sm text-green-800">Saldo awal ini dibawa otomatis dari penutupan tahun buku {data.year?.openingCarriedFrom} dan tidak dapat diubah di sini.</p>}
+            {openingAwaitsClosing && <p className="mb-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Saldo awal tahun ini akan dibawa otomatis saat tahun buku {data.previousYear?.academicYear} ditutup. Jurnal tetap dapat dicatat, tetapi laporan bulanan baru dapat dikirim setelah penutupan itu.</p>}
+            <div className="max-h-96 overflow-auto"><table className="w-full text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>Akun</th><th className={cell}>Debet</th><th className={cell}>Kredit</th></tr></thead><tbody>{postable.map((account) => <tr key={account.code}><td className={leftCell}>{account.code} · {account.name}</td>{(['debit', 'credit'] as const).map((side) => <td key={side} className={cell}><div className="ml-auto max-w-44"><CurrencyInput className={`${field} text-right`} aria-label={`${side === 'debit' ? 'Debet' : 'Kredit'} ${account.name}`} disabled={openingCarried || openingAwaitsClosing} value={openingDraft[financialAccountId(account)]?.[side] || 0} onValue={(value) => setOpeningDraft((current) => ({ ...current, [financialAccountId(account)]: { debit: current[financialAccountId(account)]?.debit || 0, credit: current[financialAccountId(account)]?.credit || 0, [side]: value } }))} /></div></td>)}</tr>)}</tbody></table></div><p className="my-3 text-sm font-semibold">Total debet {money(Object.values(openingDraft).reduce((sum, item) => sum + item.debit, 0))} · kredit {money(Object.values(openingDraft).reduce((sum, item) => sum + item.credit, 0))}</p><button className={button} disabled={busy || !!data.year?.entryCount || data.year?.status === 'CLOSED' || openingCarried || openingAwaitsClosing} onClick={() => void post('SAVE_OPENING', { openingBalances: openingDraft, expectedRevision: data.year?.revision || 0 })}>Simpan saldo awal</button></Section>}
           <Section title="Katalog akun umum · 129 kode">
             <p className="mb-3 text-sm text-slate-600">Perubahan di katalog umum berlaku untuk semua SatKer. Gunakan tab Akun untuk mengubah nomor atau nama pada satu unit saja.</p>
             <p className="mb-3 text-sm text-slate-600">Kode kosong pada buku sumber dapat diberi nama dan diaktifkan sebelum kode itu dipakai di saldo awal atau jurnal.</p>

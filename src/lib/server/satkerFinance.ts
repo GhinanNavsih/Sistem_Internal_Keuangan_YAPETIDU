@@ -1,6 +1,7 @@
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { AuthenticatedProfile, HttpError } from '@/lib/server/auth';
-import { DEFAULT_ACCOUNTS, FinancialAccount, OpeningBalances } from '@/lib/satker-finance/core';
+import { DEFAULT_ACCOUNTS, FinancialAccount, OpeningBalances, type YearClosing } from '@/lib/satker-finance/core';
+import type { FixedAsset } from '@/lib/satker-finance/depreciation';
 import biroUmumAkunData from '@/lib/satker-finance/biro-umum-26-27-akun.json';
 
 export const UNIT_COLLECTION = 'SatkerFinancialUnits';
@@ -108,6 +109,24 @@ export function unitAccountCatalogMetaRef(unitId: string) {
   return unitAccountCollection(unitId).doc('_meta');
 }
 
+/** A unit's fixed-asset register; it spans academic years, like the assets themselves. */
+export function fixedAssetCollection(unitId: string) {
+  return adminDb.collection(UNIT_COLLECTION).doc(unitId).collection('fixedAssets');
+}
+
+export function fixedAssetFrom(id: string, data: FirebaseFirestore.DocumentData): FixedAsset {
+  return {
+    id, name: String(data.name || ''), assetAccountId: String(data.assetAccountId || ''), accumulatedAccountId: String(data.accumulatedAccountId || ''),
+    expenseAccountId: String(data.expenseAccountId || ''), acquisitionDate: String(data.acquisitionDate || ''), cost: Number(data.cost || 0),
+    residualValue: Number(data.residualValue || 0), usefulLifeMonths: Number(data.usefulLifeMonths || 0), revision: Number(data.revision || 0),
+  };
+}
+
+export async function loadFixedAssets(unitId: string) {
+  const snapshot = await fixedAssetCollection(unitId).get();
+  return snapshot.docs.map((doc) => fixedAssetFrom(doc.id, doc.data()));
+}
+
 export function unitAccountCatalogSource(unitId: string) {
   return unitId === BIRO_UMUM_ACCOUNT_UNIT_ID ? BIRO_UMUM_ACCOUNT_SOURCE : null;
 }
@@ -120,9 +139,10 @@ type ImportedAkun = {
   reportTarget: FinancialAccount['reportTarget'];
 };
 
+// Payables (Hutang) count as operating cash flow; see defaultCashFlowSection in core.
 function inferredCashFlowSection(account: ImportedAkun): FinancialAccount['cashFlowSection'] {
-  if (account.type === 'TERIMA' || account.type === 'KELUAR') return 'OPERATING';
-  if (account.type === 'HUTANG' || account.type === 'MODAL') return 'FINANCING';
+  if (account.type === 'TERIMA' || account.type === 'KELUAR' || account.type === 'HUTANG') return 'OPERATING';
+  if (account.type === 'MODAL') return 'FINANCING';
   if (account.type === 'AKTIVA' && account.code.startsWith('13')) return 'INVESTING';
   if (account.type === 'AKTIVA' && account.code.startsWith('12')) return 'OPERATING';
   return null;
@@ -211,5 +231,9 @@ export function publicYear(data: Record<string, unknown> | undefined) {
     revision: typeof data?.revision === 'number' ? data.revision : 0,
     entryCount: typeof data?.entryCount === 'number' ? data.entryCount : 0,
     openingBalances: openingFrom(data?.openingBalances),
+    /** 'CARRIED_FORWARD' once the previous year's closing has written the opening balance. */
+    openingSource: data?.openingSource === 'CARRIED_FORWARD' ? 'CARRIED_FORWARD' as const : 'MANUAL' as const,
+    openingCarriedFrom: typeof data?.openingCarriedFrom === 'string' ? data.openingCarriedFrom : null,
+    closing: (data?.closing && typeof data.closing === 'object' ? data.closing : null) as (YearClosing & { equityAccountCode?: string; equityAccountName?: string }) | null,
   };
 }

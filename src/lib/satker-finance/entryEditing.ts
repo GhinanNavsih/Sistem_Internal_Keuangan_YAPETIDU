@@ -69,6 +69,9 @@ export function entryChangeBlocker(args: {
   if (args.change === 'edit' && args.entry.kind === 'REVERSAL') {
     return 'Jurnal pembalik tidak dapat diubah. Hapus jurnal pembalik ini lalu catat ulang bila perlu.';
   }
+  if (args.change === 'edit' && args.entry.kind === 'DEPRECIATION') {
+    return 'Jurnal penyusutan dibuat dari daftar aset tetap. Ubah daftar asetnya, lalu posting ulang penyusutan bulan ini.';
+  }
   if (args.reversed) return 'Jurnal ini sudah dibalik. Hapus jurnal pembaliknya lebih dahulu.';
 
   const locked = lockedThroughPeriod(args.academicYear, args.reports);

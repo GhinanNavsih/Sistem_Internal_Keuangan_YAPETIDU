@@ -220,6 +220,17 @@ Super Admin and Admin Karyawan (`EMPLOYEE_PROFILE_EDITOR_ROLES`) convert a Pekar
 - **Outside the app:** attendance rows are still routed by the scanner's department column, so the fingerprint machine's department must change from TEKNISI/CS/SECURITY/DRIVER; the Loyalis presence page warns about a newly converted employee with no matched scans.
 - **Test:** `npm run test:employee-conversion:integration` (Auth + Firestore emulators, project `demo-conversion`; needs Java).
 
+## SatKer Finance (Buku keuangan satuan kerja)
+
+Double-entry books per unit at `/dashboard/satker-finance` (API `/api/satker-finance`, Firestore `SatkerFinancialYears/{unitId}_{academicYear}` with `entries`, `reports`, `bankReconciliations`, `audit`; units in `SatkerFinancialUnits`, each with `accountCatalog` and `fixedAssets`). Fiscal year September–August. Pure rules live in `src/lib/satker-finance/` (core, entryEditing, depreciation, bankReconciliation, monthControls), each with a test; the page and server import the same functions. A month's report goes to BAK only when every item of `monthChecks` passes (the page shows it as a checklist):
+
+- **Trial balance and cash flow** balance. Each journal's cash-flow split (`cashFlows`) is derived when posted from each counter account's catalog `cashFlowSection` (`cashFlowAllocation`), never chosen per journal; older journals keep their single hand-picked `cashFlowSection`. Hutang defaults to Operasional, Modal to Pendanaan, 13xxx to Investasi (`defaultCashFlowSection`).
+- **Opening balance**: only a book's first year in the app is typed in (Pengaturan, Super Admin). `CLOSE_YEAR` (all 12 months approved) stores the closing journal (`buildYearClosing`: income-statement accounts to zero, surplus/deficit into the chosen Modal account, default 30000) on the year and writes the next year's opening (`openingSource: 'CARRIED_FORWARD'`). While the previous year is in use (`yearInUse`: has journals or is closed) and not closed, the new year may journal but not submit; `SAVE_OPENING` refuses.
+- **Depreciation**: the unit's fixed-asset register (tab Aset Tetap) is straight-line from the acquisition month, whole Rupiah, exact total. `POST_DEPRECIATION` writes the month's one journal `depreciation-MM` (kind `DEPRECIATION`, dated month end, grouped by account), never editable by hand; a month cannot be submitted while that journal differs from the register. An asset's figures freeze once its depreciation is in a sealed month or closed year (`assetChangeBlocker`).
+- **Bank reconciliation** (tab Rekonsiliasi Bank): every cash/bank account with a balance or movement that month needs a saved statement balance (or cash count) that, with deposits in transit and outstanding payments, equals the book balance. Bank charges must be journaled, not listed. Optional statement file served by `/api/satker-finance/receipt?reconciliationId=`.
+- **Normal balance** (`normalBalance`) drives the Buku Besar direction and the "saldo tidak normal" warnings (warnings only). Unit accounts can be marked contra (akun pengurang); a used catalog code may still change its normal side and cash-flow section, not its name, report target or cash flag.
+- **Test**: `npm run test:satker-finance:integration` (Auth + Firestore + Storage emulators, project `demo-satker-finance`; needs Java).
+
 ## Payroll Calculation Logic
 
 ### White-collar salary (`src/utils/payrollLogic.ts`, pure logic split into `src/lib/payroll/salaryMatrix.ts` so it's importable from API routes without the client SDK)
@@ -286,7 +297,7 @@ Physical presence printouts are parsed via the [/api/parse-rekap](file:///Users/
 
 - **Run dev environment**: `npm run dev`
 - **Build application**: `npm run build`
-- **Test**: `npm test` (runs `tsx --test` over the payroll/server/util test suite directly); emulator integration tests: `test:kjm:integration`, `test:bansos:integration`, `test:bonus-triwulan:integration`, `test:employee-conversion:integration`, `test:venue-inspection:integration`, `test:loyalis-auto-leave:integration`, `test:account-switch:integration`
+- **Test**: `npm test` (runs `tsx --test` over the payroll/server/util test suite directly); emulator integration tests: `test:kjm:integration`, `test:bansos:integration`, `test:bonus-triwulan:integration`, `test:employee-conversion:integration`, `test:venue-inspection:integration`, `test:loyalis-auto-leave:integration`, `test:account-switch:integration`, `test:satker-finance:integration`
 
 `scripts/` holds ~125 files; only the ones below are wired into `package.json`. The rest are ad hoc one-off migration/inspection scripts (`inspect*`, `check*`, `compare*`, `find*`, etc.) run directly via `tsx scripts/<file>.ts` — don't assume every script has an npm entry.
 

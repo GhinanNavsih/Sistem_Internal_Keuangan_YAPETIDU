@@ -80,6 +80,12 @@ test('a reversing journal can be deleted but not edited', () => {
   assert.equal(entryChangeBlocker({ change: 'delete', entry, reversed: false, academicYear, reports: [] }), null);
 });
 
+test('a depreciation journal is rebuilt from the register, never edited by hand, but may be deleted', () => {
+  const entry = { kind: 'DEPRECIATION' as const, monthIndex: nov };
+  assert.match(entryChangeBlocker({ change: 'edit', entry, reversed: false, academicYear, reports: [] })!, /aset tetap/);
+  assert.equal(entryChangeBlocker({ change: 'delete', entry, reversed: false, academicYear, reports: [] }), null);
+});
+
 test('a journal that has been reversed can be neither edited nor deleted', () => {
   for (const change of ['edit', 'delete'] as const) {
     assert.match(blocker(change, nov, [], { reversed: true })!, /sudah dibalik/);

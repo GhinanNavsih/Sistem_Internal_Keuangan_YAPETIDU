@@ -247,7 +247,7 @@
     "reportTarget": null,
     "postable": false,
     "cashEquivalent": false,
-    "cashFlowSection": "FINANCING"
+    "cashFlowSection": "OPERATING"
   },
   {
     "code": "20001",
@@ -257,7 +257,7 @@
     "reportTarget": "BALANCE_SHEET",
     "postable": true,
     "cashEquivalent": false,
-    "cashFlowSection": "FINANCING"
+    "cashFlowSection": "OPERATING"
   },
   {
     "code": "20002",
@@ -267,7 +267,7 @@
     "reportTarget": "BALANCE_SHEET",
     "postable": false,
     "cashEquivalent": false,
-    "cashFlowSection": "FINANCING"
+    "cashFlowSection": "OPERATING"
   },
   {
     "code": "20003",
@@ -277,7 +277,7 @@
     "reportTarget": "BALANCE_SHEET",
     "postable": false,
     "cashEquivalent": false,
-    "cashFlowSection": "FINANCING"
+    "cashFlowSection": "OPERATING"
   },
   {
     "code": "20004",
@@ -287,7 +287,7 @@
     "reportTarget": "BALANCE_SHEET",
     "postable": false,
     "cashEquivalent": false,
-    "cashFlowSection": "FINANCING"
+    "cashFlowSection": "OPERATING"
   },
   {
     "code": "20005",
@@ -297,7 +297,7 @@
     "reportTarget": "BALANCE_SHEET",
     "postable": false,
     "cashEquivalent": false,
-    "cashFlowSection": "FINANCING"
+    "cashFlowSection": "OPERATING"
   },
   {
     "code": "30000",

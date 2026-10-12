@@ -16,6 +16,7 @@ export type FinancialAccount = {
   cashFlowSection: CashFlowSection | null;
   revision?: number;
 };
+export type CashFlowAmounts = Record<CashFlowSection, number>;
 export type JournalLine = { accountCode: string; accountNumber?: string; accountName: string; debit: number; credit: number; description?: string };
 export type JournalEntry = {
   id: string;
@@ -24,11 +25,16 @@ export type JournalEntry = {
   monthIndex: number;
   date: string;
   description: string;
-  kind: 'EXPENSE' | 'INFLOW' | 'TRANSFER' | 'ADVANCED' | 'REVERSAL';
+  kind: 'EXPENSE' | 'INFLOW' | 'TRANSFER' | 'ADVANCED' | 'REVERSAL' | 'DEPRECIATION';
   lines: JournalLine[];
   totalAmount: number;
   isBalanced?: true;
+  /** The section with the largest share of `cashFlows`; on journals posted before the split was kept, the one section chosen by hand. */
   cashFlowSection: CashFlowSection | null;
+  /** Cash moved per section, derived from the counter accounts when the journal was posted. Absent on older journals. */
+  cashFlows?: CashFlowAmounts;
+  /** On a monthly depreciation journal: what each fixed asset contributed. */
+  depreciation?: { assets: { assetId: string; name: string; amount: number }[] };
   createdBy: string;
   createdAt?: unknown;
   receiptPath?: string;
@@ -55,6 +61,120 @@ export function academicYearFor(date: Date) {
   const year = date.getFullYear();
   const start = date.getMonth() + 1 >= 9 ? year : year - 1;
   return `${start}-${start + 1}`;
+}
+
+/** The academic year before (-1) or after (+1) this one. */
+export function adjacentAcademicYear(academicYear: string, offset: 1 | -1) {
+  fiscalMonths(academicYear);
+  const start = Number(academicYear.slice(0, 4)) + offset;
+  return `${start}-${start + 1}`;
+}
+
+/** The calendar year a month of the academic year falls in (September–December in the first, the rest in the second). */
+export function calendarYearOf(academicYear: string, monthIndex: number) {
+  const month = fiscalMonths(academicYear).find((item) => item.monthIndex === monthIndex);
+  if (!month) throw new Error('Bulan tidak valid.');
+  return month.year;
+}
+
+/** The last date (YYYY-MM-DD) of a month of the academic year. */
+export function lastDateOfMonth(academicYear: string, monthIndex: number) {
+  const year = calendarYearOf(academicYear, monthIndex);
+  const day = new Date(Date.UTC(year, monthIndex, 0)).getUTCDate();
+  return `${year}-${String(monthIndex).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/**
+ * A book counts as in use once it has a journal or has been closed. The year
+ * after a book in use takes its opening balance from that book's closing,
+ * instead of having it typed in.
+ */
+export function yearInUse(year: { status?: unknown; entryCount?: unknown } | null | undefined) {
+  return !!year && (year.status === 'CLOSED' || Number(year.entryCount || 0) > 0);
+}
+
+/** The normal side of a new account in a group; a contra account (akun pengurang, such as accumulated depreciation) takes the other side. */
+export function groupNormalBalance(type: AccountType, contra = false): 'DEBIT' | 'CREDIT' {
+  return (type === 'HUTANG' || type === 'MODAL' || type === 'TERIMA') !== contra ? 'CREDIT' : 'DEBIT';
+}
+
+/**
+ * The cash-flow section a non-cash account of a group starts with. Payables (Hutang) are paid in the ordinary course
+ * of operations, so they are operating; only capital (Modal) is financing. A borrowing account can be set to
+ * Pendanaan in the catalog.
+ */
+export function defaultCashFlowSection(type: AccountType, code: string): CashFlowSection {
+  if (type === 'MODAL') return 'FINANCING';
+  if (type === 'AKTIVA' && code.startsWith('13')) return 'INVESTING';
+  return 'OPERATING';
+}
+
+export const emptyCashFlows = (): CashFlowAmounts => ({ OPERATING: 0, INVESTING: 0, FINANCING: 0 });
+
+const cashChangeOf = (lines: Pick<JournalLine, 'accountCode' | 'debit' | 'credit'>[], byId: Map<string, FinancialAccount>) =>
+  lines.reduce((sum, line) => sum + (byId.get(line.accountCode)?.cashEquivalent ? line.debit - line.credit : 0), 0);
+
+/**
+ * How much cash a journal moved in each cash-flow section. Each non-cash line
+ * stands for the cash it brought in or paid out, classified by its own
+ * account (the catalog's policy, not a choice made per journal): a debit to an
+ * expense is cash paid for operations, a debit to equipment cash paid for an
+ * investment, a credit to a revenue cash received. The sections always add up
+ * to the journal's net change in cash and bank; a journal that does not touch
+ * cash (an accrual, a transfer between two cash accounts) moves nothing.
+ */
+export function cashFlowAllocation(lines: Pick<JournalLine, 'accountCode' | 'debit' | 'credit'>[], accounts: FinancialAccount[] | Map<string, FinancialAccount>): CashFlowAmounts {
+  const byId = accounts instanceof Map ? accounts : new Map(accounts.map((account) => [accountId(account), account]));
+  const flows = emptyCashFlows();
+  if (cashChangeOf(lines, byId) === 0) return flows;
+  for (const line of lines) {
+    const account = byId.get(line.accountCode);
+    if (account?.cashEquivalent) continue;
+    const section = account?.cashFlowSection;
+    if (!section) throw new Error(`Akun ${account?.code || line.accountCode} belum memiliki klasifikasi arus kas. BAK dapat mengaturnya di katalog akun.`);
+    flows[section] -= line.debit - line.credit;
+  }
+  return flows;
+}
+
+/** The section that carries most of a journal's cash, or null when it moves none. */
+export function mainCashFlowSection(flows: CashFlowAmounts): CashFlowSection | null {
+  let main: CashFlowSection | null = null;
+  for (const section of CASH_FLOW_SECTIONS) {
+    if (flows[section] !== 0 && (!main || Math.abs(flows[section]) > Math.abs(flows[main]))) main = section;
+  }
+  return main;
+}
+
+/**
+ * The cash flows a posted journal counts for: its stored split, or, on a
+ * journal posted before the split was kept, its whole cash change in the one
+ * section chosen then (none when none was chosen, which the cash
+ * reconciliation then reports).
+ */
+export function entryCashFlows(entry: Pick<JournalEntry, 'lines' | 'cashFlows' | 'cashFlowSection'>, accountMap: Map<string, FinancialAccount>): CashFlowAmounts {
+  if (entry.cashFlows) return { ...emptyCashFlows(), ...entry.cashFlows };
+  const flows = emptyCashFlows();
+  const cashChange = cashChangeOf(entry.lines, accountMap);
+  if (cashChange && entry.cashFlowSection) flows[entry.cashFlowSection] = cashChange;
+  return flows;
+}
+
+/** Whether an ending balance sits on the side opposite the account's normal balance (an overdrawn cash account, a debit liability). */
+export function hasAbnormalBalance(account: Pick<FinancialAccount, 'normalBalance'>, endingDebit: number, endingCredit: number) {
+  if (account.normalBalance === 'DEBIT') return endingCredit > 0;
+  if (account.normalBalance === 'CREDIT') return endingDebit > 0;
+  return false;
+}
+
+/** Whether two sets of balances agree account by account (zero balances and the debit/credit split aside). */
+export function sameBalances(a: OpeningBalances, b: OpeningBalances) {
+  const net = (balances: OpeningBalances) => new Map(Object.entries(balances)
+    .map(([id, balance]) => [id, (balance?.debit || 0) - (balance?.credit || 0)] as const)
+    .filter(([, value]) => value !== 0));
+  const left = net(a);
+  const right = net(b);
+  return left.size === right.size && [...left].every(([id, value]) => right.get(id) === value);
 }
 
 export function validateEntryDate(date: string, academicYear: string, monthIndex: number) {
@@ -94,7 +214,7 @@ export function validateOpeningBalances(opening: OpeningBalances, accounts: Fina
 
 export function buildVoucher(
   raw: Record<string, unknown>, accounts: FinancialAccount[],
-): Pick<JournalEntry, 'kind' | 'description' | 'date' | 'lines' | 'totalAmount' | 'cashFlowSection'> {
+): Pick<JournalEntry, 'kind' | 'description' | 'date' | 'lines' | 'totalAmount' | 'cashFlowSection'> & { cashFlows: CashFlowAmounts } {
   const byCode = new Map(accounts.filter((account) => account.postable).map((account) => [accountId(account), account]));
   const kind = raw.kind;
   const description = typeof raw.description === 'string' ? raw.description.trim() : '';
@@ -137,20 +257,66 @@ export function buildVoucher(
   const totalDebit = lines.reduce((sum, item) => sum + item.debit, 0);
   const totalCredit = lines.reduce((sum, item) => sum + item.credit, 0);
   if (!Number.isSafeInteger(totalDebit) || totalDebit !== totalCredit || totalDebit <= 0) throw new Error('Debit dan kredit jurnal harus seimbang.');
-  const cashChange = lines.reduce((sum, item) => sum + (byCode.get(item.accountCode)?.cashEquivalent ? item.debit - item.credit : 0), 0);
-  let cashFlowSection: CashFlowSection | null = null;
-  if (cashChange !== 0) {
-    const selected = raw.cashFlowSection;
-    if (kind === 'ADVANCED') {
-      if (!CASH_FLOW_SECTIONS.includes(selected as CashFlowSection)) throw new Error('Klasifikasi arus kas wajib dipilih untuk jurnal kas lanjutan.');
-      cashFlowSection = selected as CashFlowSection;
-    } else {
-      const category = byCode.get(String(raw.accountCode));
-      cashFlowSection = category?.cashFlowSection ?? null;
-      if (!cashFlowSection) throw new Error('Akun lawan kas belum memiliki klasifikasi arus kas.');
-    }
+  // The cash-flow section follows the counter accounts' classification; it is not chosen per journal.
+  const cashFlows = cashFlowAllocation(lines, byCode);
+  return { kind: kind as JournalEntry['kind'], description, date, lines, totalAmount: totalDebit, cashFlowSection: mainCashFlowSection(cashFlows), cashFlows };
+}
+
+export type YearClosing = {
+  equityAccountId: string;
+  /** Penerimaan minus Pengeluaran for the year; negative for a deficit. */
+  surplus: number;
+  /** The closing journal (jurnal penutup): every income-statement account brought to zero, the difference into equity. */
+  lines: JournalLine[];
+  /** Balance-sheet balances after closing: the next year's opening balance. */
+  balances: OpeningBalances;
+};
+
+/** The equity account a year's surplus is closed into unless another is chosen: the lowest-numbered active Modal account. */
+export function defaultSurplusAccountId(accounts: FinancialAccount[]) {
+  const equity = accounts.filter((account) => account.postable && account.type === 'MODAL' && account.reportTarget === 'BALANCE_SHEET')
+    .sort((a, b) => a.code.localeCompare(b.code));
+  return equity[0] ? accountId(equity[0]) : '';
+}
+
+/**
+ * Closes a year: every Penerimaan and Pengeluaran account is brought to zero
+ * and the year's surplus (or deficit) moves into the chosen Modal account.
+ * What remains, the balance-sheet accounts, is the next year's opening
+ * balance, so nobody types it in again.
+ */
+export function buildYearClosing(args: {
+  accounts: FinancialAccount[];
+  opening: OpeningBalances;
+  entries: JournalEntry[];
+  academicYear: string;
+  equityAccountId: string;
+}): YearClosing {
+  const statements = buildFinancialStatements({ ...args, monthIndex: 'ANNUAL' });
+  if (statements.trialBalance.difference !== 0) throw new Error('Neraca saldo tahunan belum seimbang.');
+  const equity = args.accounts.find((account) => accountId(account) === args.equityAccountId);
+  if (!equity?.postable || equity.type !== 'MODAL' || equity.reportTarget !== 'BALANCE_SHEET') {
+    throw new Error('Akun penampung surplus harus akun Modal yang aktif.');
   }
-  return { kind: kind as JournalEntry['kind'], description, date, lines, totalAmount: totalDebit, cashFlowSection };
+  const line = (account: FinancialAccount, debit: number, credit: number, description: string): JournalLine =>
+    ({ accountCode: accountId(account), accountNumber: account.code, accountName: account.name, debit, credit, description });
+  const lines: JournalLine[] = [];
+  for (const row of statements.rows) {
+    if (row.account.reportTarget !== 'INCOME_STATEMENT') continue;
+    if (row.endingCredit) lines.push(line(row.account, row.endingCredit, 0, 'Penutupan saldo akhir tahun'));
+    if (row.endingDebit) lines.push(line(row.account, 0, row.endingDebit, 'Penutupan saldo akhir tahun'));
+  }
+  const surplus = statements.annualWorksheet.allocatedSurplus;
+  if (surplus > 0) lines.push(line(equity, 0, surplus, 'Surplus tahun berjalan'));
+  if (surplus < 0) lines.push(line(equity, -surplus, 0, 'Defisit tahun berjalan'));
+  const balances: OpeningBalances = {};
+  for (const row of statements.rows) {
+    if (row.account.reportTarget !== 'BALANCE_SHEET') continue;
+    const signed = row.endingDebit - row.endingCredit - (accountId(row.account) === args.equityAccountId ? surplus : 0);
+    if (signed) balances[accountId(row.account)] = { debit: Math.max(signed, 0), credit: Math.max(-signed, 0) };
+  }
+  validateOpeningBalances(balances, args.accounts);
+  return { equityAccountId: args.equityAccountId, surplus, lines, balances };
 }
 
 export function buildFinancialStatements(args: {
@@ -183,8 +349,8 @@ export function buildFinancialStatements(args: {
     validateEntryDate(entry.date, args.academicYear, entry.monthIndex);
     const period = periodOf.get(entry.date.slice(0, 7));
     if (!period || period > targetPeriod) continue;
-    const cashChange = entry.lines.reduce((sum, line) => sum + (accountMap.get(line.accountCode)?.cashEquivalent ? line.debit - line.credit : 0), 0);
-    if (cashChange && entry.cashFlowSection) cashFlows[entry.cashFlowSection] += cashChange;
+    const flows = entryCashFlows(entry, accountMap);
+    for (const section of CASH_FLOW_SECTIONS) cashFlows[section] += flows[section];
     for (const line of entry.lines) {
       const current = movements.get(line.accountCode) ?? { debit: 0, credit: 0 };
       current.debit += line.debit;
@@ -214,10 +380,15 @@ export function buildFinancialStatements(args: {
       openingCredit: args.opening[accountId(account)]?.credit ?? 0,
       debitMovement: movement.debit,
       creditMovement: movement.credit,
+      /** Movement in the report month alone (August for the annual report). */
+      periodDebit: periodMovements.get(id)?.debit ?? 0,
+      periodCredit: periodMovements.get(id)?.credit ?? 0,
       endingDebit: Math.max(signed, 0),
       endingCredit: Math.max(-signed, 0),
     };
   });
+  const abnormalBalances = rows.filter((row) => hasAbnormalBalance(row.account, row.endingDebit, row.endingCredit))
+    .map((row) => ({ account: row.account, side: row.endingDebit ? 'DEBIT' as const : 'CREDIT' as const, amount: row.endingDebit || row.endingCredit }));
   const cashOpening = args.accounts.filter((account) => account.cashEquivalent).reduce((sum, account) => sum + (openingSigned.get(accountId(account)) ?? 0), 0);
   const endingCash = rows.filter((row) => row.account.cashEquivalent).reduce((sum, row) => sum + row.endingDebit - row.endingCredit, 0);
   const cashFlowChange = cashFlows.OPERATING + cashFlows.INVESTING + cashFlows.FINANCING;
@@ -232,8 +403,9 @@ export function buildFinancialStatements(args: {
   const monthCashFlows = args.monthIndex === 'ANNUAL' ? cashFlows : { OPERATING: 0, INVESTING: 0, FINANCING: 0 };
   if (args.monthIndex !== 'ANNUAL') {
     for (const entry of args.entries) {
-      if (entry.academicYear !== args.academicYear || periodOf.get(entry.date.slice(0, 7)) !== targetPeriod || !entry.cashFlowSection) continue;
-      monthCashFlows[entry.cashFlowSection] += entry.lines.reduce((sum, line) => sum + (accountMap.get(line.accountCode)?.cashEquivalent ? line.debit - line.credit : 0), 0);
+      if (entry.academicYear !== args.academicYear || periodOf.get(entry.date.slice(0, 7)) !== targetPeriod) continue;
+      const flows = entryCashFlows(entry, accountMap);
+      for (const section of CASH_FLOW_SECTIONS) monthCashFlows[section] += flows[section];
     }
   }
   const monthCashChange = monthCashFlows.OPERATING + monthCashFlows.INVESTING + monthCashFlows.FINANCING;
@@ -254,7 +426,7 @@ export function buildFinancialStatements(args: {
   const balanceCredit = balanceRows.reduce((sum, row) => sum + row.endingCredit, 0);
   const allocatedSurplus = incomeCredit - incomeDebit;
   return {
-    rows, monthlyIncome,
+    rows, monthlyIncome, abnormalBalances,
     incomeStatement: { income, expense, surplus: income - expense, rows: incomeRows },
     balanceSheet: { rows: balanceRows, assets: balanceRows.filter((row) => row.account.type === 'AKTIVA').reduce((sum, row) => sum + row.endingDebit - row.endingCredit, 0), liabilities: balanceRows.filter((row) => row.account.type === 'HUTANG').reduce((sum, row) => sum + row.endingCredit - row.endingDebit, 0), equity: balanceRows.filter((row) => row.account.type === 'MODAL').reduce((sum, row) => sum + row.endingCredit - row.endingDebit, 0), accumulatedSurplus: monthlyIncome.slice(0, targetPeriod).reduce((sum, month) => sum + month.surplus, 0) },
     cashFlow: { openingCash: openingCashForMonth, ...monthCashFlows, netChange: monthCashChange, endingCash: openingCashForMonth + monthCashChange, physicalCash: endingCash, reconciliationDelta: openingCashForMonth + monthCashChange - endingCash },
