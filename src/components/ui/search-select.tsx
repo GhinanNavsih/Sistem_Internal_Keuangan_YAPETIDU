@@ -4,6 +4,7 @@ import * as React from "react"
 import { Combobox } from "@base-ui/react/combobox"
 import { CheckIcon, ChevronDownIcon } from "lucide-react"
 
+import { rankSearchOptions } from "@/lib/searchMatch"
 import { cn } from "@/lib/utils"
 
 export interface SearchSelectOption {
@@ -26,8 +27,9 @@ interface SearchSelectProps {
 }
 
 /**
- * A select you can type into: the list narrows to the options whose label
- * contains the typed text, and the chosen option's label stays in the box.
+ * A select you can type into: the list narrows to the options that match every
+ * word typed (any order, punctuation ignored), best matches first, and the
+ * chosen option's label stays in the box.
  * Use it instead of `Select` when the list is long (an account catalog, say).
  * `value` is the option's `value`, or '' while nothing is chosen.
  */
@@ -43,10 +45,15 @@ export function SearchSelect({
   className,
 }: SearchSelectProps) {
   const selected = options.find((option) => option.value === value) ?? null
+  // Combobox keeps the typed text itself; this copy is only for ranking the list.
+  const [typed, setTyped] = React.useState(selected?.label ?? "")
+  const matches = React.useMemo(() => rankSearchOptions(options, typed), [options, typed])
 
   return (
     <Combobox.Root
       items={options}
+      filteredItems={matches}
+      onInputValueChange={(next) => setTyped(next)}
       value={selected}
       onValueChange={(next) => onValueChange(next ? next.value : "")}
       itemToStringLabel={(option) => option.label}

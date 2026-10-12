@@ -74,6 +74,9 @@ const normalBalanceItems = { DEBIT: 'Debet', CREDIT: 'Kredit' };
 const reportTargetItems = { BALANCE_SHEET: 'Neraca', INCOME_STATEMENT: 'Laba Rugi' };
 const accountTypeItems: Record<AccountType, string> = { AKTIVA: 'Aktiva', HUTANG: 'Hutang', MODAL: 'Modal', TERIMA: 'Penerimaan', KELUAR: 'Pengeluaran' };
 const emptyLine = (): DraftLine => ({ accountCode: '', description: '', debit: '', credit: '' });
+// Journal lines are tinted by side so Debet and Kredit read apart at a glance.
+const debitRow = 'bg-sky-50';
+const creditRow = 'bg-emerald-50';
 
 // One status per record, shown as a dot plus text (never a filled pill).
 function Status({ status }: { status?: string }) {
@@ -238,7 +241,7 @@ export default function SatkerFinancePage() {
   const cancelEdit = () => { if (editingEntry) leaveEdit(); };
   const selectUnit = (id: string) => { cancelEdit(); setUnitId(id); };
 
-  // Loads a posted journal into the form above the table. Journals posted with one uraian for the whole entry get it on every line.
+  // Loads a posted journal into the form in its own row. Journals posted with one uraian for the whole entry get it on every line.
   const startEdit = (entry: EntryRecord) => {
     if (!editingEntry) draftBeforeEdit.current = { lines, voucherDate, receipt };
     const sharedDescription = entry.lines.some((line) => line.description) ? '' : entry.description;
@@ -374,8 +377,49 @@ export default function SatkerFinancePage() {
   // A sealed month (its report, or a later one, is with BAK or Rektorat) takes no reconciliation or depreciation changes.
   const monthOpen = month !== 'ANNUAL' && (fiscalPeriod(academicYear, month) ?? 0) > lockedThrough;
 
+  // The journal form. A new journal is posted from the top; an edit takes the place of that journal's own rows, highlighted yellow.
+  const journalComposer = canPost ? <tbody key={editingEntry?.id ?? 'composer'} ref={composerRef} className={`align-top ${editingEntry ? 'bg-amber-50' : 'bg-slate-50'}`}>
+      {editingEntry && <tr><td colSpan={6} className="border-b border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Mengedit jurnal {editingEntry.date} · {editingEntry.description}. Simpan perubahan, atau batalkan untuk kembali.{error && <span role="alert" className="mt-1 block text-red-700">{error}</span>}</td></tr>}
+      {lines.map((line, index) => <tr key={index}>
+        {index === 0 && <td rowSpan={lines.length + 1} className="border-b border-slate-200 px-3 py-2"><input type="date" aria-label="Tanggal transaksi" className={field} value={voucherDate} onChange={(event) => setVoucherDate(event.target.value)} /></td>}
+        <td className="px-3 py-1.5"><div className="flex items-center gap-1">
+          <SearchSelect aria-label={`Akun baris ${index + 1}`} placeholder="Cari kode / nama akun" options={accountItems} value={line.accountCode} onValueChange={(value) => setLines((current) => current.map((item, i) => i === index ? { ...item, accountCode: value } : item))} />
+          {lines.length > 2 && <button type="button" aria-label={`Hapus baris ${index + 1}`} className={`${lightButton} !px-2`} onClick={() => setLines((current) => current.filter((_, i) => i !== index))}>×</button>}
+        </div></td>
+        <td className="px-3 py-1.5"><input aria-label={`Uraian baris ${index + 1}`} className={field} value={line.description} maxLength={300} onChange={(event) => setLines((current) => current.map((item, i) => i === index ? { ...item, description: event.target.value } : item))} placeholder="Uraian" /></td>
+        <td className="px-3 py-1.5"><CurrencyInput className={`${field} text-right`} aria-label={`Debet baris ${index + 1}`} value={amountNumber(line.debit)} onValue={(value) => setLines((current) => current.map((item, i) => i === index ? { ...item, debit: amountText(value) } : item))} /></td>
+        <td className="px-3 py-1.5"><CurrencyInput className={`${field} text-right`} aria-label={`Kredit baris ${index + 1}`} value={amountNumber(line.credit)} onValue={(value) => setLines((current) => current.map((item, i) => i === index ? { ...item, credit: amountText(value) } : item))} /></td>
+        {index === 0 && <td rowSpan={lines.length + 1} className="border-b border-slate-200 px-3 py-2"><div className="flex flex-col items-start gap-2">
+          <button type="button" className={button} disabled={busy || !draftValid} onClick={() => void postVoucher()}>{editingEntry ? <Save className="h-4 w-4" /> : <FilePlus2 className="h-4 w-4" />}{editingEntry ? 'Simpan perubahan' : 'Posting jurnal'}</button>
+          {editingEntry && <button type="button" className={lightButton} disabled={busy} onClick={cancelEdit}>Batal</button>}
+          {!draftValid && !busy && draftHint && lines.some((line) => line.accountCode || line.debit || line.credit || line.description) && <p className="text-xs text-amber-700">{draftHint}</p>}
+          <div className="w-full border-t border-slate-200 pt-2">
+            <input key={voucherId} ref={receiptInputRef} id="voucher-receipt" className="hidden" type="file" accept={UPLOAD_ACCEPT} onChange={(event) => { const file = event.target.files?.[0] || null; const problem = file ? uploadFileProblem(file) : null; if (problem) { setError(problem); event.target.value = ''; return; } setError(''); setReceipt(file); }} />
+            {receipt ? <div className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700"><span className="min-w-0 truncate" title={receipt.name}>{receipt.name}</span><button type="button" aria-label="Lepas bukti" title="Lepas bukti" className="shrink-0 text-slate-400 hover:text-red-700" onClick={() => { setReceipt(null); if (receiptInputRef.current) receiptInputRef.current.value = ''; }}><X className="h-4 w-4" /></button></div>
+              : <button type="button" className={lightButton} onClick={() => receiptInputRef.current?.click()}><Paperclip className="h-4 w-4" />{editingEntry?.hasReceipt ? 'Ganti bukti' : 'Lampirkan bukti'}</button>}
+            <p className="mt-1 text-xs text-slate-400">{editingEntry?.hasReceipt && !receipt ? 'Bukti yang tersimpan tetap dipakai bila tidak diganti. ' : 'Boleh dikosongkan. '}{UPLOAD_TYPES_TEXT}, maks. 5 MB.</p>
+          </div>
+        </div></td>}
+      </tr>)}
+      <tr>
+        <td className="border-b border-slate-200 px-3 py-1.5"><button type="button" className={lightButton} disabled={lines.length >= 30} onClick={() => setLines((current) => {
+          // The new line starts with whatever amount makes Debet equal Kredit.
+          const gap = current.reduce((sum, line) => sum + amountNumber(line.debit) - amountNumber(line.credit), 0);
+          return [...current, { ...emptyLine(), debit: gap < 0 ? String(-gap) : '', credit: gap > 0 ? String(gap) : '' }];
+        })}>Tambah baris</button></td>
+        <td className="border-b border-slate-200 px-3 py-1.5 text-xs text-slate-500">
+          {/* Classified by the counter accounts in the catalog, not chosen per journal. */}
+          {!!draftCashFlowParts.length && <p className="font-medium text-slate-600" title="Mengikuti klasifikasi arus kas akun lawan di katalog akun">Arus kas: {draftCashFlowParts.join(' · ')}</p>}
+          {draftCashFlows.error && <p className="text-amber-700">{draftCashFlows.error}</p>}
+          {draftDebit !== draftCredit && <p className="mt-1 text-amber-700">Belum seimbang · selisih {money(Math.abs(draftDebit - draftCredit))}</p>}
+        </td>
+        <td className="border-b border-slate-200 px-3 py-1.5 text-right text-xs tabular-nums text-slate-600">{money(draftDebit)}</td>
+        <td className="border-b border-slate-200 px-3 py-1.5 text-right text-xs tabular-nums text-slate-600">{money(draftCredit)}</td>
+      </tr>
+  </tbody> : null;
+
   return <div className="min-h-screen bg-white text-slate-700">
-    <div className="mx-auto max-w-[1600px] space-y-5 px-4 pt-6 pb-16 sm:px-8 sm:pt-8">
+    <div className="space-y-5 px-4 pt-6 pb-16 sm:px-8 sm:pt-8">
       {/* This page has no shell top bar, so the title sits in the toolbar row instead of a banner. */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-base font-semibold text-slate-900">Buku keuangan satuan kerja</h1>
@@ -426,59 +470,22 @@ export default function SatkerFinancePage() {
             entries={data.entries || []} academicYear={academicYear} closing={data.year.closing ?? null} closed={data.year.status === 'CLOSED'} allApproved={allApproved}
             isAdmin={isAdmin} busy={busy} post={post} />}
         </div>}
-        {tab === 'jurnal' && <div className="space-y-5"><Section title="Riwayat jurnal"><div className="overflow-x-auto"><table className="w-full min-w-[960px] text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={`${leftCell} w-40`}>Tanggal</th><th className={`${leftCell} w-60 min-w-52`}>Akun</th><th className={`${leftCell} min-w-56`}>Uraian</th><th className={`${cell} w-44`}>Debet</th><th className={`${cell} w-44`}>Kredit</th><th className={`${leftCell} w-60 min-w-60`}>Aksi</th></tr></thead>
-            {canPost && <tbody ref={composerRef} className="bg-slate-50 align-top">
-              {editingEntry && <tr><td colSpan={6} className="border-b border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Mengedit jurnal {editingEntry.date} · {editingEntry.description}. Simpan perubahan, atau batalkan untuk kembali.{error && <span role="alert" className="mt-1 block text-red-700">{error}</span>}</td></tr>}
-              {lines.map((line, index) => <tr key={index}>
-                {index === 0 && <td rowSpan={lines.length + 1} className="border-b border-slate-200 px-3 py-2"><input type="date" aria-label="Tanggal transaksi" className={field} value={voucherDate} onChange={(event) => setVoucherDate(event.target.value)} /></td>}
-                <td className="px-3 py-1.5"><div className="flex items-center gap-1">
-                  <SearchSelect aria-label={`Akun baris ${index + 1}`} placeholder="Cari kode / nama akun" options={accountItems} value={line.accountCode} onValueChange={(value) => setLines((current) => current.map((item, i) => i === index ? { ...item, accountCode: value } : item))} />
-                  {lines.length > 2 && <button type="button" aria-label={`Hapus baris ${index + 1}`} className={`${lightButton} !px-2`} onClick={() => setLines((current) => current.filter((_, i) => i !== index))}>×</button>}
-                </div></td>
-                <td className="px-3 py-1.5"><input aria-label={`Uraian baris ${index + 1}`} className={field} value={line.description} maxLength={300} onChange={(event) => setLines((current) => current.map((item, i) => i === index ? { ...item, description: event.target.value } : item))} placeholder="Uraian" /></td>
-                <td className="px-3 py-1.5"><CurrencyInput className={`${field} text-right`} aria-label={`Debet baris ${index + 1}`} value={amountNumber(line.debit)} onValue={(value) => setLines((current) => current.map((item, i) => i === index ? { ...item, debit: amountText(value) } : item))} /></td>
-                <td className="px-3 py-1.5"><CurrencyInput className={`${field} text-right`} aria-label={`Kredit baris ${index + 1}`} value={amountNumber(line.credit)} onValue={(value) => setLines((current) => current.map((item, i) => i === index ? { ...item, credit: amountText(value) } : item))} /></td>
-                {index === 0 && <td rowSpan={lines.length + 1} className="border-b border-slate-200 px-3 py-2"><div className="flex flex-col items-start gap-2">
-                  <button type="button" className={button} disabled={busy || !draftValid} onClick={() => void postVoucher()}>{editingEntry ? <Save className="h-4 w-4" /> : <FilePlus2 className="h-4 w-4" />}{editingEntry ? 'Simpan perubahan' : 'Posting jurnal'}</button>
-                  {editingEntry && <button type="button" className={lightButton} disabled={busy} onClick={cancelEdit}>Batal</button>}
-                  {!draftValid && !busy && draftHint && lines.some((line) => line.accountCode || line.debit || line.credit || line.description) && <p className="text-xs text-amber-700">{draftHint}</p>}
-                  <div className="w-full border-t border-slate-200 pt-2">
-                    <input key={voucherId} ref={receiptInputRef} id="voucher-receipt" className="hidden" type="file" accept={UPLOAD_ACCEPT} onChange={(event) => { const file = event.target.files?.[0] || null; const problem = file ? uploadFileProblem(file) : null; if (problem) { setError(problem); event.target.value = ''; return; } setError(''); setReceipt(file); }} />
-                    {receipt ? <div className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700"><span className="min-w-0 truncate" title={receipt.name}>{receipt.name}</span><button type="button" aria-label="Lepas bukti" title="Lepas bukti" className="shrink-0 text-slate-400 hover:text-red-700" onClick={() => { setReceipt(null); if (receiptInputRef.current) receiptInputRef.current.value = ''; }}><X className="h-4 w-4" /></button></div>
-                      : <button type="button" className={lightButton} onClick={() => receiptInputRef.current?.click()}><Paperclip className="h-4 w-4" />{editingEntry?.hasReceipt ? 'Ganti bukti' : 'Lampirkan bukti'}</button>}
-                    <p className="mt-1 text-xs text-slate-400">{editingEntry?.hasReceipt && !receipt ? 'Bukti yang tersimpan tetap dipakai bila tidak diganti. ' : 'Boleh dikosongkan. '}{UPLOAD_TYPES_TEXT}, maks. 5 MB.</p>
-                  </div>
-                </div></td>}
-              </tr>)}
-              <tr>
-                <td className="border-b border-slate-200 px-3 py-1.5"><button type="button" className={lightButton} disabled={lines.length >= 30} onClick={() => setLines((current) => {
-                  // The new line starts with whatever amount makes Debet equal Kredit.
-                  const gap = current.reduce((sum, line) => sum + amountNumber(line.debit) - amountNumber(line.credit), 0);
-                  return [...current, { ...emptyLine(), debit: gap < 0 ? String(-gap) : '', credit: gap > 0 ? String(gap) : '' }];
-                })}>Tambah baris</button></td>
-                <td className="border-b border-slate-200 px-3 py-1.5 text-xs text-slate-500">
-                  {/* Classified by the counter accounts in the catalog, not chosen per journal. */}
-                  {!!draftCashFlowParts.length && <p className="font-medium text-slate-600" title="Mengikuti klasifikasi arus kas akun lawan di katalog akun">Arus kas: {draftCashFlowParts.join(' · ')}</p>}
-                  {draftCashFlows.error && <p className="text-amber-700">{draftCashFlows.error}</p>}
-                  {draftDebit !== draftCredit && <p className="mt-1 text-amber-700">Belum seimbang · selisih {money(Math.abs(draftDebit - draftCredit))}</p>}
-                </td>
-                <td className="border-b border-slate-200 px-3 py-1.5 text-right text-xs tabular-nums text-slate-600">{money(draftDebit)}</td>
-                <td className="border-b border-slate-200 px-3 py-1.5 text-right text-xs tabular-nums text-slate-600">{money(draftCredit)}</td>
-              </tr>
-            </tbody>}
+        {tab === 'jurnal' && <div className="space-y-5"><Section title="Riwayat jurnal"><div className="overflow-x-auto"><table className="w-full min-w-[960px] text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={`${leftCell} w-40`}>Tanggal</th><th className={`${leftCell} w-96 min-w-52`}>Akun</th><th className={`${leftCell} min-w-56`}>Uraian</th><th className={`${cell} w-44`}>Debet</th><th className={`${cell} w-44`}>Kredit</th><th className={`${leftCell} w-60 min-w-60`}>Aksi</th></tr></thead>
+            {!editingEntry && journalComposer}
             {data.entries?.map((entry) => {
             // Edit and delete while the journal's month (and every later one) is still open; in a sealed month only a reversing journal can correct it.
             const reversed = reversedIds.has(entry.id);
             const changeBlocker = entryChangeBlocker({ change: 'delete', entry, reversed, academicYear, reports: data.reports || [], yearStatus: data.year?.status });
             const sealedMonth = (fiscalPeriod(academicYear, entry.monthIndex) ?? 0) <= lockedThrough;
             const beingEdited = editingEntry?.id === entry.id;
-            return <tbody key={entry.id} className={`align-top ${beingEdited ? 'bg-amber-50' : ''}`}>{entry.lines.map((line, index) => {
+            if (beingEdited && journalComposer) return journalComposer;
+            return <tbody key={entry.id} className="align-top">{entry.lines.map((line, index) => {
             const last = index === entry.lines.length - 1;
             const rule = last ? 'border-b border-slate-100' : '';
             const span = entry.lines.length;
             // Entries posted with a uraian on each line show them row by row; older ones and reversals show one for the whole entry.
             const perLine = entry.kind !== 'REVERSAL' && entry.lines.some((item) => item.description);
-            return <tr key={index}>
+            return <tr key={index} className={line.debit ? debitRow : creditRow}>
               {index === 0 && <td rowSpan={span} className={leftCell}>{entry.date}</td>}
               <td className={`px-3 py-2 text-left ${rule}`}>{line.accountNumber || line.accountCode} · {line.accountName}</td>
               {perLine ? <td className={`px-3 py-2 text-left ${rule}`}>{line.description}</td> : index === 0 ? <td rowSpan={span} className={`${leftCell} font-semibold`}>{entry.description}</td> : null}
