@@ -2,10 +2,11 @@
  * Bonus Triwulan: Rp500.000 for a Loyalis who qualifies three payroll months in
  * a row, paid on the slip of the third month.
  *
- * A month qualifies when the person reached Strata 1 Bonus Presensi and missed
- * at most one Senam Pagi session. Every streak starts fresh: months that paid a
- * bonus never count toward the next one, so month M pays when M-2, M-1 and M
- * all qualify and neither M-2 nor M-1 paid.
+ * The person must reach Strata 1 Bonus Presensi in each of the three months,
+ * and miss at most one Senam Pagi session in total: the limit is counted over
+ * every session held in the three months together, not per month. Every streak
+ * starts fresh: months that paid a bonus never count toward the next one, so
+ * month M pays when M-2, M-1 and M qualify and neither M-2 nor M-1 paid.
  *
  * Senam Pagi is its own roll call, independent of scan masuk/pulang, cuti or
  * ganti libur. Each recorded session stores who was present, so a month nobody
@@ -99,8 +100,13 @@ export interface SenamPagiMonth {
   noSessions: boolean;
   /** Sorted by date. */
   sessions: SenamPagiSession[];
-  /** Paper months only: who met the Senam Pagi rule that month. */
-  paperMetEmployeeIds: string[];
+  /**
+   * Paper months only: how many sessions were held, and how many each person
+   * missed (anyone not listed missed them all). Null when the paper record is
+   * absent or in an older shape, which counts as not recorded.
+   */
+  paperSessionCount: number | null;
+  paperMisses: Record<string, number>;
   revision: number;
 }
 
@@ -108,6 +114,14 @@ function stringIds(value: unknown): string[] {
   return Array.isArray(value)
     ? [...new Set(value.filter((id): id is string => typeof id === 'string' && EMPLOYEE_ID_PATTERN.test(id)))].sort()
     : [];
+}
+
+function paperMissCounts(value: unknown): Record<string, number> {
+  if (!value || typeof value !== 'object') return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(([id, count]) =>
+      EMPLOYEE_ID_PATTERN.test(id) && Number.isInteger(count) && Number(count) >= 0),
+  ) as Record<string, number>;
 }
 
 /** Reads a stored `SenamPagi/{period}` document; null when there is none. */
@@ -133,23 +147,28 @@ export function parseSenamPagiDoc(period: string, data: unknown): SenamPagiMonth
     source: record.source === 'paper' ? 'paper' : 'saku',
     noSessions: record.noSessions === true,
     sessions,
-    paperMetEmployeeIds: stringIds(record.paperMetEmployeeIds),
+    paperSessionCount:
+      Number.isInteger(record.paperSessionCount) && Number(record.paperSessionCount) >= 0
+        ? Number(record.paperSessionCount)
+        : null,
+    paperMisses: paperMissCounts(record.paperMisses),
     revision: Number(record.revision || 0),
   };
 }
 
-/** Whether the month has been filled in at all (a paper record counts). */
+/** Whether the month has been filled in at all (a usable paper record counts). */
 export function isSenamPagiRecorded(month: SenamPagiMonth | null | undefined): boolean {
   if (!month) return false;
-  return month.source === 'paper' || month.noSessions || month.sessions.length > 0;
+  if (month.source === 'paper') return month.paperSessionCount !== null;
+  return month.noSessions || month.sessions.length > 0;
 }
 
+/** One person's attendance in one month. The pass/fail limit is not per month. */
 export interface SenamPagiStanding {
   recorded: boolean;
-  /** Sessions held that month (0 for a paper month or one without senam). */
+  /** Sessions held that month. */
   sessionCount: number;
   misses: number;
-  met: boolean;
 }
 
 export function senamPagiStanding(
@@ -157,28 +176,56 @@ export function senamPagiStanding(
   employeeId: string,
 ): SenamPagiStanding {
   if (!month || !isSenamPagiRecorded(month)) {
-    return { recorded: false, sessionCount: 0, misses: 0, met: false };
+    return { recorded: false, sessionCount: 0, misses: 0 };
   }
   if (month.source === 'paper') {
+    const sessionCount = month.paperSessionCount ?? 0;
     return {
       recorded: true,
-      sessionCount: 0,
-      misses: 0,
-      met: month.paperMetEmployeeIds.includes(employeeId),
+      sessionCount,
+      // Someone the paper record does not list missed every session.
+      misses: Math.min(month.paperMisses[employeeId] ?? sessionCount, sessionCount),
     };
   }
   if (month.sessions.length === 0) {
     // Only reachable with `noSessions`: nothing to attend, so nothing missed.
-    return { recorded: true, sessionCount: 0, misses: 0, met: true };
+    return { recorded: true, sessionCount: 0, misses: 0 };
   }
-  const misses = month.sessions.filter(
-    (session) => !session.presentEmployeeIds.includes(employeeId),
-  ).length;
   return {
     recorded: true,
     sessionCount: month.sessions.length,
+    misses: month.sessions.filter((session) => !session.presentEmployeeIds.includes(employeeId)).length,
+  };
+}
+
+/** Attendance over the whole three-month window, where the miss limit applies. */
+export interface SenamPagiWindowStanding {
+  /** Every month of the window has been recorded. */
+  complete: boolean;
+  /** Sessions held across the window. */
+  sessions: number;
+  /** Sessions missed across the window. */
+  misses: number;
+  /** Already over the limit; more recorded months cannot undo it. */
+  failed: boolean;
+  /** Complete and within the limit. */
+  met: boolean;
+}
+
+export function senamPagiWindowStanding(
+  months: ReadonlyArray<SenamPagiMonth | null | undefined>,
+  employeeId: string,
+): SenamPagiWindowStanding {
+  const standings = months.map((month) => senamPagiStanding(month, employeeId));
+  const misses = standings.reduce((sum, standing) => sum + standing.misses, 0);
+  const complete = standings.every((standing) => standing.recorded);
+  const failed = misses > SENAM_PAGI_MAX_MISSES;
+  return {
+    complete,
+    sessions: standings.reduce((sum, standing) => sum + standing.sessionCount, 0),
     misses,
-    met: misses <= SENAM_PAGI_MAX_MISSES,
+    failed,
+    met: complete && !failed,
   };
 }
 
@@ -207,7 +254,8 @@ export function applySenamPagiCommand(
         source: 'saku',
         noSessions: false,
         sessions: [],
-        paperMetEmployeeIds: [],
+        paperSessionCount: null,
+        paperMisses: {},
         revision: 0,
       };
 
@@ -276,14 +324,16 @@ export interface BonusTriwulanMonthStanding {
   /** Null when the person has no presence entry that month. */
   stratum: number | null;
   strata1: boolean;
+  /** This month's attendance, shown for context; the limit is on the window. */
   senam: SenamPagiStanding;
-  qualifies: boolean;
 }
 
 export interface BonusTriwulanRow {
   employeeId: string;
   employeeName: string;
   months: BonusTriwulanMonthStanding[];
+  /** Senam Pagi over the whole window. */
+  senam: SenamPagiWindowStanding;
   /** The earlier month of the window that already paid them, if any. */
   paidIn: string | null;
   awarded: boolean;
@@ -332,16 +382,10 @@ function missingInputs(input: BonusTriwulanInput): string[] {
   return missing;
 }
 
-function failureReason(standing: BonusTriwulanMonthStanding): string | null {
+function strataFailure(standing: BonusTriwulanMonthStanding): string | null {
   const month = periodMonthName(standing.period);
   if (standing.stratum === null) return `${month}: tidak ada data presensi`;
   if (!standing.strata1) return `${month}: Strata ${standing.stratum}`;
-  if (!standing.senam.recorded) return null;
-  if (!standing.senam.met) {
-    return standing.senam.sessionCount > 0
-      ? `${month}: tidak ikut senam ${standing.senam.misses}×`
-      : `${month}: tidak memenuhi Senam Pagi`;
-  }
   return null;
 }
 
@@ -365,25 +409,27 @@ export function evaluateBonusTriwulan(input: BonusTriwulanInput): BonusTriwulanE
           ? entryStratum(month.presence?.[employee.employeeId])
           : null;
         const senam = senamPagiStanding(month.senam, employee.employeeId);
-        const strata1 = stratum === 1;
-        return { period: month.period, stratum, strata1, senam, qualifies: strata1 && senam.met };
+        return { period: month.period, stratum, strata1: stratum === 1, senam };
       });
+      const senam = senamPagiWindowStanding(input.months.map((month) => month.senam), employee.employeeId);
       // The latest earlier payout is the one that resets the count.
       const paidIn = [...paidBy].reverse().find((prior) => prior.ids.has(employee.employeeId))?.period || null;
-      const allQualify = months.every((month) => month.qualifies);
-      const awarded = complete && allQualify && !paidIn;
+      const awarded = complete && months.every((month) => month.strata1) && senam.met && !paidIn;
       let reason: string;
       if (awarded) {
         reason = `Dapat ${BONUS_TRIWULAN_LABEL}`;
       } else if (paidIn) {
         reason = `Sudah dapat di ${periodMonthName(paidIn)}; hitungan dimulai lagi`;
       } else {
-        const failures = months.map(failureReason).filter((text): text is string => Boolean(text));
+        const failures = months.map(strataFailure).filter((text): text is string => Boolean(text));
+        if (senam.failed) {
+          failures.push(`Senam Pagi: tidak hadir ${senam.misses}× dari ${senam.sessions} sesi (maks. ${SENAM_PAGI_MAX_MISSES})`);
+        }
         reason = failures.length > 0
           ? failures.join('; ')
           : 'Menunggu data lengkap';
       }
-      return { employeeId: employee.employeeId, employeeName: employee.employeeName, months, paidIn, awarded, reason };
+      return { employeeId: employee.employeeId, employeeName: employee.employeeName, months, senam, paidIn, awarded, reason };
     });
 
   return {

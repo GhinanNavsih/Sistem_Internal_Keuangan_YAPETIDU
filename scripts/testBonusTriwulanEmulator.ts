@@ -46,7 +46,8 @@ async function main() {
   await adminDb.doc(`users/${finance.uid}`).set({ role: 'finance_verifier', displayName: 'Badan Keuangan' });
   await adminDb.doc(`users/${honorer.uid}`).set({ role: 'honorer', displayName: 'Cahyo', permittedCategories: ['KEBERSIHAN'] });
 
-  // Ani qualifies; Bayu was paid last month (fresh count); Citra had Strata 2 last month.
+  // Ani qualifies (one miss in the window, the limit); Bayu was paid last month (fresh count);
+  // Citra had Strata 2 last month.
   await adminDb.doc('Employees_Loyalis/Loyalis_901').set({ personal_info: { name: 'Ani', status: 'AKTIF' } });
   await adminDb.doc('Employees_Loyalis/Loyalis_902').set({ personal_info: { name: 'Bayu', status: 'AKTIF' } });
   await adminDb.doc('Employees_Loyalis/Loyalis_903').set({ personal_info: { name: 'Citra', status: 'AKTIF' } });
@@ -64,7 +65,14 @@ async function main() {
     });
   }
   for (const [month, recipients] of [[m2, {}], [m1, { Loyalis_902: { employeeName: 'Bayu' } }]] as const) {
-    await adminDb.doc(`SenamPagi/${month}`).set({ period: month, source: 'paper', paperMetEmployeeIds: all, revision: 1 });
+    // Paper months hold sessions held and misses per person. Ani missed one of last month's three.
+    await adminDb.doc(`SenamPagi/${month}`).set({
+      period: month,
+      source: 'paper',
+      paperSessionCount: 3,
+      paperMisses: Object.fromEntries(all.map((id) => [id, month === m1 && id === 'Loyalis_901' ? 1 : 0])),
+      revision: 1,
+    });
     await adminDb.doc(`BonusTriwulan/${month}`).set({ period: month, source: 'paper', recipients, missing: [], revision: 1 });
   }
   await adminDb.doc(`PayrollPeriods/${period}`).set({ attendanceStatus: 'open' });
@@ -121,7 +129,7 @@ async function main() {
     await expectStatus(await senamWrite(employeeAdmin.authorization, { action: 'save_session', date: future, presentEmployeeIds: [] }), 409, 'future date');
   }
 
-  // ── Two sessions; Bayu misses one. Ani is paid, Bayu was paid last month, Citra had Strata 2 ──
+  // ── Two sessions this month; Bayu misses one. Ani is paid, Bayu was paid last month, Citra had Strata 2 ──
   await adminDb.doc(`SenamPagi/${period}`).set({
     period, source: 'saku', noSessions: false, revision: 1,
     sessions: { [day2]: { presentEmployeeIds: all } },
@@ -145,6 +153,11 @@ async function main() {
   const rowOf = (id: string) => bonus.evaluation.rows.find((row: { employeeId: string }) => row.employeeId === id);
   assert.equal(rowOf('Loyalis_902').paidIn, m1);
   assert.match(rowOf('Loyalis_903').reason, /Strata 2/);
+  assert.deepEqual(
+    { misses: rowOf('Loyalis_901').senam.misses, sessions: rowOf('Loyalis_901').senam.sessions },
+    { misses: 1, sessions: 3 + 3 + 2 },
+    'Ani\'s window: the one miss of last month, over every session of the three months',
+  );
   assert.equal(await bonusTriwulanCloseBlocker(period), null, 'current and complete');
 
   // A stale revision is refused; a recalculation with nothing new changes nothing.
@@ -156,10 +169,10 @@ async function main() {
   const unchanged = await expectStatus(await recalculate(finance.authorization), 200);
   assert.equal(unchanged.result.changed, false);
 
-  // ── A change the save never saw (Ani now misses both) makes the result stale until recalculated ──
+  // ── A change the save never saw (Ani now misses one session this month) makes the result stale ──
+  // That is her second miss in the three months (the first was last month's), over the limit.
   await adminDb.doc(`SenamPagi/${period}`).update({
-    [`sessions.${day1}.presentEmployeeIds`]: ['Loyalis_903'],
-    [`sessions.${day2}.presentEmployeeIds`]: ['Loyalis_902', 'Loyalis_903'],
+    [`sessions.${day1}.presentEmployeeIds`]: ['Loyalis_902', 'Loyalis_903'],
     revision: Number((await adminDb.doc(`SenamPagi/${period}`).get()).data()!.revision) + 1,
   });
   bonus = await expectStatus(await get(bonusApi, 'bonus-triwulan', superAdmin.authorization), 200);
@@ -174,9 +187,9 @@ async function main() {
   assert.equal(await slipEarning('Loyalis_901'), null, 'the row leaves the draft slip');
   assert.equal(await bonusTriwulanCloseBlocker(period), null);
 
-  // ── A locked slip refuses a change that would pay it ──
+  // ── A locked slip refuses a change that would pay it (the roll call is corrected: Ani was there) ──
   await adminDb.doc(slipPath('Loyalis_901')).update({ status: 'locked' });
-  const relock = await senamWrite(employeeAdmin.authorization, { action: 'save_session', date: day2, presentEmployeeIds: all });
+  const relock = await senamWrite(employeeAdmin.authorization, { action: 'save_session', date: day1, presentEmployeeIds: all });
   written = await expectStatus(relock, 200, 'attendance still saves');
   assert.match(String(written.bonusNote), /dikunci/);
   assert.deepEqual((await adminDb.doc(eventPath).get()).data()!.eventWorkers, {}, 'payout unchanged');
@@ -212,7 +225,7 @@ async function main() {
 
   const audits = await adminDb.collection('FinancialAuditLogs').where('entityType', 'in', ['SenamPagi', 'BonusTriwulan']).get();
   assert.ok(audits.size >= 5, `every change is audited (${audits.size})`);
-  console.log('Bonus Triwulan integration passed: access, missing data, paper/future refusals, payout on save, fresh-start and strata rules, stale revision, no-op recalculation, stale result + close blocker, removal from slip, locked slip, editor and rules guards, closed period.');
+  console.log('Bonus Triwulan integration passed: access, missing data, paper/future refusals, payout on save, fresh-start, strata and three-month miss-limit rules, stale revision, no-op recalculation, stale result + close blocker, removal from slip, locked slip, editor and rules guards, closed period.');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });

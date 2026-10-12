@@ -18,6 +18,7 @@ import {
   periodLabel,
   SENAM_PAGI_COLLECTION,
   senamPagiStanding,
+  senamPagiWindowStanding,
   shiftPeriod,
   storedBonusTriwulanMissing,
   storedBonusTriwulanRecipients,
@@ -25,6 +26,7 @@ import {
   type SenamPagiCommand,
   type SenamPagiMonth,
   type SenamPagiStanding,
+  type SenamPagiWindowStanding,
   type StratumEntryLike,
 } from '@/lib/payroll/bonusTriwulan';
 import { assertRequestId } from '@/lib/payroll/domain';
@@ -391,15 +393,21 @@ export interface SenamPagiView {
     sessions: Array<{ date: string; presentEmployeeIds: string[] }>;
     revision: number;
   } | null;
-  roster: Array<LoyalisRosterEntry & { standing: SenamPagiStanding }>;
+  /**
+   * `standing` is this month; `window` is the three months ending here, where
+   * the miss limit applies (the earlier months are read as they are saved).
+   */
+  roster: Array<LoyalisRosterEntry & { standing: SenamPagiStanding; window: SenamPagiWindowStanding }>;
 }
 
 export async function getSenamPagiView(period: string): Promise<SenamPagiView> {
-  const [roster, month, periodSnapshot] = await Promise.all([
+  const window = bonusTriwulanWindow(period);
+  const [roster, windowMonths, periodSnapshot] = await Promise.all([
     loadLoyalisRoster(period),
-    loadSenamPagiMonth(period),
+    Promise.all(window.map((windowPeriod) => loadSenamPagiMonth(windowPeriod))),
     periodRef(period).get(),
   ]);
+  const month = windowMonths[windowMonths.length - 1];
   const periodClosed = isPeriodClosed(periodSnapshot.data());
   let readOnlyReason: string | null = null;
   if (month?.source === 'paper') {
@@ -416,7 +424,11 @@ export async function getSenamPagiView(period: string): Promise<SenamPagiView> {
     month: month
       ? { source: month.source, noSessions: month.noSessions, sessions: month.sessions, revision: month.revision }
       : null,
-    roster: roster.map((entry) => ({ ...entry, standing: senamPagiStanding(month, entry.employeeId) })),
+    roster: roster.map((entry) => ({
+      ...entry,
+      standing: senamPagiStanding(month, entry.employeeId),
+      window: senamPagiWindowStanding(windowMonths, entry.employeeId),
+    })),
   };
 }
 

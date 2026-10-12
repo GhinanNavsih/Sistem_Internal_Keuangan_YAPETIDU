@@ -25,6 +25,7 @@ import {
   type BonusTriwulanRow,
   type BonusTriwulanMonthStanding,
   type SenamPagiStanding,
+  type SenamPagiWindowStanding,
 } from '@/lib/payroll/bonusTriwulan';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 import { canRecordSenamPagi } from '@/lib/payroll/roles';
@@ -41,7 +42,10 @@ interface RosterEntry {
   employeeName: string;
   nipy: string;
   unit: string;
+  /** This month. */
   standing: SenamPagiStanding;
+  /** The three months ending here, where the miss limit applies. */
+  window: SenamPagiWindowStanding;
 }
 
 interface SenamView {
@@ -118,11 +122,16 @@ function matchesSearch(entry: { employeeName: string; nipy?: string; unit?: stri
     .some((value) => value.toLocaleLowerCase('id-ID').includes(needle));
 }
 
-function standingStatus(standing: SenamPagiStanding) {
-  if (!standing.recorded) return <StatusDot tone="neutral" className="whitespace-nowrap">Belum dicatat</StatusDot>;
-  return standing.met
-    ? <StatusDot tone="success" className="whitespace-nowrap">Memenuhi</StatusDot>
-    : <StatusDot tone="danger" className="whitespace-nowrap">Tidak memenuhi</StatusDot>;
+/** Over the limit is final; within it only counts once all three months are recorded. */
+function windowStatus(window: SenamPagiWindowStanding) {
+  if (window.failed) return <StatusDot tone="danger" className="whitespace-nowrap">Tidak memenuhi</StatusDot>;
+  if (window.met) return <StatusDot tone="success" className="whitespace-nowrap">Memenuhi</StatusDot>;
+  return <StatusDot tone="neutral" className="whitespace-nowrap">Belum lengkap</StatusDot>;
+}
+
+/** "1 dari 9", or a dash when there were no sessions. */
+function missesText(misses: number, sessions: number) {
+  return sessions > 0 ? `${misses} dari ${sessions}` : '–';
 }
 
 export default function SenamPagiPage() {
@@ -414,14 +423,12 @@ function AttendanceSection({
   const sessions = view.month?.sessions ?? [];
   const isPaper = view.month?.source === 'paper';
   const rosterSize = view.roster.length;
-  const notMet = view.roster.filter((entry) => entry.standing.recorded && !entry.standing.met).length;
+  const notMet = view.roster.filter((entry) => entry.window.failed).length;
   const rows = view.roster.filter((entry) =>
-    matchesSearch(entry, query) && (!onlyProblems || (entry.standing.recorded && !entry.standing.met)),
+    matchesSearch(entry, query) && (!onlyProblems || entry.window.failed),
   );
   // Phones get two columns (name, status); from sm up the misses get their own.
-  const columns = isPaper
-    ? 'sm:grid-cols-[minmax(0,1fr)_11rem]'
-    : 'sm:grid-cols-[minmax(0,1fr)_7rem_11rem]';
+  const columns = 'sm:grid-cols-[minmax(0,1fr)_8rem_8rem_10rem]';
   const markButtonClass =
     'h-auto min-h-11 w-full whitespace-normal py-2 text-center sm:h-8 sm:min-h-0 sm:w-auto sm:whitespace-nowrap sm:py-0';
 
@@ -511,7 +518,8 @@ function AttendanceSection({
           <div>
             <div className={cn('hidden gap-4 border-b border-slate-200 py-2 text-xs font-medium text-slate-500 sm:grid', columns)}>
               <span>Pegawai</span>
-              {!isPaper && <span>Tidak hadir</span>}
+              <span>Tidak hadir bulan ini</span>
+              <span>Tidak hadir 3 bulan</span>
               <span>Status</span>
             </div>
             <ul className="divide-y divide-slate-100">
@@ -523,16 +531,17 @@ function AttendanceSection({
                   <div className="min-w-0">
                     <span className="block text-sm text-slate-800">{entry.employeeName}</span>
                   </div>
-                  {!isPaper && (
-                    <span className="hidden text-sm tabular-nums text-slate-700 sm:block">
-                      {entry.standing.sessionCount > 0 ? `${entry.standing.misses} dari ${entry.standing.sessionCount}` : '–'}
-                    </span>
-                  )}
+                  <span className="hidden text-sm tabular-nums text-slate-700 sm:block">
+                    {missesText(entry.standing.misses, entry.standing.sessionCount)}
+                  </span>
+                  <span className="hidden text-sm tabular-nums text-slate-700 sm:block">
+                    {missesText(entry.window.misses, entry.window.sessions)}
+                  </span>
                   <div className="flex flex-col items-end gap-0.5 sm:items-start">
-                    {standingStatus(entry.standing)}
-                    {!isPaper && entry.standing.sessionCount > 0 && (
+                    {windowStatus(entry.window)}
+                    {entry.window.sessions > 0 && (
                       <span className="text-xs tabular-nums text-slate-500 sm:hidden">
-                        tidak hadir {entry.standing.misses} dari {entry.standing.sessionCount}
+                        tidak hadir {entry.window.misses} dari {entry.window.sessions} (3 bulan)
                       </span>
                     )}
                   </div>
@@ -806,10 +815,11 @@ function MonthCell({ standing, inline = false }: { standing: BonusTriwulanMonthS
   const senamText = !standing.senam.recorded
     ? 'senam belum dicatat'
     : standing.senam.sessionCount > 0
-      ? `absen senam ${standing.senam.misses}×`
-      : standing.senam.met ? 'senam memenuhi' : 'senam tidak memenuhi';
+      ? `tidak hadir senam ${standing.senam.misses} dari ${standing.senam.sessionCount}`
+      : 'tanpa senam';
+  // The tone follows Strata only: the Senam Pagi limit is judged over all three months.
   return (
-    <StatusDot tone={standing.qualifies ? 'success' : standing.senam.recorded && standing.stratum !== null ? 'danger' : 'neutral'}>
+    <StatusDot tone={standing.strata1 ? 'success' : standing.stratum !== null ? 'danger' : 'neutral'}>
       {inline ? (
         <span className="text-sm">
           {strataText}
@@ -821,6 +831,16 @@ function MonthCell({ standing, inline = false }: { standing: BonusTriwulanMonthS
           <span className="block text-xs text-slate-500">{senamText}</span>
         </span>
       )}
+    </StatusDot>
+  );
+}
+
+/** Senam Pagi over the three months, where the miss limit applies. */
+function SenamWindow({ senam }: { senam: SenamPagiWindowStanding }) {
+  const text = senam.sessions > 0 ? `tidak hadir ${senam.misses} dari ${senam.sessions} sesi` : 'tanpa sesi';
+  return (
+    <StatusDot tone={senam.failed ? 'danger' : senam.met ? 'success' : 'neutral'}>
+      <span className="text-sm">{text}</span>
     </StatusDot>
   );
 }
@@ -964,19 +984,24 @@ function BonusSection({
                       <dd className="min-w-0">{monthContent(row, month, true)}</dd>
                     </div>
                   ))}
+                  <div className="flex items-start gap-3 border-t border-slate-200 pt-1.5">
+                    <dt className="w-16 shrink-0 text-xs leading-5 text-slate-500">Senam 3 bln</dt>
+                    <dd className="min-w-0"><SenamWindow senam={row.senam} /></dd>
+                  </div>
                 </dl>
               </li>
             ))}
           </ul>
 
           <div className="hidden overflow-x-auto sm:block">
-            <table className="w-full min-w-[720px] text-sm">
+            <table className="w-full min-w-[820px] text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
                   <th className="py-2 pr-4 font-medium">Pegawai</th>
                   {monthPeriods.map((month) => (
                     <th key={month} className="py-2 pr-4 font-medium">{periodMonthName(month)}</th>
                   ))}
+                  <th className="py-2 pr-4 font-medium">Senam 3 bulan</th>
                   <th className="py-2 font-medium">Hasil</th>
                 </tr>
               </thead>
@@ -987,6 +1012,7 @@ function BonusSection({
                     {row.months.map((month) => (
                       <td key={month.period} className="py-2.5 pr-4">{monthContent(row, month)}</td>
                     ))}
+                    <td className="py-2.5 pr-4"><SenamWindow senam={row.senam} /></td>
                     <td className="py-2.5">
                       {row.awarded ? (
                         <StatusDot tone="success">Dapat {rupiah(view.amount)}</StatusDot>
