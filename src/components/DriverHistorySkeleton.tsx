@@ -69,7 +69,7 @@ export function DriverHistoryPageSkeleton() {
         {/* Assigned SPJ history — mirrors the shared panel's fixed caption */}
         <div className="space-y-3">
           <div className="px-1">
-            <h2 className="text-xs font-black uppercase tracking-wider text-slate-600">Riwayat SPJ Penugasan</h2>
+            <h2 className="text-xs font-black uppercase tracking-wider text-slate-600">Riwayat Penerimaan Vakasi</h2>
             <p className="mt-0.5 text-[10px] font-medium text-slate-400">
               Penugasan yang disetujui dan otomatis masuk ke pendapatan SPJ Anda.
             </p>

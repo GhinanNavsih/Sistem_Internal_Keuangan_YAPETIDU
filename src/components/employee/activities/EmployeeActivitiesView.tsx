@@ -64,6 +64,13 @@ export default function EmployeeActivitiesView({ model }: EmployeeActivitiesView
       );
     }
 
+  const assignedSpjHistoryPanel = (
+    <AssignedSpjHistoryPanel
+      assignedSpjEvents={model.assignedSpjEvents}
+      loadingAssignedSpjEvents={model.loadingAssignedSpjEvents}
+    />
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 font-sans selection:bg-indigo-100 relative overflow-hidden text-slate-800">
       <FloatingSnackbar message={message} onDismiss={() => setMessage(null)} />
@@ -99,15 +106,12 @@ export default function EmployeeActivitiesView({ model }: EmployeeActivitiesView
 
       <div className="max-w-2xl mx-auto px-4 py-5 space-y-5 relative z-10">
         <ActivityPeriodSelector model={model} />
+        {workflow === 'pekarya' && !model.loadingAssignedSpjEvents &&
+          model.assignedSpjEvents.length > 0 && assignedSpjHistoryPanel}
         {workflow === 'satpam' && <SatpamActivitiesView model={model} />}
         {workflow === 'sopir' && <SopirActivitiesView model={model} />}
         {workflow === 'pekarya' && <PekaryaActivitiesView model={model} />}
-        {workflow !== 'sopir' && (
-          <AssignedSpjHistoryPanel
-            assignedSpjEvents={model.assignedSpjEvents}
-            loadingAssignedSpjEvents={model.loadingAssignedSpjEvents}
-          />
-        )}
+        {workflow === 'satpam' && assignedSpjHistoryPanel}
         <div className="h-20" />
       </div>
     </div>
