@@ -270,7 +270,7 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
   const [showFoundItemForm, setShowFoundItemForm] = useState(false);
   const [editingActivity, setEditingActivity] = useState<ActivityReport | null>(null);
   const [formActivityType, setFormActivityType] = useState<'Piket' | 'Standby' | 'Ro\'an' | 'Lainnya' | 'Buang Sampah'>('Piket');
-  const [formName, setFormName] = useState('Piket');
+  const [formName, setFormName] = useState(isSatpam ? '' : 'Piket');
   const [formCustomName, setFormCustomName] = useState('');
   const [formDate, setFormDate] = useState(getTodayISO());
   const [formTimeStart, setFormTimeStart] = useState('');
@@ -894,7 +894,8 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
   const resetForm = () => {
     activityRequestIdRef.current = null;
     const defaultType = isKebersihan || isSatpam ? 'Piket' : 'Lainnya';
-    const defaultName = isKebersihan || isSatpam ? 'Piket' : (isSopir ? 'Perjalanan Dinas' : '');
+    // Piket and Standby share a rate. Satpam supplies the audit name separately.
+    const defaultName = isKebersihan ? 'Piket' : (isSopir ? 'Perjalanan Dinas' : '');
     setFormActivityType(defaultType);
     setFormName(defaultName);
     setFormCustomName('');
@@ -960,7 +961,9 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
       return;
     }
 
-    const cleanName = activity.activityName.replace(/\s*\(.*\)\s*$/, '');
+    const cleanName = isSatpam
+      ? activity.activityName
+      : activity.activityName.replace(/\s*\(.*\)\s*$/, '');
     setEditingActivity(activity);
     const type = isKebersihan
       ? (activity.activityType || (['Piket', 'Standby', 'Ro\'an', 'Buang Sampah'].includes(cleanName) ? cleanName : 'Lainnya'))
@@ -969,13 +972,8 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
         : 'Lainnya';
     setFormActivityType(type as any);
     if (isSatpam) {
-      if (cleanName !== 'Piket' && cleanName !== 'Standby') {
-        setFormCustomName(cleanName);
-        setFormName(cleanName);
-      } else {
-        setFormCustomName('');
-        setFormName(type);
-      }
+      setFormCustomName(cleanName);
+      setFormName(cleanName);
     } else if (type === 'Lainnya') {
       setFormCustomName(cleanName);
       setFormName(cleanName);
@@ -2969,6 +2967,10 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
 
     const isBuangSampah = formActivityType === 'Buang Sampah';
 
+    if (isSatpam && formName.normalize('NFKC').trim().length < 2) {
+      setMessage({ type: 'error', text: 'Nama kegiatan wajib diisi minimal 2 karakter.' });
+      return;
+    }
     if (!formName.trim()) {
       setMessage({ type: 'error', text: 'Jenis kegiatan harus diisi.' });
       return;
@@ -3013,9 +3015,7 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
     const routeSummary = isSopir ? ` (${formPoints.map(p => p.trim()).filter(Boolean).join(' → ')})` : '';
     const finalActivityName = isSopir
       ? formName.trim().replace(/\s*\(.*\)\s*$/, '') + routeSummary
-      : isSatpam
-        ? (formCustomName.trim() || formActivityType)
-        : formName.trim();
+      : formName.trim();
 
     const driverFields = isSopir ? {
       tripType: formTripType,

@@ -617,62 +617,15 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                   </div>
                 </div>
               </div>
-            ) : (isSatpam || userJobCategory === 'SATPAM') ? (
-              <div className="space-y-3 animate-in fade-in duration-200">
-                {/* Jenis Kegiatan (Klasifikasi SPJ) */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="satpamActivityType" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    Klasifikasi Kegiatan SPJ
-                  </Label>
-                  <Select
-                    value={formActivityType === 'Standby' ? 'Standby' : 'Piket'}
-                    onValueChange={(value) => {
-                      if (!value) return;
-                      const nextType = value as 'Piket' | 'Standby';
-                      setFormActivityType(nextType);
-                      if (!formCustomName.trim()) {
-                        setFormName(nextType);
-                      }
-                    }}
-                  >
-                    <SelectTrigger id="satpamActivityType" className="w-full text-base sm:text-sm font-bold text-slate-700 bg-white rounded-sm border border-slate-200 h-11 px-3">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="rounded-md border-slate-100 shadow-xl bg-white">
-                      <SelectItem value="Piket">Piket (Tarif Rp5.000 / jam)</SelectItem>
-                      <SelectItem value="Standby">Standby (Tarif Rp5.000 / jam)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Nama / Keterangan Kegiatan */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="activityNameInput" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    Keterangan Kegiatan (Opsional)
-                  </Label>
-                  <Input
-                    id="activityNameInput"
-                    placeholder="Contoh: Pengamanan Acara Kampus (opsional)..."
-                    value={formCustomName}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setFormCustomName(val);
-                      setFormName(val.trim() ? val : formActivityType);
-                    }}
-                    className="h-11 rounded-sm border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm"
-                    autoComplete="off"
-                  />
-                </div>
-              </div>
             ) : (
-              /* Free text input for other job categories */
+              /* Activity name for Satpam and other job categories */
               <div className="space-y-2 animate-in fade-in duration-200">
-                <Label htmlFor="activityNameInput" className="text-sm font-bold text-slate-600">
+                <Label htmlFor="activityNameInput" className="text-base font-bold text-slate-600">
                   Nama Kegiatan
                 </Label>
                 <Input
                   id="activityNameInput"
-                  placeholder="Masukkan nama kegiatan..."
+                  placeholder={isSatpam ? 'Contoh: Pengamanan Acara Kampus' : 'Masukkan nama kegiatan...'}
                   value={formName}
                   onChange={(e) => {
                     setFormName(e.target.value);
@@ -680,6 +633,8 @@ export default function ActivityFormDialog({ model }: ActivityFormDialogProps) {
                   }}
                   className="h-12 rounded-sm border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base"
                   required
+                  minLength={isSatpam ? 2 : undefined}
+                  maxLength={isSatpam ? 180 : undefined}
                   autoFocus
                   autoComplete="off"
                 />
