@@ -25,7 +25,7 @@ import {
   bansosSubjectText,
   formatBansosDate,
   formatRupiah,
-} from '@/components/bansos/BansosParts';
+} from '@/components/santunan/SantunanParts';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FloatingSnackbar, type SnackbarMessage } from '@/components/ui/floating-snackbar';
@@ -43,16 +43,15 @@ import {
   BANSOS_RELATIONSHIPS,
   isBansosAwaiting,
   type BansosKind,
-  type BansosRequest,
-} from '@/lib/payroll/bansos';
+  type BansosEmployeeView,
+} from '@/lib/payroll/santunan';
 import { authenticatedFormData, authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 import { UPLOAD_ACCEPT, UPLOAD_TYPES_TEXT, uploadFileProblem } from '@/lib/uploadFileTypes';
 
 interface BansosData {
   employeeName: string;
   employeeClass: 'loyalis' | 'pekarya';
-  defaultAmounts: Record<BansosKind, number>;
-  requests: BansosRequest[];
+  requests: BansosEmployeeView[];
 }
 
 const SUBMITTER_ROLES = ['loyalis', 'honorer', 'ketua_shift_satpam'];
@@ -69,7 +68,7 @@ const KIND_DETAILS: Record<BansosKind, { icon: typeof Flower2; hint: string }> =
 };
 
 /** The icon tile and the two lines of a kind; `kind` null is the "nothing chosen yet" card. */
-function KindCard({ kind, amount, active }: { kind: BansosKind | null; amount?: number; active: boolean }) {
+function KindCard({ kind, active }: { kind: BansosKind | null; active: boolean }) {
   const Icon = kind ? KIND_DETAILS[kind].icon : HandHeart;
   return (
     <span className="flex min-w-0 flex-1 items-center gap-3">
@@ -79,7 +78,7 @@ function KindCard({ kind, amount, active }: { kind: BansosKind | null; amount?: 
       <span className="min-w-0">
         <span className="block text-sm font-bold text-slate-800">{kind ? BANSOS_KIND_LABELS[kind] : 'Pilih jenis ajuan'}</span>
         <span className="block text-xs text-slate-500">
-          {kind ? `${KIND_DETAILS[kind].hint}${amount ? ` · ${formatRupiah(amount)}` : ''}` : 'Duka atau Melahirkan'}
+          {kind ? KIND_DETAILS[kind].hint : 'Duka atau Melahirkan'}
         </span>
       </span>
     </span>
@@ -117,7 +116,7 @@ export default function BansosRequestPage() {
   const submissionIdRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [withdrawTarget, setWithdrawTarget] = useState<BansosRequest | null>(null);
+  const [withdrawTarget, setWithdrawTarget] = useState<BansosEmployeeView | null>(null);
   const [withdrawing, setWithdrawing] = useState(false);
 
   const load = useCallback(async () => {
@@ -127,7 +126,7 @@ export default function BansosRequestPage() {
     }
     setLoading(true);
     try {
-      setData(await authenticatedJson<BansosData>('/api/employee/bansos'));
+      setData(await authenticatedJson<BansosData>('/api/employee/santunan'));
       setLoadError('');
     } catch (cause) {
       setLoadError(cause instanceof Error ? cause.message : 'Data ajuan gagal dimuat.');
@@ -205,7 +204,7 @@ export default function BansosRequestPage() {
     form.set('file', proof!);
     setSending(true);
     try {
-      await authenticatedFormData('/api/employee/bansos', form);
+      await authenticatedFormData('/api/employee/santunan', form);
       resetForm();
       setNotice({ type: 'success', text: 'Ajuan terkirim. Admin Karyawan dan Super Admin akan memeriksanya.' });
       await load();
@@ -220,7 +219,7 @@ export default function BansosRequestPage() {
     if (!withdrawTarget || withdrawing) return;
     setWithdrawing(true);
     try {
-      await authenticatedJson(`/api/employee/bansos?requestId=${encodeURIComponent(withdrawTarget.id)}`, { method: 'DELETE' });
+      await authenticatedJson(`/api/employee/santunan?requestId=${encodeURIComponent(withdrawTarget.id)}`, { method: 'DELETE' });
       setNotice({ type: 'success', text: 'Ajuan ditarik.' });
       setWithdrawTarget(null);
       await load();
@@ -236,15 +235,13 @@ export default function BansosRequestPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 p-6">
         <div className="w-full max-w-md bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-8 text-center space-y-4">
-          <h1 className="text-lg font-bold text-slate-800">Ajuan Tunjangan Tidak Tersedia</h1>
+          <h1 className="text-lg font-bold text-slate-800">Ajuan Santunan Tidak Tersedia</h1>
           <p className="text-sm text-slate-500">Halaman ini untuk akun Loyalis atau Pekarya yang terhubung ke data pegawai.</p>
-          <Button className="rounded-sm" variant="outline" render={<Link href="/employee/payslip" />}>Kembali ke Slip Gaji</Button>
+          <Button className="rounded-sm" variant="outline" nativeButton={false} render={<Link href="/employee/payslip" />}>Kembali ke Slip Gaji</Button>
         </div>
       </div>
     );
   }
-
-  const amountFor = (value: BansosKind) => data?.defaultAmounts[value];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 font-sans selection:bg-indigo-100 relative overflow-hidden text-slate-800">
@@ -257,7 +254,7 @@ export default function BansosRequestPage() {
           <Link href="/employee/payslip" aria-label="Kembali ke Slip Gaji" className="rounded-sm p-2 text-slate-500 hover:bg-slate-100"><ChevronLeft className="size-5" /></Link>
           <div className="flex size-9 items-center justify-center rounded-sm bg-indigo-600 text-white"><HandHeart className="size-5" /></div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold text-slate-800">Ajuan Tunjangan</p>
+            <h1 className="truncate text-sm font-bold text-slate-800">Ajuan Santunan</h1>
             <p className="truncate text-xs text-slate-500">{profile?.displayName || profile?.email}</p>
           </div>
           <EmployeeNavigationMenu />
@@ -266,11 +263,6 @@ export default function BansosRequestPage() {
       </header>
 
       <main className="relative z-10 mx-auto max-w-3xl space-y-8 px-4 py-6 pb-24 sm:px-6 sm:py-8">
-        <div className="space-y-1">
-          <h1 className="text-3xl font-bold text-slate-800">Tunjangan</h1>
-          <p className="text-slate-500 text-sm">Ajukan santunan duka atau melahirkan. Admin Karyawan dan Super Admin memeriksa ajuan, lalu santunan dibayarkan bersama gaji.</p>
-        </div>
-
         {loadError && (
           <div role="alert" className="flex items-center gap-2 px-4 py-3 rounded-md text-sm font-medium bg-red-50 text-red-700 border border-red-200">
             <AlertCircle className="size-4 shrink-0" /> {loadError}
@@ -289,7 +281,7 @@ export default function BansosRequestPage() {
                     aria-labelledby="bansos-kind-label"
                     className="flex w-full items-center gap-3 rounded-md border border-slate-200 bg-white p-4 text-left transition-all hover:border-indigo-300 hover:bg-slate-50 focus-visible:border-indigo-500 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-indigo-500/25 data-[popup-open]:border-indigo-500 cursor-pointer"
                   >
-                    <KindCard kind={kind} amount={kind ? amountFor(kind) : undefined} active={Boolean(kind)} />
+                    <KindCard kind={kind} active={Boolean(kind)} />
                     <span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-indigo-600">
                       Ganti <ChevronsUpDown className="size-4" />
                     </span>
@@ -301,7 +293,7 @@ export default function BansosRequestPage() {
                         onClick={() => chooseKind(value)}
                         className="rounded-sm p-2.5 text-sm data-highlighted:bg-indigo-50"
                       >
-                        <KindCard kind={value} amount={amountFor(value)} active={kind === value} />
+                        <KindCard kind={value} active={kind === value} />
                         {kind === value && <Check className="size-4 shrink-0 text-indigo-600" />}
                       </DropdownMenuItem>
                     ))}
@@ -405,11 +397,6 @@ export default function BansosRequestPage() {
                       </p>
                     )}
                   </div>
-
-                  <div className="rounded-md border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm text-slate-600">
-                    Santunan: <span className="font-bold text-slate-800">{amountFor(kind) ? formatRupiah(amountFor(kind)!) : '—'}</span>
-                    <span className="text-slate-500"> · dapat disesuaikan Super Admin</span>
-                  </div>
                 </>
               )}
 
@@ -452,10 +439,12 @@ export default function BansosRequestPage() {
                   <SideDecision request={item} side="finance" />
                 </div>
               )}
-              <p className="text-sm text-slate-600">
-                Santunan <span className="font-bold text-slate-800">{formatRupiah(item.amount)}</span>
-                {item.status === 'paid' ? ' · dibayarkan bersama gaji' : ''}
-              </p>
+              {item.amount !== undefined && (
+                <p className="text-sm text-slate-600">
+                  Santunan <span className="font-bold text-slate-800">{formatRupiah(item.amount)}</span>
+                  {item.status === 'paid' ? ' · dibayarkan bersama gaji' : ' · sudah diserahkan'}
+                </p>
+              )}
               <div className="flex flex-wrap items-center gap-2">
                 <BansosProofButton request={item} />
                 {isBansosAwaiting(item.status) && (

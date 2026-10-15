@@ -15,10 +15,11 @@ import {
   BANSOS_SIDE_LABELS,
   BANSOS_STATUS_LABELS,
   bansosRelationshipLabel,
+  type BansosEmployeeView,
   type BansosRequest,
   type BansosSide,
   type BansosStatus,
-} from '@/lib/payroll/bansos';
+} from '@/lib/payroll/santunan';
 import { uploadFileTypeFor } from '@/lib/uploadFileTypes';
 
 /** Pieces shared by the employee page, the Admin Karyawan page and the Vakasi panel. */
@@ -44,7 +45,7 @@ export function formatBansosPeriod(period: string): string {
 }
 
 /** "Ayah · Pak Darmo" for Duka, "Bayi: Aisyah" (or "—") for Melahirkan. */
-export function bansosSubjectText(request: BansosRequest): string {
+export function bansosSubjectText(request: BansosEmployeeView): string {
   if (request.kind === 'duka') {
     return [bansosRelationshipLabel(request), request.subjectName].filter(Boolean).join(' · ');
   }
@@ -56,6 +57,8 @@ const STATUS_STYLES: Record<BansosStatus, string> = {
   awaiting_admin: 'bg-amber-50 text-amber-700 border-amber-200',
   awaiting_finance: 'bg-amber-50 text-amber-700 border-amber-200',
   paid: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  awaiting_handover: 'bg-sky-50 text-sky-700 border-sky-200',
+  handed_over: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   rejected: 'bg-rose-50 text-rose-700 border-rose-200',
   withdrawn: 'bg-slate-100 text-slate-700 border-slate-200',
 };
@@ -81,7 +84,7 @@ export function EmployeeClassBadge({ request }: { request: BansosRequest }) {
 }
 
 /** One side's decision as a quiet line: a dot, who, and what they decided. */
-export function SideDecision({ request, side }: { request: BansosRequest; side: BansosSide }) {
+export function SideDecision({ request, side }: { request: BansosEmployeeView; side: BansosSide }) {
   const decision = side === 'admin' ? request.adminDecision : request.financeDecision;
   const reason = side === 'admin' ? request.adminReason : request.financeReason;
   const by = side === 'admin' ? request.adminByName : request.financeByName;
@@ -100,7 +103,7 @@ export function SideDecision({ request, side }: { request: BansosRequest; side: 
 }
 
 /** Opens the proof: images and PDFs inline, other formats as a download. */
-export function BansosProofButton({ request, className = '' }: { request: BansosRequest; className?: string }) {
+export function BansosProofButton({ request, className = '' }: { request: BansosEmployeeView; className?: string }) {
   const [open, setOpen] = useState(false);
   const type = uploadFileTypeFor(request.proofContentType);
   const isPdf = type?.mime === 'application/pdf';
@@ -134,6 +137,7 @@ export function BansosProofButton({ request, className = '' }: { request: Bansos
           <DialogFooter>
             <Button
               variant="outline"
+              nativeButton={false}
               className="rounded-sm border-slate-200"
               render={<a href={request.proofUrl} target="_blank" rel="noopener noreferrer" download={request.proofName} />}
             >

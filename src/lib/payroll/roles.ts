@@ -35,7 +35,7 @@ export const LEGACY_ROLE_ALIASES: Readonly<Record<string, UserRole>> = {
  */
 export const LOYALIS_ADMIN_PATHS = [
   '/dashboard/employees',
-  '/dashboard/bansos',
+  '/dashboard/santunan',
   '/dashboard/payroll/uraian/presensi-loyalis-raw',
   '/dashboard/payroll/uraian/senam-pagi',
   '/dashboard/payroll/uraian/presensi-pekarya',

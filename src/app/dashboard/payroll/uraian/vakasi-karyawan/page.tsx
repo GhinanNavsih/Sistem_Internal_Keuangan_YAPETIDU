@@ -42,8 +42,8 @@ import CetakKegiatanLoyalisDialog from '@/components/CetakKegiatanLoyalisDialog'
 import { generateKegiatanLoyalisRecapPdf } from '@/utils/generateKegiatanLoyalisRecapPdf';
 import { generateKegiatanLoyalisRecapXlsx } from '@/utils/generateKegiatanLoyalisRecapXlsx';
 import { isProposalLpjSandboxSource } from '@/lib/payroll/vakasiTambahan';
-import { BANSOS_EVENT_SOURCE_KIND, isBansosKind } from '@/lib/payroll/bansos';
-import BansosEventPanel from '@/components/vakasi/BansosEventPanel';
+import { BANSOS_EVENT_SOURCE_KIND, isBansosKind } from '@/lib/payroll/santunan';
+import SantunanEventPanel from '@/components/vakasi/SantunanEventPanel';
 import BonusTriwulanEventPanel from '@/components/vakasi/BonusTriwulanEventPanel';
 import { BONUS_TRIWULAN_SOURCE_KIND } from '@/lib/payroll/bonusTriwulan';
 import { canRecordSenamPagi } from '@/lib/payroll/roles';
@@ -1096,7 +1096,7 @@ export default function VakasiKaryawanPage() {
               showSenamPagiLink={canRecordSenamPagi(profile?.role) || profile?.role === 'finance_verifier'}
             />
           ) : selectedBansosEvent && isBansosKind(selectedBansosEvent.bansosKind) ? (
-            <BansosEventPanel
+            <SantunanEventPanel
               key={selectedBansosEvent.id}
               period={selectedBansosEvent.period}
               kind={selectedBansosEvent.bansosKind}

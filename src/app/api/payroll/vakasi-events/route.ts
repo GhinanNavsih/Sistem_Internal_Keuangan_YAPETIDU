@@ -4,7 +4,7 @@ import admin, { adminDb } from '@/lib/firebase-admin';
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { assertRequestId } from '@/lib/payroll/domain';
 import { URAIAN_EDITOR_ROLES } from '@/lib/payroll/roles';
-import { BANSOS_EVENT_SOURCE_KIND, isBansosEventId } from '@/lib/payroll/bansos';
+import { BANSOS_EVENT_SOURCE_KIND, isBansosEventId } from '@/lib/payroll/santunan';
 import { BONUS_TRIWULAN_SOURCE_KIND, isBonusTriwulanEventId } from '@/lib/payroll/bonusTriwulan';
 import {
   isProposalLpjSandboxSource,

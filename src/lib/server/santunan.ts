@@ -4,12 +4,15 @@ import {
   BANSOS_EVENT_SOURCE_KIND,
   BANSOS_KIND_LABELS,
   BANSOS_REQUESTS_COLLECTION,
+  assertBansosHandover,
   bansosCounts,
   bansosEventId,
+  bansosPaidInCash,
   bansosPayoutPeriod,
   bansosStatus,
   buildBansosEventWorkers,
   defaultBansosAmount,
+  isBansosAwaiting,
   isBansosKind,
   planBansosDecision,
   possibleDuplicate,
@@ -19,7 +22,7 @@ import {
   type BansosRequest,
   type BansosSide,
   type BansosSubmission,
-} from '@/lib/payroll/bansos';
+} from '@/lib/payroll/santunan';
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { assertRequestId } from '@/lib/payroll/domain';
 import {
@@ -47,6 +50,11 @@ const SIDE_BY_ROLE: Partial<Record<AuthenticatedProfile['role'], BansosSide>> = 
   loyalis_admin: 'admin',
   super_admin: 'finance',
 };
+
+/** The side a role decides, if any. Both deciders may also mark a Duka handed over. */
+export function bansosSideForRole(role: AuthenticatedProfile['role']): BansosSide | undefined {
+  return SIDE_BY_ROLE[role];
+}
 
 function requests() {
   return adminDb.collection(BANSOS_REQUESTS_COLLECTION);
@@ -80,6 +88,8 @@ export function serializeBansosRequest(id: string, data: FirebaseFirestore.Docum
   const adminDecision = decision(data.adminDecision);
   const financeDecision = decision(data.financeDecision);
   const withdrawn = data.withdrawn === true;
+  const handedOver = data.handedOver === true;
+  const kind = isBansosKind(data.kind) ? data.kind : 'duka';
   const employeeCollection = vakasiWorkerCollection(data as VakasiWorkerLike);
   return {
     id,
@@ -88,7 +98,7 @@ export function serializeBansosRequest(id: string, data: FirebaseFirestore.Docum
     employeeClass: data.employeeClass === 'pekarya' ? 'pekarya' : 'loyalis',
     employeeName: String(data.employeeName || ''),
     ...(optionalString(data.jobCategory) ? { jobCategory: String(data.jobCategory) } : {}),
-    kind: isBansosKind(data.kind) ? data.kind : 'duka',
+    kind,
     eventDate: String(data.eventDate || ''),
     subjectName: String(data.subjectName || ''),
     ...(optionalString(data.relationship) ? { relationship: data.relationship } : {}),
@@ -110,7 +120,10 @@ export function serializeBansosRequest(id: string, data: FirebaseFirestore.Docum
     period: String(data.period || ''),
     ...(optionalString(data.paidPeriod) ? { paidPeriod: String(data.paidPeriod) } : {}),
     withdrawn,
-    status: bansosStatus({ adminDecision, financeDecision, withdrawn }),
+    handedOver,
+    ...(optionalString(data.handedOverByName) ? { handedOverByName: String(data.handedOverByName) } : {}),
+    ...(data.handedOverAt ? { handedOverAt: timestampToIso(data.handedOverAt) } : {}),
+    status: bansosStatus({ kind, adminDecision, financeDecision, withdrawn, handedOver }),
     revision: Number(data.revision || 1),
     submittedAt: timestampToIso(data.submittedAt),
   };
@@ -341,8 +354,9 @@ export interface CreateBansosInput {
 }
 
 /**
- * Stores a new ajuan and makes sure its month's event exists, so it shows in
- * the Vakasi list straight away. The proof is already uploaded by the caller.
+ * Stores a new ajuan. For Melahirkan it also makes sure its month's event
+ * exists, so it shows in the Vakasi list straight away; Duka is paid in cash
+ * and has no event. The proof is already uploaded by the caller.
  */
 export async function createBansosRequest(
   actor: AuthenticatedProfile,
@@ -389,6 +403,7 @@ export async function createBansosRequest(
       fingerprint: input.fingerprint,
       adminDecision: 'pending',
       financeDecision: 'pending',
+      handedOver: false,
       amount: defaultBansosAmount(input.submission.kind, employee.employeeClass),
       period,
       withdrawn: false,
@@ -396,12 +411,12 @@ export async function createBansosRequest(
       submittedAt: now,
     };
     const created = serializeBansosRequest(input.requestId, { ...stored, submittedAt: new Date().toISOString() });
-    const sync = await prepareBansosEventSync(transaction, {
-      period, kind: input.submission.kind, changed: created, actor, now,
-    });
+    const sync = bansosPaidInCash(input.submission.kind)
+      ? null
+      : await prepareBansosEventSync(transaction, { period, kind: input.submission.kind, changed: created, actor, now });
 
     transaction.create(requestRef, stored);
-    sync.write();
+    sync?.write();
     transaction.create(newFinancialAuditRef(), buildFinancialAuditRecord(actor, {
       action: 'BANSOS_SUBMITTED',
       entityType: BANSOS_REQUESTS_COLLECTION,
@@ -428,16 +443,18 @@ export async function withdrawBansosRequest(
     }
     const current = serializeBansosRequest(snapshot.id, snapshot.data()!);
     if (current.status === 'withdrawn') return { requestId, status: 'withdrawn' };
-    if (current.status === 'paid' || current.status === 'rejected') {
+    if (!isBansosAwaiting(current.status)) {
       throw new HttpError(409, 'Ajuan yang sudah disetujui atau ditolak tidak dapat ditarik.');
     }
     const now = admin.firestore.FieldValue.serverTimestamp();
     const changed: BansosRequest = { ...current, withdrawn: true, status: 'withdrawn', revision: current.revision + 1 };
-    const sync = await prepareBansosEventSync(transaction, {
-      period: bansosPayoutPeriod(current), kind: current.kind, changed, actor, now,
-    });
+    const sync = bansosPaidInCash(current.kind)
+      ? null
+      : await prepareBansosEventSync(transaction, {
+        period: bansosPayoutPeriod(current), kind: current.kind, changed, actor, now,
+      });
     transaction.update(requestRef, { withdrawn: true, withdrawnAt: now, revision: changed.revision });
-    sync.write();
+    sync?.write();
     transaction.create(newFinancialAuditRef(), buildFinancialAuditRecord(actor, {
       action: 'BANSOS_WITHDRAWN',
       entityType: BANSOS_REQUESTS_COLLECTION,
@@ -461,21 +478,34 @@ async function withDuplicateFlags(list: BansosRequest[]): Promise<BansosRequest[
   return list.map((request) => ({ ...request, possibleDuplicate: possibleDuplicate(request, others) }));
 }
 
-export type BansosReviewTab = 'waiting' | 'decided' | 'all';
+export type BansosReviewTab = 'waiting' | 'handover' | 'decided' | 'all';
+
+export function isBansosReviewTab(value: unknown): value is BansosReviewTab {
+  return value === 'waiting' || value === 'handover' || value === 'decided' || value === 'all';
+}
 
 /**
- * The Admin Karyawan list. "waiting" is what still needs their decision;
- * "decided" what they already decided.
+ * The Verifikasi Ajuan Santunan list, seen from one side. "waiting" is what
+ * still needs that side's decision (for Super Admin only Duka: Melahirkan is
+ * decided in the Vakasi page), "handover" the Duka whose cash is still to be
+ * handed over, "decided" what that side already decided.
  */
-export async function listBansosForReview(tab: BansosReviewTab): Promise<BansosRequest[]> {
+export async function listBansosForReview(tab: BansosReviewTab, side: BansosSide = 'admin'): Promise<BansosRequest[]> {
+  const decisionField = side === 'admin' ? 'adminDecision' : 'financeDecision';
   const snapshot = tab === 'waiting'
-    ? await requests().where('adminDecision', '==', 'pending').get()
-    : tab === 'decided'
-      ? await requests().where('adminDecision', 'in', ['accepted', 'rejected']).get()
-      : await requests().orderBy('submittedAt', 'desc').limit(300).get();
+    ? await requests().where(decisionField, '==', 'pending').get()
+    : tab === 'handover'
+      ? await requests().where('adminDecision', '==', 'accepted').get()
+      : tab === 'decided'
+        ? await requests().where(decisionField, 'in', ['accepted', 'rejected']).get()
+        : await requests().orderBy('submittedAt', 'desc').limit(300).get();
   const list = snapshot.docs
     .map((doc) => serializeBansosRequest(doc.id, doc.data()))
-    .filter((request) => tab !== 'waiting' || (request.status !== 'withdrawn' && request.status !== 'rejected'))
+    .filter((request) => {
+      if (tab === 'waiting') return isBansosAwaiting(request.status) && (side === 'admin' || bansosPaidInCash(request.kind));
+      if (tab === 'handover') return request.status === 'awaiting_handover';
+      return true;
+    })
     .sort((left, right) => right.submittedAt.localeCompare(left.submittedAt));
   return withDuplicateFlags(list);
 }
@@ -505,22 +535,31 @@ export interface BansosDecisionCommand {
   amount?: number;
 }
 
-export function parseBansosDecisionCommand(raw: unknown): BansosDecisionCommand {
+export type BansosHandoverCommand = Pick<BansosDecisionCommand, 'requestId' | 'bansosRequestId' | 'expectedRevision'> & {
+  action: 'handover';
+};
+
+/** A reviewer's POST: one side's decision, or marking a Duka's cash handed over. */
+export function parseBansosReviewCommand(raw: unknown): BansosDecisionCommand | BansosHandoverCommand {
   if (!raw || typeof raw !== 'object') throw new HttpError(400, 'Perintah tidak valid.');
   const value = raw as Record<string, unknown>;
   const action = value.action;
-  if (action !== 'accept' && action !== 'reject' && action !== 'reset') {
+  if (action !== 'accept' && action !== 'reject' && action !== 'reset' && action !== 'handover') {
     throw new HttpError(400, 'Tindakan tidak valid.');
   }
   const expectedRevision = value.expectedRevision;
   if (typeof expectedRevision !== 'number' || !Number.isSafeInteger(expectedRevision) || expectedRevision < 1) {
     throw new HttpError(400, 'Revisi ajuan wajib dikirim. Muat ulang data.');
   }
-  return {
+  const base = {
     requestId: parseBansosId(value.requestId, 'requestId tidak valid.'),
     bansosRequestId: parseBansosId(value.bansosRequestId),
-    action,
     expectedRevision,
+  };
+  if (action === 'handover') return { ...base, action };
+  return {
+    ...base,
+    action,
     ...(typeof value.reason === 'string' ? { reason: value.reason } : {}),
     ...(value.amount !== undefined ? { amount: value.amount as number } : {}),
   };
@@ -535,11 +574,22 @@ export interface BansosDecisionResult {
   idempotent?: boolean;
 }
 
+function replayedResult(bansosRequestId: string, previous: FirebaseFirestore.DocumentData): BansosDecisionResult {
+  return {
+    bansosRequestId,
+    status: String(previous.resultingStatus || ''),
+    revision: Number(previous.revision || 0),
+    ...(previous.paidPeriod ? { paidPeriod: String(previous.paidPeriod) } : {}),
+    propagationSummary: {},
+    idempotent: true,
+  };
+}
+
 /**
  * One reviewer's decision. Admin Karyawan decides the "admin" side, Super Admin
- * the "finance" side (and the amount); neither can decide for the other. When
- * the ajuan starts or stops being paid, its month's event is rebuilt in the
- * same transaction and the slips are refreshed after it.
+ * the "finance" side; neither can decide for the other. When a Melahirkan
+ * starts or stops being paid, its month's event is rebuilt in the same
+ * transaction and the slips are refreshed after it. A Duka has no event.
  */
 export async function decideBansos(
   actor: AuthenticatedProfile,
@@ -560,17 +610,7 @@ export async function decideBansos(
       if (previous.requestHash !== requestHash) {
         throw new HttpError(409, 'requestId sudah digunakan untuk keputusan lain.');
       }
-      return {
-        result: {
-          bansosRequestId: command.bansosRequestId,
-          status: String(previous.resultingStatus || ''),
-          revision: Number(previous.revision || 0),
-          ...(previous.paidPeriod ? { paidPeriod: String(previous.paidPeriod) } : {}),
-          propagationSummary: {},
-          idempotent: true,
-        },
-        syncs: [] as EventSync[],
-      };
+      return { result: replayedResult(command.bansosRequestId, previous), syncs: [] as EventSync[] };
     }
     if (!snapshot.exists) throw new HttpError(404, 'Ajuan tidak ditemukan.');
     const current = serializeBansosRequest(snapshot.id, snapshot.data()!);
@@ -642,7 +682,9 @@ export async function decideBansos(
     };
     changed.status = bansosStatus(changed);
 
-    const periods = [...new Set([bansosPayoutPeriod(current), bansosPayoutPeriod(changed)])];
+    const periods = bansosPaidInCash(current.kind)
+      ? []
+      : [...new Set([bansosPayoutPeriod(current), bansosPayoutPeriod(changed)])];
     const syncs: EventSync[] = [];
     for (const period of periods) {
       syncs.push(await prepareBansosEventSync(transaction, {
@@ -715,4 +757,69 @@ export async function decideBansos(
     ...outcome.result,
     propagationSummary: await propagate(actor, outcome.syncs, command.requestId),
   };
+}
+
+/**
+ * Admin Karyawan or Super Admin records that a Duka's cash was handed over.
+ * It must be accepted by both first; afterwards neither decision can change.
+ */
+export async function markBansosHandedOver(
+  actor: AuthenticatedProfile,
+  command: BansosHandoverCommand,
+): Promise<BansosDecisionResult> {
+  if (!SIDE_BY_ROLE[actor.role]) throw new HttpError(403, 'Anda tidak berhak menandai penyerahan santunan.');
+  const requestRef = requests().doc(command.bansosRequestId);
+  const idempotencyRef = adminDb
+    .collection('FinancialIdempotencyKeys')
+    .doc(`${actor.uid}__bansos__${command.requestId}`);
+  const requestHash = createHash('sha256').update(JSON.stringify(command)).digest('hex');
+
+  return adminDb.runTransaction(async (transaction) => {
+    const [snapshot, idempotency] = await transaction.getAll(requestRef, idempotencyRef);
+    if (idempotency.exists) {
+      const previous = idempotency.data()!;
+      if (previous.requestHash !== requestHash) {
+        throw new HttpError(409, 'requestId sudah digunakan untuk keputusan lain.');
+      }
+      return replayedResult(command.bansosRequestId, previous);
+    }
+    if (!snapshot.exists) throw new HttpError(404, 'Ajuan tidak ditemukan.');
+    const current = serializeBansosRequest(snapshot.id, snapshot.data()!);
+    if (current.revision !== command.expectedRevision) {
+      throw new HttpError(409, 'Ajuan telah berubah di perangkat lain. Muat ulang sebelum melanjutkan.');
+    }
+    try {
+      assertBansosHandover(current);
+    } catch (error) {
+      throw new HttpError(409, error instanceof Error ? error.message : 'Penyerahan tidak dapat dicatat.');
+    }
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const revision = current.revision + 1;
+    transaction.update(requestRef, {
+      handedOver: true,
+      handedOverAt: now,
+      handedOverBy: actor.uid,
+      handedOverByName: actor.displayName || actor.email || null,
+      revision,
+      updatedAt: now,
+    });
+    transaction.create(newFinancialAuditRef(), buildFinancialAuditRecord(actor, {
+      action: 'BANSOS_HANDED_OVER',
+      entityType: BANSOS_REQUESTS_COLLECTION,
+      entityId: command.bansosRequestId,
+      reason: `${BANSOS_KIND_LABELS[current.kind]} diserahkan tunai`,
+      requestId: command.requestId,
+      before: { handedOver: false },
+      after: { handedOver: true, amount: current.amount },
+    }));
+    transaction.create(idempotencyRef, {
+      requestHash,
+      entityId: command.bansosRequestId,
+      revision,
+      resultingStatus: 'handed_over',
+      createdAt: now,
+    });
+    return { bansosRequestId: command.bansosRequestId, status: 'handed_over', revision, propagationSummary: {} };
+  });
 }

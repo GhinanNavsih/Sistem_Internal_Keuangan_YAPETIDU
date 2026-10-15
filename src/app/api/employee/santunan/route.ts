@@ -2,9 +2,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { adminStorage } from '@/lib/firebase-admin';
 import {
-  BANSOS_DEFAULT_AMOUNTS,
+  bansosEmployeeView,
   validateBansosSubmission,
-} from '@/lib/payroll/bansos';
+} from '@/lib/payroll/santunan';
 import { detectUploadFileType, MAX_UPLOAD_BYTES } from '@/lib/uploadFileTypes';
 import { errorResponse, HttpError, requireAuthenticatedProfile } from '@/lib/server/auth';
 import {
@@ -13,7 +13,7 @@ import {
   parseBansosId,
   requireSelfBansosEmployee,
   withdrawBansosRequest,
-} from '@/lib/server/bansos';
+} from '@/lib/server/santunan';
 import { jakartaToday } from '@/lib/server/payrollPeriod';
 import { saveUploadedFile, sanitizePathSegment } from '@/lib/server/storageUpload';
 
@@ -29,11 +29,8 @@ export async function GET(request: NextRequest) {
       employeeId: employee.id,
       employeeName: employee.name,
       employeeClass: employee.employeeClass,
-      defaultAmounts: {
-        duka: BANSOS_DEFAULT_AMOUNTS.duka[employee.employeeClass],
-        melahirkan: BANSOS_DEFAULT_AMOUNTS.melahirkan[employee.employeeClass],
-      },
-      requests: await listOwnBansosRequests(employee.id),
+      // The amount stays hidden until it is paid.
+      requests: (await listOwnBansosRequests(employee.id)).map(bansosEmployeeView),
     }, { headers: responseHeaders });
   } catch (error) {
     return errorResponse(error);

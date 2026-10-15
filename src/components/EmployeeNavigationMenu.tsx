@@ -141,13 +141,13 @@ export default function EmployeeNavigationMenu() {
               Pengajuan T. Keluarga
             </DropdownMenuItem>
           )}
-          {(isLoyalis || isBlueCollarHonorer) && pathname !== '/employee/bansos' && (
+          {(isLoyalis || isBlueCollarHonorer) && pathname !== '/employee/santunan' && (
             <DropdownMenuItem
               className="min-h-11 rounded-sm px-3.5 py-2.5 text-sm"
-              render={<Link href="/employee/bansos" />}
+              render={<Link href="/employee/santunan" />}
             >
               <HandHeart className="text-rose-500" />
-              Ajuan Tunjangan
+              Ajuan Santunan
             </DropdownMenuItem>
           )}
           {isSopir && pathname !== '/employee/driver-history' && (

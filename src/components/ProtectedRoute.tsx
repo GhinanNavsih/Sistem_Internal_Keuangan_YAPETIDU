@@ -20,7 +20,7 @@ const LOYALIS_ROUTES = [
   '/employee/presensi-correction',
   '/employee/leave',
   '/employee/family-allowance',
-  '/employee/bansos',
+  '/employee/santunan',
   '/employee/facility-reports',
   '/employee/simpan-pinjam',
 ];

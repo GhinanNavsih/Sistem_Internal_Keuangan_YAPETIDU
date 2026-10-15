@@ -1,14 +1,18 @@
 import type { ResolvedVakasiWorker, VakasiEmployeeCollection } from './vakasiTambahan';
 
 /**
- * BanSos (bantuan sosial): Ajuan Duka and Ajuan Melahirkan.
+ * Santunan (formerly BanSos): Ajuan Duka and Ajuan Melahirkan.
  *
  * An employee (Loyalis or Pekarya) submits an ajuan with proof. Two people
  * decide on it in either order: Admin Karyawan (the "admin" side) and Super
- * Admin (the "finance" side, who also sets the amount). Once both accept, the
- * ajuan is paid through one VakasiTambahan event per month and kind, named
- * "Ajuan Duka" / "Ajuan Melahirkan", which every payroll reader already knows
- * how to pay.
+ * Admin (the "finance" side). Either may set the amount when accepting, but
+ * Admin Karyawan cannot change it once Super Admin has accepted, so Super Admin
+ * has the last word. Once both accept:
+ * - Melahirkan is paid on the slip through one VakasiTambahan event per month,
+ *   named "Ajuan Melahirkan", which every payroll reader already knows how to pay;
+ * - Duka is handed over in cash, and either of them then marks it handed over.
+ *
+ * The employee does not see the amount until it is paid.
  *
  * Pure module, no Firebase, so the rules are unit tested and shared by the
  * pages and the API.
@@ -28,7 +32,12 @@ export type BansosStatus =
   | 'awaiting_both'
   | 'awaiting_admin'
   | 'awaiting_finance'
+  /** Melahirkan, both accepted: on the slip. */
   | 'paid'
+  /** Duka, both accepted: the cash is still to be handed over. */
+  | 'awaiting_handover'
+  /** Duka: the cash was handed over. */
+  | 'handed_over'
   | 'rejected'
   | 'withdrawn';
 
@@ -40,24 +49,32 @@ export const BANSOS_KIND_LABELS: Readonly<Record<BansosKind, string>> = {
 
 export const BANSOS_DEFAULT_AMOUNTS: Readonly<Record<BansosKind, Readonly<Record<BansosEmployeeClass, number>>>> = {
   duka: { loyalis: 1_000_000, pekarya: 750_000 },
-  melahirkan: { loyalis: 500_000, pekarya: 500_000 },
+  melahirkan: { loyalis: 500_000, pekarya: 300_000 },
 };
 
 /** Same ceiling as one Vakasi recipient. */
 export const BANSOS_MAX_AMOUNT = 100_000_000;
 
-/** Whose death an Ajuan Duka is for. Any family member counts; Admin Karyawan judges. */
+/**
+ * Whose death an Ajuan Duka is for: birth parents and children, or "Lainnya"
+ * with a typed-in relationship that Admin Karyawan judges.
+ */
 export const BANSOS_RELATIONSHIPS = [
-  { value: 'pasangan', label: 'Suami/Istri' },
+  { value: 'ibu', label: 'Ibu Kandung' },
+  { value: 'ayah', label: 'Ayah Kandung' },
   { value: 'anak', label: 'Anak' },
-  { value: 'ayah', label: 'Ayah' },
-  { value: 'ibu', label: 'Ibu' },
-  { value: 'ayah_mertua', label: 'Ayah Mertua' },
-  { value: 'ibu_mertua', label: 'Ibu Mertua' },
-  { value: 'saudara_kandung', label: 'Saudara Kandung' },
   { value: 'lainnya', label: 'Lainnya' },
 ] as const;
 export type BansosRelationship = (typeof BANSOS_RELATIONSHIPS)[number]['value'];
+
+/** No longer offered; ajuan stored with these still show their label. */
+const BANSOS_RETIRED_RELATIONSHIPS = [
+  { value: 'pasangan', label: 'Suami/Istri' },
+  { value: 'ayah_mertua', label: 'Ayah Mertua' },
+  { value: 'ibu_mertua', label: 'Ibu Mertua' },
+  { value: 'saudara_kandung', label: 'Saudara Kandung' },
+] as const;
+export type StoredBansosRelationship = BansosRelationship | (typeof BANSOS_RETIRED_RELATIONSHIPS)[number]['value'];
 
 export const BANSOS_SIDE_LABELS: Readonly<Record<BansosSide, string>> = {
   admin: 'Admin Karyawan',
@@ -69,6 +86,8 @@ export const BANSOS_STATUS_LABELS: Readonly<Record<BansosStatus, string>> = {
   awaiting_admin: 'Menunggu Admin Karyawan',
   awaiting_finance: 'Menunggu Super Admin',
   paid: 'Disetujui',
+  awaiting_handover: 'Menunggu penyerahan',
+  handed_over: 'Selesai',
   rejected: 'Ditolak',
   withdrawn: 'Ditarik',
 };
@@ -86,7 +105,7 @@ export interface BansosRequest {
   eventDate: string;
   /** Duka: who died. Melahirkan: the baby's name, if given. */
   subjectName: string;
-  relationship?: BansosRelationship;
+  relationship?: StoredBansosRelationship;
   relationshipOther?: string;
   note?: string;
   proofName: string;
@@ -107,12 +126,19 @@ export interface BansosRequest {
   /** Set only when it was paid in a later month because `period` had closed. */
   paidPeriod?: string;
   withdrawn: boolean;
+  /** Duka only: the cash was handed over. */
+  handedOver: boolean;
+  handedOverByName?: string;
+  handedOverAt?: string;
   status: BansosStatus;
   revision: number;
   submittedAt: string;
   /** Reviewer pages only: another live ajuan looks like the same event. */
   possibleDuplicate?: boolean;
 }
+
+/** An ajuan as its employee sees it: the amount only once it is paid. */
+export type BansosEmployeeView = Omit<BansosRequest, 'amount' | 'possibleDuplicate'> & { amount?: number };
 
 export function isBansosKind(value: unknown): value is BansosKind {
   return typeof value === 'string' && (BANSOS_KINDS as readonly string[]).includes(value);
@@ -124,7 +150,7 @@ export function isBansosRelationship(value: unknown): value is BansosRelationshi
 
 export function bansosRelationshipLabel(request: Pick<BansosRequest, 'relationship' | 'relationshipOther'>): string {
   if (request.relationship === 'lainnya') return request.relationshipOther || 'Lainnya';
-  return BANSOS_RELATIONSHIPS.find((option) => option.value === request.relationship)?.label || '';
+  return [...BANSOS_RELATIONSHIPS, ...BANSOS_RETIRED_RELATIONSHIPS].find((option) => option.value === request.relationship)?.label || '';
 }
 
 export function employeeClassForCollection(collection: VakasiEmployeeCollection): BansosEmployeeClass {
@@ -133,6 +159,11 @@ export function employeeClassForCollection(collection: VakasiEmployeeCollection)
 
 export function defaultBansosAmount(kind: BansosKind, employeeClass: BansosEmployeeClass): number {
   return BANSOS_DEFAULT_AMOUNTS[kind][employeeClass];
+}
+
+/** Duka is handed over in cash; Melahirkan is paid on the slip. */
+export function bansosPaidInCash(kind: BansosKind): boolean {
+  return kind === 'duka';
 }
 
 /** The one VakasiTambahan document holding every ajuan of a kind paid in a month. */
@@ -145,13 +176,18 @@ export function isBansosEventId(eventId: string): boolean {
 }
 
 export function bansosStatus(request: {
+  kind: BansosKind;
   adminDecision: BansosDecision;
   financeDecision: BansosDecision;
   withdrawn?: boolean;
+  handedOver?: boolean;
 }): BansosStatus {
   if (request.withdrawn) return 'withdrawn';
   if (request.adminDecision === 'rejected' || request.financeDecision === 'rejected') return 'rejected';
-  if (request.adminDecision === 'accepted' && request.financeDecision === 'accepted') return 'paid';
+  if (request.adminDecision === 'accepted' && request.financeDecision === 'accepted') {
+    if (!bansosPaidInCash(request.kind)) return 'paid';
+    return request.handedOver ? 'handed_over' : 'awaiting_handover';
+  }
   if (request.adminDecision === 'accepted') return 'awaiting_finance';
   if (request.financeDecision === 'accepted') return 'awaiting_admin';
   return 'awaiting_both';
@@ -159,6 +195,19 @@ export function bansosStatus(request: {
 
 export function isBansosAwaiting(status: BansosStatus): boolean {
   return status === 'awaiting_both' || status === 'awaiting_admin' || status === 'awaiting_finance';
+}
+
+/** Accepted by both sides, whether paid on the slip or (to be) handed over. */
+export function isBansosApproved(status: BansosStatus): boolean {
+  return status === 'paid' || status === 'awaiting_handover' || status === 'handed_over';
+}
+
+/** Hides the amount from the employee until it is on the slip or in their hands. */
+export function bansosEmployeeView(request: BansosRequest): BansosEmployeeView {
+  const view: BansosEmployeeView & { possibleDuplicate?: boolean } = { ...request };
+  delete view.possibleDuplicate;
+  if (request.status !== 'paid' && request.status !== 'handed_over') delete view.amount;
+  return view;
 }
 
 /** The month a paid ajuan is paid in. */
@@ -255,9 +304,11 @@ export function possibleDuplicate(
 }
 
 export interface BansosDecisionState {
+  kind: BansosKind;
   adminDecision: BansosDecision;
   financeDecision: BansosDecision;
   withdrawn?: boolean;
+  handedOver?: boolean;
   amount: number;
 }
 
@@ -265,6 +316,7 @@ export interface BansosDecisionPlan {
   decision: BansosDecision;
   reason: string | null;
   amount: number;
+  /** On the slip before / after this decision (never for Duka, which is paid in cash). */
   wasPaid: boolean;
   willBePaid: boolean;
 }
@@ -272,7 +324,9 @@ export interface BansosDecisionPlan {
 /**
  * What one side's decision does to an ajuan. Each side changes only its own
  * decision; a decided side must reset before deciding again, and a rejection
- * by either side ends the ajuan for the other until it is reset.
+ * by either side ends the ajuan for the other until it is reset. Accepting may
+ * set the amount, except Admin Karyawan's once Super Admin has accepted. Once a
+ * Duka's cash is handed over, nothing changes any more.
  */
 export function planBansosDecision(
   request: BansosDecisionState,
@@ -281,9 +335,7 @@ export function planBansosDecision(
   input: { reason?: unknown; amount?: unknown } = {},
 ): BansosDecisionPlan {
   if (request.withdrawn) throw new Error('Ajuan ini sudah ditarik pegawai.');
-  if (side === 'admin' && input.amount !== undefined) {
-    throw new Error('Nominal hanya dapat diubah Super Admin.');
-  }
+  if (request.handedOver) throw new Error('Santunan ini sudah diserahkan, keputusannya tidak dapat diubah lagi.');
   const own = side === 'admin' ? request.adminDecision : request.financeDecision;
   const other = side === 'admin' ? request.financeDecision : request.adminDecision;
   const wasPaid = bansosStatus(request) === 'paid';
@@ -305,9 +357,12 @@ export function planBansosDecision(
       decision = 'rejected';
     } else {
       decision = 'accepted';
-      if (side === 'finance') {
+      if (input.amount !== undefined) {
         const parsed = parseBansosAmount(input.amount);
         if (parsed === null) throw new Error('Nominal harus berupa rupiah bulat antara Rp 1 dan Rp 100.000.000.');
+        if (side === 'admin' && request.financeDecision === 'accepted' && parsed !== request.amount) {
+          throw new Error('Nominal sudah ditetapkan Super Admin.');
+        }
         amount = parsed;
       }
     }
@@ -322,6 +377,18 @@ export function planBansosDecision(
     wasPaid,
     willBePaid: bansosStatus(next) === 'paid',
   };
+}
+
+/** Throws the message to show unless a Duka is accepted by both and not yet handed over. */
+export function assertBansosHandover(
+  request: Pick<BansosRequest, 'kind' | 'adminDecision' | 'financeDecision' | 'withdrawn' | 'handedOver'>,
+): void {
+  if (!bansosPaidInCash(request.kind)) throw new Error('Ajuan Melahirkan dibayar bersama gaji, bukan diserahkan tunai.');
+  const status = bansosStatus(request);
+  if (status === 'handed_over') throw new Error('Santunan ini sudah ditandai diserahkan.');
+  if (status !== 'awaiting_handover') {
+    throw new Error('Santunan baru dapat diserahkan setelah Admin Karyawan dan Super Admin sama-sama menerima.');
+  }
 }
 
 /**

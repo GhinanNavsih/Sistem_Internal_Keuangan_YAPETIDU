@@ -2,29 +2,45 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, HandHeart, Info, Loader2, RefreshCw } from 'lucide-react';
-import BansosReviewTable, { type BansosDecisionInput } from '@/components/bansos/BansosReviewTable';
+import SantunanReviewTable, { type BansosDecisionInput } from '@/components/santunan/SantunanReviewTable';
 import { FloatingSnackbar, type SnackbarMessage } from '@/components/ui/floating-snackbar';
 import { useAuth } from '@/lib/AuthContext';
-import type { BansosRequest } from '@/lib/payroll/bansos';
+import type { BansosRequest, BansosSide } from '@/lib/payroll/santunan';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 
 /**
- * Verifikasi Ajuan Tunjangan (BanSos): Admin Karyawan's side of each Ajuan Duka / Melahirkan.
- * Super Admin decides the other side (and the amount) in the Vakasi page, so
- * here Super Admin only looks.
+ * Verifikasi Ajuan Santunan (BanSos). Admin Karyawan decides its side of every
+ * Ajuan Duka / Melahirkan here. Super Admin decides Duka here too, while
+ * Melahirkan stays in the Vakasi page with the rest of the slip payouts.
+ * Either of them marks an accepted Duka handed over once the cash is given.
  */
 
-type Tab = 'waiting' | 'decided' | 'all';
+type Tab = 'waiting' | 'handover' | 'decided' | 'all';
 
-const TABS: { value: Tab; label: string }[] = [
-  { value: 'waiting', label: 'Menunggu Verifikasi' },
-  { value: 'decided', label: 'Sudah Diputuskan' },
-  { value: 'all', label: 'Semua' },
+const TABS: { value: Tab; label: string; empty: string }[] = [
+  { value: 'waiting', label: 'Menunggu Verifikasi', empty: 'Tidak ada ajuan yang menunggu verifikasi.' },
+  { value: 'handover', label: 'Menunggu Penyerahan', empty: 'Tidak ada santunan duka yang menunggu diserahkan.' },
+  { value: 'decided', label: 'Sudah Diputuskan', empty: 'Belum ada ajuan.' },
+  { value: 'all', label: 'Semua', empty: 'Belum ada ajuan.' },
 ];
+
+const DECISION_NOTICES: Record<string, string> = {
+  paid: 'Ajuan disetujui dan santunan masuk ke slip/SPJ.',
+  awaiting_handover: 'Ajuan disetujui. Serahkan santunan tunai, lalu tandai sudah diserahkan.',
+  awaiting_finance: 'Ajuan diterima. Menunggu keputusan Super Admin.',
+  awaiting_admin: 'Ajuan diterima. Menunggu verifikasi Admin Karyawan.',
+};
 
 export default function BansosVerificationPage() {
   const { profile } = useAuth();
-  const canDecide = profile?.role === 'loyalis_admin';
+  const role = profile?.role;
+  const side: BansosSide = role === 'super_admin' ? 'finance' : 'admin';
+  const canDecide = role === 'loyalis_admin'
+    ? true
+    : role === 'super_admin'
+      ? (request: BansosRequest) => request.kind === 'duka'
+      : false;
+  const canHandover = role === 'loyalis_admin' || role === 'super_admin';
   const [tab, setTab] = useState<Tab>('waiting');
   const [requests, setRequests] = useState<BansosRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,7 +52,7 @@ export default function BansosVerificationPage() {
     const current = ++sequence.current;
     if (!silent) setLoading(true);
     try {
-      const result = await authenticatedJson<{ requests: BansosRequest[] }>(`/api/payroll/bansos?tab=${tab}`);
+      const result = await authenticatedJson<{ requests: BansosRequest[] }>(`/api/payroll/santunan?tab=${tab}`);
       if (current !== sequence.current) return;
       setRequests(result.requests);
       setError('');
@@ -55,10 +71,10 @@ export default function BansosVerificationPage() {
 
   const decide = async (request: BansosRequest, input: BansosDecisionInput) => {
     try {
-      const result = await authenticatedJson<{ status: string }>('/api/payroll/bansos', {
+      const result = await authenticatedJson<{ status: string }>('/api/payroll/santunan', {
         method: 'POST',
         body: JSON.stringify({
-          requestId: createFinancialRequestId('bansos_admin'),
+          requestId: createFinancialRequestId(`bansos_${side}`),
           bansosRequestId: request.id,
           expectedRevision: request.revision,
           ...input,
@@ -70,12 +86,28 @@ export default function BansosVerificationPage() {
           ? 'Keputusan dibatalkan.'
           : input.action === 'reject'
             ? 'Ajuan ditolak.'
-            : result.status === 'paid'
-              ? 'Ajuan diterima dan santunan masuk ke slip/SPJ.'
-              : 'Ajuan diterima. Menunggu keputusan Super Admin.',
+            : DECISION_NOTICES[result.status] || 'Ajuan diterima.',
       });
     } catch (cause) {
       setNotice({ type: 'error', text: cause instanceof Error ? cause.message : 'Keputusan gagal disimpan.' });
+    }
+    await load(true);
+  };
+
+  const handover = async (request: BansosRequest) => {
+    try {
+      await authenticatedJson('/api/payroll/santunan', {
+        method: 'POST',
+        body: JSON.stringify({
+          requestId: createFinancialRequestId('bansos_handover'),
+          bansosRequestId: request.id,
+          expectedRevision: request.revision,
+          action: 'handover',
+        }),
+      });
+      setNotice({ type: 'success', text: `Santunan ${request.employeeName} ditandai sudah diserahkan.` });
+    } catch (cause) {
+      setNotice({ type: 'error', text: cause instanceof Error ? cause.message : 'Penyerahan gagal dicatat.' });
     }
     await load(true);
   };
@@ -90,10 +122,11 @@ export default function BansosVerificationPage() {
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div className="space-y-1">
             <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-3">
-              <HandHeart className="size-7 text-indigo-500" /> Verifikasi Ajuan Tunjangan
+              <HandHeart className="size-7 text-indigo-500" /> Verifikasi Ajuan Santunan
             </h1>
             <p className="text-slate-500 text-sm">
-              Periksa bukti Ajuan Duka dan Ajuan Melahirkan pegawai. Santunan dibayar setelah Anda dan Super Admin sama-sama menerima.
+              Periksa bukti Ajuan Duka dan Ajuan Melahirkan pegawai. Setelah Admin Karyawan dan Super Admin sama-sama menerima,
+              santunan melahirkan dibayar bersama gaji, sedangkan santunan duka diserahkan tunai lalu ditandai di sini.
             </p>
           </div>
           <button
@@ -105,10 +138,10 @@ export default function BansosVerificationPage() {
           </button>
         </div>
 
-        {!canDecide && (
+        {role === 'super_admin' && (
           <div className="flex items-center gap-2 px-4 py-3 rounded-md text-sm font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">
             <Info className="size-4 shrink-0" />
-            Halaman ini hanya untuk dilihat. Verifikasi dilakukan Admin Karyawan; keputusan Super Admin ada di halaman Vakasi Tambahan.
+            Ajuan Duka Anda putuskan di sini. Ajuan Melahirkan tetap diputuskan di halaman Vakasi Tambahan.
           </div>
         )}
 
@@ -143,10 +176,17 @@ export default function BansosVerificationPage() {
             </div>
           ) : requests.length === 0 ? (
             <p className="py-12 text-center text-sm text-slate-400">
-              {tab === 'waiting' ? 'Tidak ada ajuan yang menunggu verifikasi.' : 'Belum ada ajuan.'}
+              {TABS.find((option) => option.value === tab)?.empty}
             </p>
           ) : (
-            <BansosReviewTable requests={requests} side="admin" canDecide={canDecide} onDecide={decide} />
+            <SantunanReviewTable
+              requests={requests}
+              side={side}
+              canDecide={canDecide}
+              decidedElsewhereNote="Diputuskan di Vakasi Tambahan"
+              onHandover={canHandover ? handover : undefined}
+              onDecide={decide}
+            />
           )}
         </div>
       </div>

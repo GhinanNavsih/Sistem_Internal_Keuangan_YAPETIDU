@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { isBansosKind } from '@/lib/payroll/bansos';
+import { isBansosKind } from '@/lib/payroll/santunan';
 import {
   errorResponse,
   HttpError,
@@ -8,18 +8,22 @@ import {
 } from '@/lib/server/auth';
 import {
   BANSOS_REVIEW_READER_ROLES,
+  bansosSideForRole,
   decideBansos,
+  isBansosReviewTab,
   listBansosForEvent,
   listBansosForReview,
-  parseBansosDecisionCommand,
-} from '@/lib/server/bansos';
+  markBansosHandedOver,
+  parseBansosReviewCommand,
+} from '@/lib/server/santunan';
 
 export const dynamic = 'force-dynamic';
 
 const responseHeaders = { 'Cache-Control': 'no-store' };
 
 /**
- * `?tab=waiting|decided|all` lists ajuan for the Admin Karyawan page;
+ * `?tab=waiting|handover|decided|all` lists ajuan for the Verifikasi Ajuan
+ * Santunan page, from the caller's side;
  * `?period=YYYY-MM&kind=duka|melahirkan` lists one month's event for the
  * Vakasi page panel.
  */
@@ -36,22 +40,29 @@ export async function GET(request: NextRequest) {
       return Response.json({ requests: await listBansosForEvent(period, kind) }, { headers: responseHeaders });
     }
     const tab = params.get('tab') || 'waiting';
-    if (tab !== 'waiting' && tab !== 'decided' && tab !== 'all') {
-      throw new HttpError(400, 'Tab tidak valid.');
-    }
-    return Response.json({ requests: await listBansosForReview(tab) }, { headers: responseHeaders });
+    if (!isBansosReviewTab(tab)) throw new HttpError(400, 'Tab tidak valid.');
+    return Response.json(
+      { requests: await listBansosForReview(tab, bansosSideForRole(actor.role)) },
+      { headers: responseHeaders },
+    );
   } catch (error) {
     return errorResponse(error);
   }
 }
 
-/** One side's decision: Admin Karyawan for the admin side, Super Admin for the finance side. */
+/**
+ * One side's decision (Admin Karyawan for the admin side, Super Admin for the
+ * finance side), or `action: 'handover'` from either once a Duka's cash is handed over.
+ */
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
     requireRole(actor, ['loyalis_admin', 'super_admin']);
-    const command = parseBansosDecisionCommand(await request.json());
-    return Response.json(await decideBansos(actor, command), { headers: responseHeaders });
+    const command = parseBansosReviewCommand(await request.json());
+    const result = command.action === 'handover'
+      ? await markBansosHandedOver(actor, command)
+      : await decideBansos(actor, command);
+    return Response.json(result, { headers: responseHeaders });
   } catch (error) {
     return errorResponse(error);
   }

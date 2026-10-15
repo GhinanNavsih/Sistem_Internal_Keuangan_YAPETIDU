@@ -3,14 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, HandHeart, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
-import BansosReviewTable, { type BansosDecisionInput } from '@/components/bansos/BansosReviewTable';
-import { formatBansosPeriod, formatRupiah } from '@/components/bansos/BansosParts';
+import SantunanReviewTable, { type BansosDecisionInput } from '@/components/santunan/SantunanReviewTable';
+import { formatBansosPeriod, formatRupiah } from '@/components/santunan/SantunanParts';
 import {
   BANSOS_KIND_LABELS,
   bansosCounts,
   type BansosKind,
   type BansosRequest,
-} from '@/lib/payroll/bansos';
+} from '@/lib/payroll/santunan';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 
 interface Props {
@@ -30,7 +30,7 @@ interface Props {
  * being typed in, and each one is paid only once Admin Karyawan has accepted
  * it too.
  */
-export default function BansosEventPanel({ period, kind, eventRevision, canDecide, onMessage }: Props) {
+export default function SantunanEventPanel({ period, kind, eventRevision, canDecide, onMessage }: Props) {
   const [requests, setRequests] = useState<BansosRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -41,7 +41,7 @@ export default function BansosEventPanel({ period, kind, eventRevision, canDecid
     if (!silent) setLoading(true);
     try {
       const result = await authenticatedJson<{ requests: BansosRequest[] }>(
-        `/api/payroll/bansos?period=${encodeURIComponent(period)}&kind=${kind}`,
+        `/api/payroll/santunan?period=${encodeURIComponent(period)}&kind=${kind}`,
       );
       if (current !== sequence.current) return;
       setRequests(result.requests);
@@ -70,7 +70,7 @@ export default function BansosEventPanel({ period, kind, eventRevision, canDecid
   const decide = async (request: BansosRequest, input: BansosDecisionInput) => {
     try {
       const result = await authenticatedJson<{ status: string; paidPeriod?: string; propagationSummary?: Record<string, number> }>(
-        '/api/payroll/bansos',
+        '/api/payroll/santunan',
         {
           method: 'POST',
           body: JSON.stringify({
@@ -135,7 +135,7 @@ export default function BansosEventPanel({ period, kind, eventRevision, canDecid
       ) : requests.length === 0 ? (
         <p className="py-12 text-center text-xs text-slate-400">Belum ada ajuan pada periode ini.</p>
       ) : (
-        <BansosReviewTable
+        <SantunanReviewTable
           requests={requests}
           side="finance"
           canDecide={canDecide}

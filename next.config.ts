@@ -9,6 +9,12 @@ const nextConfig: NextConfig = {
         destination: '/dashboard/payroll/uraian/vakasi-karyawan',
         permanent: true,
       },
+      // BanSos was renamed Santunan; old bookmarks land on the new pages.
+      { source: '/employee/bansos', destination: '/employee/santunan', permanent: true },
+      { source: '/dashboard/bansos', destination: '/dashboard/santunan', permanent: true },
+      // 308 keeps the method and body, so a tab still running the old page keeps working.
+      { source: '/api/employee/bansos', destination: '/api/employee/santunan', permanent: true },
+      { source: '/api/payroll/bansos', destination: '/api/payroll/santunan', permanent: true },
     ];
   },
   experimental: {
