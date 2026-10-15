@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   Image as ImageIcon,
   Loader2,
+  LogOut,
   MapPin,
   Plus,
   Send,
@@ -15,7 +16,9 @@ import {
   X,
 } from 'lucide-react';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
+import EmployeeNavigationMenu from '@/components/EmployeeNavigationMenu';
 import { ImageExifViewer } from '@/components/ImageExifViewer';
+import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -66,6 +69,7 @@ function formatReportDate(value: string): string {
 
 export default function FacilityReportsPage() {
   const { profile: rawProfile, activeProfile } = useAuth();
+  const requestLogout = useConfirmLogout();
   const profile = activeProfile || rawProfile;
 
   const [reports, setReports] = useState<FacilityReportRow[]>([]);
@@ -271,40 +275,39 @@ export default function FacilityReportsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/70 to-slate-100 font-sans text-slate-800">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-5">
-        <div className="flex items-center justify-between gap-3">
-          <Link href={homeHref}>
-            <Button
-              variant="outline"
-              className="rounded-sm h-9 px-3 border-slate-200 bg-white shadow-sm cursor-pointer flex items-center gap-1.5 text-slate-600 font-bold text-xs"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              Kembali
-            </Button>
+      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur">
+        <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3 sm:px-6">
+          <Link
+            href={homeHref}
+            aria-label={profile?.role === 'loyalis' ? 'Kembali ke Slip Gaji' : 'Kembali ke Laporan Kegiatan'}
+            className="rounded-sm p-2 text-slate-500 hover:bg-slate-100"
+          >
+            <ChevronLeft className="size-5" />
           </Link>
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-sm bg-indigo-600 text-white"><Wrench className="size-5" /></div>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-sm font-bold text-slate-800">Lapor Kondisi Fasilitas</h1>
+            <p className="truncate text-xs text-slate-500">{profile?.displayName || profile?.email}</p>
+          </div>
+          <EmployeeNavigationMenu />
+          <Button className="rounded-sm" type="button" variant="ghost" size="icon" onClick={requestLogout} aria-label="Keluar"><LogOut className="size-4" /></Button>
+        </div>
+      </header>
+
+      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-5">
+        <div className="flex flex-col gap-3">
+          <p className="text-slate-500 text-xs sm:text-sm">
+            Crew Reparasi: Biro Umum, Teknisi, Kebersihan, dan PusKom.
+          </p>
           {!showForm && (
             <Button
               onClick={() => setShowForm(true)}
-              className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-9 px-3.5 shadow-sm cursor-pointer flex items-center gap-1.5"
+              className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-9 w-full px-3.5 shadow-sm cursor-pointer flex items-center justify-center gap-1.5 text-center"
             >
               <Plus className="w-4 h-4" />
               Laporkan Kondisi
             </Button>
           )}
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-sm bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 shadow-inner shrink-0">
-            <Wrench className="w-5 h-5" />
-          </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-              Lapor Kondisi Fasilitas
-            </h1>
-            <p className="text-slate-500 text-xs sm:text-sm">
-              Crew Reparasi: Biro Umum, Teknisi, Kebersihan, dan PusKom.
-            </p>
-          </div>
         </div>
 
         {showForm && (
@@ -574,7 +577,7 @@ export default function FacilityReportsPage() {
           )}
         </div>
 
-      </div>
+      </main>
 
       <ImageExifViewer
         imageUrl={zoomPhoto?.photo.url || ''}
