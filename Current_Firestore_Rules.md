@@ -718,6 +718,15 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Simulasi Biaya Perjalanan and the Google route answers behind them are
+    // read and written only by /api/driver-journey-simulations.
+    match /DriverJourneySimulations/{simulationId} {
+      allow read, write: if false;
+    }
+    match /DriverRouteQuotes/{routeId} {
+      allow read, write: if false;
+    }
+
     // Everything not explicitly listed is denied.
     match /{document=**} {
       allow read, write: if false;

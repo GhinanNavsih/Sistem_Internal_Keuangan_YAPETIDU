@@ -94,6 +94,21 @@ export function canReserveVenues(role: UserRole | null | undefined): boolean {
 }
 
 /**
+ * Who may make a Simulasi Biaya Perjalanan, and so trigger the paid Google
+ * route and toll lookups behind it. Kepala SatKer Pekarya authorizes the real
+ * journeys and does not get it. The route guard, both menus and the API all
+ * read this list.
+ */
+export const DRIVER_JOURNEY_SIMULATION_ROLES: readonly UserRole[] = [
+  'super_admin',
+  'satker_head_loyalis',
+];
+
+export function canSimulateDriverJourneys(role: UserRole | null | undefined): boolean {
+  return !!role && DRIVER_JOURNEY_SIMULATION_ROLES.includes(role);
+}
+
+/**
  * Who may record Senam Pagi attendance, and so move Bonus Triwulan. The page,
  * both menus and `/api/payroll/senam-pagi` read this list.
  */

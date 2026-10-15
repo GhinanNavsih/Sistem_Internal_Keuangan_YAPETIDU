@@ -8,6 +8,7 @@ import {
   getEmployeeRouteRedirect,
 } from '@/lib/employeeActivities';
 import { isVenueReservationPath } from '@/lib/venueReservation';
+import { isDriverJourneySimulationPath } from '@/lib/driverJourneySimulation';
 import { Loader2 } from 'lucide-react';
 
 /**
@@ -81,11 +82,12 @@ export default function ProtectedRoute({
             router.replace('/dashboard/payroll/activity-review');
           }
         } else if (currentProfile.role === 'satker_head_loyalis') {
-          // SatKer Loyalis is ONLY allowed to access /dashboard/payroll/uraian (including sub-routes)
-          // and the venue reservation page
+          // SatKer Loyalis is ONLY allowed to access /dashboard/payroll/uraian (including sub-routes),
+          // the venue reservation page and the Simulasi Biaya Perjalanan
           if (
             !pathname.startsWith('/dashboard/payroll/uraian') &&
             !isVenueReservationPath(pathname) &&
+            !isDriverJourneySimulationPath(pathname) &&
             pathname !== '/dashboard/satker-finance'
           ) {
             router.replace('/dashboard/payroll/uraian');
@@ -156,6 +158,7 @@ export default function ProtectedRoute({
     profile.role === 'satker_head_loyalis' &&
     !pathname.startsWith('/dashboard/payroll/uraian') &&
     !isVenueReservationPath(pathname) &&
+    !isDriverJourneySimulationPath(pathname) &&
     pathname !== '/dashboard/satker-finance'
   ) {
     return null;

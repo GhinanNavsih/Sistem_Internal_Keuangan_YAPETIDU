@@ -6,9 +6,10 @@ import Image from 'next/image';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
-import { canReserveVenues, getUserRoleLabel } from '@/lib/payroll/roles';
+import { canReserveVenues, canSimulateDriverJourneys, getUserRoleLabel } from '@/lib/payroll/roles';
 import { VENUE_RESERVATION_PATH } from '@/lib/venueReservation';
 import { VENUE_INSPECTION_PATH } from '@/lib/venueInspection';
+import { DRIVER_JOURNEY_SIMULATION_PATH } from '@/lib/driverJourneySimulation';
 import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
 import { SENAM_PAGI_PATH } from '@/lib/payroll/bonusTriwulan';
 import { Button } from '@/components/ui/button';
@@ -27,6 +28,7 @@ import {
   Compass,
   HandHeart,
   PersonStanding,
+  Route,
   ScanLine,
   Wrench,
   LogOut,
@@ -171,6 +173,12 @@ export default function Sidebar() {
       icon: ClipboardCheck
     },
     {
+      // Kepala SatKer Loyalis prices an event's transport here; Super Admin tests it.
+      name: 'Simulasi Perjalanan',
+      path: DRIVER_JOURNEY_SIMULATION_PATH,
+      icon: Route
+    },
+    {
       // Starts the "monitoring" group — rendered below a separator so the
       // two dashboards read apart from the operational menus above.
       name: 'Dashboard',
@@ -218,6 +226,14 @@ export default function Sidebar() {
           path: VENUE_RESERVATION_PATH,
           icon: CalendarCheck,
           activePattern: VENUE_RESERVATION_PATH,
+        }]
+      : []),
+    ...(canSimulateDriverJourneys(currentProfile.role)
+      ? [{
+          name: 'Simulasi Perjalanan',
+          path: DRIVER_JOURNEY_SIMULATION_PATH,
+          icon: Route,
+          activePattern: DRIVER_JOURNEY_SIMULATION_PATH,
         }]
       : []),
   ];
@@ -304,6 +320,7 @@ export default function Sidebar() {
         ? employeeAdminMenuItems
         : adminMenuItems.filter(item => {
           if (item.path === VENUE_RESERVATION_PATH) return canReserveVenues(currentProfile.role);
+          if (item.path === DRIVER_JOURNEY_SIMULATION_PATH) return canSimulateDriverJourneys(currentProfile.role);
           if (currentProfile.role === 'super_admin') return true;
           return item.path === '/dashboard/payroll' || item.path === '/dashboard/satker-finance';
         });
