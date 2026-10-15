@@ -8,6 +8,8 @@ import {
   calculateLoopFuelCost,
   calculatePlannedDriverJourney,
   driverJourneyRoutePoint,
+  normalizeDriverJourneyLocations,
+  type DriverJourneyLocation,
   type DriverVehicleName,
   type PlannedDriverJourneyResult,
 } from './payroll/driverJourney';
@@ -57,15 +59,28 @@ export function normalizeSimulationStops(stops: readonly string[]): string[] {
   return stops.map((stop) => stop.trim()).filter(Boolean);
 }
 
-/** The loop Google measures: UNIPDU, the stops in order, back to UNIPDU. */
-export function simulationRoutePoints(stops: readonly string[]): string[] {
+/**
+ * The loop Google measures: UNIPDU, the stops in order, back to UNIPDU. A stop
+ * picked on the map is sent as its coordinates, as in the sopir's report; an
+ * older Simulasi saved before stops had coordinates falls back to the name.
+ */
+export function simulationRoutePoints(
+  stops: readonly string[],
+  stopLocations: ReadonlyArray<DriverJourneyLocation | null> = [],
+): string[] {
   const start = simulationStartPoint();
-  return [start, ...normalizeSimulationStops(stops), start];
+  const points = stops
+    .map((stop, index) => (stop.trim() ? driverJourneyRoutePoint(stop, stopLocations[index]) : ''))
+    .filter(Boolean);
+  return [start, ...points, start];
 }
 
 /** Identifies a route for "has it been measured yet" checks in the form. */
-export function simulationRouteKey(stops: readonly string[]): string {
-  return normalizeSimulationStops(stops).join('\u0000');
+export function simulationRouteKey(
+  stops: readonly string[],
+  stopLocations: ReadonlyArray<DriverJourneyLocation | null> = [],
+): string {
+  return simulationRoutePoints(stops, stopLocations).join('\u0000');
 }
 
 // ── Route and toll quotes ──────────────────────────────────────────────────
@@ -136,6 +151,8 @@ export type TollSource = 'google' | 'manual';
 
 export interface SimulationJourneyInput {
   stops: string[];
+  /** The map pin of each stop, in the same order; null for a stop known only by name. */
+  stopLocations: Array<DriverJourneyLocation | null>;
   vehicleName: DriverVehicleName;
   departureDate: string;
   departureTime: string;
@@ -202,11 +219,21 @@ export function parseSimulationStops(raw: unknown, prefix = ''): string[] {
   return stops;
 }
 
+/** The stops of one Perjalanan with their map pins; a pin that does not belong to its stop is dropped. */
+export function parseSimulationRoute(
+  rawStops: unknown,
+  rawLocations: unknown,
+  prefix = '',
+): { stops: string[]; stopLocations: Array<DriverJourneyLocation | null> } {
+  const stops = parseSimulationStops(rawStops, prefix);
+  return { stops, stopLocations: normalizeDriverJourneyLocations(rawLocations, stops) };
+}
+
 function parseJourney(raw: unknown, position: number): SimulationJourneyInput {
   const label = `Perjalanan ${position}`;
   if (!isRecord(raw)) throw new SimulationInputError(`${label} tidak valid.`);
 
-  const stops = parseSimulationStops(raw.stops, `${label}: `);
+  const { stops, stopLocations } = parseSimulationRoute(raw.stops, raw.stopLocations, `${label}: `);
 
   if (!isSimulationVehicle(raw.vehicleName)) {
     throw new SimulationInputError(`${label}: pilih kendaraan.`);
@@ -235,6 +262,7 @@ function parseJourney(raw: unknown, position: number): SimulationJourneyInput {
 
   return {
     stops,
+    stopLocations,
     vehicleName: raw.vehicleName,
     departureDate,
     departureTime,
@@ -330,6 +358,10 @@ export function calculateSimulationJourney(
   return {
     ...journey,
     stops: [...journey.stops],
+    stopLocations: journey.stops.map((_, index) => {
+      const location = journey.stopLocations?.[index];
+      return location ? { ...location } : null;
+    }),
     route: {
       distanceKm: measurement.distanceKm,
       durationHours: measurement.durationHours,

@@ -7,6 +7,7 @@ import {
   isDriverJourneySimulationPath,
   isRouteQuoteFresh,
   parseSimulationInput,
+  parseSimulationRoute,
   resolveSimulationToll,
   SIMULATION_VEHICLES,
   simulationRouteKey,
@@ -21,6 +22,7 @@ import {
 
 const surabayaDay: SimulationJourneyInput = {
   stops: ['Universitas Airlangga Kampus C, Surabaya'],
+  stopLocations: [null],
   vehicleName: 'Innova Matic',
   departureDate: '2026-11-02',
   departureTime: '07:00',
@@ -59,6 +61,20 @@ test('every route starts and ends at UNIPDU as the sopir report measures it', ()
   assert.deepEqual(points, [simulationStartPoint(), 'Surabaya', 'Sidoarjo', simulationStartPoint()]);
   assert.match(simulationStartPoint(), /^-?\d+\.\d{6},-?\d+\.\d{6}$/);
   assert.equal(simulationRouteKey([' Surabaya', 'Sidoarjo ']), simulationRouteKey(['Surabaya', 'Sidoarjo']));
+});
+
+test('a stop picked on the map is measured by its pin, as in the sopir report', () => {
+  const kampusC = { address: 'Kampus C', latitude: -7.2656, longitude: 112.7838 };
+  const points = simulationRoutePoints(['Kampus C', 'Sidoarjo'], [kampusC, null]);
+  assert.deepEqual(points, [simulationStartPoint(), '-7.265600,112.783800', 'Sidoarjo', simulationStartPoint()]);
+  // Moving the pin makes the measured route stale.
+  assert.notEqual(
+    simulationRouteKey(['Kampus C'], [kampusC]),
+    simulationRouteKey(['Kampus C'], [{ ...kampusC, latitude: -7.27 }]),
+  );
+  const parsed = parseSimulationRoute(['Kampus C', 'Sidoarjo'], [kampusC, { address: 'Elsewhere', latitude: 0, longitude: 0 }]);
+  assert.deepEqual(parsed.stopLocations, [kampusC, null], 'a pin that belongs to another stop is dropped');
+  assert.deepEqual(parseSimulationRoute(['Kampus C'], undefined).stopLocations, [null]);
 });
 
 test('a Simulasi Perjalanan costs fuel, toll, parking and the Upah Bersih the sopir is paid', () => {

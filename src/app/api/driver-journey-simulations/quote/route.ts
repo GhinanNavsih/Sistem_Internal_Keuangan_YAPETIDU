@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import {
-  parseSimulationStops,
+  parseSimulationRoute,
   simulationRoutePoints,
   SimulationInputError,
 } from '@/lib/driverJourneySimulation';
@@ -21,15 +21,15 @@ export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
     requireRole(actor, DRIVER_JOURNEY_SIMULATION_ROLES);
-    const body = await request.json().catch(() => null) as { stops?: unknown } | null;
-    let stops: string[];
+    const body = await request.json().catch(() => null) as { stops?: unknown; stopLocations?: unknown } | null;
+    let route: ReturnType<typeof parseSimulationRoute>;
     try {
-      stops = parseSimulationStops(body?.stops);
+      route = parseSimulationRoute(body?.stops, body?.stopLocations);
     } catch (error) {
       if (error instanceof SimulationInputError) throw new HttpError(400, error.message);
       throw error;
     }
-    const quote = await loadRouteQuote(adminDb, simulationRoutePoints(stops));
+    const quote = await loadRouteQuote(adminDb, simulationRoutePoints(route.stops, route.stopLocations));
     return NextResponse.json({ quote });
   } catch (error) {
     return errorResponse(error);

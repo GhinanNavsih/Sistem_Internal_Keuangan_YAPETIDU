@@ -1,7 +1,6 @@
 import {
   calculateSimulationJourney,
   initialTollAmount,
-  normalizeSimulationStops,
   simulationRouteKey,
   type RouteQuote,
   type SimulationInput,
@@ -10,12 +9,14 @@ import {
   type SimulationView,
   type TollSource,
 } from '@/lib/driverJourneySimulation';
-import type { DriverVehicleName } from '@/lib/payroll/driverJourney';
+import type { DriverJourneyLocation, DriverVehicleName } from '@/lib/payroll/driverJourney';
 
 /** One Perjalanan as the form holds it: text as typed, plus the last route answer. */
 export interface JourneyForm {
   key: string;
+  /** Stops in route order, each picked on the map. */
   stops: string[];
+  stopLocations: Array<DriverJourneyLocation | null>;
   vehicleName: DriverVehicleName | '';
   departureDate: string;
   departureTime: string;
@@ -50,7 +51,8 @@ export function emptyJourney(previous?: JourneyForm): JourneyForm {
   const date = previous?.departureDate || jakartaToday();
   return {
     key: newKey(),
-    stops: [''],
+    stops: [],
+    stopLocations: [],
     vehicleName: '',
     departureDate: date,
     departureTime: previous?.departureTime || '',
@@ -76,6 +78,8 @@ export function journeyFormFromResult(journey: SimulationJourneyResult): Journey
   return {
     key: newKey(),
     stops: [...journey.stops],
+    // A Simulasi saved before stops were picked on the map has names only.
+    stopLocations: journey.stops.map((_, index) => journey.stopLocations?.[index] ?? null),
     vehicleName: journey.vehicleName,
     departureDate: journey.departureDate,
     departureTime: journey.departureTime,
@@ -93,7 +97,7 @@ export function journeyFormFromResult(journey: SimulationJourneyResult): Journey
       toll: journey.tollQuote,
       measuredAt: journey.route.measuredAt,
     },
-    quoteKey: simulationRouteKey(journey.stops),
+    quoteKey: simulationRouteKey(journey.stops, journey.stopLocations ?? []),
   };
 }
 
@@ -111,20 +115,24 @@ export function applyQuote(journey: JourneyForm, quote: RouteQuote): JourneyForm
   return {
     ...journey,
     quote,
-    quoteKey: simulationRouteKey(journey.stops),
+    quoteKey: simulationRouteKey(journey.stops, journey.stopLocations),
     tollSource: initial === null ? 'manual' : 'google',
     tollInput: initial === null ? keepTyped : digits(initial),
   };
 }
 
 export function hasFreshQuote(journey: JourneyForm): boolean {
-  return Boolean(journey.quote) && journey.quoteKey === simulationRouteKey(journey.stops);
+  return Boolean(journey.quote) && journey.quoteKey === simulationRouteKey(journey.stops, journey.stopLocations);
 }
+
+/** Why a Perjalanan cannot be costed while its route is still unmeasured. */
+export const ROUTE_NOT_MEASURED = 'Rute belum diukur.';
 
 function toInput(journey: JourneyForm): SimulationJourneyInput | null {
   if (!journey.vehicleName) return null;
   return {
-    stops: normalizeSimulationStops(journey.stops),
+    stops: [...journey.stops],
+    stopLocations: journey.stops.map((_, index) => journey.stopLocations[index] ?? null),
     vehicleName: journey.vehicleName,
     departureDate: journey.departureDate,
     departureTime: journey.departureTime,
@@ -142,8 +150,8 @@ export type JourneyPreview =
 
 /** The figures for one Perjalanan as the form stands, or what is still missing. */
 export function previewJourney(journey: JourneyForm): JourneyPreview {
-  if (normalizeSimulationStops(journey.stops).length === 0) {
-    return { state: 'blocked', reason: 'Isi minimal satu tujuan.' };
+  if (journey.stops.length === 0) {
+    return { state: 'blocked', reason: 'Tambah minimal satu tujuan.' };
   }
   if (!journey.vehicleName) return { state: 'blocked', reason: 'Pilih kendaraan.' };
   if (!journey.departureDate || !journey.departureTime) {
@@ -156,7 +164,7 @@ export function previewJourney(journey: JourneyForm): JourneyPreview {
     return { state: 'blocked', reason: 'Waktu kembali harus setelah waktu berangkat.' };
   }
   if (!hasFreshQuote(journey) || !journey.quote) {
-    return { state: 'blocked', reason: 'Hitung rute dulu.' };
+    return { state: 'blocked', reason: ROUTE_NOT_MEASURED };
   }
   if (journey.tollSource === 'manual' && journey.tollInput === '') {
     return { state: 'blocked', reason: 'Isi biaya tol.' };
@@ -186,7 +194,7 @@ export function sameSimulationInput(a: SimulationForm, b: SimulationForm): boole
   const shape = (form: SimulationForm) => JSON.stringify({
     eventName: form.eventName.trim(),
     journeys: form.journeys.map((journey) => ({
-      stops: normalizeSimulationStops(journey.stops),
+      route: simulationRouteKey(journey.stops, journey.stopLocations),
       vehicleName: journey.vehicleName,
       departureDate: journey.departureDate,
       departureTime: journey.departureTime,

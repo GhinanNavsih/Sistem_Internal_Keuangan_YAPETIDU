@@ -57,7 +57,7 @@ async function calculate(db: Firestore, input: SimulationInput, now: Date) {
   const quotes: RouteQuote[] = [];
   // One after another: two Perjalanan on the same route then share one answer.
   for (const journey of input.journeys) {
-    quotes.push(await loadRouteQuote(db, simulationRoutePoints(journey.stops), now));
+    quotes.push(await loadRouteQuote(db, simulationRoutePoints(journey.stops, journey.stopLocations), now));
   }
   try {
     return calculateSimulation(input.journeys, quotes);

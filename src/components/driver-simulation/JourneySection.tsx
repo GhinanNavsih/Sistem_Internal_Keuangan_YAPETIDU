@@ -1,10 +1,17 @@
 "use client";
 
 import { useState } from 'react';
-import { ChevronDown, Loader2, Plus, Route, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Loader2, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/callout';
 import { DetailList, DetailRow } from '@/components/ui/detail-list';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { OptionSelect } from '@/components/ui/option-select';
@@ -13,14 +20,31 @@ import {
   formatKm,
   formatRupiah,
   MAX_SIMULATION_STOPS,
-  MAX_SIMULATION_STOP_LENGTH,
+  SIMULATION_START_LABEL,
   SIMULATION_VEHICLES,
   tollLineLabel,
   upahBersihLines,
 } from '@/lib/driverJourneySimulation';
-import { DRIVER_VEHICLE_RATES, type DriverVehicleName } from '@/lib/payroll/driverJourney';
-import { cn } from '@/lib/utils';
+import {
+  DRIVER_VEHICLE_RATES,
+  type DriverJourneyLocation,
+  type DriverVehicleName,
+} from '@/lib/payroll/driverJourney';
+import type { RouteLeg } from '@/lib/driverJourneySimulation';
+import { LocationPickerDialog } from './LocationPickerDialog';
 import { hasFreshQuote, type JourneyForm, type JourneyPreview } from './simulationForm';
+
+const START_LABEL = SIMULATION_START_LABEL.split(',')[0];
+
+/** The leg that arrives at a stop, as the sopir report shows it under each stop. */
+function LegLine({ leg }: { leg: RouteLeg | undefined }) {
+  if (!leg) return null;
+  return (
+    <div className="text-[13px] tabular-nums text-slate-500">
+      {formatKm(leg.distanceKm)} · {formatHours(leg.durationHours)}
+    </div>
+  );
+}
 
 const VEHICLE_OPTIONS = SIMULATION_VEHICLES.map((name) => ({
   value: name,
@@ -81,8 +105,10 @@ interface JourneySectionProps {
   quoting: boolean;
   quoteError: string;
   onChange: (update: (journey: JourneyForm) => JourneyForm) => void;
+  /** A new stop list; the page measures the route again. */
+  onStopsChange: (stops: string[], stopLocations: Array<DriverJourneyLocation | null>) => void;
+  onRetryQuote: () => void;
   onRemove: () => void;
-  onQuote: () => void;
 }
 
 export function JourneySection({
@@ -93,21 +119,50 @@ export function JourneySection({
   quoting,
   quoteError,
   onChange,
+  onStopsChange,
+  onRetryQuote,
   onRemove,
-  onQuote,
 }: JourneySectionProps) {
-  const [showLegs, setShowLegs] = useState(false);
+  // The stop the map picker is open for: an index, or 'new' for "Tambah lokasi".
+  const [picker, setPicker] = useState<number | 'new' | null>(null);
   const fresh = hasFreshQuote(journey);
   const idPrefix = `journey-${journey.key}`;
-  const filledStops = journey.stops.filter((stop) => stop.trim()).length;
   const toll = journey.quote?.toll;
   const tollMissing = fresh && journey.tollSource === 'manual' && journey.tollInput === '';
+  const legs = fresh ? journey.quote?.measurement.legs ?? [] : [];
+  const atStopLimit = journey.stops.length >= MAX_SIMULATION_STOPS;
 
-  const setStop = (stopIndex: number, value: string) =>
-    onChange((current) => ({
-      ...current,
-      stops: current.stops.map((stop, position) => (position === stopIndex ? value : stop)),
-    }));
+  const confirmPicked = (address: string, location: DriverJourneyLocation) => {
+    if (picker === 'new') {
+      onStopsChange([...journey.stops, address], [...journey.stopLocations, location]);
+    } else if (picker !== null) {
+      onStopsChange(
+        journey.stops.map((stop, index) => (index === picker ? address : stop)),
+        journey.stops.map((_, index) => (index === picker ? location : journey.stopLocations[index] ?? null)),
+      );
+    }
+    setPicker(null);
+  };
+
+  // Reordering is how the route follows the order the stops are driven.
+  const moveStop = (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= journey.stops.length) return;
+    const stops = [...journey.stops];
+    const locations = journey.stops.map((_, position) => journey.stopLocations[position] ?? null);
+    [stops[index], stops[target]] = [stops[target], stops[index]];
+    [locations[index], locations[target]] = [locations[target], locations[index]];
+    onStopsChange(stops, locations);
+  };
+
+  const removeStop = (index: number) => {
+    onStopsChange(
+      journey.stops.filter((_, position) => position !== index),
+      journey.stops
+        .map((_, position) => journey.stopLocations[position] ?? null)
+        .filter((_, position) => position !== index),
+    );
+  };
 
   return (
     <section aria-labelledby={`${idPrefix}-title`} className="space-y-4 border-t border-slate-200 pt-5">
@@ -123,50 +178,155 @@ export function JourneySection({
         )}
       </div>
 
-      <Field label="Tujuan" required hint="Berangkat dari dan kembali ke UNIPDU Jombang. Urutkan sesuai rute.">
-        <ol className="space-y-2">
-          {journey.stops.map((stop, stopIndex) => (
-            <li key={stopIndex} className="flex items-center gap-2">
-              <span className="w-5 shrink-0 text-right text-xs tabular-nums text-slate-400">{stopIndex + 1}</span>
-              <Input
-                aria-label={`Tujuan ${stopIndex + 1}`}
-                value={stop}
-                maxLength={MAX_SIMULATION_STOP_LENGTH}
-                placeholder={stopIndex === 0 ? 'Contoh: Universitas Airlangga Kampus C, Surabaya' : 'Tujuan berikutnya'}
-                onChange={(event) => setStop(stopIndex, event.target.value)}
-                className="h-9 rounded-sm"
-              />
-              {journey.stops.length > 1 && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`Hapus tujuan ${stopIndex + 1}`}
-                  title="Hapus tujuan"
-                  onClick={() => onChange((current) => ({
-                    ...current,
-                    stops: current.stops.filter((_, position) => position !== stopIndex),
-                  }))}
-                >
-                  <X />
-                </Button>
-              )}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-medium text-slate-900">
+            Rute
+            <span aria-hidden className="text-red-600">*</span>
+          </h3>
+          {/* With no stop yet, the same button sits in the route itself. */}
+          {journey.stops.length > 0 && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={atStopLimit}
+              title={atStopLimit ? `Maksimal ${MAX_SIMULATION_STOPS} titik tujuan` : undefined}
+              onClick={() => setPicker('new')}
+            >
+              <Plus />
+              Tambah lokasi
+            </Button>
+          )}
+        </div>
+
+        <ol className="relative ml-1.5 space-y-5 border-l border-dashed border-slate-300 pl-5">
+          <li className="relative">
+            <span aria-hidden className="absolute -left-[26px] top-1.5 size-2.5 rounded-full bg-blue-600" />
+            <div className="text-xs text-slate-500">Berangkat</div>
+            <div className="truncate text-sm font-medium text-slate-900" title={SIMULATION_START_LABEL}>
+              {START_LABEL}
+            </div>
+          </li>
+
+          {journey.stops.length === 0 ? (
+            <li className="relative">
+              <span aria-hidden className="absolute -left-[26px] top-1.5 size-2.5 rounded-full border-2 border-slate-300 bg-white" />
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                onClick={() => setPicker('new')}
+                className="h-10 w-full border-dashed text-blue-600"
+              >
+                <Plus />
+                Tambah lokasi
+              </Button>
             </li>
-          ))}
+          ) : (
+            journey.stops.map((stop, index) => (
+              <li key={`${index}-${stop}`} className="relative flex items-start justify-between gap-2">
+                <span aria-hidden className="absolute -left-[26px] top-1.5 size-2.5 rounded-full bg-blue-600" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs text-slate-500">Tujuan {index + 1}</div>
+                  <div className="truncate text-sm font-medium text-slate-900" title={stop}>
+                    {stop.split(',')[0]}
+                  </div>
+                  <LegLine leg={legs[index]} />
+                </div>
+                <div className="flex shrink-0 items-center">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    disabled={index === 0 || quoting}
+                    onClick={() => moveStop(index, -1)}
+                    aria-label={`Naikkan tujuan ${index + 1}`}
+                    title="Naikkan urutan"
+                    className="text-slate-500"
+                  >
+                    <ArrowUp />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    disabled={index === journey.stops.length - 1 || quoting}
+                    onClick={() => moveStop(index, 1)}
+                    aria-label={`Turunkan tujuan ${index + 1}`}
+                    title="Turunkan urutan"
+                    className="text-slate-500"
+                  >
+                    <ArrowDown />
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Aksi lain untuk tujuan ${index + 1}`}
+                          title="Aksi lain"
+                          className="text-slate-500"
+                        />
+                      }
+                    >
+                      <MoreHorizontal />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      <DropdownMenuItem className="text-sm font-medium" onClick={() => setPicker(index)}>
+                        Ubah lokasi
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="text-sm font-medium text-red-600 data-highlighted:bg-red-50"
+                        onClick={() => removeStop(index)}
+                      >
+                        Hapus tujuan
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </li>
+            ))
+          )}
+
+          <li className="relative">
+            <span aria-hidden className="absolute -left-[26px] top-1.5 size-2.5 rounded-full bg-blue-600" />
+            <div className="text-xs text-slate-500">Pulang</div>
+            <div className="truncate text-sm font-medium text-slate-900" title={SIMULATION_START_LABEL}>
+              {START_LABEL}
+            </div>
+            {journey.stops.length > 0 ? (
+              <LegLine leg={legs[journey.stops.length]} />
+            ) : (
+              <div className="text-[13px] text-slate-500">Kembali ke titik awal; dihitung setelah tujuan ditentukan.</div>
+            )}
+          </li>
         </ol>
-        {journey.stops.length < MAX_SIMULATION_STOPS && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="mt-1 text-blue-700"
-            onClick={() => onChange((current) => ({ ...current, stops: [...current.stops, ''] }))}
+
+        {quoting ? (
+          <p className="flex items-center gap-2 text-sm text-slate-500">
+            <Loader2 className="size-4 animate-spin" /> Mengukur rute…
+          </p>
+        ) : quoteError ? (
+          <Callout
+            tone="error"
+            action={(
+              <Button type="button" variant="outline" size="sm" onClick={onRetryQuote}>
+                Coba lagi
+              </Button>
+            )}
           >
-            <Plus />
-            Tambah tujuan
-          </Button>
-        )}
-      </Field>
+            {quoteError}
+          </Callout>
+        ) : fresh && journey.quote ? (
+          <p className="text-sm text-slate-600">
+            <span className="tabular-nums">{formatKm(journey.quote.measurement.distanceKm)}</span>
+            {' · '}durasi tempuh <span className="tabular-nums">{formatHours(journey.quote.measurement.durationHours)}</span>
+          </p>
+        ) : null}
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Field label="Kendaraan" htmlFor={`${idPrefix}-vehicle`} required>
@@ -227,52 +387,8 @@ export function JourneySection({
         </Field>
       </div>
 
-      {!fresh && (
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onQuote}
-            disabled={quoting || filledStops === 0}
-          >
-            {quoting ? <Loader2 className="animate-spin" /> : <Route />}
-            {journey.quote ? 'Hitung ulang rute' : 'Hitung rute'}
-          </Button>
-          {journey.quote && (
-            <span className="text-xs text-amber-700">Tujuan berubah sejak rute dihitung.</span>
-          )}
-        </div>
-      )}
-      {quoteError && <Callout tone="error">{quoteError}</Callout>}
-
       {fresh && journey.quote && (
         <div className="space-y-4">
-          <div className="text-sm text-slate-600">
-            <span className="tabular-nums">{formatKm(journey.quote.measurement.distanceKm)}</span>
-            {' · '}durasi tempuh <span className="tabular-nums">{formatHours(journey.quote.measurement.durationHours)}</span>
-            {journey.quote.measurement.legs.length > 0 && (
-              <button
-                type="button"
-                className="ml-2 inline-flex cursor-pointer items-center gap-0.5 text-blue-700 hover:underline"
-                aria-expanded={showLegs}
-                onClick={() => setShowLegs((value) => !value)}
-              >
-                Lihat rute
-                <ChevronDown className={cn('size-3.5 transition-transform', showLegs && 'rotate-180')} />
-              </button>
-            )}
-          </div>
-          {showLegs && (
-            <ol className="space-y-1 border-l border-slate-200 pl-3 text-xs text-slate-600">
-              {journey.quote.measurement.legs.map((leg, legIndex) => (
-                <li key={legIndex} className="flex justify-between gap-3">
-                  <span className="min-w-0">{leg.start} → {leg.end}</span>
-                  <span className="shrink-0 tabular-nums">{formatKm(leg.distanceKm)}</span>
-                </li>
-              ))}
-            </ol>
-          )}
-
           <div className="grid gap-4 sm:grid-cols-2">
             <Field
               label="Tol"
@@ -335,6 +451,15 @@ export function JourneySection({
             !tollMissing && <Callout tone="warning">{preview.reason}</Callout>
           )}
         </div>
+      )}
+
+      {picker !== null && (
+        <LocationPickerDialog
+          initialAddress={picker === 'new' ? '' : journey.stops[picker]}
+          initialLocation={picker === 'new' ? null : journey.stopLocations[picker] ?? null}
+          onConfirm={confirmPicked}
+          onClose={() => setPicker(null)}
+        />
       )}
     </section>
   );

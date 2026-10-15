@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, FileDown, Loader2, Plus, RefreshCw, Route } from 'lucide-react';
 import { JourneySection } from '@/components/driver-simulation/JourneySection';
 import {
@@ -9,6 +9,7 @@ import {
   emptyJourney,
   formFromView,
   previewJourney,
+  ROUTE_NOT_MEASURED,
   sameSimulationInput,
   toSimulationInput,
   type JourneyForm,
@@ -25,10 +26,10 @@ import {
   formatRupiah,
   MAX_SIMULATION_EVENT_NAME_LENGTH,
   MAX_SIMULATION_JOURNEYS,
-  normalizeSimulationStops,
   type RouteQuote,
   type SimulationView,
 } from '@/lib/driverJourneySimulation';
+import type { DriverJourneyLocation } from '@/lib/payroll/driverJourney';
 import { authenticatedJson } from '@/lib/payroll/client';
 import { canSimulateDriverJourneys } from '@/lib/payroll/roles';
 
@@ -67,6 +68,9 @@ export default function SimulasiPerjalananPage() {
   const [confirm, setConfirm] = useState<'delete' | 'discard' | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [message, setMessage] = useState<SnackbarMessage | null>(null);
+  // Latest route request per Perjalanan, so a slower earlier answer never
+  // overwrites the route that is on screen now.
+  const quoteRequests = useRef<Record<string, number>>({});
 
   const loadSimulations = useCallback(async () => {
     setLoading(true);
@@ -100,8 +104,8 @@ export default function SimulasiPerjalananPage() {
     ? null
     : !editor.form.eventName.trim()
       ? 'Isi nama kegiatan'
-      : previews.some((preview) => preview.state === 'blocked' && preview.reason === 'Hitung rute dulu.')
-        ? 'Hitung semua rute dulu'
+      : previews.some((preview) => preview.state === 'blocked' && preview.reason === ROUTE_NOT_MEASURED)
+        ? 'Rute belum diukur'
         : previews.some((preview) => preview.state === 'blocked')
           ? 'Lengkapi setiap perjalanan'
           : null;
@@ -127,7 +131,7 @@ export default function SimulasiPerjalananPage() {
 
   const closeEditor = (force = false) => {
     if (!force && dirty && editor && (editor.saved || editor.form.eventName.trim() || editor.form.journeys.some(
-      (journey) => normalizeSimulationStops(journey.stops).length > 0,
+      (journey) => journey.stops.length > 0,
     ))) {
       setConfirm('discard');
       return;
@@ -136,25 +140,48 @@ export default function SimulasiPerjalananPage() {
     setEditor(null);
   };
 
-  const quoteJourney = async (journey: JourneyForm) => {
-    const stops = normalizeSimulationStops(journey.stops);
-    if (stops.length === 0) return;
-    setQuoting((current) => ({ ...current, [journey.key]: true }));
-    setQuoteErrors((current) => ({ ...current, [journey.key]: '' }));
+  /** Measures a Perjalanan's loop from UNIPDU through its stops and back. */
+  const measureRoute = async (
+    key: string,
+    stops: string[],
+    stopLocations: Array<DriverJourneyLocation | null>,
+  ) => {
+    const requestId = (quoteRequests.current[key] ?? 0) + 1;
+    quoteRequests.current[key] = requestId;
+    setQuoteErrors((current) => ({ ...current, [key]: '' }));
+    if (stops.length === 0) {
+      setQuoting((current) => ({ ...current, [key]: false }));
+      return;
+    }
+    setQuoting((current) => ({ ...current, [key]: true }));
     try {
       const { quote } = await authenticatedJson<{ quote: RouteQuote }>('/api/driver-journey-simulations/quote', {
         method: 'POST',
-        body: JSON.stringify({ stops }),
+        body: JSON.stringify({ stops, stopLocations }),
       });
-      updateJourney(journey.key, (current) => applyQuote({ ...current, stops }, quote));
+      if (quoteRequests.current[key] !== requestId) return;
+      updateJourney(key, (current) => applyQuote(current, quote));
     } catch (error) {
+      if (quoteRequests.current[key] !== requestId) return;
       setQuoteErrors((current) => ({
         ...current,
-        [journey.key]: error instanceof Error ? error.message : 'Rute gagal dihitung.',
+        [key]: error instanceof Error ? error.message : 'Rute gagal diukur.',
       }));
     } finally {
-      setQuoting((current) => ({ ...current, [journey.key]: false }));
+      if (quoteRequests.current[key] === requestId) {
+        setQuoting((current) => ({ ...current, [key]: false }));
+      }
     }
+  };
+
+  // Every change to the stops measures the route again, as the sopir report does.
+  const changeStops = (
+    key: string,
+    stops: string[],
+    stopLocations: Array<DriverJourneyLocation | null>,
+  ) => {
+    updateJourney(key, (current) => ({ ...current, stops, stopLocations }));
+    void measureRoute(key, stops, stopLocations);
   };
 
   const persist = async (mode: 'save' | 'recalculate') => {
@@ -324,11 +351,12 @@ export default function SimulasiPerjalananPage() {
                   quoting={Boolean(quoting[journey.key])}
                   quoteError={quoteErrors[journey.key] || ''}
                   onChange={(update) => updateJourney(journey.key, update)}
+                  onStopsChange={(stops, stopLocations) => changeStops(journey.key, stops, stopLocations)}
+                  onRetryQuote={() => void measureRoute(journey.key, journey.stops, journey.stopLocations)}
                   onRemove={() => updateForm((form) => ({
                     ...form,
                     journeys: form.journeys.filter((item) => item.key !== journey.key),
                   }))}
-                  onQuote={() => void quoteJourney(journey)}
                 />
               ))}
 
