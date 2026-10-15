@@ -38,6 +38,12 @@ import {
   resolveDriverJourneyPointLocations,
   normalizeDriverJourneyLocations,
   formatDurationHoursAsJamMenit,
+  authorizedDriverWageEstimate,
+  calculateDriverJourneyLoopOperationalCosts,
+  calculateLoopFuelCost,
+  calculatePlannedDriverJourney,
+  isMeasuredLoopAuthorization,
+  MEASURED_LOOP_AUTHORIZATION,
 } from './driverJourney';
 import {
   driverJourneyDraftStorageKey,
@@ -74,7 +80,9 @@ test('authorization drafts preserve the ordered destination timeline and coordin
     assignedDriverId: 'driver-1',
     calcDistance: 12.5,
     calcDuration: 1.75,
-    inputDuration: 3.5,
+    departureTime: '07:30',
+    returnDate: '2026-08-29',
+    returnTime: '02:15',
     showMapSelector: true,
     mapTarget: 1,
     mapSearchText: 'Tujuan C',
@@ -94,12 +102,15 @@ test('authorization drafts preserve the ordered destination timeline and coordin
   assert.equal(parsed.mapTarget, 1);
   assert.deepEqual(parsed.mapLocation, draftState.mapLocation);
   assert.equal(parsed.tollFee, '50.000');
+  assert.equal(parsed.departureTime, '07:30');
+  assert.equal(parsed.returnDate, '2026-08-29');
+  assert.equal(parsed.returnTime, '02:15');
 });
 
 test('authorization drafts are scoped to the account and period', () => {
   assert.equal(
     driverJourneyDraftStorageKey('admin/user 1', '2026-08'),
-    'unipdu:driver-journey-draft:v1:admin%2Fuser%201:2026-08',
+    'unipdu:driver-journey-draft:v2:admin%2Fuser%201:2026-08',
   );
   assert.equal(driverJourneyDraftStorageKey('', '2026-08'), '');
   assert.equal(driverJourneyDraftStorageKey('admin-1', '2026-13'), '');
@@ -122,7 +133,9 @@ test('authorization drafts are scoped to the account and period', () => {
       assignedDriverId: '',
       calcDistance: null,
       calcDuration: null,
-      inputDuration: null,
+      departureTime: '',
+      returnDate: '',
+      returnTime: '',
       showMapSelector: false,
       mapTarget: 'end',
       mapSearchText: '',
@@ -134,6 +147,11 @@ test('authorization drafts are scoped to the account and period', () => {
 
   assert.equal(parseDriverJourneyAuthorizationDraft(raw, '2026-09'), null);
   assert.equal(parseDriverJourneyAuthorizationDraft('{broken', '2026-08'), null);
+  // A version-1 draft held a one-way distance; it must not be read as a loop.
+  assert.equal(
+    parseDriverJourneyAuthorizationDraft(JSON.stringify({ ...JSON.parse(raw), version: 1 }), '2026-08'),
+    null,
+  );
 });
 
 test('journey destinations preserve order and support legacy endPoint documents', () => {
@@ -926,4 +944,117 @@ test('calculateDriverJourneyOperationalCosts respects hold_accumulate and procur
   assert.equal(releaseMode.effectiveFuelAllowance, 195_000); // 145.000 + 50.000
   assert.equal(releaseMode.totalFuelAllocation, 195_000);
   assert.equal(releaseMode.totalOperationalCost, 215_000); // 195.000 + 20.000
+});
+
+test('a planned journey pays what the sopir report pays for the same trip', () => {
+  // Jombang -> Surabaya -> Jombang, 07:00 to 15:00: the sopir waits all day.
+  const plan = calculatePlannedDriverJourney({
+    loopDistanceKm: 160,
+    loopDurationHours: 3,
+    departureDate: '2026-11-02',
+    departureTime: '07:00',
+    returnDate: '2026-11-02',
+    returnTime: '15:00',
+  });
+  assert.equal(plan.journeyDurationHours, 8);
+  assert.equal(plan.nightCount, 0);
+  assert.equal(plan.componentJarak, 48_000);
+  assert.equal(plan.componentWaktu, 15_000);
+  assert.equal(plan.mealWage, 40_000); // 8 jam: second meal tier
+  assert.equal(plan.shortTripMeal, 0);
+  assert.equal(plan.nightPremium, 0);
+  assert.equal(plan.upahBersih, 103_000);
+  // The figure the report computes from the same inputs.
+  assert.equal(plan.upahBersih, calculateDriverNetWage({
+    distanceKm: 160,
+    travelTimeHours: 3,
+    elapsedDurationHours: 8,
+    nightCount: 0,
+    mealAccountingMode: 'upah_bersih_gross',
+  }));
+  // The old authorization estimate understated it.
+  assert.equal(calculateEstimatedDriverWage(160, 3, 'upah_bersih_gross').baseWage, 83_000);
+});
+
+test('a planned journey counts nights and meals from the clock, not the driving time', () => {
+  const plan = calculatePlannedDriverJourney({
+    loopDistanceKm: 700,
+    loopDurationHours: 12.5,
+    departureDate: '2026-11-02',
+    departureTime: '06:00',
+    returnDate: '2026-11-04',
+    returnTime: '20:00',
+  });
+  assert.equal(plan.journeyDurationHours, 62);
+  assert.equal(plan.nightCount, 2);
+  assert.equal(plan.nightPremium, 100_000);
+  assert.equal(plan.mealWage, 2 * 60_000 + 60_000); // 2 full days + 14 jam
+  assert.equal(
+    plan.upahBersih,
+    plan.componentJarak + plan.componentWaktu + plan.shortTripMeal + plan.mealWage + plan.nightPremium,
+  );
+
+  // Arriving before 05:00 does not add a night; a short remainder earns the flat short-trip meal.
+  const earlyArrival = calculatePlannedDriverJourney({
+    loopDistanceKm: 300,
+    loopDurationHours: 6,
+    departureDate: '2026-11-02',
+    departureTime: '03:00',
+    returnDate: '2026-11-03',
+    returnTime: '04:30',
+  });
+  assert.equal(earlyArrival.nightCount, 0);
+  assert.equal(earlyArrival.journeyDurationHours, 25.5);
+  assert.equal(earlyArrival.mealWage, 60_000);
+  assert.equal(earlyArrival.shortTripMeal, 5_000);
+});
+
+test('a planned journey refuses a return before departure or a missing measurement', () => {
+  const base = {
+    loopDistanceKm: 100,
+    loopDurationHours: 2,
+    departureDate: '2026-11-02',
+    departureTime: '08:00',
+    returnDate: '2026-11-02',
+    returnTime: '12:00',
+  };
+  assert.throws(() => calculatePlannedDriverJourney({ ...base, returnTime: '08:00' }), /setelah waktu berangkat/);
+  assert.throws(() => calculatePlannedDriverJourney({ ...base, returnDate: '2026-11-01' }), /setelah waktu berangkat/);
+  assert.throws(() => calculatePlannedDriverJourney({ ...base, loopDistanceKm: 0 }), /belum diukur/);
+  assert.throws(() => calculatePlannedDriverJourney({ ...base, departureTime: '8:00' }), /JJ:MM/);
+});
+
+test('loop fuel uses the measured loop, not a doubled outbound distance', () => {
+  // UNIPDU -> Surabaya -> Sidoarjo -> UNIPDU measured at 190 km.
+  assert.equal(calculateLoopFuelCost(190, 'Innova Matic'), 275_500);
+  assert.equal(calculateLoopFuelCost(100.3, 'Elf'), 135_405);
+  const loop = calculateDriverJourneyLoopOperationalCosts(190, 8, 'Innova Matic', 30_000, {
+    mealAccountingMode: 'upah_bersih_gross',
+  });
+  assert.equal(loop.baseOperationalCost, 275_500);
+  assert.equal(loop.totalOperationalCost, 305_500);
+  // The outbound wrapper keeps its old figure.
+  assert.equal(
+    calculateDriverJourneyOperationalCosts(95, 8, 'Innova Matic', 30_000).baseOperationalCost,
+    loop.baseOperationalCost,
+  );
+});
+
+test('authorized wage estimate is one figure for measured-loop journeys and a range before', () => {
+  assert.equal(isMeasuredLoopAuthorization({ authorizationRule: MEASURED_LOOP_AUTHORIZATION }), true);
+  assert.equal(isMeasuredLoopAuthorization({}), false);
+  assert.deepEqual(
+    authorizedDriverWageEstimate({
+      authorizationRule: MEASURED_LOOP_AUTHORIZATION,
+      estimatedBaseDriverWage: 103_000,
+      estimatedMaxDriverWage: 128_750,
+    }),
+    { upahBersih: 103_000, max: null },
+  );
+  assert.deepEqual(
+    authorizedDriverWageEstimate({ estimatedBaseDriverWage: 83_000, estimatedMaxDriverWage: 103_750 }),
+    { upahBersih: 83_000, max: 103_750 },
+  );
+  const recomputed = authorizedDriverWageEstimate({ distanceKm: 80, durationHours: 1.5, mealAccountingMode: 'upah_bersih_gross' });
+  assert.deepEqual(recomputed, { upahBersih: 83_000, max: 103_750 });
 });

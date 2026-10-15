@@ -4,8 +4,8 @@ import admin from '@/lib/firebase-admin';
 import { adminDb } from '@/lib/firebase-admin';
 import { assertDateOnly, assertPekaryaActivityProofUrl } from '@/lib/payroll/domain';
 import {
-  calculateDriverJourneyOperationalCosts,
-  calculateEstimatedDriverWage,
+  calculateDriverJourneyLoopOperationalCosts,
+  calculatePlannedDriverJourney,
   CURRENT_MEAL_ACCOUNTING_MODE,
   DEFAULT_DRIVER_JOURNEY_POINT,
   DEFAULT_DRIVER_VEHICLE_NAME,
@@ -14,6 +14,7 @@ import {
   isFuelProcurementMode,
   isDriverVehicleName,
   MAX_MAIN_DESTINATIONS,
+  MEASURED_LOOP_AUTHORIZATION,
   normalizeDriverJourneyDestinations,
   normalizeDriverJourneyLocation,
   type DriverJourneyLocation,
@@ -92,6 +93,13 @@ function numberField(
     (options.integer && !Number.isSafeInteger(value))
   ) {
     throw new HttpError(400, `${field} tidak valid.`);
+  }
+  return value;
+}
+
+function timeField(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !/^([01]\d|2[0-3]):([0-5]\d)$/.test(value)) {
+    throw new HttpError(400, `${field} wajib diisi (JJ:MM).`);
   }
   return value;
 }
@@ -347,13 +355,42 @@ export async function POST(request: NextRequest) {
       if (vehicleName === DEFAULT_DRIVER_VEHICLE_NAME && requestedFuelMode !== DEFAULT_FUEL_PROCUREMENT_MODE) {
         throw new HttpError(400, 'Kendaraan Ndalem hanya menggunakan Pengisian Standard.');
       }
-      const distanceKm = numberField(body?.distanceKm, 'Jarak satu arah', { min: 0.001, max: 10_000 });
-      const durationHours = numberField(body?.durationHours, 'Durasi satu arah', { min: 0.001, max: 10_000 });
-      const customDurationPP = numberField(
-        body?.customDurationPP ?? durationHours * 2,
-        'Durasi perjalanan PP',
-        { min: 0.001, max: 20_000 },
-      );
+      // docs/adr/0001: authorization measures the whole loop and plans the
+      // departure and return, the inputs the sopir's report is paid on. A page
+      // still sending the old one-way figures has to be reloaded first.
+      if (body?.authorizationRule !== MEASURED_LOOP_AUTHORIZATION) {
+        throw new HttpError(
+          409,
+          'Halaman otorisasi sudah diperbarui. Muat ulang halaman, lalu isi jam berangkat dan kembali.',
+        );
+      }
+      const loopDistanceKm = numberField(body?.loopDistanceKm, 'Jarak pulang-pergi', { min: 0.001, max: 20_000 });
+      const loopDurationHours = numberField(body?.loopDurationHours, 'Durasi tempuh', { min: 0.001, max: 20_000 });
+      const departureTime = timeField(body?.departureTime, 'Jam berangkat');
+      const returnDate = dateField(body?.returnDate, 'Tanggal kembali');
+      const returnTime = timeField(body?.returnTime, 'Jam kembali');
+      let plan: ReturnType<typeof calculatePlannedDriverJourney>;
+      try {
+        plan = calculatePlannedDriverJourney({
+          loopDistanceKm,
+          loopDurationHours,
+          departureDate: activityDate,
+          departureTime,
+          returnDate,
+          returnTime,
+        });
+      } catch (error) {
+        throw new HttpError(400, error instanceof Error ? error.message : 'Jadwal perjalanan tidak valid.');
+      }
+      // Older readers double `distanceKm` and `durationHours` to get the round
+      // trip, so a measured-loop journey stores half the loop there. The loop
+      // itself is `totalDistanceKm` and `plannedRouteDurationHours`.
+      const distanceKm = loopDistanceKm / 2;
+      const durationHours = loopDurationHours / 2;
+      // The authorized duration the audit compares meals against: the planned
+      // Durasi perjalanan. The sopir's report takes its Komponen Waktu seed
+      // from `plannedRouteDurationHours` instead.
+      const customDurationPP = plan.journeyDurationHours;
       const tollParkingFee = numberField(body?.tollParkingFee ?? 0, 'Tol & parkir', { min: 0, max: MAX_MONEY });
       const requestedJourneyId = body?.journeyId;
       const journeyId = requestedJourneyId
@@ -385,14 +422,6 @@ export async function POST(request: NextRequest) {
           throw new HttpError(409, 'Perjalanan yang sudah dimulai atau diproses tidak dapat diubah.');
         }
 
-        // Meal is earned inside Upah Bersih now, so the authorization estimate
-        // must include it — otherwise the figure shown to the Kepala Satker
-        // understates what the sopir will actually be paid.
-        const wageEst = calculateEstimatedDriverWage(
-          distanceKm * 2,
-          customDurationPP,
-          CURRENT_MEAL_ACCOUNTING_MODE,
-        );
         const assignedTo = typeof body?.assignedTo === 'string' && body.assignedTo.trim().length > 0 ? body.assignedTo.trim() : null;
         let assignedToName: string | null = null;
         if (assignedTo) {
@@ -409,9 +438,9 @@ export async function POST(request: NextRequest) {
           assignedToName = String(driverSnapshot.data()?.name || 'Sopir');
         }
 
-        const baseOperationalCosts = calculateDriverJourneyOperationalCosts(
-          distanceKm,
-          customDurationPP,
+        const baseOperationalCosts = calculateDriverJourneyLoopOperationalCosts(
+          loopDistanceKm,
+          plan.journeyDurationHours,
           vehicleName,
           tollParkingFee,
           { mealAccountingMode: CURRENT_MEAL_ACCOUNTING_MODE },
@@ -470,9 +499,9 @@ export async function POST(request: NextRequest) {
         } else {
           throw new HttpError(409, 'Saldo BBM kendaraan tidak dapat diproses.');
         }
-        const operationalCosts = calculateDriverJourneyOperationalCosts(
-          distanceKm,
-          customDurationPP,
+        const operationalCosts = calculateDriverJourneyLoopOperationalCosts(
+          loopDistanceKm,
+          plan.journeyDurationHours,
           vehicleName,
           tollParkingFee,
           {
@@ -495,9 +524,16 @@ export async function POST(request: NextRequest) {
           vehicleName,
           vehicleRate: operationalCosts.vehicleRate,
           distanceKm,
-          totalDistanceKm: distanceKm * 2,
+          totalDistanceKm: loopDistanceKm,
           durationHours,
           customDurationPP,
+          authorizationRule: MEASURED_LOOP_AUTHORIZATION,
+          plannedRouteDurationHours: loopDurationHours,
+          plannedDepartureTime: departureTime,
+          plannedReturnDate: returnDate,
+          plannedReturnTime: returnTime,
+          plannedJourneyDurationHours: plan.journeyDurationHours,
+          plannedNightCount: plan.nightCount,
           baseOperationalCost: operationalCosts.baseOperationalCost,
           mealAllowance: operationalCosts.mealAllowance,
           // Stamped so a journey keeps the treatment it was authorized under
@@ -509,10 +545,15 @@ export async function POST(request: NextRequest) {
           totalOperationalCost: operationalCosts.totalOperationalCost,
           ...reservationFields(reservation),
           fuelModeSelectionRequired: false,
-          estimatedComponentJarak: wageEst.compJarak,
-          estimatedComponentWaktu: wageEst.compWaktu,
-          estimatedBaseDriverWage: wageEst.baseWage,
-          estimatedMaxDriverWage: wageEst.maxWage,
+          // The exact Upah Bersih if the journey runs as planned, by the rules
+          // the sopir's report is paid under. No range any more.
+          estimatedComponentJarak: plan.componentJarak,
+          estimatedComponentWaktu: plan.componentWaktu,
+          estimatedMealWage: plan.mealWage,
+          estimatedShortTripMeal: plan.shortTripMeal,
+          estimatedNightPremium: plan.nightPremium,
+          estimatedBaseDriverWage: plan.upahBersih,
+          estimatedMaxDriverWage: admin.firestore.FieldValue.delete(),
           // Location-only flow: clear historical Google Places photo URLs so
           // rendering a journey cannot trigger the Places Photo SKU.
           destinationImageUrl: null,

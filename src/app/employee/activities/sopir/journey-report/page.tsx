@@ -720,9 +720,13 @@ function JourneyReportContent() {
           const baseRoundTripDistance = Number(reportData.totalDistanceKm) > 0
             ? Number(reportData.totalDistanceKm)
             : Math.max(0, Number(reportData.distanceKm || 0) * 2);
-          const baseRoundTripDuration = Number(reportData.customDurationPP) > 0
-            ? Number(reportData.customDurationPP)
-            : Math.max(0, Number(reportData.durationHours || 0) * 2);
+          // A measured-loop journey (docs/adr/0001) carries Google's driving
+          // time for the loop; older journeys only had the typed "Durasi PP".
+          const baseRoundTripDuration = Number(reportData.plannedRouteDurationHours) > 0
+            ? Number(reportData.plannedRouteDurationHours)
+            : Number(reportData.customDurationPP) > 0
+              ? Number(reportData.customDurationPP)
+              : Math.max(0, Number(reportData.durationHours || 0) * 2);
           const hasExtraLocations = initialExtraLocs.some(
             (location: any) => location?.type === 'tambah_lokasi' && Boolean(location?.destination),
           );

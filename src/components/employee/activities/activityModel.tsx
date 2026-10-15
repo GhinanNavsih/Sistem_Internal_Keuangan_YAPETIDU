@@ -112,6 +112,7 @@ export {
   DestinationImageBanner,
   calculateSopirDefaultFee,
   fmtRp,
+  formatWageEstimate,
   journeyMainDestinationLabel,
   getNextDayISO,
   padTime,

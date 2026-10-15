@@ -74,11 +74,13 @@ import {
   DEFAULT_DRIVER_JOURNEY_LOCATION,
   DEFAULT_DRIVER_JOURNEY_POINT,
   driverJourneyRoutePoint,
-  getMealAllowanceForDuration,
   calculateDriverNetWage,
-  calculateEstimatedDriverWage,
-  CURRENT_MEAL_ACCOUNTING_MODE,
-  resolveMealAccountingMode,
+  calculatePlannedDriverJourney,
+  authorizedDriverWageEstimate,
+  closeDriverJourneyRoundTrip,
+  DRIVER_VEHICLE_RATES,
+  formatDurationHoursAsJamMenit,
+  MEASURED_LOOP_AUTHORIZATION,
   cashOperationalCostFromJourney,
   DEFAULT_FUEL_PROCUREMENT_MODE,
   fuelProcurementModeLabel,
@@ -126,15 +128,7 @@ import { MONTHS_ID } from '@/utils/rekapConfig';
 
 const YEARS = Array.from({ length: 9 }, (_, i) => new Date().getFullYear() + 3 - i);
 
-const VEHICLE_RATES = {
-  'Bis': 2500,
-  'Elf': 1350,
-  'Kijang LGX': 1200,
-  'Innova Hitam': 1250,
-  'Innova Matic': 1450,
-  'Suzuki XL7': 1000,
-  'Ndalem': 0,
-};
+const VEHICLE_RATES = DRIVER_VEHICLE_RATES;
 
 function fmtRp(val: number): string {
   return 'Rp' + Math.round(val || 0).toLocaleString('id-ID');
@@ -550,8 +544,12 @@ function DriverJourneysContent() {
 
   // Calculated preview states
   const [calcDistance, setCalcDistance] = useState<number | null>(null);
-  const [calcDuration, setCalcDuration] = useState<number | null>(null); // Google Maps one-way duration
-  const [inputDuration, setInputDuration] = useState<number | null>(null); // User editable PP duration
+  // The measured loop from the start point and back, and Google's driving time for it.
+  const [calcDuration, setCalcDuration] = useState<number | null>(null);
+  // Planned departure (on activityDate) and return: they decide meals and nights.
+  const [departureTime, setDepartureTime] = useState('');
+  const [returnDate, setReturnDate] = useState('');
+  const [returnTime, setReturnTime] = useState('');
   const [calculating, setCalculating] = useState(false);
   const [calcError, setCalcError] = useState('');
 
@@ -597,7 +595,9 @@ function DriverJourneysContent() {
     assignedDriverId,
     calcDistance,
     calcDuration,
-    inputDuration,
+    departureTime,
+    returnDate,
+    returnTime,
     showMapSelector,
     mapTarget,
     mapSearchText,
@@ -620,7 +620,9 @@ function DriverJourneysContent() {
     assignedDriverId,
     calcDistance,
     calcDuration,
-    inputDuration,
+    departureTime,
+    returnDate,
+    returnTime,
     showMapSelector,
     mapTarget,
     mapSearchText,
@@ -656,7 +658,9 @@ function DriverJourneysContent() {
     setTollFee('');
     setCalcDistance(null);
     setCalcDuration(null);
-    setInputDuration(null);
+    setDepartureTime('');
+    setReturnDate('');
+    setReturnTime('');
     setCalcError('');
     setEditingJourneyId(null);
     setAssignedDriverId('');
@@ -688,7 +692,9 @@ function DriverJourneysContent() {
     setTollFee(draft.tollFee);
     setCalcDistance(draft.calcDistance);
     setCalcDuration(draft.calcDuration);
-    setInputDuration(draft.inputDuration);
+    setDepartureTime(draft.departureTime);
+    setReturnDate(draft.returnDate);
+    setReturnTime(draft.returnTime);
     setEditingJourneyId(draft.editingJourneyId);
     setAssignedDriverId(draft.assignedDriverId);
     setShowMapSelector(draft.showMapSelector);
@@ -855,11 +861,28 @@ function DriverJourneysContent() {
   );
   const authorizationRouteKey = authorizationRoutePoints.join('\u0000');
 
-  // Dynamic preview calculations for meal allowance (Option 2: Flat Rate based on Duration)
-  const totalDurationPP = inputDuration !== null ? inputDuration : (calcDuration ? calcDuration * 2 : 0);
-  const dynamicMealAllowance = selectedVehicle === 'Ndalem'
-    ? 0
-    : getMealAllowanceForDuration(totalDurationPP, selectedVehicle);
+  // docs/adr/0001: the Upah Bersih the sopir is paid if the journey runs as
+  // planned, by the same calculation as their report and the Simulasi.
+  const effectiveReturnDate = returnDate || activityDate;
+  const plannedJourney = useMemo(() => {
+    if (calcDistance === null || calcDuration === null || !departureTime || !returnTime) return null;
+    try {
+      return calculatePlannedDriverJourney({
+        loopDistanceKm: calcDistance,
+        loopDurationHours: calcDuration,
+        departureDate: activityDate,
+        departureTime,
+        returnDate: effectiveReturnDate,
+        returnTime,
+      });
+    } catch {
+      return null;
+    }
+  }, [activityDate, calcDistance, calcDuration, departureTime, effectiveReturnDate, returnTime]);
+  const scheduleError = departureTime && returnTime &&
+    `${effectiveReturnDate}T${returnTime}` <= `${activityDate}T${departureTime}`
+    ? 'Waktu kembali harus setelah waktu berangkat.'
+    : '';
 
   const loadFuelBalances = useCallback(async () => {
     if (!user) return;
@@ -1363,7 +1386,9 @@ function DriverJourneysContent() {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${idToken}`,
             },
-            body: JSON.stringify({ points: authorizationRoutePoints }),
+            // The whole loop back to the start, measured the way the sopir's
+            // report measures it, never a doubled outbound leg.
+            body: JSON.stringify({ points: closeDriverJourneyRoundTrip(authorizationRoutePoints) }),
           });
           const data = await response.json();
 
@@ -1373,7 +1398,6 @@ function DriverJourneysContent() {
 
           setCalcDistance(data.distanceKm);
           setCalcDuration(data.durationHours);
-          setInputDuration(data.durationHours * 2);
           lastCalculatedRef.current = authorizationRouteKey;
         } catch (err: any) {
           console.error(err);
@@ -1444,6 +1468,10 @@ function DriverJourneysContent() {
       setMessage({ type: 'error', text: 'Pilih semua tujuan utama tambahan atau hapus baris yang kosong.' });
       return;
     }
+    if (!departureTime || !returnTime || !plannedJourney) {
+      setMessage({ type: 'error', text: scheduleError || 'Isi jam berangkat serta tanggal dan jam kembali.' });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -1457,7 +1485,6 @@ function DriverJourneysContent() {
         journeyId = `JRN-${dateSanitized}-${randomSuffix}`;
       }
 
-      const durPP = totalDurationPP;
 
       await authenticatedJson('/api/driver-journeys', {
         method: 'POST',
@@ -1476,9 +1503,12 @@ function DriverJourneysContent() {
           fuelProcurementMode: selectedVehicle === 'Ndalem'
             ? DEFAULT_FUEL_PROCUREMENT_MODE
             : fuelProcurementMode,
-          distanceKm: calcDistance,
-          durationHours: calcDuration,
-          customDurationPP: durPP,
+          authorizationRule: MEASURED_LOOP_AUTHORIZATION,
+          loopDistanceKm: calcDistance,
+          loopDurationHours: calcDuration,
+          departureTime,
+          returnDate: effectiveReturnDate,
+          returnTime,
           tollParkingFee: tollFeeVal,
           assignedTo: assignedDriverId || null,
         }),
@@ -1501,7 +1531,9 @@ function DriverJourneysContent() {
       setAdditionalDestinationLocations([]);
       setCalcDistance(null);
       setCalcDuration(null);
-      setInputDuration(null);
+      setDepartureTime('');
+      setReturnDate('');
+      setReturnTime('');
       setEditingJourneyId(null);
       setAssignedDriverId('');
       setTollFee('');
@@ -1886,18 +1918,13 @@ function DriverJourneysContent() {
                                 ) : isReportedDriverJourney(j) ? (
                                   <span>{fmtRp(reportedDriverJourneyWage(j))}</span>
                                 ) : (() => {
-                                  const est = calculateEstimatedDriverWage(
-                                    Number(j.distanceKm || 0) * 2,
-                                    (j.durationHours || 0) * 2,
-                                    resolveMealAccountingMode(j.mealAccountingMode, {
-                                      alreadyApproved: j.status === 'completed',
-                                    }),
-                                  );
-                                  const baseW = j.estimatedBaseDriverWage || est.baseWage;
-                                  const maxW = j.estimatedMaxDriverWage || est.maxWage;
+                                  // One exact figure for a measured-loop journey;
+                                  // older journeys keep their authorized range.
+                                  const estimate = authorizedDriverWageEstimate(j);
                                   return (
                                     <span>
-                                      {fmtRp(baseW)} - {fmtRp(maxW)}
+                                      {fmtRp(estimate.upahBersih)}
+                                      {estimate.max !== null && <> - {fmtRp(estimate.max)}</>}
                                     </span>
                                   );
                                 })()}
@@ -2019,9 +2046,13 @@ function DriverJourneysContent() {
                                           ? j.fuelProcurementMode
                                           : DEFAULT_FUEL_PROCUREMENT_MODE,
                                       );
-                                      setCalcDistance(j.distanceKm);
-                                      setCalcDuration(j.durationHours);
-                                      setInputDuration(j.customDurationPP || (j.durationHours ? j.durationHours * 2 : 0));
+                                      // The route is measured again on open; an edit is a new
+                                      // authorization under the measured-loop rule.
+                                      setCalcDistance(null);
+                                      setCalcDuration(null);
+                                      setDepartureTime(typeof j.plannedDepartureTime === 'string' ? j.plannedDepartureTime : '');
+                                      setReturnDate(typeof j.plannedReturnDate === 'string' ? j.plannedReturnDate : '');
+                                      setReturnTime(typeof j.plannedReturnTime === 'string' ? j.plannedReturnTime : '');
                                       setTollFee(j.tollParkingFee ? String(j.tollParkingFee) : '');
                                       setAssignedDriverId(j.assignedTo || '');
                                       setShowMapSelector(false);
@@ -2398,7 +2429,7 @@ function DriverJourneysContent() {
               Otorisasi Perjalanan Dinas
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-400 mt-1">
-              Masukkan detail perjalanan untuk menghitung estimasi biaya operasional driver (BBM & Uang Makan).
+              Uang jalan (BBM, tol & parkir) dan Upah Bersih sopir dihitung dari rute pulang-pergi serta jam berangkat dan kembali.
             </DialogDescription>
           </DialogHeader>
 
@@ -2500,8 +2531,9 @@ function DriverJourneysContent() {
               })()}
             </div>
 
-            {/* Kendaraan, Durasi & Tol */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 lg:col-start-2 lg:row-start-2">
+            {/* Kendaraan, Tol & Jadwal */}
+            <div className="space-y-3 lg:col-start-2 lg:row-start-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="vehicleSelect" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                   Jenis Kendaraan
@@ -2534,26 +2566,6 @@ function DriverJourneysContent() {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="durationInput" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  Durasi Perjalanan PP (Jam)
-                </Label>
-                <Input
-                  id="durationInput"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  placeholder="Contoh: 3.0"
-                  value={inputDuration !== null ? inputDuration : ''}
-                  onChange={(e) => {
-                    markJourneyDraftChanged();
-                    const val = e.target.value;
-                    setInputDuration(val === '' ? null : parseFloat(val));
-                  }}
-                  className="w-full text-sm font-bold text-slate-700 bg-white rounded-sm border border-slate-200 h-10 px-3"
-                />
-              </div>
-
-              <div className="space-y-1.5">
                 <Label htmlFor="tollInput" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                   Estimasi Tol & Parkir (Rp)
                 </Label>
@@ -2570,6 +2582,63 @@ function DriverJourneysContent() {
                   className="w-full text-sm font-bold text-slate-700 bg-white rounded-sm border border-slate-200 h-10 px-3"
                 />
               </div>
+            </div>
+
+            {/* Jadwal: decides meals and nights in the Upah Bersih (docs/adr/0001) */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="departureTimeInput" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Jam Berangkat
+                </Label>
+                <Input
+                  id="departureTimeInput"
+                  type="time"
+                  value={departureTime}
+                  onChange={(e) => {
+                    markJourneyDraftChanged();
+                    setDepartureTime(e.target.value);
+                  }}
+                  className="w-full text-sm font-bold text-slate-700 bg-white rounded-sm border border-slate-200 h-10 px-3"
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="returnDateInput" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Tanggal Kembali
+                </Label>
+                <Input
+                  id="returnDateInput"
+                  type="date"
+                  min={activityDate}
+                  value={effectiveReturnDate}
+                  onChange={(e) => {
+                    markJourneyDraftChanged();
+                    setReturnDate(e.target.value);
+                  }}
+                  className="w-full text-sm font-bold text-slate-700 bg-white rounded-sm border border-slate-200 h-10 px-3"
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="returnTimeInput" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Jam Kembali
+                </Label>
+                <Input
+                  id="returnTimeInput"
+                  type="time"
+                  value={returnTime}
+                  onChange={(e) => {
+                    markJourneyDraftChanged();
+                    setReturnTime(e.target.value);
+                  }}
+                  className="w-full text-sm font-bold text-slate-700 bg-white rounded-sm border border-slate-200 h-10 px-3"
+                  required
+                />
+              </div>
+            </div>
+            {scheduleError && (
+              <p role="alert" className="text-xs font-semibold text-rose-600">{scheduleError}</p>
+            )}
             </div>
 
             {/* Mode Pengadaan BBM */}
@@ -2827,7 +2896,7 @@ function DriverJourneysContent() {
 
             {/* Calculation Summary Preview */}
             {calcDistance !== null && (() => {
-              const baseFuelPreview = calcDistance * 2 * VEHICLE_RATES[selectedVehicle];
+              const baseFuelPreview = calcDistance * VEHICLE_RATES[selectedVehicle];
               const releasedFuelPreview = fuelProcurementMode === 'procure_release'
                 ? Number(selectedFuelBalance?.accumulatedHoldAmount || 0)
                 : 0;
@@ -2846,7 +2915,7 @@ function DriverJourneysContent() {
                   <div className="grid grid-cols-2 gap-2 text-slate-600 text-xs font-semibold">
                     <div className="bg-white p-2 rounded-sm border border-slate-100">
                       <span className="block text-[8px] text-slate-400 font-bold uppercase">Jarak Pulang-Pergi</span>
-                      <span className="text-xs font-extrabold text-slate-700">{(calcDistance * 2).toFixed(1)} km</span>
+                      <span className="text-xs font-extrabold text-slate-700">{calcDistance.toFixed(1)} km</span>
                     </div>
                     <div className="bg-white p-2 rounded-sm border border-slate-100">
                       <span className="block text-[8px] text-slate-400 font-bold uppercase">Tarif Mobil</span>
@@ -2873,10 +2942,6 @@ function DriverJourneysContent() {
                         <span className="font-bold">{fmtRp(baseFuelPreview)}</span>
                       </div>
                     )}
-                    <div className="flex justify-between text-slate-500 font-medium">
-                      <span>Uang Makan Sopir (Flat Durasi)</span>
-                      <span className="font-bold text-slate-700">{fmtRp(dynamicMealAllowance)}</span>
-                    </div>
                     {(() => {
                       const tollFeeVal = tollFee ? parseInt(tollFee.replace(/\D/g, ''), 10) || 0 : 0;
                       return (
@@ -2893,7 +2958,7 @@ function DriverJourneysContent() {
                                 ? 'Total Kas Operasional'
                                 : 'Total Uang Jalan (Operasional)'}
                             </span>
-                            <span className="text-indigo-700">{fmtRp(totalFuelAllocationPreview + dynamicMealAllowance + tollFeeVal)}</span>
+                            <span className="text-indigo-700">{fmtRp(totalFuelAllocationPreview + tollFeeVal)}</span>
                           </div>
                         </>
                       );
@@ -2901,60 +2966,61 @@ function DriverJourneysContent() {
                   </div>
                 </div>
 
-                {/* Kisaran Pendapatan Bersih Driver */}
+                {/* Upah Bersih Sopir: exact when the journey runs as planned (docs/adr/0001) */}
                 <div className="p-3.5 bg-emerald-50/70 border border-emerald-100 rounded-md space-y-1.5 animate-in fade-in duration-200">
                   <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">
-                    Kisaran Pendapatan Bersih Driver
+                    Upah Bersih Sopir
                   </span>
 
                   <div className="grid grid-cols-2 gap-2 text-slate-600 text-xs font-semibold">
                     <div className="bg-white p-2 rounded-sm border border-slate-100">
-                      <span className="block text-[8px] text-slate-400 font-bold uppercase">Jarak Pulang-Pergi</span>
-                      <span className="text-xs font-extrabold text-slate-700">{(calcDistance * 2).toFixed(1)} km</span>
+                      <span className="block text-[8px] text-slate-400 font-bold uppercase">Durasi Tempuh</span>
+                      <span className="text-xs font-extrabold text-slate-700">{formatDurationHoursAsJamMenit(calcDuration || 0)}</span>
                     </div>
                     <div className="bg-white p-2 rounded-sm border border-slate-100">
-                      <span className="block text-[8px] text-slate-400 font-bold uppercase">Estimasi Waktu PP</span>
-                      <span className="text-xs font-extrabold text-slate-700">{(calcDuration ? calcDuration * 2 : 0).toFixed(1)} jam</span>
+                      <span className="block text-[8px] text-slate-400 font-bold uppercase">Durasi Perjalanan</span>
+                      <span className="text-xs font-extrabold text-slate-700">
+                        {plannedJourney ? formatDurationHoursAsJamMenit(plannedJourney.journeyDurationHours) : '-'}
+                      </span>
                     </div>
                   </div>
 
-                  {(() => {
-                    // A journey being authorized now settles under current policy,
-                    // so the preview includes the meal the sopir will earn.
-                    const estModal = calculateEstimatedDriverWage(
-                      calcDistance * 2,
-                      calcDuration ? calcDuration * 2 : 0,
-                      CURRENT_MEAL_ACCOUNTING_MODE,
-                    );
-                    return (
-                      <div className="space-y-1 text-xs pt-1">
-                        <div className="flex justify-between text-slate-500 font-medium">
-                          <span>Komponen Jarak (Rp300/km)</span>
-                          <span className="font-bold text-slate-700">{fmtRp(estModal.compJarak)}</span>
-                        </div>
-                        <div className="flex justify-between text-slate-500 font-medium">
-                          <span>Komponen Waktu (Rp5.000/jam)</span>
-                          <span className="font-bold text-slate-700">{fmtRp(estModal.compWaktu)}</span>
-                        </div>
-                        {estModal.shortTripMeal > 0 && (
-                          <div className="flex justify-between text-emerald-600 font-medium">
-                            <span>Uang Makan Short-Trip (&le;2 Jam)</span>
-                            <span className="font-bold text-emerald-700">+{fmtRp(estModal.shortTripMeal)}</span>
-                          </div>
-                        )}
-                        <div className="flex justify-between text-amber-600 font-medium">
-                          <span>Aktivitas di Perjalanan</span>
-                          <span className="font-bold text-amber-700">s.d. +{fmtRp(Math.ceil(estModal.baseWage * 0.25))}</span>
-                        </div>
-                        <div className="flex justify-between text-slate-800 font-black border-t border-emerald-200/60 pt-1.5 mt-1 text-sm">
-                          <span>Kisaran Upah Bersih</span>
-                          <span className="text-emerald-700">
-                            {fmtRp(estModal.baseWage)} - {fmtRp(estModal.maxWage)}
-                          </span>
-                        </div>
+                  {plannedJourney ? (
+                    <div className="space-y-1 text-xs pt-1">
+                      <div className="flex justify-between text-slate-500 font-medium">
+                        <span>Komponen Jarak (Rp300/km)</span>
+                        <span className="font-bold text-slate-700">{fmtRp(plannedJourney.componentJarak)}</span>
                       </div>
-                    );
-                  })()}
+                      <div className="flex justify-between text-slate-500 font-medium">
+                        <span>Komponen Waktu (Rp5.000/jam)</span>
+                        <span className="font-bold text-slate-700">{fmtRp(plannedJourney.componentWaktu)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-500 font-medium">
+                        <span>Uang Makan</span>
+                        <span className="font-bold text-slate-700">{fmtRp(plannedJourney.mealWage)}</span>
+                      </div>
+                      {plannedJourney.shortTripMeal > 0 && (
+                        <div className="flex justify-between text-slate-500 font-medium">
+                          <span>Uang Makan Short-Trip (&le;2 Jam)</span>
+                          <span className="font-bold text-slate-700">{fmtRp(plannedJourney.shortTripMeal)}</span>
+                        </div>
+                      )}
+                      {plannedJourney.nightCount > 0 && (
+                        <div className="flex justify-between text-slate-500 font-medium">
+                          <span>Premium Malam ({plannedJourney.nightCount} malam)</span>
+                          <span className="font-bold text-slate-700">{fmtRp(plannedJourney.nightPremium)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-slate-800 font-black border-t border-emerald-200/60 pt-1.5 mt-1 text-sm">
+                        <span>Upah Bersih</span>
+                        <span className="text-emerald-700">{fmtRp(plannedJourney.upahBersih)}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="pt-1 text-xs font-medium text-slate-500">
+                      Isi jam berangkat serta tanggal dan jam kembali untuk menghitung Upah Bersih.
+                    </p>
+                  )}
                 </div>
               </div>
               );
@@ -2971,7 +3037,7 @@ function DriverJourneysContent() {
               </Button>
               <Button
                 type="submit"
-                disabled={saving || calcDistance === null}
+                disabled={saving || calcDistance === null || !plannedJourney}
                 className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 h-10"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}

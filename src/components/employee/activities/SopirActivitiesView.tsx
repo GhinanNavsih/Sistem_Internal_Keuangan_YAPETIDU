@@ -41,9 +41,8 @@ import {
   DEFAULT_FUEL_PROCUREMENT_MODE,
   DRIVER_VEHICLE_NAMES,
   DRIVER_VEHICLE_RATES,
+  authorizedDriverWageEstimate,
   cashOperationalCostFromJourney,
-  calculateEstimatedDriverWage,
-  resolveMealAccountingMode,
   fuelProcurementModeLabel,
   isFuelProcurementMode,
   type DriverVehicleName,
@@ -60,6 +59,7 @@ import {
   getEffectiveVehicleRate,
   DestinationImageBanner,
   fmtRp,
+  formatWageEstimate,
   journeyMainDestinationLabel,
 } from './activityModel';
 import type { EmployeeActivitiesModel } from './activityModel';
@@ -227,19 +227,11 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                             <span>Operasional: <strong>{fmtRp(cashOperationalCostFromJourney(j))}</strong></span>
                           </div>
                           {(() => {
-                            const est = calculateEstimatedDriverWage(
-                              j.distanceKm * 2,
-                              (j.durationHours || 0) * 2,
-                              resolveMealAccountingMode(j.mealAccountingMode, {
-                                alreadyApproved: j.status === 'completed',
-                              }),
-                            );
-                            const baseWage = j.estimatedBaseDriverWage || est.baseWage;
-                            const maxWage = j.estimatedMaxDriverWage || est.maxWage;
+                            const estimate = authorizedDriverWageEstimate(j);
                             return (
                               <div className="pt-1 border-t border-white/10 text-[10px] text-purple-200 flex justify-between items-center">
                                 <span>Estimasi Upah:</span>
-                                <span className="font-black text-amber-300">{fmtRp(baseWage)} - {fmtRp(maxWage)}</span>
+                                <span className="font-black text-amber-300">{formatWageEstimate(estimate)}</span>
                               </div>
                             );
                           })()}
@@ -267,15 +259,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                   Perjalanan Aktif Anda
                 </h3>
                 {myClaimedJourneys.map((j) => {
-                  const est = calculateEstimatedDriverWage(
-                              Number(j.distanceKm || 0) * 2,
-                              (j.durationHours || 0) * 2,
-                              resolveMealAccountingMode(j.mealAccountingMode, {
-                                alreadyApproved: j.status === 'completed',
-                              }),
-                            );
-                  const baseWage = j.estimatedBaseDriverWage || est.baseWage;
-                  const maxWage = j.estimatedMaxDriverWage || est.maxWage;
+                  const wageEstimate = authorizedDriverWageEstimate(j);
                   // A self-authorized journey has no route until its report is
                   // filed, so there is no figure to show yet — only a zero.
                   const hasRouteEstimate = Number(j.distanceKm || 0) > 0;
@@ -314,7 +298,7 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                           </div>
                           <div className="bg-emerald-50/70 border border-emerald-100 p-3.5 rounded-md space-y-0.5">
                             <span className="block text-[9px] font-black text-emerald-600 uppercase tracking-wider">Estimasi Upah Sopir</span>
-                            <span className="text-xs sm:text-sm font-black text-emerald-900 block">{fmtRp(baseWage)} - {fmtRp(maxWage)}</span>
+                            <span className="text-xs sm:text-sm font-black text-emerald-900 block">{formatWageEstimate(wageEstimate)}</span>
                           </div>
                         </div>
                       ) : (
@@ -414,23 +398,10 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                               <span className="block text-[8px] text-slate-400 font-extrabold uppercase leading-tight">Biaya Operasional</span>
                               <span className="text-xs font-black text-indigo-600">{fmtRp(cashOperationalCostFromJourney(j))}</span>
                             </div>
-                            {(() => {
-                              const est = calculateEstimatedDriverWage(
-                              j.distanceKm * 2,
-                              (j.durationHours || 0) * 2,
-                              resolveMealAccountingMode(j.mealAccountingMode, {
-                                alreadyApproved: j.status === 'completed',
-                              }),
-                            );
-                              const baseWage = j.estimatedBaseDriverWage || est.baseWage;
-                              const maxWage = j.estimatedMaxDriverWage || est.maxWage;
-                              return (
-                                <div>
-                                  <span className="block text-[8px] text-slate-400 font-extrabold uppercase leading-tight">Upah Bersih</span>
-                                  <span className="text-xs font-black text-emerald-600">{fmtRp(baseWage)} - {fmtRp(maxWage)}</span>
-                                </div>
-                              );
-                            })()}
+                            <div>
+                              <span className="block text-[8px] text-slate-400 font-extrabold uppercase leading-tight">Upah Bersih</span>
+                              <span className="text-xs font-black text-emerald-600">{formatWageEstimate(authorizedDriverWageEstimate(j))}</span>
+                            </div>
                           </div>
 
                           <Button

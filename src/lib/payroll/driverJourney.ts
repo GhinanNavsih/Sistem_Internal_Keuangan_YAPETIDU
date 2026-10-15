@@ -567,6 +567,31 @@ export function calculateDriverJourneyOperationalCosts(
   if (!Number.isFinite(distanceKmOneWay) || distanceKmOneWay < 0) {
     throw new Error('Jarak perjalanan tidak valid.');
   }
+  return calculateDriverJourneyLoopOperationalCosts(
+    distanceKmOneWay * 2,
+    durationHoursPP,
+    vehicleName,
+    tollParkingFee,
+    options,
+  );
+}
+
+/**
+ * The same budget as {@link calculateDriverJourneyOperationalCosts}, from the
+ * distance of the whole loop as Google Directions measured it rather than a
+ * doubled outbound distance. Journeys authorized under the measured-loop rule
+ * (docs/adr/0001) use this one.
+ */
+export function calculateDriverJourneyLoopOperationalCosts(
+  loopDistanceKm: number,
+  durationHoursPP: number,
+  vehicleName: DriverVehicleName,
+  tollParkingFee: number = 0,
+  options: DriverJourneyFuelCalculationOptions = {},
+): DriverJourneyOperationalCostResult {
+  if (!Number.isFinite(loopDistanceKm) || loopDistanceKm < 0) {
+    throw new Error('Jarak perjalanan tidak valid.');
+  }
   if (!Number.isFinite(durationHoursPP) || durationHoursPP < 0) {
     throw new Error('Durasi perjalanan tidak valid.');
   }
@@ -583,7 +608,7 @@ export function calculateDriverJourneyOperationalCosts(
   }
 
   const vehicleRate = DRIVER_VEHICLE_RATES[vehicleName];
-  const baseOperationalCost = distanceKmOneWay * 2 * vehicleRate;
+  const baseOperationalCost = loopDistanceKm * vehicleRate;
   const heldFuelAmount = fuelProcurementMode === 'hold_accumulate' ? baseOperationalCost : 0;
   const effectiveFuelAllowance = calculateEffectiveFuelAllowance(
     baseOperationalCost,
@@ -1006,6 +1031,154 @@ export function calculateEstimatedDriverWage(
     mealWage,
     baseWage,
     maxWage,
+  };
+}
+
+const PLAN_TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+export interface PlannedDriverJourneyInput {
+  /** The whole loop from the start point and back, as Google Directions measured it. */
+  loopDistanceKm: number;
+  /** Google's driving time for that loop (Durasi tempuh), waiting excluded. */
+  loopDurationHours: number;
+  departureDate: string; // YYYY-MM-DD
+  departureTime: string; // HH:MM
+  returnDate: string; // YYYY-MM-DD
+  returnTime: string; // HH:MM
+}
+
+export interface PlannedDriverJourneyResult {
+  /** First departure to last arrival, waiting included (Durasi perjalanan). */
+  journeyDurationHours: number;
+  nightCount: number;
+  componentJarak: number;
+  componentWaktu: number;
+  shortTripMeal: number;
+  mealWage: number;
+  nightPremium: number;
+  /** What the sopir is paid if the Perjalanan runs as planned. */
+  upahBersih: number;
+}
+
+/**
+ * The Upah Bersih a planned Perjalanan pays, by the rules the sopir's own
+ * report is paid under: distance and Durasi tempuh from the measured loop,
+ * meals and nights from the departure-to-return clock time, meal folded into
+ * the wage. The Simulasi Biaya Perjalanan and journey authorization both use
+ * this, so the figure they show is the figure the sopir is paid when the
+ * Perjalanan runs as planned.
+ */
+export function calculatePlannedDriverJourney(
+  input: PlannedDriverJourneyInput,
+): PlannedDriverJourneyResult {
+  const { loopDistanceKm, loopDurationHours } = input;
+  if (!Number.isFinite(loopDistanceKm) || loopDistanceKm <= 0) {
+    throw new Error('Jarak rute belum diukur.');
+  }
+  if (!Number.isFinite(loopDurationHours) || loopDurationHours <= 0) {
+    throw new Error('Durasi tempuh rute belum diukur.');
+  }
+  const departureDate = String(input.departureDate || '');
+  const returnDate = String(input.returnDate || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(departureDate) || !/^\d{4}-\d{2}-\d{2}$/.test(returnDate)) {
+    throw new Error('Tanggal berangkat dan kembali wajib diisi.');
+  }
+  if (!PLAN_TIME.test(input.departureTime) || !PLAN_TIME.test(input.returnTime)) {
+    throw new Error('Jam berangkat dan kembali wajib diisi (JJ:MM).');
+  }
+  const departs = `${departureDate}T${input.departureTime}`;
+  const returns = `${returnDate}T${input.returnTime}`;
+  if (returns <= departs) {
+    throw new Error('Waktu kembali harus setelah waktu berangkat.');
+  }
+
+  // The audit's timeline rule: the journey is multi-day exactly when the dates
+  // differ, and arriving before 05:00 does not count as another night.
+  const timeline = calculateEditableDriverJourneyTimeline({
+    dateStart: departureDate,
+    timeStart: input.departureTime,
+    dateEnd: returnDate,
+    timeEnd: input.returnTime,
+  });
+  const journeyDurationHours = timeline.durationHours;
+  const nightCount = timeline.nightCount;
+  assertNightCount(nightCount);
+
+  const componentJarak = Math.ceil(loopDistanceKm * DRIVER_DISTANCE_RATE);
+  const componentWaktu = Math.ceil(loopDurationHours * DRIVER_DURATION_RATE);
+  const shortTripMeal = getShortTripMealWageComponent(journeyDurationHours);
+  const mealWage = getMealWageComponent(journeyDurationHours, CURRENT_MEAL_ACCOUNTING_MODE);
+  const nightPremium = calculateNightPremium(nightCount);
+  const upahBersih = calculateDriverNetWage({
+    distanceKm: loopDistanceKm,
+    travelTimeHours: loopDurationHours,
+    elapsedDurationHours: journeyDurationHours,
+    nightCount,
+    mealAccountingMode: CURRENT_MEAL_ACCOUNTING_MODE,
+  });
+
+  return {
+    journeyDurationHours,
+    nightCount,
+    componentJarak,
+    componentWaktu,
+    shortTripMeal,
+    mealWage,
+    nightPremium,
+    upahBersih,
+  };
+}
+
+/** Biaya BBM of a measured loop, rounded up to whole rupiah like the authorized Jatah BBM. */
+export function calculateLoopFuelCost(loopDistanceKm: number, vehicleName: DriverVehicleName): number {
+  if (!Number.isFinite(loopDistanceKm) || loopDistanceKm < 0) {
+    throw new Error('Jarak perjalanan tidak valid.');
+  }
+  return Math.ceil(loopDistanceKm * DRIVER_VEHICLE_RATES[vehicleName]);
+}
+
+/**
+ * Marks a journey authorized under docs/adr/0001: Jatah BBM from the measured
+ * loop and an exact Upah Bersih estimate from planned departure and return.
+ * Journeys authorized earlier keep their doubled outbound distance and their
+ * estimate range.
+ */
+export const MEASURED_LOOP_AUTHORIZATION = 'measured_loop';
+
+export function isMeasuredLoopAuthorization(journey: { authorizationRule?: unknown }): boolean {
+  return journey.authorizationRule === MEASURED_LOOP_AUTHORIZATION;
+}
+
+/**
+ * The Upah Bersih estimate stored when a journey was authorized. A
+ * measured-loop journey has one exact figure (`max` null); an older journey
+ * keeps the range it was authorized with, recomputed only when it never stored
+ * one.
+ */
+export function authorizedDriverWageEstimate(journey: {
+  authorizationRule?: unknown;
+  distanceKm?: unknown;
+  durationHours?: unknown;
+  mealAccountingMode?: unknown;
+  status?: unknown;
+  estimatedBaseDriverWage?: unknown;
+  estimatedMaxDriverWage?: unknown;
+}): { upahBersih: number; max: number | null } {
+  const storedBase = Number(journey.estimatedBaseDriverWage);
+  if (isMeasuredLoopAuthorization(journey) && Number.isFinite(storedBase) && storedBase >= 0) {
+    return { upahBersih: storedBase, max: null };
+  }
+  const estimate = calculateEstimatedDriverWage(
+    Number(journey.distanceKm || 0) * 2,
+    Number(journey.durationHours || 0) * 2,
+    resolveMealAccountingMode(journey.mealAccountingMode, {
+      alreadyApproved: journey.status === 'completed',
+    }),
+  );
+  const storedMax = Number(journey.estimatedMaxDriverWage);
+  return {
+    upahBersih: storedBase > 0 ? storedBase : estimate.baseWage,
+    max: storedMax > 0 ? storedMax : estimate.maxWage,
   };
 }
 

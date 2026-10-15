@@ -11,7 +11,10 @@ import {
   type FuelProcurementMode,
 } from './driverJourney';
 
-export const DRIVER_JOURNEY_DRAFT_STORAGE_VERSION = 1;
+// Version 2 (docs/adr/0001): the route is the measured loop and the form plans
+// departure and return instead of a "Durasi PP" figure. A version-1 draft held
+// a one-way distance, so it is dropped rather than read as a loop.
+export const DRIVER_JOURNEY_DRAFT_STORAGE_VERSION = 2;
 
 const DEFAULT_AUTHORIZATION_VEHICLE: DriverVehicleName = 'Suzuki XL7';
 const MAX_DESTINATION_TEXT_LENGTH = 300;
@@ -36,9 +39,13 @@ export interface DriverJourneyAuthorizationDraftState {
   fuelProcurementMode: FuelProcurementMode;
   tollFee: string;
   assignedDriverId: string;
+  /** The measured loop from the start point and back. */
   calcDistance: number | null;
+  /** Google's driving time for that loop (Durasi tempuh). */
   calcDuration: number | null;
-  inputDuration: number | null;
+  departureTime: string;
+  returnDate: string;
+  returnTime: string;
   showMapSelector: boolean;
   mapTarget: DriverJourneyDraftMapTarget;
   mapSearchText: string;
@@ -79,6 +86,10 @@ function boundedString(value: unknown, fallback = '', maxLength = Number.MAX_SAF
 
 function nonNegativeNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function timeOrEmpty(value: unknown): string {
+  return typeof value === 'string' && /^([01]\d|2[0-3]):([0-5]\d)$/.test(value) ? value : '';
 }
 
 function normalizeMoneyInput(value: unknown): string {
@@ -132,7 +143,9 @@ export function createDriverJourneyAuthorizationDraft(
     assignedDriverId: state.assignedDriverId,
     calcDistance: state.calcDistance,
     calcDuration: state.calcDuration,
-    inputDuration: state.inputDuration,
+    departureTime: state.departureTime,
+    returnDate: state.returnDate,
+    returnTime: state.returnTime,
     showMapSelector: state.showMapSelector,
     mapTarget: state.mapTarget,
     mapSearchText: state.mapSearchText,
@@ -262,7 +275,11 @@ export function parseDriverJourneyAuthorizationDraft(
       assignedDriverId: boundedString(parsed.assignedDriverId).trim(),
       calcDistance: nonNegativeNumber(parsed.calcDistance),
       calcDuration: nonNegativeNumber(parsed.calcDuration),
-      inputDuration: nonNegativeNumber(parsed.inputDuration),
+      departureTime: timeOrEmpty(parsed.departureTime),
+      returnDate: typeof parsed.returnDate === 'string' && isDateOnly(parsed.returnDate)
+        ? parsed.returnDate
+        : '',
+      returnTime: timeOrEmpty(parsed.returnTime),
       showMapSelector: parsed.showMapSelector === true,
       mapTarget: normalizeMapTarget(parsed.mapTarget, additionalDestinations.length),
       mapSearchText,

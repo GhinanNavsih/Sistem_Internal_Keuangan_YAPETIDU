@@ -277,6 +277,13 @@ export function fmtRp(val: number): string {
   return 'Rp' + val.toLocaleString('id-ID');
 }
 
+/** An authorized Upah Bersih estimate: one figure, or the range an older journey was authorized with. */
+export function formatWageEstimate(estimate: { upahBersih: number; max: number | null }): string {
+  return estimate.max === null
+    ? fmtRp(estimate.upahBersih)
+    : `${fmtRp(estimate.upahBersih)} - ${fmtRp(estimate.max)}`;
+}
+
 export function journeyMainDestinationLabel(journey: {
   mainDestinations?: unknown;
   endPoint?: unknown;
