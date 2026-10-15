@@ -236,7 +236,7 @@ export default function BansosRequestPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 p-6">
         <div className="w-full max-w-md bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-8 text-center space-y-4">
-          <h1 className="text-lg font-bold text-slate-800">Ajuan BanSos Tidak Tersedia</h1>
+          <h1 className="text-lg font-bold text-slate-800">Ajuan Tunjangan Tidak Tersedia</h1>
           <p className="text-sm text-slate-500">Halaman ini untuk akun Loyalis atau Pekarya yang terhubung ke data pegawai.</p>
           <Button className="rounded-sm" variant="outline" render={<Link href="/employee/payslip" />}>Kembali ke Slip Gaji</Button>
         </div>
@@ -257,7 +257,7 @@ export default function BansosRequestPage() {
           <Link href="/employee/payslip" aria-label="Kembali ke Slip Gaji" className="rounded-sm p-2 text-slate-500 hover:bg-slate-100"><ChevronLeft className="size-5" /></Link>
           <div className="flex size-9 items-center justify-center rounded-sm bg-indigo-600 text-white"><HandHeart className="size-5" /></div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold text-slate-800">Ajuan BanSos</p>
+            <p className="truncate text-sm font-bold text-slate-800">Ajuan Tunjangan</p>
             <p className="truncate text-xs text-slate-500">{profile?.displayName || profile?.email}</p>
           </div>
           <EmployeeNavigationMenu />
@@ -267,7 +267,7 @@ export default function BansosRequestPage() {
 
       <main className="relative z-10 mx-auto max-w-3xl space-y-8 px-4 py-6 pb-24 sm:px-6 sm:py-8">
         <div className="space-y-1">
-          <h1 className="text-3xl font-bold text-slate-800">Bantuan Sosial</h1>
+          <h1 className="text-3xl font-bold text-slate-800">Tunjangan</h1>
           <p className="text-slate-500 text-sm">Ajukan santunan duka atau melahirkan. Admin Karyawan dan Super Admin memeriksa ajuan, lalu santunan dibayarkan bersama gaji.</p>
         </div>
 

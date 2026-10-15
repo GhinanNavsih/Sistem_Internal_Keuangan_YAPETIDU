@@ -147,7 +147,7 @@ export default function EmployeeNavigationMenu() {
               render={<Link href="/employee/bansos" />}
             >
               <HandHeart className="text-rose-500" />
-              Ajuan BanSos
+              Ajuan Tunjangan
             </DropdownMenuItem>
           )}
           {isSopir && pathname !== '/employee/driver-history' && (

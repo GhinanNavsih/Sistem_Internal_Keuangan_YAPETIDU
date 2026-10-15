@@ -141,7 +141,7 @@ export default function Sidebar() {
     {
       // Admin Karyawan verifies BanSos here; Super Admin only views it and
       // decides its own side from the Vakasi Tambahan page.
-      name: 'Verifikasi BanSos',
+      name: 'Verifikasi Ajuan Tunjangan',
       path: '/dashboard/bansos',
       icon: HandHeart
     },
@@ -270,7 +270,7 @@ export default function Sidebar() {
       activePattern: '/dashboard/employees',
     },
     {
-      name: 'Verifikasi BanSos',
+      name: 'Verifikasi Ajuan Tunjangan',
       path: '/dashboard/bansos',
       icon: HandHeart,
       activePattern: '/dashboard/bansos',

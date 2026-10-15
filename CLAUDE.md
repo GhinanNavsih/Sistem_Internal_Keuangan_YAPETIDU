@@ -28,7 +28,7 @@ src/
 │   │                              #   payroll/senam-pagi + payroll/bonus-triwulan (see Bonus Triwulan below)
 │   ├── dashboard/
 │   │   ├── employees/             # Employee master data admin
-│   │   ├── bansos/                # Verifikasi BanSos (Admin Karyawan decides; Super Admin views), see BanSos below
+│   │   ├── bansos/                # Verifikasi Ajuan Tunjangan (Admin Karyawan decides; Super Admin views), see BanSos below
 │   │   ├── users/                 # User/role management
 │   │   ├── reservasi-ruang/       # Venue reservations in SIMPEL UNIPDU (Kepala SatKer Loyalis + Super Admin)
 │   │   ├── pemeriksaan-ruang/     # Return checks after a room is used (Teknisi/Kebersihan honorer + Super Admin)
@@ -188,7 +188,7 @@ Teknisi and Kebersihan honorer check a room in after use at `/dashboard/pemeriks
 
 ## BanSos (Ajuan Duka & Ajuan Melahirkan)
 
-Loyalis (`loyalis`) and Pekarya (`honorer`, `ketua_shift_satpam`) employees claim social assistance at `/employee/bansos` (menu "Ajuan BanSos"): a death in the family (any relative; Admin Karyawan judges) or a birth, with required proof (shared upload types, checked by bytes, Storage `bansos_requests/{employeeId}/`). Rules are pure and tested in `src/lib/payroll/bansos.ts`; the service is `src/lib/server/bansos.ts` behind `/api/employee/bansos` (GET/POST/DELETE = withdraw) and `/api/payroll/bansos` (GET list, POST decision).
+Loyalis (`loyalis`) and Pekarya (`honorer`, `ketua_shift_satpam`) employees claim social assistance at `/employee/bansos` (menu "Ajuan Tunjangan"): a death in the family (any relative; Admin Karyawan judges) or a birth, with required proof (shared upload types, checked by bytes, Storage `bansos_requests/{employeeId}/`). Rules are pure and tested in `src/lib/payroll/bansos.ts`; the service is `src/lib/server/bansos.ts` behind `/api/employee/bansos` (GET/POST/DELETE = withdraw) and `/api/payroll/bansos` (GET list, POST decision).
 
 - **Two decisions, either order.** Admin Karyawan decides the "admin" side at `/dashboard/bansos`; Super Admin the "finance" side in the Vakasi Tambahan page (`BansosEventPanel` replaces the Rincian Kegiatan form for a BanSos event) and sets the amount there. The side comes from the role, so neither can decide for the other; Super Admin only views `/dashboard/bansos`, Badan Keuangan only views the panel. It is paid when the second acceptance lands; a rejection by either side ends it (the reason is shown to the employee); each side can "Batalkan keputusan" (reset) while the slip is not locked. Status is derived (`bansosStatus`), never stored.
 - **Defaults** (`BANSOS_DEFAULT_AMOUNTS`): Melahirkan Rp500.000; Duka Rp1.000.000 Loyalis / Rp750.000 Pekarya. Stored on the ajuan at submission; Super Admin can change it before accepting.

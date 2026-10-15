@@ -9,7 +9,7 @@ import type { BansosRequest } from '@/lib/payroll/bansos';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 
 /**
- * Verifikasi BanSos: Admin Karyawan's side of each Ajuan Duka / Melahirkan.
+ * Verifikasi Ajuan Tunjangan (BanSos): Admin Karyawan's side of each Ajuan Duka / Melahirkan.
  * Super Admin decides the other side (and the amount) in the Vakasi page, so
  * here Super Admin only looks.
  */
@@ -90,7 +90,7 @@ export default function BansosVerificationPage() {
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div className="space-y-1">
             <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-3">
-              <HandHeart className="size-7 text-indigo-500" /> Verifikasi BanSos
+              <HandHeart className="size-7 text-indigo-500" /> Verifikasi Ajuan Tunjangan
             </h1>
             <p className="text-slate-500 text-sm">
               Periksa bukti Ajuan Duka dan Ajuan Melahirkan pegawai. Santunan dibayar setelah Anda dan Super Admin sama-sama menerima.
