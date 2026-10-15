@@ -12,6 +12,7 @@
 - **Excel Utilities**: XLSX (SheetJS) for spreadsheet imports/seeds/exports
 - **Other notable deps**: `date-fns` (date math), `exifreader` (photo EXIF metadata audit, see `src/lib/exif.ts`), `nodemailer` (payslip/notification email), `recharts` (dashboard charts), `dotenv` (script env loading via `scripts/initEnv.ts`)
 - **Tests**: no Jest/Vitest — `npm test` runs `tsx --test` directly over ~26 `*.test.ts` files, concentrated in `src/lib/payroll/`
+- **Domain docs**: `CONTEXT.md` is the glossary (Perjalanan, Upah Bersih, Durasi tempuh vs Durasi perjalanan, Biaya BBM vs Jatah BBM…); `docs/adr/` records decisions a reader would otherwise "fix".
 
 ---
 
