@@ -37,11 +37,25 @@ export type JournalEntry = {
   depreciation?: { assets: { assetId: string; name: string; amount: number }[] };
   createdBy: string;
   createdAt?: unknown;
+  /** Storage paths of the receipts. Journals posted before several were allowed keep their one receipt in `receiptPath`; read both through `entryReceiptPaths`. */
+  receiptPaths?: string[];
   receiptPath?: string;
   reversesEntryId?: string;
   requestFingerprint?: string;
 };
 export type OpeningBalances = Record<string, { debit: number; credit: number }>;
+
+/**
+ * Receipts one journal may carry, and the size each is compressed to before it is sent. They travel in one JSON
+ * request (base64, a third larger), which the host caps near 32 MB: ten of 2 MB always fit.
+ */
+export const MAX_ENTRY_RECEIPTS = 10;
+export const MAX_ENTRY_RECEIPT_BYTES = 2 * 1024 * 1024;
+/** Storage paths of a journal's receipts, oldest first. */
+export function entryReceiptPaths(entry: Pick<JournalEntry, 'receiptPath' | 'receiptPaths'>): string[] {
+  if (Array.isArray(entry.receiptPaths)) return entry.receiptPaths.filter((path): path is string => typeof path === 'string' && !!path);
+  return entry.receiptPath ? [entry.receiptPath] : [];
+}
 
 export const DEFAULT_ACCOUNTS: FinancialAccount[] = workbookAccounts as FinancialAccount[];
 export const CASH_FLOW_SECTIONS: CashFlowSection[] = ['OPERATING', 'INVESTING', 'FINANCING'];

@@ -7,14 +7,15 @@ import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import AccountSwitcher from '@/components/AccountSwitcher';
 import {
   accountId as financialAccountId, academicYearFor, buildFinancialStatements, cashFlowAllocation, CASH_FLOW_SECTIONS, defaultCashFlowSection,
-  fiscalMonths, FinancialAccount, groupNormalBalance, hasAbnormalBalance, JournalEntry, OpeningBalances, type AccountType, type CashFlowSection, type YearClosing,
+  fiscalMonths, FinancialAccount, groupNormalBalance, hasAbnormalBalance, JournalEntry, MAX_ENTRY_RECEIPT_BYTES, MAX_ENTRY_RECEIPTS, OpeningBalances, type AccountType, type CashFlowSection, type YearClosing,
 } from '@/lib/satker-finance/core';
 import { canCorrectByReversal, entryChangeBlocker, fiscalPeriod, lockedThroughPeriod, reversedEntryIds } from '@/lib/satker-finance/entryEditing';
 import type { FixedAsset } from '@/lib/satker-finance/depreciation';
 import type { BankReconciliation } from '@/lib/satker-finance/bankReconciliation';
 import { monthChecks, openingComesFromPreviousYear, type PreviousYearState } from '@/lib/satker-finance/monthControls';
 import type { FinancialUnit } from '@/lib/server/satkerFinance';
-import { UPLOAD_ACCEPT, UPLOAD_TYPES_TEXT, uploadFileProblem, uploadFileTypeFor, type UploadFileType } from '@/lib/uploadFileTypes';
+import { fitUploadToLimit } from '@/lib/photoEvidence';
+import { UPLOAD_ACCEPT, uploadFileProblem, uploadFileTypeFor, type UploadFileType } from '@/lib/uploadFileTypes';
 import { Button } from '@/components/ui/button';
 import { CurrencyInput } from '@/components/ui/currency-input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -30,7 +31,7 @@ import { Download, FileCheck2, FilePlus2, Loader2, Paperclip, Pencil, RefreshCw,
 
 type Statements = ReturnType<typeof buildFinancialStatements>;
 // `revision` counts the edits of a journal (absent on one never edited); the server refuses a change made on an older one.
-type EntryRecord = JournalEntry & { hasReceipt?: boolean; revision?: number };
+type EntryRecord = JournalEntry & { hasReceipt?: boolean; receiptCount?: number; revision?: number };
 type Report = {
   id: string; unitName?: string; monthIndex: number; status: string; revision: number; sourceRevision: number;
   snapshot: Statements; submittedName?: string; bakApprovedName?: string; rectorApprovedName?: string;
@@ -105,10 +106,13 @@ export default function SatkerFinancePage() {
   const [voucherDate, setVoucherDate] = useState(localToday);
   const [voucherId, setVoucherId] = useState(() => crypto.randomUUID());
   const [lines, setLines] = useState<DraftLine[]>([emptyLine(), emptyLine()]);
-  const [receipt, setReceipt] = useState<File | null>(null);
+  const [receipts, setReceipts] = useState<File[]>([]);
+  const [preparingReceipts, setPreparingReceipts] = useState(false);
   // The journal being edited in the form above the table, and the draft that was in the form before the edit began.
   const [editingEntry, setEditingEntry] = useState<EntryRecord | null>(null);
-  const draftBeforeEdit = useRef<{ lines: DraftLine[]; voucherDate: string; receipt: File | null } | null>(null);
+  // Receipts the journal being edited already has; files picked now are added to them.
+  const savedReceiptCount = editingEntry?.receiptCount ?? 0;
+  const draftBeforeEdit = useRef<{ lines: DraftLine[]; voucherDate: string; receipts: File[] } | null>(null);
   const composerRef = useRef<HTMLTableSectionElement>(null);
   const receiptInputRef = useRef<HTMLInputElement>(null);
   const [deletingEntry, setDeletingEntry] = useState<EntryRecord | null>(null);
@@ -157,7 +161,7 @@ export default function SatkerFinancePage() {
   const draftCashFlowParts = draftCashFlows.flows ? CASH_FLOW_SECTIONS.filter((section) => draftCashFlows.flows![section] !== 0)
     .map((section) => `${cashFlowItems[section]} ${draftCashFlows.flows![section] > 0 ? '+' : '−'}${money(Math.abs(draftCashFlows.flows![section]))}`) : [];
   const unitItems = [...(canReadAll ? [{ value: 'ALL', label: 'Konsolidasi seluruh SatKer' }] : []), ...(data?.units.map((unit) => ({ value: unit.id, label: unit.name })) || [])];
-  const periodItems = [{ value: 'ANNUAL', label: 'Tahunan (Sep–Agu)' }, ...months.map((item) => ({ value: String(item.monthIndex), label: `${item.period}. ${monthNames[item.monthIndex - 1]} ${item.year}` }))];
+  const periodItems = [{ value: 'ANNUAL', label: 'Tahunan (Sep–Agu)' }, ...months.map((item) => ({ value: String(item.monthIndex), label: `${monthNames[item.monthIndex - 1]} ${item.year}` }))];
   const accountItems = postable.map((account) => ({ value: financialAccountId(account), label: `${account.code} · ${account.name}` }));
   const globalAccounts = data?.globalAccounts || data?.accounts || [];
   const allAccountItems = globalAccounts.map((account) => ({ value: financialAccountId(account), label: `${account.code} · ${account.name || '(belum bernama)'}` }));
@@ -234,7 +238,7 @@ export default function SatkerFinancePage() {
     draftBeforeEdit.current = null;
     setEditingEntry(null);
     setVoucherId(crypto.randomUUID());
-    setReceipt(draft?.receipt ?? null);
+    setReceipts(draft?.receipts ?? []);
     setLines(draft?.lines ?? [emptyLine(), emptyLine()]);
     if (draft) setVoucherDate(draft.voucherDate);
   };
@@ -243,36 +247,54 @@ export default function SatkerFinancePage() {
 
   // Loads a posted journal into the form in its own row. Journals posted with one uraian for the whole entry get it on every line.
   const startEdit = (entry: EntryRecord) => {
-    if (!editingEntry) draftBeforeEdit.current = { lines, voucherDate, receipt };
+    if (!editingEntry) draftBeforeEdit.current = { lines, voucherDate, receipts };
     const sharedDescription = entry.lines.some((line) => line.description) ? '' : entry.description;
     setEditingEntry(entry);
     setVoucherId(crypto.randomUUID());
     setVoucherDate(entry.date);
-    setReceipt(null);
+    setReceipts([]);
     setLines(entry.lines.map((line) => ({ accountCode: line.accountCode, description: line.description || sharedDescription, debit: amountText(line.debit), credit: amountText(line.credit) })));
     setError(''); setSuccess('');
     window.requestAnimationFrame(() => composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
   };
 
+  // Adds the picked files to the receipts, each compressed to MAX_ENTRY_RECEIPT_BYTES (photos only; a PDF over the limit is refused).
+  // Files that cannot be added are named in the error; the others are kept.
+  const addReceipts = async (picked: File[]) => {
+    setPreparingReceipts(true);
+    setError('');
+    const added: File[] = [];
+    const failures: string[] = [];
+    for (const file of picked) {
+      if (savedReceiptCount + receipts.length + added.length >= MAX_ENTRY_RECEIPTS) { failures.push(`${file.name}: satu jurnal maksimal memiliki ${MAX_ENTRY_RECEIPTS} bukti.`); continue; }
+      const problem = uploadFileProblem(file, Number.POSITIVE_INFINITY);
+      if (problem) { failures.push(`${file.name}: ${problem}`); continue; }
+      try { added.push(await fitUploadToLimit(file, MAX_ENTRY_RECEIPT_BYTES)); }
+      catch (cause) { failures.push(`${file.name}: ${cause instanceof Error ? cause.message : 'tidak dapat diproses.'}`); }
+    }
+    if (added.length) setReceipts((current) => [...current, ...added]);
+    if (failures.length) setError(`Tidak ditambahkan — ${failures.join(' ')}`);
+    setPreparingReceipts(false);
+  };
+
   const postVoucher = async () => {
-    let receiptDataUrl: string | undefined;
-    if (receipt) {
+    for (const receipt of receipts) {
       const problem = uploadFileProblem(receipt);
       if (problem) { setError(problem); return; }
-      receiptDataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(receipt); });
     }
+    const receiptDataUrls = await Promise.all(receipts.map((receipt) => new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(receipt); })));
     const targetMonth = Number(voucherDate.slice(5, 7));
     const voucher = {
       monthIndex: targetMonth, date: voucherDate, description: entryDescription, kind: 'ADVANCED',
       lines: lines.map((line) => ({ accountCode: line.accountCode, description: line.description.trim(), debit: amountNumber(line.debit), credit: amountNumber(line.credit) })),
-      receiptDataUrl,
+      ...(receiptDataUrls.length ? { receiptDataUrls } : {}),
     };
     if (editingEntry) {
       if (await post('UPDATE_ENTRY', { ...voucher, entryId: editingEntry.id, expectedRevision: editingEntry.revision ?? 0 })) leaveEdit();
       return;
     }
     const result = await post('POST_ENTRY', { entryId: voucherId, ...voucher });
-    if (result) { setVoucherId(crypto.randomUUID()); setReceipt(null); setLines([emptyLine(), emptyLine()]); }
+    if (result) { setVoucherId(crypto.randomUUID()); setReceipts([]); setLines([emptyLine(), emptyLine()]); }
   };
 
   const openDelete = (entry: EntryRecord) => { setError(''); setSuccess(''); setDeleteReason(''); setDeletingEntry(entry); };
@@ -288,7 +310,7 @@ export default function SatkerFinancePage() {
   };
 
   // A journal's receipt, or a bank reconciliation's statement.
-  const viewReceipt = async (target: { entryId: string } | { reconciliationId: string }) => {
+  const viewReceipt = async (target: { entryId: string; index: string } | { reconciliationId: string }) => {
     if (!user) return;
     try {
       const params = new URLSearchParams({ unitId, academicYear, ...target });
@@ -390,14 +412,18 @@ export default function SatkerFinancePage() {
         <td className="px-3 py-1.5"><CurrencyInput className={`${field} text-right`} aria-label={`Debet baris ${index + 1}`} value={amountNumber(line.debit)} onValue={(value) => setLines((current) => current.map((item, i) => i === index ? { ...item, debit: amountText(value) } : item))} /></td>
         <td className="px-3 py-1.5"><CurrencyInput className={`${field} text-right`} aria-label={`Kredit baris ${index + 1}`} value={amountNumber(line.credit)} onValue={(value) => setLines((current) => current.map((item, i) => i === index ? { ...item, credit: amountText(value) } : item))} /></td>
         {index === 0 && <td rowSpan={lines.length + 1} className="border-b border-slate-200 px-3 py-2"><div className="flex flex-col items-start gap-2">
-          <button type="button" className={button} disabled={busy || !draftValid} onClick={() => void postVoucher()}>{editingEntry ? <Save className="h-4 w-4" /> : <FilePlus2 className="h-4 w-4" />}{editingEntry ? 'Simpan perubahan' : 'Posting jurnal'}</button>
+          <button type="button" className={button} disabled={busy || preparingReceipts || !draftValid} onClick={() => void postVoucher()}>{editingEntry ? <Save className="h-4 w-4" /> : <FilePlus2 className="h-4 w-4" />}{editingEntry ? 'Simpan perubahan' : 'Posting jurnal'}</button>
           {editingEntry && <button type="button" className={lightButton} disabled={busy} onClick={cancelEdit}>Batal</button>}
           {!draftValid && !busy && draftHint && lines.some((line) => line.accountCode || line.debit || line.credit || line.description) && <p className="text-xs text-amber-700">{draftHint}</p>}
           <div className="w-full border-t border-slate-200 pt-2">
-            <input key={voucherId} ref={receiptInputRef} id="voucher-receipt" className="hidden" type="file" accept={UPLOAD_ACCEPT} onChange={(event) => { const file = event.target.files?.[0] || null; const problem = file ? uploadFileProblem(file) : null; if (problem) { setError(problem); event.target.value = ''; return; } setError(''); setReceipt(file); }} />
-            {receipt ? <div className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700"><span className="min-w-0 truncate" title={receipt.name}>{receipt.name}</span><button type="button" aria-label="Lepas bukti" title="Lepas bukti" className="shrink-0 text-slate-400 hover:text-red-700" onClick={() => { setReceipt(null); if (receiptInputRef.current) receiptInputRef.current.value = ''; }}><X className="h-4 w-4" /></button></div>
-              : <button type="button" className={lightButton} onClick={() => receiptInputRef.current?.click()}><Paperclip className="h-4 w-4" />{editingEntry?.hasReceipt ? 'Ganti bukti' : 'Lampirkan bukti'}</button>}
-            <p className="mt-1 text-xs text-slate-400">{editingEntry?.hasReceipt && !receipt ? 'Bukti yang tersimpan tetap dipakai bila tidak diganti. ' : 'Boleh dikosongkan. '}{UPLOAD_TYPES_TEXT}, maks. 5 MB.</p>
+            <input key={voucherId} ref={receiptInputRef} id="voucher-receipt" className="hidden" type="file" multiple accept={UPLOAD_ACCEPT} onChange={(event) => {
+              const picked = Array.from(event.target.files || []);
+              event.target.value = '';
+              if (picked.length) void addReceipts(picked);
+            }} />
+            {receipts.length > 0 && <ul className="mb-2 space-y-1">{receipts.map((file, index) => <li key={`${file.name}-${index}`} className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700"><span className="min-w-0 truncate" title={file.name}>{file.name}</span><button type="button" aria-label={`Lepas ${file.name}`} title="Lepas bukti" className="shrink-0 text-slate-400 hover:text-red-700" onClick={() => setReceipts((current) => current.filter((_, i) => i !== index))}><X className="h-4 w-4" /></button></li>)}</ul>}
+            <button type="button" className={lightButton} disabled={preparingReceipts || savedReceiptCount + receipts.length >= MAX_ENTRY_RECEIPTS} onClick={() => receiptInputRef.current?.click()}>{preparingReceipts ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}{preparingReceipts ? 'Memproses bukti…' : savedReceiptCount + receipts.length > 0 ? 'Tambah bukti' : 'Lampirkan bukti'}</button>
+            {savedReceiptCount > 0 && <p className="mt-1 text-xs text-slate-400">{savedReceiptCount} bukti sudah tersimpan.</p>}
           </div>
         </div></td>}
       </tr>)}
@@ -428,7 +454,7 @@ export default function SatkerFinancePage() {
       <div className="flex flex-wrap items-end gap-3 border-b border-slate-200 pb-5">
         <div className="min-w-60 flex-1 text-xs font-medium text-slate-500"><span id="satker-unit-label">Satuan Kerja</span><Select items={unitItems} value={unitId || null} onValueChange={(value) => selectUnit(value || '')}><SelectTrigger aria-labelledby="satker-unit-label" className={selectTrigger}><SelectValue placeholder="Pilih SatKer" /></SelectTrigger><SelectContent className={selectContent}>{canReadAll && <SelectItem className={selectItem} value="ALL">Konsolidasi seluruh SatKer</SelectItem>}{data?.units.map((unit) => <SelectItem className={selectItem} key={unit.id} value={unit.id}>{unit.name}</SelectItem>)}</SelectContent></Select></div>
         <label className="w-40 text-xs font-medium text-slate-500">Awal tahun akademik<input className={`${field} mt-1`} type="number" min="2020" max="2100" value={yearStart} onChange={(event) => { cancelEdit(); const start = Number(event.target.value); setYearStart(start); if (month !== 'ANNUAL') setVoucherDate(`${month >= 9 ? start : start + 1}-${String(month).padStart(2, '0')}-01`); }} /></label>
-        <div className="w-52 text-xs font-medium text-slate-500"><span id="satker-period-label">Periode</span><Select items={periodItems} value={String(month)} onValueChange={(value) => { if (!value) return; cancelEdit(); const selected = value === 'ANNUAL' ? 'ANNUAL' : Number(value); setMonth(selected); if (selected !== 'ANNUAL') { const period = months.find((item) => item.monthIndex === selected); if (period) setVoucherDate(`${period.year}-${String(selected).padStart(2, '0')}-01`); } }}><SelectTrigger aria-labelledby="satker-period-label" className={selectTrigger}><SelectValue /></SelectTrigger><SelectContent className={selectContent}><SelectItem className={selectItem} value="ANNUAL">Tahunan (Sep–Agu)</SelectItem>{months.map((item) => <SelectItem className={selectItem} key={item.period} value={String(item.monthIndex)}>{item.period}. {monthNames[item.monthIndex - 1]} {item.year}</SelectItem>)}</SelectContent></Select></div>
+        <div className="w-52 text-xs font-medium text-slate-500"><span id="satker-period-label">Periode</span><Select items={periodItems} value={String(month)} onValueChange={(value) => { if (!value) return; cancelEdit(); const selected = value === 'ANNUAL' ? 'ANNUAL' : Number(value); setMonth(selected); if (selected !== 'ANNUAL') { const period = months.find((item) => item.monthIndex === selected); if (period) setVoucherDate(`${period.year}-${String(selected).padStart(2, '0')}-01`); } }}><SelectTrigger aria-labelledby="satker-period-label" className={selectTrigger}><SelectValue /></SelectTrigger><SelectContent className={selectContent}><SelectItem className={selectItem} value="ANNUAL">Tahunan (Sep–Agu)</SelectItem>{months.map((item) => <SelectItem className={selectItem} key={item.period} value={String(item.monthIndex)}>{monthNames[item.monthIndex - 1]} {item.year}</SelectItem>)}</SelectContent></Select></div>
         {data?.unit && unitId !== 'ALL' && <div className="pb-2"><Status status={status} /></div>}
       </div>
       {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
@@ -492,7 +518,8 @@ export default function SatkerFinancePage() {
               <td className={`px-3 py-2 text-right tabular-nums ${rule}`}>{line.debit ? money(line.debit) : ''}</td>
               <td className={`px-3 py-2 text-right tabular-nums ${rule}`}>{line.credit ? money(line.credit) : ''}</td>
               {index === 0 && <td rowSpan={span} className={leftCell}><div className="flex flex-col items-start gap-1.5">
-                {entry.hasReceipt && <button className="text-accent-700 hover:underline" onClick={() => void viewReceipt({ entryId: entry.id })}>Lihat bukti</button>}
+                {(entry.receiptCount ?? 0) === 1 && <button className="text-accent-700 hover:underline" onClick={() => void viewReceipt({ entryId: entry.id, index: '0' })}>Lihat bukti</button>}
+                {(entry.receiptCount ?? 0) > 1 && <div className="flex flex-wrap items-center gap-x-2"><span className="text-slate-500">Bukti</span>{Array.from({ length: entry.receiptCount ?? 0 }, (_, index) => <button key={index} className="text-accent-700 hover:underline" aria-label={`Lihat bukti ${index + 1}`} onClick={() => void viewReceipt({ entryId: entry.id, index: String(index) })}>{index + 1}</button>)}</div>}
                 {entry.kind === 'DEPRECIATION' && <span className="text-xs text-slate-500">Dibuat dari daftar aset tetap</span>}
                 {canPost && !changeBlocker && <div className="flex items-center gap-1">
                   {entry.kind !== 'REVERSAL' && entry.kind !== 'DEPRECIATION' && <button type="button" className={`${lightButton} !px-2`} aria-label="Edit jurnal" title="Edit jurnal" disabled={busy || beingEdited} onClick={() => startEdit(entry)}><Pencil className="h-4 w-4" /></button>}

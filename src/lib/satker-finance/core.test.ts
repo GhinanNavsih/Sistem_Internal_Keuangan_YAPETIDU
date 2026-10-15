@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   academicYearFor, adjacentAcademicYear, buildFinancialStatements, buildVoucher, buildYearClosing, cashFlowAllocation, DEFAULT_ACCOUNTS, defaultCashFlowSection,
-  defaultSurplusAccountId, entryCashFlows, fiscalMonths, groupNormalBalance, hasAbnormalBalance, JournalEntry, lastDateOfMonth, sameBalances,
+  defaultSurplusAccountId, entryCashFlows, entryReceiptPaths, fiscalMonths, groupNormalBalance, hasAbnormalBalance, JournalEntry, lastDateOfMonth, sameBalances,
   validateEntryDate, validateOpeningBalances, yearInUse, type FinancialAccount,
 } from './core';
 
@@ -203,4 +203,12 @@ test('year and month helpers', () => {
   assert.equal(yearInUse({ status: 'ACTIVE', entryCount: 0 }), false);
   assert.equal(yearInUse({ status: 'ACTIVE', entryCount: 3 }), true);
   assert.equal(yearInUse({ status: 'CLOSED', entryCount: 0 }), true);
+});
+
+test('a journal\'s receipts come from receiptPaths, or from the single receiptPath of older journals', () => {
+  assert.deepEqual(entryReceiptPaths({}), []);
+  assert.deepEqual(entryReceiptPaths({ receiptPath: 'a.jpg' }), ['a.jpg']);
+  assert.deepEqual(entryReceiptPaths({ receiptPaths: ['a.jpg', 'b.pdf'] }), ['a.jpg', 'b.pdf']);
+  assert.deepEqual(entryReceiptPaths({ receiptPath: 'old.jpg', receiptPaths: ['a.jpg', 'old.jpg'] }), ['a.jpg', 'old.jpg'], 'the list wins once it exists');
+  assert.deepEqual(entryReceiptPaths({ receiptPaths: [] }), []);
 });

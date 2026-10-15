@@ -83,8 +83,8 @@ export function uploadFileTypeFor(mimeOrExtension: string): UploadFileType | nul
  * Client-side first check before reading a file: its size, and that its name or
  * type is one of the accepted ones. The server still checks the contents.
  */
-export function uploadFileProblem(file: { name: string; type: string; size: number }): string | null {
-  if (file.size > MAX_UPLOAD_BYTES) return 'Ukuran berkas maksimal 5 MB.';
+export function uploadFileProblem(file: { name: string; type: string; size: number }, maxBytes = MAX_UPLOAD_BYTES): string | null {
+  if (file.size > maxBytes) return `Ukuran berkas maksimal ${maxBytes / (1024 * 1024)} MB.`;
   const extension = file.name.includes('.') ? file.name.split('.').pop() || '' : '';
   if (!uploadFileTypeFor(file.type) && !uploadFileTypeFor(extension)) {
     return `Jenis berkas tidak didukung. Gunakan ${UPLOAD_TYPES_TEXT}.`;

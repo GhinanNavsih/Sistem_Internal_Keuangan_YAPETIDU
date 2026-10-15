@@ -150,6 +150,7 @@ async function main() {
   // Edit and delete: allowed only while the journal's month and every later month are open.
   const yearDoc = adminDb.collection('SatkerFinancialYears').doc('puskomnet_2026-2027');
   const entryDoc = (id: string) => yearDoc.collection('entries').doc(id);
+  const receiptsOf = (snapshot: FirebaseFirestore.DocumentSnapshot) => (snapshot.data()!.receiptPaths ?? []) as string[];
   const auditActions = async (action: string) => (await yearDoc.collection('audit').where('action', '==', action).get()).docs.map((doc) => doc.data());
   const edit = (entryId: string, extra: Record<string, unknown> = {}) => ({
     ...base, action: 'UPDATE_ENTRY', entryId, expectedRevision: 0, monthIndex: 10, date: '2026-10-01', description: 'Droping (dikoreksi)', cashFlowSection: 'OPERATING',
@@ -196,11 +197,12 @@ async function main() {
   assert.equal((await succeeds(await read(head, { ...base, month: '10' }))).entries.find((item: { id: string }) => item.id === 'voucher-oct-001').hasReceipt, true);
   const octReceipt = await receiptGet(new NextRequest(`http://localhost/api/satker-finance/receipt?${new URLSearchParams({ ...base, entryId: 'voucher-oct-001' })}`, { headers: { authorization: `Bearer ${head.token}` } }));
   assert.equal(octReceipt.status, 200);
-  const receiptPath = (await entryDoc('voucher-oct-001').get()).data()!.receiptPath;
+  const receiptPath = (await entryDoc('voucher-oct-001').get()).data()!.receiptPaths[0];
   assert.match(receiptPath, /^satker-finance\/puskomnet\/2026-2027\/voucher-oct-001_/);
+  assert.equal((await succeeds(await read(head, { ...base, month: '10' }))).entries.find((item: { id: string }) => item.id === 'voucher-oct-001').receiptCount, 1);
   await succeeds(await invoke(secretary, edit('voucher-oct-001', { expectedRevision: 2, description: 'Droping (dikoreksi lagi)' })));
   const reedited = (await entryDoc('voucher-oct-001').get()).data()!;
-  assert.equal(reedited.receiptPath, receiptPath);
+  assert.deepEqual(reedited.receiptPaths, [receiptPath]);
   assert.equal(reedited.revision, 3);
   assert.equal(reedited.description, 'Droping (dikoreksi lagi)');
   view = await succeeds(await read(head, { ...base, month: '10' }));
@@ -213,16 +215,30 @@ async function main() {
   const pdfReceipt = asDataUrl('application/octet-stream', '%PDF-1.4\n', '1 0 obj <<>> endobj');
   const heicReceipt = asDataUrl('', 0, 0, 0, 24, 'ftypheic', 0, 0, 0, 0, 'mif1heic');
   await succeeds(await invoke(secretary, edit('voucher-oct-001', { expectedRevision: 3, receiptDataUrl: pdfReceipt })));
-  const pdfResponse = await receiptGet(new NextRequest(`http://localhost/api/satker-finance/receipt?${new URLSearchParams({ ...base, entryId: 'voucher-oct-001' })}`, { headers: { authorization: `Bearer ${head.token}` } }));
+  const pdfResponse = await receiptGet(new NextRequest(`http://localhost/api/satker-finance/receipt?${new URLSearchParams({ ...base, entryId: 'voucher-oct-001', index: '1' })}`, { headers: { authorization: `Bearer ${head.token}` } }));
+  assert.equal(receiptsOf(await entryDoc('voucher-oct-001').get()).length, 2, 'a receipt added on edit joins the saved one');
   assert.equal(pdfResponse.status, 200);
   assert.equal(pdfResponse.headers.get('content-type'), 'application/pdf');
-  assert.match((await entryDoc('voucher-oct-001').get()).data()!.receiptPath, /\.pdf$/);
+  assert.match((await entryDoc('voucher-oct-001').get()).data()!.receiptPaths[1], /\.pdf$/);
   await succeeds(await invoke(secretary, edit('voucher-oct-001', { expectedRevision: 4, receiptDataUrl: heicReceipt })));
-  const heicResponse = await receiptGet(new NextRequest(`http://localhost/api/satker-finance/receipt?${new URLSearchParams({ ...base, entryId: 'voucher-oct-001' })}`, { headers: { authorization: `Bearer ${head.token}` } }));
+  const heicResponse = await receiptGet(new NextRequest(`http://localhost/api/satker-finance/receipt?${new URLSearchParams({ ...base, entryId: 'voucher-oct-001', index: '2' })}`, { headers: { authorization: `Bearer ${head.token}` } }));
   assert.equal(heicResponse.headers.get('content-type'), 'image/heic');
-  assert.equal((await invoke(secretary, edit('voucher-oct-001', { expectedRevision: 5, receiptDataUrl: asDataUrl('image/png', 'MZ', 0x90, 0, 3, 0, 0, 0) }))).status, 400, 'a program renamed to .png is refused');
-  assert.equal((await invoke(secretary, edit('voucher-oct-001', { expectedRevision: 5, receiptDataUrl: 'hello' }))).status, 400);
-  assert.equal((await entryDoc('voucher-oct-001').get()).data()!.revision, 5, 'a refused receipt changes nothing');
+  assert.equal((await receiptGet(new NextRequest(`http://localhost/api/satker-finance/receipt?${new URLSearchParams({ ...base, entryId: 'voucher-oct-001', index: '3' })}`, { headers: { authorization: `Bearer ${head.token}` } }))).status, 404, 'there is no fourth receipt');
+  // Several receipts in one request, up to ten per journal; a file that fails keeps the others out too.
+  await succeeds(await invoke(secretary, edit('voucher-oct-001', { expectedRevision: 5, receiptDataUrls: [pdfReceipt, receiptDataUrl] })));
+  assert.equal(receiptsOf(await entryDoc('voucher-oct-001').get()).length, 5);
+  assert.equal((await invoke(secretary, edit('voucher-oct-001', { expectedRevision: 6, receiptDataUrls: [receiptDataUrl, 'hello'] }))).status, 400);
+  assert.equal((await invoke(secretary, edit('voucher-oct-001', { expectedRevision: 6, receiptDataUrls: Array(11).fill(receiptDataUrl) }))).status, 400, 'more than ten files in one request');
+  assert.equal((await invoke(secretary, edit('voucher-oct-001', { expectedRevision: 6, receiptDataUrls: Array(6).fill(receiptDataUrl) }))).status, 409, 'five saved plus six would pass ten');
+  assert.equal(receiptsOf(await entryDoc('voucher-oct-001').get()).length, 5);
+  await succeeds(await invoke(secretary, edit('voucher-oct-001', { expectedRevision: 6, receiptDataUrls: Array(5).fill(receiptDataUrl) })));
+  assert.equal(receiptsOf(await entryDoc('voucher-oct-001').get()).length, 10);
+  assert.equal((await succeeds(await read(head, { ...base, month: '10' }))).entries.find((item: { id: string }) => item.id === 'voucher-oct-001').receiptCount, 10);
+  assert.equal((await invoke(secretary, edit('voucher-oct-001', { expectedRevision: 7, receiptDataUrl: asDataUrl('image/png', 'MZ', 0x90, 0, 3, 0, 0, 0) }))).status, 400, 'a program renamed to .png is refused');
+  assert.equal((await invoke(secretary, edit('voucher-oct-001', { expectedRevision: 7, receiptDataUrl: 'hello' }))).status, 400);
+  const pngOver2Mb = `data:image/png;base64,${Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(2 * 1024 * 1024)]).toString('base64')}`;
+  assert.equal((await invoke(secretary, edit('voucher-oct-001', { expectedRevision: 7, receiptDataUrl: pngOver2Mb }))).status, 400, 'a journal receipt over 2 MB is refused (the browser compresses to that size)');
+  assert.equal((await entryDoc('voucher-oct-001').get()).data()!.revision, 7, 'a refused receipt changes nothing');
   // A journal and its reversal belong together: neither half is changed alone, a reversal can only be deleted.
   const entriesBeforeScratch = (await yearDoc.get()).data()!.entryCount;
   await succeeds(await invoke(secretary, { ...base, action: 'POST_ENTRY', entryId: 'voucher-oct-003', monthIndex: 10, date: '2026-10-04', kind: 'EXPENSE', accountCode: '54101', paymentAccountCode: '10000', amount: 20, description: 'Biaya sementara' }));

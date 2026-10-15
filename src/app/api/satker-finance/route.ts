@@ -10,7 +10,7 @@ import {
 } from '@/lib/server/satkerFinance';
 import {
   accountId as financialAccountId, academicYearFor, adjacentAcademicYear, buildFinancialStatements, buildVoucher, buildYearClosing, CASH_FLOW_SECTIONS,
-  calendarYearOf, DEFAULT_ACCOUNTS, defaultCashFlowSection, defaultSurplusAccountId, emptyCashFlows, groupNormalBalance, entryCashFlows, fiscalMonths, FinancialAccount, JournalEntry, lastDateOfMonth,
+  calendarYearOf, DEFAULT_ACCOUNTS, defaultCashFlowSection, entryReceiptPaths, MAX_ENTRY_RECEIPTS, MAX_ENTRY_RECEIPT_BYTES, defaultSurplusAccountId, emptyCashFlows, groupNormalBalance, entryCashFlows, fiscalMonths, FinancialAccount, JournalEntry, lastDateOfMonth,
   OpeningBalances, sameBalances, type AccountType, type CashFlowAmounts, validateEntryDate, validateOpeningBalances,
 } from '@/lib/satker-finance/core';
 import { entryChangeBlocker, isReportOpen } from '@/lib/satker-finance/entryEditing';
@@ -51,28 +51,49 @@ async function usersWithRole(role: string) {
   const snapshot = await adminDb.collection('users').where('role', '==', role).get();
   return snapshot.docs.filter((doc) => doc.data().disabled !== true).map((doc) => doc.id);
 }
+/** The receipts a request carries: `receiptDataUrls`, or the single `receiptDataUrl` older clients send. */
+function receiptInputs(raw: Record<string, unknown>): unknown[] {
+  const value = raw.receiptDataUrls ?? (raw.receiptDataUrl ? [raw.receiptDataUrl] : []);
+  if (!Array.isArray(value)) throw new HttpError(400, 'Bukti transaksi tidak valid.');
+  if (value.length > MAX_ENTRY_RECEIPTS) throw new HttpError(400, `Bukti transaksi maksimal ${MAX_ENTRY_RECEIPTS} berkas.`);
+  return value;
+}
+async function deleteReceipts(paths: string[]) {
+  await Promise.all(paths.map((path) => adminStorage.bucket().file(path).delete({ ignoreNotFound: true }).catch((cleanupError) => console.error('Receipt cleanup failed', cleanupError))));
+}
 /**
- * Validates a receipt photo sent as a data URL and stores it, returning its
- * Storage path. Every call writes a new file (random suffix), so replacing a
- * receipt never overwrites the old one, which the audit trail still points at.
+ * Validates receipt photos sent as data URLs and stores them, returning their
+ * Storage paths in order. Nothing is stored unless every file is valid (each at
+ * most maxBytes; the browser compresses journal receipts to that size). Every
+ * call writes new files (random suffix), so adding a receipt never overwrites
+ * an old one, which the audit trail still points at.
  */
-async function storeReceipt(dataUrl: unknown, unitId: string, academicYear: string, entryId: string): Promise<string> {
-  if (typeof dataUrl !== 'string') throw new HttpError(400, 'Bukti transaksi tidak valid.');
-  const buffer = parseBase64DataUrl(dataUrl);
-  if (!buffer) throw new HttpError(400, 'Bukti transaksi tidak valid.');
-  if (!buffer.length || buffer.length > MAX_UPLOAD_BYTES) throw new HttpError(400, 'Ukuran bukti transaksi maksimal 5 MB.');
-  // The type comes from the file's own bytes, whatever the browser declared.
-  const type = detectUploadFileType(buffer);
-  if (!type) throw new HttpError(400, `Bukti harus berupa ${UPLOAD_TYPES_TEXT}, dan isi berkas harus sesuai jenisnya.`);
-  const receiptPath = `satker-finance/${unitId}/${academicYear}/${entryId}_${randomBytes(8).toString('hex')}.${type.extension}`;
-  await adminStorage.bucket().file(receiptPath).save(buffer, { resumable: false, metadata: { contentType: type.mime } });
-  return receiptPath;
+async function storeReceipts(dataUrls: unknown[], unitId: string, academicYear: string, entryId: string, maxBytes = MAX_UPLOAD_BYTES): Promise<string[]> {
+  const files = dataUrls.map((dataUrl) => {
+    if (typeof dataUrl !== 'string') throw new HttpError(400, 'Bukti transaksi tidak valid.');
+    const buffer = parseBase64DataUrl(dataUrl);
+    if (!buffer) throw new HttpError(400, 'Bukti transaksi tidak valid.');
+    if (!buffer.length || buffer.length > maxBytes) throw new HttpError(400, `Ukuran tiap bukti maksimal ${maxBytes / (1024 * 1024)} MB.`);
+    // The type comes from the file's own bytes, whatever the browser declared.
+    const type = detectUploadFileType(buffer);
+    if (!type) throw new HttpError(400, `Bukti harus berupa ${UPLOAD_TYPES_TEXT}, dan isi berkas harus sesuai jenisnya.`);
+    return { buffer, type };
+  });
+  const paths: string[] = [];
+  try {
+    for (const { buffer, type } of files) {
+      const receiptPath = `satker-finance/${unitId}/${academicYear}/${entryId}_${randomBytes(8).toString('hex')}.${type.extension}`;
+      await adminStorage.bucket().file(receiptPath).save(buffer, { resumable: false, metadata: { contentType: type.mime } });
+      paths.push(receiptPath);
+    }
+  } catch (error) { await deleteReceipts(paths); throw error; }
+  return paths;
 }
 /** What the audit trail keeps of a journal that is changed or removed. */
 function entrySnapshot(entry: Partial<JournalEntry>) {
   return {
     date: entry.date ?? null, monthIndex: entry.monthIndex ?? null, kind: entry.kind ?? null, description: entry.description ?? '',
-    totalAmount: entry.totalAmount ?? 0, cashFlowSection: entry.cashFlowSection ?? null, cashFlows: entry.cashFlows ?? null, receiptPath: entry.receiptPath ?? null,
+    totalAmount: entry.totalAmount ?? 0, cashFlowSection: entry.cashFlowSection ?? null, cashFlows: entry.cashFlows ?? null, receiptPaths: entryReceiptPaths(entry),
     lines: (entry.lines || []).map((line) => ({ accountCode: line.accountCode, accountNumber: line.accountNumber ?? null, accountName: line.accountName, debit: line.debit, credit: line.credit, description: line.description ?? null })),
   };
 }
@@ -228,8 +249,10 @@ export async function GET(request: NextRequest) {
     const annualStatements = monthIndex === 'ANNUAL' ? statements : buildFinancialStatements({ accounts, opening: state.year.openingBalances, entries: state.entries, academicYear, monthIndex: 'ANNUAL' });
     return Response.json({ ...base, accountCatalogRevision: Number(unitCatalog.data()?.revision || 0), unit, year: state.year, statements, annualStatements, monthlyTrial: monthlyTrial(accounts, state.year.openingBalances, state.entries, academicYear),
       entries: state.entries.map((entry) => {
-        const result = { ...entry, hasReceipt: !!entry.receiptPath };
+        const receiptCount = entryReceiptPaths(entry).length;
+        const result = { ...entry, hasReceipt: receiptCount > 0, receiptCount };
         delete result.receiptPath;
+        delete result.receiptPaths;
         delete result.requestFingerprint;
         return result;
       }),
@@ -479,7 +502,8 @@ export async function POST(request: NextRequest) {
       } else {
         try { voucher = buildVoucher(raw, accounts); } catch (error) { inputError(error); }
       }
-      const requestFingerprint = createHash('sha256').update(JSON.stringify({ voucher, reversesEntryId: reversesEntryId || null, receiptDataUrl: raw.receiptDataUrl || null })).digest('hex');
+      const receiptDataUrls = action === 'POST_ENTRY' ? receiptInputs(raw) : [];
+      const requestFingerprint = createHash('sha256').update(JSON.stringify({ voucher, reversesEntryId: reversesEntryId || null, receiptDataUrls: receiptDataUrls.length ? receiptDataUrls : null })).digest('hex');
       const existing = await entryRef.get();
       if (existing.exists) {
         if (existing.data()?.createdBy === actor.uid && existing.data()?.requestFingerprint === requestFingerprint) {
@@ -487,10 +511,9 @@ export async function POST(request: NextRequest) {
         }
         throw new HttpError(409, 'ID voucher sudah dipakai untuk transaksi lain.');
       }
-      let receiptPath: string | undefined;
-      if (action === 'POST_ENTRY' && raw.receiptDataUrl) receiptPath = await storeReceipt(raw.receiptDataUrl, unitId, academicYear, entryId);
+      const receiptPaths = await storeReceipts(receiptDataUrls, unitId, academicYear, entryId, MAX_ENTRY_RECEIPT_BYTES);
       const entry: JournalEntry = { ...voucher, id: entryId, satkerId: unitId, academicYear, monthIndex, isBalanced: true,
-        createdBy: actor.uid, requestFingerprint, ...(receiptPath ? { receiptPath } : {}), ...(reversesEntryId ? { reversesEntryId } : {}) };
+        createdBy: actor.uid, requestFingerprint, ...(receiptPaths.length ? { receiptPaths } : {}), ...(reversesEntryId ? { reversesEntryId } : {}) };
       try {
         await adminDb.runTransaction(async (tx) => {
           const [yearDoc, entryDoc, meta, unitMeta, ...reports] = await Promise.all([
@@ -511,7 +534,7 @@ export async function POST(request: NextRequest) {
           audit(tx, year, actor, action === 'REVERSE_ENTRY' ? 'ENTRY_REVERSED' : 'ENTRY_POSTED', { entryId, date, lines: entry.lines, description: entry.description, reversesEntryId: reversesEntryId || null });
         });
       } catch (error) {
-        if (receiptPath) await adminStorage.bucket().file(receiptPath).delete({ ignoreNotFound: true }).catch((cleanupError) => console.error('Receipt cleanup failed', cleanupError));
+        await deleteReceipts(receiptPaths);
         throw error;
       }
       return Response.json({ ok: true, entryId }, { headers: noStore });
@@ -539,8 +562,8 @@ export async function POST(request: NextRequest) {
         // An edited journal is saved in the advanced form whatever form it was first posted in.
         try { voucher = buildVoucher({ ...raw, kind: 'ADVANCED', date }, accounts); } catch (error) { inputError(error); }
       }
-      let receiptPath: string | undefined;
-      if (!deleting && raw.receiptDataUrl) receiptPath = await storeReceipt(raw.receiptDataUrl, unitId, academicYear, entryId);
+      // New receipts are added to the ones the journal already has.
+      const newReceiptPaths = deleting ? [] : await storeReceipts(receiptInputs(raw), unitId, academicYear, entryId, MAX_ENTRY_RECEIPT_BYTES);
       const entryRef = year.collection('entries').doc(entryId);
       const months = fiscalMonths(academicYear);
       try {
@@ -563,6 +586,8 @@ export async function POST(request: NextRequest) {
             ...(deleting ? {} : { newMonthIndex: monthIndex }),
           });
           if (blocker) throw new HttpError(409, blocker);
+          const receiptPaths = [...entryReceiptPaths(current), ...newReceiptPaths];
+          if (receiptPaths.length > MAX_ENTRY_RECEIPTS) throw new HttpError(409, `Satu jurnal maksimal memiliki ${MAX_ENTRY_RECEIPTS} bukti.`);
           const now = admin.firestore.FieldValue.serverTimestamp();
           if (deleting) {
             tx.delete(entryRef);
@@ -573,18 +598,18 @@ export async function POST(request: NextRequest) {
           const next = voucher!;
           tx.update(entryRef, {
             kind: next.kind, date: next.date, monthIndex, description: next.description, lines: next.lines, totalAmount: next.totalAmount,
-            cashFlowSection: next.cashFlowSection, cashFlows: next.cashFlows, isBalanced: true, ...(receiptPath ? { receiptPath } : {}),
+            cashFlowSection: next.cashFlowSection, cashFlows: next.cashFlows, isBalanced: true, ...(newReceiptPaths.length ? { receiptPaths, receiptPath: admin.firestore.FieldValue.delete() } : {}),
             revision: Number(current.revision || 0) + 1, updatedBy: actor.uid, updatedAt: now,
           });
           tx.set(year, { revision: admin.firestore.FieldValue.increment(1), updatedAt: now }, { merge: true });
           tx.set(CATALOG_META_REF, { usedCodes: admin.firestore.FieldValue.arrayUnion(...next.lines.map((line) => line.accountCode)) }, { merge: true });
           audit(tx, year, actor, 'ENTRY_UPDATED', {
             entryId, before: entrySnapshot(current),
-            after: entrySnapshot({ ...next, monthIndex, receiptPath: receiptPath ?? current.receiptPath }),
+            after: entrySnapshot({ ...next, monthIndex, receiptPaths }),
           });
         });
       } catch (error) {
-        if (receiptPath) await adminStorage.bucket().file(receiptPath).delete({ ignoreNotFound: true }).catch((cleanupError) => console.error('Receipt cleanup failed', cleanupError));
+        await deleteReceipts(newReceiptPaths);
         throw error;
       }
       return Response.json({ ok: true, entryId }, { headers: noStore });
@@ -649,7 +674,7 @@ export async function POST(request: NextRequest) {
       try { input = validateReconciliationInput(raw); } catch (error) { inputError(error); }
       const docId = reconciliationDocId(monthIndex, accountKey);
       if (!/^[a-zA-Z0-9_-]{4,150}$/.test(docId)) throw new HttpError(400, 'Akun kas/bank tidak valid.');
-      const statementPath = raw.statementDataUrl ? await storeReceipt(raw.statementDataUrl, unitId, academicYear, `rekonsiliasi-${docId}`) : undefined;
+      const statementPath = raw.statementDataUrl ? (await storeReceipts([raw.statementDataUrl], unitId, academicYear, `rekonsiliasi-${docId}`))[0] : undefined;
       const ref = year.collection('bankReconciliations').doc(docId);
       try {
         await adminDb.runTransaction(async (tx) => {

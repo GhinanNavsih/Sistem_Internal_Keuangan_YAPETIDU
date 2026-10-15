@@ -178,6 +178,80 @@ export async function compressProofImageToLimit(file: File, maxBytes: number): P
   return new File([blob], compressedFileName(file.name), { type: 'image/jpeg', lastModified: Date.now() });
 }
 
+// Compression that aims at the limit instead of far below it: full resolution
+// (capped for canvas limits) and the highest JPEG quality that still fits.
+const NEAR_LIMIT_MAX_DIMENSION = 4096;
+const NEAR_LIMIT_MIN_DIMENSION = 1280;
+const NEAR_LIMIT_MAX_QUALITY = 0.92;
+const NEAR_LIMIT_MIN_QUALITY = 0.5;
+
+async function drawOpaqueCanvas(file: File): Promise<HTMLCanvasElement> {
+  const image = await loadImage(file);
+  try {
+    if (!image.width || !image.height) throw new Error('Ukuran gambar tidak valid.');
+    const scale = Math.min(1, NEAR_LIMIT_MAX_DIMENSION / Math.max(image.width, image.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.width * scale));
+    canvas.height = Math.max(1, Math.round(image.height * scale));
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Perangkat tidak mendukung kompresi gambar.');
+    // JPEG has no transparency: a transparent PNG would turn black without this.
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image.source, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  } finally {
+    image.dispose();
+  }
+}
+
+/** The best-looking JPEG of this canvas that is at most maxBytes, or null when even the lowest quality is too big. */
+async function jpegNearLimit(canvas: HTMLCanvasElement, maxBytes: number): Promise<Blob | null> {
+  const best = await canvasToJpeg(canvas, NEAR_LIMIT_MAX_QUALITY);
+  if (best.size <= maxBytes) return best;
+  let fitting = await canvasToJpeg(canvas, NEAR_LIMIT_MIN_QUALITY);
+  if (fitting.size > maxBytes) return null;
+  let low = NEAR_LIMIT_MIN_QUALITY;
+  let high = NEAR_LIMIT_MAX_QUALITY;
+  for (let step = 0; step < 6; step++) {
+    const quality = (low + high) / 2;
+    const blob = await canvasToJpeg(canvas, quality);
+    if (blob.size <= maxBytes) { fitting = blob; low = quality; } else { high = quality; }
+  }
+  return fitting;
+}
+
+/**
+ * Shrinks a photo to at most maxBytes without squeezing it further than needed:
+ * the result is as close to the limit as the quality search gets. Photos already
+ * under the limit are returned untouched. Only if the lowest acceptable quality
+ * is still too big does it reduce the dimensions, step by step.
+ */
+export async function compressImageNearLimit(file: File, maxBytes: number): Promise<File> {
+  if (file.size <= maxBytes) return file;
+  let canvas = await drawOpaqueCanvas(file);
+  for (;;) {
+    const blob = await jpegNearLimit(canvas, maxBytes);
+    if (blob) return new File([blob], compressedFileName(file.name), { type: 'image/jpeg', lastModified: Date.now() });
+    if (Math.max(canvas.width, canvas.height) <= NEAR_LIMIT_MIN_DIMENSION) break;
+    canvas = scaleCanvas(canvas, 0.85);
+  }
+  const limitMb = Math.round((maxBytes / (1024 * 1024)) * 10) / 10;
+  throw new Error(`Foto masih lebih dari ${limitMb} MB setelah dikompresi. Pilih foto lain yang lebih kecil.`);
+}
+
+/**
+ * Any accepted proof (photo or PDF) as a file of at most maxBytes. Photos are
+ * compressed with compressImageNearLimit; a PDF cannot be compressed in the
+ * browser, so a PDF over the limit is refused.
+ */
+export async function fitUploadToLimit(file: File, maxBytes: number): Promise<File> {
+  if (file.size <= maxBytes) return file;
+  const limitMb = Math.round((maxBytes / (1024 * 1024)) * 10) / 10;
+  if (isPdfFile(file)) throw new Error(`PDF lebih dari ${limitMb} MB tidak dapat dikompresi. Pilih PDF yang lebih kecil atau gunakan foto.`);
+  return compressImageNearLimit(file, maxBytes);
+}
+
 async function resolveNearestPlace(metadata: PhotoAuditMetadata): Promise<PhotoAuditMetadata> {
   if (metadata.latitude === null || metadata.longitude === null) return metadata;
   try {

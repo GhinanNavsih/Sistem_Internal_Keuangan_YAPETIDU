@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { adminStorage } from '@/lib/firebase-admin';
 import { errorResponse, HttpError, requireAuthenticatedProfile } from '@/lib/server/auth';
 import { getUnit, yearRef } from '@/lib/server/satkerFinance';
+import { entryReceiptPaths } from '@/lib/satker-finance/core';
 import { uploadFileTypeFor } from '@/lib/uploadFileTypes';
 
 export const dynamic = 'force-dynamic';
@@ -18,7 +19,10 @@ export async function GET(request: NextRequest) {
     const id = reconciliationId || entryId;
     if (!/^[a-zA-Z0-9_-]{4,150}$/.test(id)) throw new HttpError(400, 'ID bukti tidak valid.');
     const snapshot = await yearRef(unitId, academicYear).collection(reconciliationId ? 'bankReconciliations' : 'entries').doc(id).get();
-    const path = snapshot.data()?.[reconciliationId ? 'statementPath' : 'receiptPath'];
+    // A journal may carry several receipts; `index` picks one (the first by default).
+    const index = Number(request.nextUrl.searchParams.get('index') ?? 0);
+    if (!Number.isInteger(index) || index < 0) throw new HttpError(400, 'Nomor bukti tidak valid.');
+    const path = reconciliationId ? snapshot.data()?.statementPath : entryReceiptPaths(snapshot.data() ?? {})[index];
     if (!snapshot.exists || typeof path !== 'string' || !path.startsWith(`satker-finance/${unitId}/${academicYear}/`)) {
       throw new HttpError(404, 'Bukti transaksi tidak ditemukan.');
     }
@@ -30,7 +34,7 @@ export async function GET(request: NextRequest) {
     const [buffer] = await file.download();
     return new Response(new Uint8Array(buffer), { headers: {
       'Content-Type': type.mime,
-      'Content-Disposition': `inline; filename="bukti-${id}.${type.extension}"`,
+      'Content-Disposition': `inline; filename="bukti-${id}${index ? `-${index + 1}` : ''}.${type.extension}"`,
       'Cache-Control': 'private, no-store, max-age=0',
       'X-Content-Type-Options': 'nosniff',
     } });
