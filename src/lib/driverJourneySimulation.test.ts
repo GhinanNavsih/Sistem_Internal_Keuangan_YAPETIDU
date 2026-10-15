@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { journeyFormFromResult } from '@/components/driver-simulation/simulationForm';
 import {
   calculateSimulation,
   calculateSimulationJourney,
@@ -84,6 +85,22 @@ test('a Simulasi Perjalanan costs fuel, toll, parking and the Upah Bersih the so
   assert.equal(result.pay.upahBersih, 103_000);
   assert.equal(result.total, 232_000 + 64_000 + 10_000 + 103_000);
   assert.equal(simulationTollMark(result), null);
+});
+
+test('toll access directions survive the saved calculation and reopening the simulation form', () => {
+  const access = [
+    { legIndex: 0, entrance: 'Masuk Jl. Tol Jombang', exit: 'Ambil jalan keluar menuju Surabaya' },
+    { legIndex: 1, entrance: 'Masuk Jl. Tol Surabaya', exit: 'Ambil jalan keluar menuju Jombang' },
+  ];
+  const result = calculateSimulationJourney(surabayaDay, {
+    ...surabayaQuote,
+    toll: { ...surabayaQuote.toll, access },
+  });
+  assert.deepEqual(result.tollQuote.access, access);
+  const reopened = journeyFormFromResult(JSON.parse(JSON.stringify(result)));
+  assert.deepEqual(reopened.quote?.toll.access, access);
+  assert.equal(reopened.tollInput, '64000');
+  assert.equal(reopened.tollSource, 'google');
 });
 
 test('going out and back twice in one day is one Perjalanan with the sopir waiting', () => {

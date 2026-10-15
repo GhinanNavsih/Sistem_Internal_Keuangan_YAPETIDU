@@ -15,7 +15,8 @@ export const dynamic = 'force-dynamic';
  * Measures one Perjalanan's loop from UNIPDU and back ("Hitung"): kilometres
  * and Durasi tempuh from Google Directions, the toll from Google Routes. Only
  * the roles that may simulate can reach it, and a route asked about within
- * the last seven days is answered from the store without a Google request.
+ * the last seven days is answered from the store. Older toll quotes missing
+ * entry/exit directions are enriched once through Google Routes.
  */
 export async function POST(request: NextRequest) {
   try {

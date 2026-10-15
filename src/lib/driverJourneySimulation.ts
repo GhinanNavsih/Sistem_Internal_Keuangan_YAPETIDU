@@ -108,10 +108,20 @@ export interface RouteMeasurement {
  */
 export type TollQuoteStatus = 'priced' | 'unknown_price' | 'none' | 'unavailable';
 
+export interface TollAccess {
+  /** Zero-based route leg, in the same stop order as the toll quote. */
+  legIndex: number;
+  /** Google's navigation instructions, not independently verified gate names. */
+  entrance: string | null;
+  exit: string | null;
+}
+
 export interface TollQuote {
   status: TollQuoteStatus;
   /** Whole rupiah, only for `priced`. */
   amount: number | null;
+  /** Absent on older quotes; an empty array means Google did not identify the access directions. */
+  access?: TollAccess[];
 }
 
 export interface RouteQuote {

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-export const PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH = 4;
+export const PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH = 3;
 export const PLACE_AUTOCOMPLETE_DEBOUNCE_MS = 400;
 const PLACE_AUTOCOMPLETE_CACHE_LIMIT = 50;
 

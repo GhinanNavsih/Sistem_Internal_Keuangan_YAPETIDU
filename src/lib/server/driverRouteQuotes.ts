@@ -5,6 +5,7 @@ import {
   type RouteLeg,
   type RouteMeasurement,
   type RouteQuote,
+  type TollAccess,
   type TollQuote,
   type TollQuoteStatus,
 } from '@/lib/driverJourneySimulation';
@@ -56,9 +57,22 @@ function storedToll(value: unknown): TollQuote {
     ? (record.status as TollQuoteStatus)
     : 'unavailable';
   const amount = finiteNonNegative(record.amount);
-  return status === 'priced' && amount !== null
+  const toll: TollQuote = status === 'priced' && amount !== null
     ? { status, amount }
     : { status: status === 'priced' ? 'unavailable' : status, amount: null };
+  if (Array.isArray(record.access)) {
+    toll.access = record.access.flatMap((value): TollAccess[] => {
+      if (!value || typeof value !== 'object') return [];
+      const entry = value as Record<string, unknown>;
+      if (!Number.isInteger(entry.legIndex) || Number(entry.legIndex) < 0) return [];
+      return [{
+        legIndex: Number(entry.legIndex),
+        entrance: typeof entry.entrance === 'string' ? entry.entrance : null,
+        exit: typeof entry.exit === 'string' ? entry.exit : null,
+      }];
+    });
+  }
+  return toll;
 }
 
 function plainMeasurement(measurement: RouteMeasurement): RouteMeasurement {
@@ -78,7 +92,8 @@ function plainMeasurement(measurement: RouteMeasurement): RouteMeasurement {
  * The measurement and toll for a route, from the store when it was measured
  * within the reuse window, otherwise from Google. A toll Google could not
  * answer earlier is asked again (a failed toll request is not billed), the
- * kilometres are not.
+ * kilometres are not. Older toll quotes without access directions are also
+ * refreshed once; subsequent reads reuse the enriched answer.
  */
 export async function loadRouteQuote(
   db: Firestore,
@@ -93,9 +108,13 @@ export async function loadRouteQuote(
 
   if (cachedMeasurement && isRouteQuoteFresh(measuredAt, now)) {
     let toll = storedToll(data?.toll);
-    if (toll.status === 'unavailable') {
-      toll = await quoteRouteToll(points);
-      if (toll.status !== 'unavailable') {
+    if (toll.status === 'unavailable' ||
+      ((toll.status === 'priced' || toll.status === 'unknown_price') && !toll.access)) {
+      const refreshed = await quoteRouteToll(points);
+      // Missing access directions must not discard an otherwise usable price
+      // when Google is temporarily unavailable.
+      if (refreshed.status !== 'unavailable') {
+        toll = refreshed;
         await ref.set({ toll, tollCheckedAt: now.toISOString() }, { merge: true });
       }
     }

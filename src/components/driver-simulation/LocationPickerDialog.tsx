@@ -271,7 +271,7 @@ export function LocationPickerDialog({
     <Dialog open onOpenChange={(open) => { if (!open) close(); }}>
       <DialogContent
         showCloseButton={false}
-        className="top-4 max-h-[calc(100dvh-2rem)] translate-y-0 overflow-y-auto sm:max-w-lg"
+        className="top-4 max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] translate-y-0 overflow-y-auto sm:max-w-6xl"
       >
         <DialogHeader>
           <DialogTitle className="text-base font-semibold text-slate-900">Pilih lokasi</DialogTitle>
@@ -340,7 +340,7 @@ export function LocationPickerDialog({
           ref={(element) => {
             if (element) initMap(element);
           }}
-          className="h-56 w-full overflow-hidden rounded-lg border border-slate-200"
+          className="h-[clamp(18rem,55dvh,36rem)] w-full overflow-hidden rounded-lg border border-slate-200"
         />
 
         <DetailList>

@@ -83,7 +83,7 @@ function RupiahTextInput({
   );
 }
 
-function tollHint(journey: JourneyForm): string | null {
+function tollHint(journey: JourneyForm): ReactNode {
   const toll = journey.quote?.toll;
   if (!toll) return null;
   if (journey.tollSource === 'manual') {
@@ -92,7 +92,26 @@ function tollHint(journey: JourneyForm): string | null {
     if (toll.status === 'unknown_price') return 'Rute melewati tol yang tarifnya tidak diketahui Google.';
     return 'Tarif tol dari Google tidak tersedia saat ini.';
   }
-  if (toll.status === 'priced') return 'Tarif Google untuk kartu e-toll.';
+  if (toll.status === 'priced') {
+    return (
+      <>
+        <span className="block">Tarif Google untuk kartu e-toll.</span>
+        {toll.access?.length ? toll.access.map((access, index) => (
+          <span key={`${access.legIndex}-${index}`} className="mt-2 block space-y-1">
+            <span className="block font-medium text-slate-600">
+              {access.legIndex === 0 ? START_LABEL : journey.stops[access.legIndex - 1]?.split(',')[0]}
+              {' → '}
+              {journey.stops[access.legIndex]?.split(',')[0] || START_LABEL}
+            </span>
+            <span className="block">Masuk tol: {access.entrance || 'Tidak disebutkan Google.'}</span>
+            <span className="block">Keluar tol: {access.exit || 'Tidak disebutkan Google.'}</span>
+          </span>
+        )) : (
+          <span className="mt-1 block">Petunjuk masuk dan keluar tol tidak tersedia dari Google.</span>
+        )}
+      </>
+    );
+  }
   if (toll.status === 'none') return 'Google tidak menemukan tol di rute ini.';
   return null;
 }
