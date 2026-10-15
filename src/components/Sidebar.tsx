@@ -148,13 +148,6 @@ export default function Sidebar() {
       icon: HandHeart
     },
     {
-      // Admin Karyawan records it; Super Admin can too. Decides Bonus Triwulan.
-      name: 'Senam Pagi',
-      path: SENAM_PAGI_PATH,
-      icon: PersonStanding,
-      activePattern: SENAM_PAGI_PATH
-    },
-    {
       name: 'Keuangan SatKer',
       path: '/dashboard/satker-finance',
       icon: FileSpreadsheet
@@ -331,9 +324,8 @@ export default function Sidebar() {
     }
     if (item.activePattern) {
       if (item.activePattern === '/dashboard/payroll/uraian') {
-        // Senam Pagi has its own Super Admin menu item.
         return (
-          (pathname.startsWith('/dashboard/payroll/uraian') && !pathname.startsWith(SENAM_PAGI_PATH)) ||
+          pathname.startsWith('/dashboard/payroll/uraian') ||
           pathname.startsWith('/dashboard/payroll/activity-review')
         );
       }

@@ -245,7 +245,7 @@ export default function SimulasiPerjalananPage() {
 
   return (
     <div className="min-h-screen bg-white font-sans text-slate-800">
-      <div className="mx-auto w-full max-w-4xl px-4 py-5 sm:px-6 sm:py-6">
+      <div className="w-full px-4 py-5 sm:px-6 sm:py-6">
         {!editor ? (
           <>
             <div className="mb-5 flex items-center justify-between gap-3">
@@ -325,25 +325,24 @@ export default function SimulasiPerjalananPage() {
             </div>
 
             <div className="space-y-6">
-              <section className="space-y-4">
-                <Field label="Nama Kegiatan" htmlFor="simulation-event" required>
-                  <Input
-                    id="simulation-event"
-                    value={editor.form.eventName}
-                    maxLength={MAX_SIMULATION_EVENT_NAME_LENGTH}
-                    placeholder="Contoh: Seminar Nasional Kewirausahaan"
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      updateForm((form) => ({ ...form, eventName: value }));
-                    }}
-                    className="h-9 rounded-sm"
-                  />
-                </Field>
-              </section>
-
               {editor.form.journeys.map((journey, index) => (
                 <JourneySection
                   key={journey.key}
+                  eventNameField={index === 0 ? (
+                    <Field label="Nama Kegiatan" htmlFor="simulation-event" required>
+                      <Input
+                        id="simulation-event"
+                        value={editor.form.eventName}
+                        maxLength={MAX_SIMULATION_EVENT_NAME_LENGTH}
+                        placeholder="Contoh: Seminar Nasional Kewirausahaan"
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          updateForm((form) => ({ ...form, eventName: value }));
+                        }}
+                        className="h-9 rounded-sm"
+                      />
+                    </Field>
+                  ) : undefined}
                   journey={journey}
                   index={index}
                   canRemove={editor.form.journeys.length > 1}
@@ -359,60 +358,64 @@ export default function SimulasiPerjalananPage() {
                   }))}
                 />
               ))}
-
-              {editor.form.journeys.length < MAX_SIMULATION_JOURNEYS && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="text-blue-700"
-                  onClick={() => updateForm((form) => ({
-                    ...form,
-                    journeys: [...form.journeys, emptyJourney(form.journeys[form.journeys.length - 1])],
-                  }))}
-                >
-                  <Plus />
-                  Tambah perjalanan
-                </Button>
-              )}
             </div>
 
-            <div className="mt-6 border-t border-slate-200 pt-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <p className="text-xs text-slate-500">Total biaya transportasi</p>
-                  <p className="text-base font-semibold tabular-nums text-slate-900">
-                    {grandTotal === null ? 'Belum lengkap' : formatRupiah(grandTotal)}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                  {editor.saved && (
-                    <Button type="button" variant="danger-ghost" onClick={() => setConfirm('delete')}>
-                      Hapus
-                    </Button>
-                  )}
-                  {editor.saved && !dirty && (
-                    <>
-                      <Button type="button" variant="outline" onClick={() => void persist('recalculate')} disabled={recalculating}>
-                        {recalculating ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-                        Hitung ulang
+            <div className="mt-6 grid items-start gap-6 lg:grid-cols-2 lg:gap-8">
+              <div>
+                {editor.form.journeys.length < MAX_SIMULATION_JOURNEYS && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="text-blue-700"
+                    onClick={() => updateForm((form) => ({
+                      ...form,
+                      journeys: [...form.journeys, emptyJourney(form.journeys[form.journeys.length - 1])],
+                    }))}
+                  >
+                    <Plus />
+                    Tambah perjalanan
+                  </Button>
+                )}
+              </div>
+
+              <div className="border-t border-slate-200 pt-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs text-slate-500">Total biaya transportasi</p>
+                    <p className="text-base font-semibold tabular-nums text-slate-900">
+                      {grandTotal === null ? 'Belum lengkap' : formatRupiah(grandTotal)}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                    {editor.saved && (
+                      <Button type="button" variant="danger-ghost" onClick={() => setConfirm('delete')}>
+                        Hapus
                       </Button>
-                      <Button type="button" variant="outline" onClick={() => void printPdf()}>
-                        <FileDown />
-                        Cetak PDF
+                    )}
+                    {editor.saved && !dirty && (
+                      <>
+                        <Button type="button" variant="outline" onClick={() => void persist('recalculate')} disabled={recalculating}>
+                          {recalculating ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+                          Hitung ulang
+                        </Button>
+                        <Button type="button" variant="outline" onClick={() => void printPdf()}>
+                          <FileDown />
+                          Cetak PDF
+                        </Button>
+                      </>
+                    )}
+                    {(dirty || !editor.saved) && (
+                      <Button
+                        type="button"
+                        variant="accent"
+                        onClick={() => void persist('save')}
+                        disabled={saving || Boolean(saveBlocker)}
+                      >
+                        {saving ? <Loader2 className="animate-spin" /> : null}
+                        {saveBlocker || 'Simpan'}
                       </Button>
-                    </>
-                  )}
-                  {(dirty || !editor.saved) && (
-                    <Button
-                      type="button"
-                      variant="accent"
-                      onClick={() => void persist('save')}
-                      disabled={saving || Boolean(saveBlocker)}
-                    >
-                      {saving ? <Loader2 className="animate-spin" /> : null}
-                      {saveBlocker || 'Simpan'}
-                    </Button>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

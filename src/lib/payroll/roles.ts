@@ -110,7 +110,8 @@ export function canSimulateDriverJourneys(role: UserRole | null | undefined): bo
 
 /**
  * Who may record Senam Pagi attendance, and so move Bonus Triwulan. The page,
- * both menus and `/api/payroll/senam-pagi` read this list.
+ * Admin Karyawan's sidebar, Super Admin's Rekap & Vakasi tabs and
+ * `/api/payroll/senam-pagi` read this list.
  */
 export const SENAM_PAGI_EDITOR_ROLES: readonly UserRole[] = [
   'super_admin',
