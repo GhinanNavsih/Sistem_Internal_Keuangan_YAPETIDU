@@ -179,6 +179,68 @@ function isImageProofUrl(value: string): boolean {
   );
 }
 
+function AnnualLeaveProofPreview({
+  request,
+  onOpenImage,
+}: {
+  request: Pick<AnnualPaidLeaveRequest, 'attachments' | 'proofUrl'>;
+  onOpenImage: (url: string) => void;
+}) {
+  const attachments = request.attachments || [];
+  const images = attachments
+    .filter((attachment) => attachment.contentType.startsWith('image/'))
+    .map((attachment) => ({ url: attachment.url, key: attachment.path }));
+  const additionalProofUrl = request.proofUrl &&
+    !attachments.some((attachment) => attachment.url === request.proofUrl)
+      ? request.proofUrl
+      : undefined;
+  const additionalProofIsImage = additionalProofUrl && isImageProofUrl(additionalProofUrl);
+  if (additionalProofUrl && additionalProofIsImage) {
+    images.push({ url: additionalProofUrl, key: additionalProofUrl });
+  }
+
+  return (
+    <div className="space-y-3">
+      {images.map((image, index) => (
+        <div key={image.key} className="border border-slate-100 rounded-md overflow-hidden bg-slate-50 p-2">
+          <button
+            type="button"
+            onClick={() => onOpenImage(image.url)}
+            aria-label={`Perbesar bukti cuti tahunan ${index + 1}`}
+            className="group block relative cursor-zoom-in w-full rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={image.url}
+              alt={`Bukti cuti tahunan ${index + 1}`}
+              loading="lazy"
+              decoding="async"
+              className="max-h-[280px] object-contain rounded-sm w-full hover:opacity-90 transition-opacity"
+            />
+            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 flex items-center justify-center transition-opacity text-white text-[10px] font-bold gap-1 rounded-sm">
+              <ZoomIn className="w-3.5 h-3.5" /> Perbesar Gambar
+            </div>
+          </button>
+        </div>
+      ))}
+      <GantiLiburAttachmentLinks
+        attachments={attachments.filter((attachment) => !attachment.contentType.startsWith('image/'))}
+      />
+      {additionalProofUrl && !additionalProofIsImage && (
+        <a href={additionalProofUrl} target="_blank" rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:underline">
+          <FileText className="w-3.5 h-3.5" /> Lihat bukti pendukung
+        </a>
+      )}
+      {attachments.length === 0 && !request.proofUrl && (
+        <div className="min-h-[160px] flex items-center justify-center rounded-md border border-dashed border-slate-200 text-xs font-semibold text-slate-400">
+          Tidak ada dokumen pendukung
+        </div>
+      )}
+    </div>
+  );
+}
+
 function checkClass(check: GantiLiburAttendanceCheck): string {
   if (check.verdict === 'eligible') return 'border-emerald-200 bg-emerald-50 text-emerald-800';
   if (check.verdict === 'awaiting_upload') return 'border-slate-200 bg-slate-50 text-slate-600';
@@ -1496,18 +1558,12 @@ export function LoyalisPresenceCorrectionsCard({
                                   <div className="text-left space-y-4">
                                     <div className="space-y-2">
                                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                                        Informasi &amp; Catatan
+                                        Dokumen Pendukung
                                       </span>
-                                      <div className="rounded-md border border-slate-100 bg-slate-50 p-4 text-xs font-medium text-slate-600 space-y-2">
-                                        <p>
-                                          Persetujuan cuti tahunan Loyalis membuat presensi
-                                          berbayar penuh pada tanggal pengajuan.
-                                        </p>
-                                        <p>
-                                          Penolakan akan melepaskan reservasi saldo cuti tanpa
-                                          memotong kuota.
-                                        </p>
-                                      </div>
+                                      <AnnualLeaveProofPreview
+                                        request={item.request}
+                                        onOpenImage={openImageLightbox}
+                                      />
                                     </div>
                                     {item.request.decisionReason && (
                                       <div
@@ -1619,12 +1675,9 @@ export function LoyalisPresenceCorrectionsCard({
                                 </p>
                               )}
 
-                              {item.kind !== 'correction' && item.request.proofUrl && !item.request.attachments?.length && (
+                              {item.kind === 'ganti_libur' && item.request.proofUrl && !item.request.attachments?.length && (
                                 <a href={item.request.proofUrl} target="_blank" rel="noopener noreferrer"
                                   className="inline-flex text-xs font-medium text-indigo-600 underline">Lihat bukti pengajuan</a>
-                              )}
-                              {item.kind === 'paid_leave' && Boolean(item.request.attachments?.length) && (
-                                <GantiLiburAttachmentLinks attachments={item.request.attachments} />
                               )}
 
                               {status === 'pending' && (
