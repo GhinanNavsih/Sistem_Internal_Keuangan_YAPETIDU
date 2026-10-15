@@ -62,13 +62,6 @@ export function generateSimulasiBiayaPerjalananPdf(simulation: SimulationView, s
   doc.setTextColor(0, 0, 0);
   y = Math.max(y + 6, 38);
 
-  if (simulation.note) {
-    const noteLines = doc.splitTextToSize(pdfText(`Catatan: ${simulation.note}`), tableWidth);
-    doc.setFontSize(9);
-    doc.text(noteLines, MARGIN, y);
-    y += noteLines.length * 4.2 + 2;
-  }
-
   const tableStyles = {
     theme: 'grid' as const,
     margin: { left: MARGIN, right: MARGIN },

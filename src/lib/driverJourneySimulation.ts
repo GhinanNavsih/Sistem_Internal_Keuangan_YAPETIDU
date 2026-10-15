@@ -32,7 +32,6 @@ export const MAX_SIMULATION_JOURNEYS = 10;
 export const MAX_SIMULATION_STOPS = MAX_MAIN_DESTINATIONS;
 export const MAX_SIMULATION_STOP_LENGTH = 200;
 export const MAX_SIMULATION_EVENT_NAME_LENGTH = 150;
-export const MAX_SIMULATION_NOTE_LENGTH = 500;
 export const MAX_SIMULATION_MONEY = 100_000_000;
 /** A route measured within this many days is reused instead of asking Google again. */
 export const ROUTE_QUOTE_REUSE_DAYS = 7;
@@ -150,7 +149,6 @@ export interface SimulationJourneyInput {
 
 export interface SimulationInput {
   eventName: string;
-  note: string;
   journeys: SimulationJourneyInput[];
 }
 
@@ -256,10 +254,6 @@ export function parseSimulationInput(raw: unknown): SimulationInput {
   if (eventName.length > MAX_SIMULATION_EVENT_NAME_LENGTH) {
     throw new SimulationInputError(`Nama kegiatan maksimal ${MAX_SIMULATION_EVENT_NAME_LENGTH} karakter.`);
   }
-  const note = typeof raw.note === 'string' ? raw.note.trim() : '';
-  if (note.length > MAX_SIMULATION_NOTE_LENGTH) {
-    throw new SimulationInputError(`Catatan maksimal ${MAX_SIMULATION_NOTE_LENGTH} karakter.`);
-  }
   if (!Array.isArray(raw.journeys) || raw.journeys.length === 0) {
     throw new SimulationInputError('Tambahkan minimal satu perjalanan.');
   }
@@ -268,7 +262,6 @@ export function parseSimulationInput(raw: unknown): SimulationInput {
   }
   return {
     eventName,
-    note,
     journeys: raw.journeys.map((journey, index) => parseJourney(journey, index + 1)),
   };
 }
@@ -371,7 +364,6 @@ export function calculateSimulation(
 export interface SimulationView {
   id: string;
   eventName: string;
-  note: string;
   ownerName: string;
   isOwner: boolean;
   journeys: SimulationJourneyResult[];

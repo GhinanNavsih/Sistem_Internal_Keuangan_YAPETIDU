@@ -39,7 +39,6 @@ function toView(
   return {
     id,
     eventName: String(data.eventName || ''),
-    note: String(data.note || ''),
     ownerName: String(data.ownerName || ''),
     isOwner: data.ownerUid === actor.uid,
     journeys: Array.isArray(data.journeys) ? (data.journeys as SimulationJourneyResult[]) : [],
@@ -72,7 +71,6 @@ async function calculate(db: Firestore, input: SimulationInput, now: Date) {
 function documentFields(input: SimulationInput, result: Awaited<ReturnType<typeof calculate>>, now: Date) {
   return {
     eventName: input.eventName,
-    note: input.note,
     journeys: result.journeys,
     grandTotal: result.grandTotal,
     calculatedAt: now,

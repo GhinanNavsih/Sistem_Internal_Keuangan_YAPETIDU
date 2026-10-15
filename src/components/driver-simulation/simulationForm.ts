@@ -32,7 +32,6 @@ export interface JourneyForm {
 
 export interface SimulationForm {
   eventName: string;
-  note: string;
   journeys: JourneyForm[];
 }
 
@@ -66,7 +65,7 @@ export function emptyJourney(previous?: JourneyForm): JourneyForm {
 }
 
 export function emptyForm(): SimulationForm {
-  return { eventName: '', note: '', journeys: [emptyJourney()] };
+  return { eventName: '', journeys: [emptyJourney()] };
 }
 
 function digits(value: number): string {
@@ -101,7 +100,6 @@ export function journeyFormFromResult(journey: SimulationJourneyResult): Journey
 export function formFromView(view: SimulationView): SimulationForm {
   return {
     eventName: view.eventName,
-    note: view.note,
     journeys: view.journeys.map(journeyFormFromResult),
   };
 }
@@ -175,7 +173,6 @@ export function previewJourney(journey: JourneyForm): JourneyPreview {
 export function toSimulationInput(form: SimulationForm): SimulationInput {
   return {
     eventName: form.eventName.trim(),
-    note: form.note.trim(),
     journeys: form.journeys.map((journey) => {
       const input = toInput(journey);
       if (!input) throw new Error('Pilih kendaraan untuk setiap perjalanan.');
@@ -188,7 +185,6 @@ export function toSimulationInput(form: SimulationForm): SimulationInput {
 export function sameSimulationInput(a: SimulationForm, b: SimulationForm): boolean {
   const shape = (form: SimulationForm) => JSON.stringify({
     eventName: form.eventName.trim(),
-    note: form.note.trim(),
     journeys: form.journeys.map((journey) => ({
       stops: normalizeSimulationStops(journey.stops),
       vehicleName: journey.vehicleName,

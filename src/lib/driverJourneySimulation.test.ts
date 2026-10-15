@@ -134,7 +134,6 @@ test('a measured route is reused for seven days', () => {
 test('the form input is validated with messages for the user', () => {
   const valid = {
     eventName: '  Seminar Nasional ',
-    note: '',
     journeys: [{ ...surabayaDay, tollAmount: 999 }],
   };
   const parsed = parseSimulationInput(valid);

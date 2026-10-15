@@ -25,7 +25,6 @@ import {
   formatRupiah,
   MAX_SIMULATION_EVENT_NAME_LENGTH,
   MAX_SIMULATION_JOURNEYS,
-  MAX_SIMULATION_NOTE_LENGTH,
   normalizeSimulationStops,
   type RouteQuote,
   type SimulationView,
@@ -311,19 +310,6 @@ export default function SimulasiPerjalananPage() {
                       updateForm((form) => ({ ...form, eventName: value }));
                     }}
                     className="h-9 rounded-sm"
-                  />
-                </Field>
-                <Field label="Catatan" htmlFor="simulation-note">
-                  <textarea
-                    id="simulation-note"
-                    rows={2}
-                    maxLength={MAX_SIMULATION_NOTE_LENGTH}
-                    value={editor.form.note}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      updateForm((form) => ({ ...form, note: value }));
-                    }}
-                    className="w-full rounded-sm border border-input px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                   />
                 </Field>
               </section>
