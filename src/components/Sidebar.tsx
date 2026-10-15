@@ -411,11 +411,11 @@ export default function Sidebar() {
       {/* DESKTOP SIDEBAR — EXPANDED                               */}
       {/* ======================================================== */}
       <aside
-        className={`hidden md:flex flex-col justify-between shrink-0 border-r border-slate-200/80 bg-white/80 backdrop-blur-md sticky top-0 h-screen z-40 transition-all duration-300 ease-in-out ${
+        className={`hidden md:flex flex-col justify-between shrink-0 border-r border-slate-200/80 bg-white/80 backdrop-blur-md sticky top-0 h-dvh overflow-y-auto overscroll-y-contain z-40 transition-all duration-300 ease-in-out ${
           isCollapsed ? 'w-[76px] p-3' : 'w-72 p-6'
         }`}
       >
-        <div className="flex flex-col gap-8">
+        <div className="flex shrink-0 flex-col gap-8">
           {/* Brand Header */}
           {isCollapsed ? (
             <div className="flex items-center justify-center pt-1">
@@ -454,7 +454,7 @@ export default function Sidebar() {
         </div>
 
         {/* Bottom Area: Collapse toggle + User Profile */}
-        <div className="mt-auto">
+        <div className="mt-auto shrink-0">
           {/* Collapse / Expand Toggle */}
           <div className={`flex ${isCollapsed ? 'justify-center' : 'justify-end'} mb-3`}>
             <button
@@ -572,8 +572,8 @@ export default function Sidebar() {
           />
 
           {/* Drawer Panel */}
-          <div className="relative flex flex-col justify-between w-72 max-w-[80vw] h-full bg-white p-6 shadow-2xl animate-in slide-in-from-left duration-300 z-50">
-            <div className="flex flex-col gap-6">
+          <div className="relative flex flex-col justify-between w-72 max-w-[80vw] h-dvh overflow-y-auto overscroll-y-contain bg-white p-6 shadow-2xl animate-in slide-in-from-left duration-300 z-50">
+            <div className="flex shrink-0 flex-col gap-6">
               {/* Drawer Brand Header & Close Button */}
               <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                 <div className="flex items-center gap-2">
@@ -604,7 +604,7 @@ export default function Sidebar() {
             </div>
 
             {/* User Profile Footer */}
-            <div className="border-t border-slate-200/80 pt-4 mt-auto">
+            <div className="border-t border-slate-200/80 pt-4 mt-auto shrink-0">
               <div className="flex items-center gap-3 mb-4 px-2">
                 <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold shadow-md shadow-indigo-100 uppercase text-xs">
                   {currentProfile?.displayName ? currentProfile.displayName.substring(0, 2) : 'AD'}
