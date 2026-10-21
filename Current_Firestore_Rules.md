@@ -530,7 +530,12 @@ service cloud.firestore {
         roleIs('satker_head_loyalis')) && createsOpenPeriodRecord();
       allow update: if (isFinanceVerifier() || isSuperAdmin() ||
         roleIs('satker_head_loyalis')) && updatesOpenPeriodRecord();
-      allow delete: if false;
+      // Super Admin may delete any proposal; Kepala SatKer Loyalis only the
+      // ones they submitted. Both only while the period is open.
+      allow delete: if (isSuperAdmin() ||
+        (roleIs('satker_head_loyalis') &&
+          resource.data.get('submittedBy', null) == request.auth.uid)) &&
+        deletesOpenPeriodRecord();
     }
 
     match /EmpEditLog/{docId} {

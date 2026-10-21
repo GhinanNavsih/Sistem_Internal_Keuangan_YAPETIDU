@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import Image from 'next/image';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -283,6 +284,11 @@ export default function ProposalKegiatanPage() {
 
   // Review Dialog for Super Admin
   const [showReviewDialog, setShowReviewDialog] = useState(false);
+
+  // Delete flow: confirm, then a blocking progress dialog, then success or the specific error.
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteState, setDeleteState] = useState<'idle' | 'deleting' | 'success' | 'error'>('idle');
+  const [deleteError, setDeleteError] = useState<{ code: string | null; message: string } | null>(null);
   const [reviewTarget, setReviewTarget] = useState<'proposal' | 'lpj'>('proposal');
   const [reviewAction, setReviewAction] = useState<string>('proposal_approved');
   const [reviewNoteInput, setReviewNoteInput] = useState('');
@@ -418,6 +424,19 @@ export default function ProposalKegiatanPage() {
       currentProposalStatus?.startsWith('lpj_'),
     );
   }, [currentProposalStatus, isLoyalisSandbox, profile]);
+
+  // Mirrors the ProposalKegiatan delete rule: Super Admin may delete any
+  // proposal, Kepala SatKer Loyalis only their own, and only while the period is open.
+  const selectedProposal = useMemo(
+    () => proposalList.find((item) => item.id === selectedProposalId) ?? null,
+    [proposalList, selectedProposalId],
+  );
+  const canDeleteProposal = Boolean(
+    selectedProposal && !periodClosed && (
+      profile?.role === 'super_admin' ||
+      (profile?.role === 'satker_head_loyalis' && selectedProposal.submittedBy === profile.uid)
+    ),
+  );
 
   const handleSelectProposal = (item: any) => {
     skipAutoSaveRef.current = true;
@@ -747,20 +766,46 @@ export default function ProposalKegiatanPage() {
     }
   };
 
-  // Delete Proposal Handler
+  // Firestore errors carry a `code`. Each code a user can act on gets its own
+  // explanation; anything else shows the raw message, never a bare "gagal".
+  const describeDeleteError = (err: unknown): { code: string | null; message: string } => {
+    const code = typeof err === 'object' && err !== null && 'code' in err ? String(err.code) : null;
+    const detail = err instanceof Error ? err.message : '';
+    switch (code) {
+      case 'permission-denied':
+        return { code, message: 'Server menolak penghapusan. Periode payroll mungkin sudah ditutup, atau proposal ini bukan milik Anda.' };
+      case 'not-found':
+        return { code, message: 'Proposal ini sudah tidak ada di database, kemungkinan sudah dihapus. Muat ulang halaman.' };
+      case 'unauthenticated':
+        return { code, message: 'Sesi login sudah berakhir. Muat ulang halaman lalu masuk kembali.' };
+      case 'unavailable':
+        return { code, message: 'Tidak dapat terhubung ke database. Periksa koneksi internet lalu coba lagi.' };
+      case 'deadline-exceeded':
+        return { code, message: 'Permintaan ke database melewati batas waktu. Coba lagi.' };
+      default:
+        return { code, message: detail || 'Terjadi kesalahan yang tidak dikenal saat menghapus proposal.' };
+    }
+  };
+
+  // Delete Proposal Handler. The result dialog blocks the page while this runs.
   const handleDeleteProposal = async (id: string) => {
-    if (!confirm('Apakah Anda yakin ingin menghapus proposal/laporan event ini? Data yang dihapus tidak dapat dikembalikan.')) return;
-    setSaving(true);
+    setDeleteConfirmOpen(false);
+    setDeleteState('deleting');
+    setDeleteError(null);
     try {
       await deleteDoc(doc(db, 'ProposalKegiatan', id));
       resetForm();
-      setMessage({ type: 'success', text: 'Proposal/laporan event berhasil dihapus.' });
+      setDeleteState('success');
     } catch (err) {
       console.error('Gagal menghapus proposal:', err);
-      setMessage({ type: 'error', text: 'Gagal menghapus proposal event.' });
-    } finally {
-      setSaving(false);
+      setDeleteError(describeDeleteError(err));
+      setDeleteState('error');
     }
+  };
+
+  const closeDeleteResult = () => {
+    setDeleteState('idle');
+    setDeleteError(null);
   };
 
   // Keep this callback stable. ExpenseReportStage uses it in its debounced
@@ -1963,11 +2008,11 @@ export default function ProposalKegiatanPage() {
             {/* Stage 1 Actions */}
             <div className="flex flex-wrap justify-between items-center gap-3 pt-6 border-t border-slate-100 mt-6">
               <div>
-                {selectedProposalId && (
+                {canDeleteProposal && selectedProposalId && (
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => handleDeleteProposal(selectedProposalId)}
+                    onClick={() => setDeleteConfirmOpen(true)}
                     className="rounded-sm border-rose-200 text-rose-600 bg-rose-50/50 hover:bg-rose-50 text-xs font-bold flex items-center gap-1.5 h-10 cursor-pointer"
                   >
                     <Trash2 className="w-4 h-4" /> Hapus Laporan
@@ -2804,11 +2849,11 @@ export default function ProposalKegiatanPage() {
                 {/* LPJ Actions */}
                 <div className="flex flex-wrap justify-between items-center gap-3 pt-6 border-t border-slate-100 mt-6">
                   <div>
-                    {selectedProposalId && (
+                    {canDeleteProposal && selectedProposalId && (
                       <Button
                         type="button"
                         variant="outline"
-                        onClick={() => handleDeleteProposal(selectedProposalId)}
+                        onClick={() => setDeleteConfirmOpen(true)}
                         className="rounded-sm border-rose-200 text-rose-600 bg-rose-50/50 hover:bg-rose-50 text-xs font-bold flex items-center gap-1.5 h-10 cursor-pointer"
                       >
                         <Trash2 className="w-4 h-4" /> Hapus Laporan
@@ -2996,6 +3041,50 @@ export default function ProposalKegiatanPage() {
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />} Konfirmasi & Send Email
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title="Hapus proposal ini?"
+        description="Proposal/laporan event ini akan dihapus permanen dan tidak dapat dikembalikan."
+        confirmLabel="Hapus"
+        destructive
+        onConfirm={() => { if (selectedProposalId) void handleDeleteProposal(selectedProposalId); }}
+      />
+
+      {/* Blocks the page while the delete runs; closes only after success or failure is shown. */}
+      <Dialog
+        open={deleteState !== 'idle'}
+        onOpenChange={(open) => { if (!open && deleteState !== 'deleting') closeDeleteResult(); }}
+      >
+        <DialogContent showCloseButton={false} className="sm:max-w-md max-w-full p-0 border-none bg-white shadow-2xl rounded-md overflow-hidden">
+          <div className="p-6 flex flex-col items-center text-center gap-3">
+            {deleteState === 'deleting' && <Loader2 className="w-9 h-9 text-rose-500 animate-spin" />}
+            {deleteState === 'success' && <CheckCircle2 className="w-9 h-9 text-emerald-500" />}
+            {deleteState === 'error' && <XCircle className="w-9 h-9 text-rose-500" />}
+            <DialogTitle className="text-slate-800 font-bold text-base">
+              {deleteState === 'deleting' && 'Menghapus proposal...'}
+              {deleteState === 'success' && 'Proposal berhasil dihapus'}
+              {deleteState === 'error' && 'Proposal gagal dihapus'}
+            </DialogTitle>
+            <p className="text-slate-500 text-xs leading-relaxed">
+              {deleteState === 'deleting' && 'Mohon tunggu sampai proses selesai. Jangan menutup halaman ini.'}
+              {deleteState === 'success' && 'Proposal/laporan event sudah dihapus dari periode ini.'}
+              {deleteState === 'error' && deleteError?.message}
+            </p>
+            {deleteState === 'error' && deleteError?.code && (
+              <p className="text-[11px] font-mono text-slate-400">Kode: {deleteError.code}</p>
+            )}
+          </div>
+          {deleteState !== 'deleting' && (
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end rounded-b-md">
+              <Button onClick={closeDeleteResult} className="rounded-sm px-5 bg-slate-900 hover:bg-black text-white font-bold text-xs h-9">
+                Tutup
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
