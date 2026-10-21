@@ -44,6 +44,8 @@ next-env.d.ts
 service-account.json
 koperasi-service-account.json
 simpel-service-account.json
+sistem-pendaftaran-service-account.json
+*firebase-adminsdk*.json
 
 # Python
 venv/

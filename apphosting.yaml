@@ -40,3 +40,5 @@ env:
     secret: koperasi-service-account
   - variable: SIMPEL_SERVICE_ACCOUNT
     secret: simpel-service-account
+  - variable: SISTEM_PENDAFTARAN_SERVICE_ACCOUNT
+    secret: sistem-pendaftaran-service-account
