@@ -392,6 +392,8 @@ export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
     const command = parseCommand(await request.json());
+    if (command.snapshot?.eventName.trim().toLocaleLowerCase('id-ID') === 'bonus rekommendasi') throw new HttpError(409, 'Nama kegiatan Bonus Rekommendasi dikhususkan untuk integrasi PMB.');
+    if (command.eventId?.startsWith('BONUS_REKOMENDASI_')) throw new HttpError(409, 'Bonus Rekommendasi dikelola otomatis oleh PMB.');
     assertActionAllowed(actor, command);
 
     const eventId = command.eventId || `VAKASI_${command.requestId}`;
@@ -438,6 +440,7 @@ export async function POST(request: NextRequest) {
       const before = eventSnapshot.exists
         ? (eventSnapshot.data() as Record<string, unknown>)
         : null;
+      if (before?.sourceKind === 'loyalis_referral') throw new HttpError(409, 'Bonus Rekommendasi dikelola otomatis oleh PMB.');
       if (before?.sourceKind === 'kjm_import') {
         throw new HttpError(409, 'KJM hanya dapat diubah melalui halaman Kelebihan Jam Mengajar.');
       }

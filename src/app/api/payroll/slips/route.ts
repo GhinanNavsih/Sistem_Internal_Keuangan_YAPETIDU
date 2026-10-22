@@ -1,3 +1,4 @@
+import { referralRecoveriesForSlip, assertReferralDeductions, referralEarningForSlip, assertReferralEarning } from '@/lib/server/loyalisReferralPayroll';
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
@@ -266,6 +267,8 @@ export async function POST(request: NextRequest) {
         transaction.get(loyalisEmployeeRef),
         transaction.get(periodSlipsQuery),
       ]);
+      const referralRecoveries = await referralRecoveriesForSlip(transaction, slipId);
+      const referralEarning = await referralEarningForSlip(transaction, command.period, command.employeeId);
       const before = slipSnapshot.exists ? slipSnapshot.data()! : null;
       const commandHash = snapshotHash(command);
 
@@ -590,6 +593,8 @@ export async function POST(request: NextRequest) {
             ? mergeSatpamLegacyBonusIntoTunjangan(validatedEarnings)
             : validatedEarnings;
           const deductions = validateMoneyFields(effectiveCommand.deductions, 'deductions');
+          assertReferralDeductions(deductions, referralRecoveries);
+          assertReferralEarning(earnings, referralEarning);
           // A slip being created for the first time must carry exactly the
           // matrix's Gaji Pokok. Drafts that already exist keep whatever
           // manual edit Finance made until the next Refresh recalculates them.

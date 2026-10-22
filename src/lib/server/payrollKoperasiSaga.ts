@@ -1,3 +1,4 @@
+import { referralRecoveriesForSlip, assertReferralDeductions, settleReferralRecoveries, referralEarningForSlip, assertReferralEarning } from './loyalisReferralPayroll';
 import { createHash } from 'node:crypto';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
@@ -234,6 +235,10 @@ export async function verifyAndLockWithKoperasi(
     ) {
       throw new HttpError(409, 'Operasi cicilan sebelumnya memakai revisi draf yang berbeda.');
     }
+    const recoveries = await referralRecoveriesForSlip(transaction, slipId);
+    const referralEarning = await referralEarningForSlip(transaction, command.period, command.employeeId);
+    assertReferralDeductions(validateMoneyFields(before.deductions, 'deductions'), recoveries);
+    assertReferralEarning(validateMoneyFields(before.earnings, 'earnings'), referralEarning);
     const employee = employeeIdentity(
       command.employeeId,
       blueSnapshot.exists ? blueSnapshot.data() : undefined,
@@ -355,7 +360,11 @@ export async function verifyAndLockWithKoperasi(
           command.period,
         )
       : validatedForCollar;
+    const referralRecoveries = await referralRecoveriesForSlip(transaction, slipId);
+    const referralEarning = await referralEarningForSlip(transaction, command.period, command.employeeId);
     const deductions = validateMoneyFields(before.deductions, 'deductions');
+    assertReferralDeductions(deductions, referralRecoveries);
+    assertReferralEarning(earnings, referralEarning);
     // Sealing re-derives the tax from the rows being sealed, so the locked
     // snapshot's hash covers a Gaji Bersih that is internally consistent.
     const taxes = recalculateSlipTaxes(before, earnings, deductions);
@@ -402,6 +411,7 @@ export async function verifyAndLockWithKoperasi(
       revision: Number(before.revision || 0) + 1,
       updatedAt: now,
     };
+    settleReferralRecoveries(transaction, referralRecoveries);
     transaction.set(slipRef, after);
     transaction.set(operationRef, {
       status: 'completed',
