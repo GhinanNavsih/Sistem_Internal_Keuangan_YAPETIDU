@@ -1,12 +1,13 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import {
   getFirestore,
+  connectFirestoreEmulator,
   initializeFirestore,
   persistentLocalCache,
   persistentMultipleTabManager,
   setLogLevel
 } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import { connectAuthEmulator, getAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage";
 
 // Your web app's Firebase configuration
@@ -50,6 +51,20 @@ const getCachedDb = (appInstance: any, cacheKey: string) => {
 export const db = getCachedDb(app, "__firestore_db");
 export const auth = getAuth(app);
 export const storage = getStorage(app);
+// Explicit demo-only connections for isolated integration/browser verification.
+// Production configuration cannot redirect Auth or Firestore to an emulator.
+if (typeof window !== 'undefined' && firebaseConfig.projectId?.startsWith('demo-')) {
+  const authHost = process.env.NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST;
+  const firestoreHost = process.env.NEXT_PUBLIC_FIRESTORE_EMULATOR_HOST;
+  const cache = window as typeof window & { __referralEmulatorsConnected?: boolean };
+  if (!cache.__referralEmulatorsConnected && authHost && firestoreHost) {
+    connectAuthEmulator(auth, `http://${authHost}`, { disableWarnings: true });
+    const [host, port] = firestoreHost.split(':');
+    connectFirestoreEmulator(db, host, Number(port));
+    cache.__referralEmulatorsConnected = true;
+  }
+}
+
 
 // ─── Secondary Project Config (Koperasi Unipdu) ───
 const secondaryConfig = {

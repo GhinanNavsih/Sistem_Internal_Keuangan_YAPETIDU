@@ -65,3 +65,7 @@ scripts/output/
 firebase-debug.log*
 firebase-debug.*.log
 firestore-debug.log*
+
+# Isolated integration/build outputs and committed configuration template.
+/.next-*/
+!.env.example
