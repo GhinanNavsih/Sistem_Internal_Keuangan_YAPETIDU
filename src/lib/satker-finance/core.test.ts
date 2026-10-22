@@ -212,3 +212,68 @@ test('a journal\'s receipts come from receiptPaths, or from the single receiptPa
   assert.deepEqual(entryReceiptPaths({ receiptPath: 'old.jpg', receiptPaths: ['a.jpg', 'old.jpg'] }), ['a.jpg', 'old.jpg'], 'the list wins once it exists');
   assert.deepEqual(entryReceiptPaths({ receiptPaths: [] }), []);
 });
+
+test('accounts with decimal/float codes can be used in vouchers and statements', () => {
+  const customAccounts: FinancialAccount[] = [
+    ...DEFAULT_ACCOUNTS,
+    {
+      id: 'custom_11000_1',
+      code: '11000.1',
+      name: 'Bank Kepegawaian Khusus',
+      type: 'AKTIVA',
+      normalBalance: 'DEBIT',
+      reportTarget: 'BALANCE_SHEET',
+      postable: true,
+      cashEquivalent: true,
+      cashFlowSection: null,
+    },
+    {
+      id: 'custom_52199_1',
+      code: '52199.1',
+      name: 'Beban Operasional Khusus',
+      type: 'KELUAR',
+      normalBalance: 'DEBIT',
+      reportTarget: 'INCOME_STATEMENT',
+      postable: true,
+      cashEquivalent: false,
+      cashFlowSection: 'OPERATING',
+    },
+  ];
+
+  assert.equal(defaultCashFlowSection('AKTIVA', '11000.1'), 'OPERATING');
+  assert.equal(defaultCashFlowSection('AKTIVA', '13000.1'), 'INVESTING');
+
+  const voucher = buildVoucher({
+    date: '2026-09-02',
+    description: 'Biaya khusus',
+    kind: 'ADVANCED',
+    lines: [
+      { accountCode: 'custom_52199_1', debit: 250_000, credit: 0 },
+      { accountCode: 'custom_11000_1', debit: 0, credit: 250_000 },
+    ],
+  }, customAccounts);
+
+  assert.equal(voucher.lines[0].accountNumber, '52199.1');
+  assert.equal(voucher.lines[1].accountNumber, '11000.1');
+
+  const journalEntry: JournalEntry = {
+    id: 'entry-float-1',
+    satkerId: 'puskomnet',
+    academicYear,
+    monthIndex: 9,
+    createdBy: 'test',
+    ...voucher,
+  };
+
+  const statements = buildFinancialStatements({
+    accounts: customAccounts,
+    opening: { custom_11000_1: { debit: 1_000_000, credit: 0 }, '30000': { debit: 0, credit: 1_000_000 } },
+    entries: [journalEntry],
+    academicYear,
+    monthIndex: 9,
+  });
+
+  assert.equal(statements.trialBalance.difference, 0);
+  assert.equal(statements.rows.find((r) => r.account.code === '11000.1')?.endingDebit, 750_000);
+  assert.equal(statements.rows.find((r) => r.account.code === '52199.1')?.endingDebit, 250_000);
+});

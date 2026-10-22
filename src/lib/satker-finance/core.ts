@@ -289,7 +289,7 @@ export type YearClosing = {
 /** The equity account a year's surplus is closed into unless another is chosen: the lowest-numbered active Modal account. */
 export function defaultSurplusAccountId(accounts: FinancialAccount[]) {
   const equity = accounts.filter((account) => account.postable && account.type === 'MODAL' && account.reportTarget === 'BALANCE_SHEET')
-    .sort((a, b) => a.code.localeCompare(b.code));
+    .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
   return equity[0] ? accountId(equity[0]) : '';
 }
 

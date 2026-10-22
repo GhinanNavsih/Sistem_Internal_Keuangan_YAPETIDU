@@ -217,7 +217,7 @@ export async function loadAccounts(unitId?: string): Promise<FinancialAccount[]>
       revision: Number(local.revision || 0),
     });
   }
-  return unitAccounts;
+  return unitAccounts.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
 }
 
 export function openingFrom(value: unknown): OpeningBalances {

@@ -307,8 +307,8 @@ export async function POST(request: NextRequest) {
       const unitId = string(raw.unitId, 'SatKer', 50);
       const unit = await getUnit(actor, unitId);
       assertUnitEdit(actor, unit);
-      const code = string(raw.code, 'Nomor akun', 5);
-      if (!/^\d{5}$/.test(code)) throw new HttpError(400, 'Nomor akun harus terdiri dari 5 angka.');
+      const code = string(raw.code, 'Nomor akun', 20);
+      if (!/^\d+(\.\d+)?$/.test(code)) throw new HttpError(400, 'Nomor akun harus berupa angka atau desimal.');
       const name = string(raw.name, 'Nama akun');
       const accounts = await loadAccounts(unitId);
       const requestedId = typeof raw.accountId === 'string' ? raw.accountId : '';
@@ -345,8 +345,8 @@ export async function POST(request: NextRequest) {
         const type = raw.type as AccountType;
         if (!['AKTIVA', 'HUTANG', 'MODAL', 'TERIMA', 'KELUAR'].includes(type)) throw new HttpError(400, 'Kelompok akun tidak valid.');
         const cashEquivalent = raw.cashEquivalent === true;
-        if (cashEquivalent && (type !== 'AKTIVA' || (code !== '10000' && !code.startsWith('11')))) {
-          throw new HttpError(400, 'Akun kas atau bank harus bertipe Aktiva dan memakai nomor 10000 atau 11xxx.');
+        if (cashEquivalent && (type !== 'AKTIVA' || (!code.startsWith('10') && !code.startsWith('11')))) {
+          throw new HttpError(400, 'Akun kas atau bank harus bertipe Aktiva dan memakai nomor 10xxx atau 11xxx.');
         }
         const contra = raw.contra === true && !cashEquivalent;
         const normalBalance = groupNormalBalance(type, contra);
