@@ -1,4 +1,6 @@
 "use client"
+import ReferralFinancePanel from '@/components/payroll/ReferralFinancePanel';
+import ReferralEventPanel from '@/components/payroll/ReferralEventPanel';
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
@@ -275,7 +277,7 @@ export default function VakasiKaryawanPage() {
     return existingEvents.filter(evt =>
       evt.departmentUnit === filterDept ||
       evt.sourceKind === BANSOS_EVENT_SOURCE_KIND ||
-      evt.sourceKind === BONUS_TRIWULAN_SOURCE_KIND,
+      (evt.sourceKind === BONUS_TRIWULAN_SOURCE_KIND || evt.sourceKind === 'loyalis_referral'),
     );
   }, [existingEvents, filterDept]);
 
@@ -286,8 +288,8 @@ export default function VakasiKaryawanPage() {
 
   // Bonus Triwulan shares the selection slot: like BanSos it replaces the
   // event form, and it is only ever shown, never edited, here.
-  const selectedBonusTriwulanEvent = useMemo(
-    () => existingEvents.find(evt => evt.id === selectedBansosEventId && evt.sourceKind === BONUS_TRIWULAN_SOURCE_KIND) || null,
+  const selectedManagedBonusEvent = useMemo(
+    () => existingEvents.find(evt => evt.id === selectedBansosEventId && (evt.sourceKind === BONUS_TRIWULAN_SOURCE_KIND || evt.sourceKind === 'loyalis_referral')) || null,
     [existingEvents, selectedBansosEventId],
   );
 
@@ -987,16 +989,19 @@ export default function VakasiKaryawanPage() {
               <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
                 {filteredEvents.map(evt => {
                   const isBansos = evt.sourceKind === BANSOS_EVENT_SOURCE_KIND;
-                  const isBonusTriwulan = evt.sourceKind === BONUS_TRIWULAN_SOURCE_KIND;
-                  const isActive = isBansos || isBonusTriwulan
+                  const isManagedBonus = evt.sourceKind === BONUS_TRIWULAN_SOURCE_KIND || evt.sourceKind === 'loyalis_referral';
+                  const isActive = isBansos || isManagedBonus
                     ? selectedBansosEventId === evt.id
-                    : !selectedBansosEvent && !selectedBonusTriwulanEvent && selectedEventId === evt.id;
+                    : !selectedBansosEvent && !selectedManagedBonusEvent && selectedEventId === evt.id;
                   const wCount = Object.keys(evt.eventWorkers || {}).length;
-                  if (isBonusTriwulan) {
+                  if (isManagedBonus) {
                     return (
                       <div
                         key={evt.id}
                         onClick={() => setSelectedBansosEventId(evt.id)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedBansosEventId(evt.id); } }}
                         className={`p-4 rounded-md border transition-all duration-200 cursor-pointer ${getCardBgClass(wCount > 0 ? 'approved' : 'draft', isActive)}`}
                       >
                         <div className="flex justify-between items-start gap-2">
@@ -1088,11 +1093,12 @@ export default function VakasiKaryawanPage() {
 
         {/* Right side form */}
         <div className="xl:col-span-8">
-          {selectedBonusTriwulanEvent ? (
+          <ReferralFinancePanel canManage={profile?.role === 'super_admin' || profile?.role === 'finance_verifier'} />
+          {selectedManagedBonusEvent?.sourceKind === 'loyalis_referral' ? <ReferralEventPanel period={selectedManagedBonusEvent.period} workers={selectedManagedBonusEvent.eventWorkers || {}} states={selectedManagedBonusEvent.referralStates || {}} details={selectedManagedBonusEvent.referralDetails || {}} /> : selectedManagedBonusEvent ? (
             <BonusTriwulanEventPanel
-              key={selectedBonusTriwulanEvent.id}
-              period={selectedBonusTriwulanEvent.period}
-              workers={selectedBonusTriwulanEvent.eventWorkers || {}}
+              key={selectedManagedBonusEvent.id}
+              period={selectedManagedBonusEvent.period}
+              workers={selectedManagedBonusEvent.eventWorkers || {}}
               showSenamPagiLink={canRecordSenamPagi(profile?.role) || profile?.role === 'finance_verifier'}
             />
           ) : selectedBansosEvent && isBansosKind(selectedBansosEvent.bansosKind) ? (

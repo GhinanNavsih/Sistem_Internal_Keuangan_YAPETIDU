@@ -132,6 +132,7 @@ export default function EmployeeNavigationMenu() {
               Slip Gaji
             </DropdownMenuItem>
           )}
+          {isLoyalis && pathname !== '/employee/rekomendasi' && <DropdownMenuItem className="min-h-11 rounded-sm px-3.5 py-2.5 text-sm" render={<Link href="/employee/rekomendasi" />}><GraduationCap className="text-emerald-500" />Rekomendasi Mahasiswa</DropdownMenuItem>}
           {isLoyalis && pathname !== '/employee/family-allowance' && (
             <DropdownMenuItem
               className="min-h-11 rounded-sm px-3.5 py-2.5 text-sm"
