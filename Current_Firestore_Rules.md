@@ -311,18 +311,22 @@ service cloud.firestore {
       allow create: if (isFinanceVerifier() || isSuperAdmin() ||
         roleIs('satker_head_loyalis')) && createsOpenPeriodRecord() &&
         !docId.matches('KJM_.*') && !docId.matches('BANSOS_.*') &&
-        !docId.matches('BONUS_TRIWULAN_.*') &&
-        !(request.resource.data.get('sourceKind', '') in ['kjm_import', 'bansos', 'bonus_triwulan']);
+        !docId.matches('BONUS_TRIWULAN_.*') && !docId.matches('BONUS_REKOMENDASI_.*') &&
+        !(request.resource.data.get('sourceKind', '') in ['kjm_import', 'bansos', 'bonus_triwulan', 'loyalis_referral']);
       allow update: if (isFinanceVerifier() || isSuperAdmin() ||
         roleIs('satker_head_loyalis')) && updatesOpenPeriodRecord() &&
         !docId.matches('KJM_.*') && !docId.matches('BANSOS_.*') &&
-        !docId.matches('BONUS_TRIWULAN_.*') &&
-        !(resource.data.get('sourceKind', '') in ['kjm_import', 'bansos', 'bonus_triwulan']) &&
-        !(request.resource.data.get('sourceKind', '') in ['kjm_import', 'bansos', 'bonus_triwulan']);
+        !docId.matches('BONUS_TRIWULAN_.*') && !docId.matches('BONUS_REKOMENDASI_.*') &&
+        !(resource.data.get('sourceKind', '') in ['kjm_import', 'bansos', 'bonus_triwulan', 'loyalis_referral']) &&
+        !(request.resource.data.get('sourceKind', '') in ['kjm_import', 'bansos', 'bonus_triwulan', 'loyalis_referral']);
       allow delete: if false;
     }
 
     // KJM draft/review/approval and semester claims are server-owned.
+    match /LoyalisReferralBonuses/{docId} { allow read, write: if false; }
+    match /LoyalisReferralReceipts/{docId} { allow read, write: if false; }
+    match /LoyalisReferralRecoveries/{docId} { allow read, write: if false; }
+
     match /KjmImports/{docId} { allow read, write: if false; }
     match /KjmPaymentClaims/{docId} { allow read, write: if false; }
 

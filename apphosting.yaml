@@ -8,6 +8,14 @@ runConfig:
 
 # Environment variables
 env:
+  - variable: LOYALIS_REFERRALS_ENABLED
+    value: "false"
+    availability:
+      - RUNTIME
+  - variable: PMB_REFERRAL_ORIGIN
+    value: https://pmb.unipdu.ac.id
+    availability:
+      - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_API_KEY
     value: "AIzaSyCbfQFInBd9jIfw-6F-261i3y1hSK7T1dg"
   - variable: NEXT_PUBLIC_GOOGLE_MAPS_API_KEY

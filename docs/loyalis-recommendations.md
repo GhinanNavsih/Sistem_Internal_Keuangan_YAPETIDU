@@ -1,0 +1,21 @@
+# Rekomendasi Loyalis PMB
+
+Loyalis mengakses `/employee/rekomendasi` dari menu bersama untuk menerbitkan PDF rekomendasi bernama, paling banyak lima surat aktif/disetujui per siklus pendaftaran. Surat yang belum disetujui dapat dicabut; pengganti mendapat ID baru. Status AKTIF diperiksa di server. Surat lama tetap berlaku setelah Loyalis keluar.
+
+PMB menyimpan surat, kuota, klaim, dan riwayat. Kedua server berkomunikasi dengan HMAC bertimestamp dan ID pengiriman idempoten. Aktifkan `LOYALIS_REFERRALS_ENABLED=true` hanya setelah kedua aplikasi dan pembaruan `Current_Firestore_Rules.md` dideploy, secret bersama minimal 32 karakter tersimpan di secret store, origin HTTPS PMB dikonfigurasi melalui `PMB_REFERRAL_ORIGIN`, dan PMB selesai first import. Nilai default tetap false; tidak ada bonus historis atau pembayaran untuk data uji.
+
+`LoyalisReferralBonuses` mencatat satu hak Rp12.345 bruto per rekomendasi yang memiliki persetujuan beasiswa dan NIM. `VakasiTambahan/BONUS_REKOMENDASI_YYYY-MM` adalah kegiatan otomatis berjudul **Bonus Rekommendasi**. Jumlah per Loyalis merupakan agregat rekomendasi berhasil. Perubahan hanya menyentuh penerima terkait; penerima lain yang slipnya terkunci tetap utuh.
+
+Pembatalan oleh PMB mengembalikan kuota dan menghapus bonus pada slip yang masih dapat diubah. Bonus yang sudah difinalisasi menghasilkan `LoyalisReferralRecoveries`; Finance menekan **Terapkan Potongan** di vakasi-karyawan untuk menambahkan potongan terkait ke bulan pertama yang dapat diubah. Potongan tidak dapat dihapus lewat penyimpanan draf biasa dan selesai ketika slip tujuan difinalisasi. Jika belum ada slip atau penghasilan tidak cukup, flag tetap menunggu. Penyelesaian manual harus penuh dan disertai referensi. Bonus pegawai keluar yang belum masuk payroll juga masuk antrean penyelesaian manual Finance.
+
+Pengujian integrasi lintas proyek dan browser dijalankan dari sibling `LandingPagePMB_UNIPDU` dengan `npm run test:referrals`; pengujian memakai dua Auth emulator, dua proyek demo, dan server Next lokal. Dokumentasi lengkap dan Cloud Scheduler berada pada `LandingPagePMB_UNIPDU/docs/loyalis-recommendations.md`.
+
+Tema PDF memakai `public/templates/unipdu-letterhead.jpg`, gambar asli `word/media/image1.jpg` dari `LandingPagePMB_UNIPDU/public/templates/surat-permohonan-beasiswa-mahasiswa-baru-unipdu-2026.docx`. Header, tiga bar warna di kiri atas, dan footer dicetak pada setiap halaman. Aset lokal ini disertakan dalam server trace route unduhan agar tersedia pada deployment tanpa mengambil template dari PMB saat runtime.
+
+## Kontinuitas API dua arah
+
+PMB dan Internal-BAK menggunakan API server bertanda tangan HMAC dengan origin resmi yang sudah ditetapkan pada konfigurasi deployment. `health` memeriksa jalur PMB → Internal-BAK → PMB sebelum aktivasi; pemeriksaan tidak membuat surat atau pembayaran. Kunci `LOYALIS_REFERRAL_SECRET` harus sama dan disimpan sebagai secret runtime di kedua proyek.
+
+Worker PMB melakukan rekonsiliasi setiap lima menit dengan cursor persisten, sepuluh klaim per putaran. PMB mengirim status klaim terakhir, Internal-BAK menerapkannya secara idempoten lalu mengembalikan status payroll, finalisasi slip, serta pengembalian Finance. Klaim tetap diperiksa setelah pendaftaran dihapus. Pengiriman yang hilang atau balasan yang terputus dapat dicoba lagi tanpa menambahkan bonus kedua. PMB menyimpan status balasan dan menyediakan pemeriksaan langsung dari tinjauan beasiswa.
+
+`LoyalisReferralReceipts` hanya dapat ditulis server. Revisi status payroll terpisah dari versi klaim PMB, sehingga balasan lama tidak menimpa hasil finalisasi atau pembatalan yang lebih baru. Ledger bonus yang hilang setelah pernah diakui memerlukan pemeriksaan Finance sebelum dipulihkan. Identitas pegawai dan penggajian tetap otoritas Internal-BAK; surat dan keputusan beasiswa tetap otoritas PMB. Snapshot surat dan slip final tidak ditulis ulang oleh rekonsiliasi.
