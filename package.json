@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "postbuild": "node scripts/checkPublicAssets.mjs --if-standalone",
+    "check:public-assets": "node scripts/checkPublicAssets.mjs",
     "start": "next start",
     "lint": "eslint",
     "test:kjm": "tsx --test src/lib/payroll/kjm.test.ts",

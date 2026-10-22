@@ -97,6 +97,22 @@ npm run dev
 ```
 Buka [http://localhost:3000](http://localhost:3000) pada peramban Anda untuk melihat hasilnya.
 
+### 5. Memeriksa aset deployment
+
+Build standalone Firebase App Hosting memeriksa seluruh isi `public/` lewat `postbuild`; build gagal jika ada aset yang hilang atau berbeda. Untuk menjalankannya secara lokal:
+
+```bash
+NEXT_PRIVATE_STANDALONE=true npm run build
+```
+
+Setelah deployment, periksa juga berkas yang benar-benar disajikan situs:
+
+```bash
+npm run check:public-assets -- --origin https://saku.unipdu.ac.id
+```
+
+Seluruh `public/` disertakan dalam file tracing. Jika hanya letterhead PDF yang disertakan, folder `public/` parsial membuat adapter Firebase melewatkan penyalinan logo, manifest, dan service worker.
+
 ---
 
 ## ⚙️ Skrip Migrasi & Seeding Data

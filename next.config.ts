@@ -3,7 +3,10 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   distDir: process.env.NEXT_DIST_DIR || ".next",
   outputFileTracingIncludes: {
-    '/api/employee/recommendations/*': ['public/templates/unipdu-letterhead.jpg'],
+    // App Hosting skips copying public/ when tracing has already created it
+    // (for example, for the PDF letterhead). Include every public asset so
+    // that the standalone folder also contains the logos, manifest and workers.
+    '/*': ['public/**/*'],
   },
   async redirects() {
     return [
