@@ -811,7 +811,7 @@ test('buildSakuBooking supports multi-day series metadata', () => {
   assert.equal(normalized.sakuGroupTotal, 3);
 
   // toReservationView maps group fields
-  const view = toReservationView(normalized, 'satker_head_loyalis', 'uid-123');
+  const view = toReservationView(normalized, 'satker_head_loyalis', 'uid-123', NOW.date);
   assert.equal(view.groupId, groupId);
   assert.deepEqual(view.groupDates, dates);
   assert.equal(view.groupIndex, 2);

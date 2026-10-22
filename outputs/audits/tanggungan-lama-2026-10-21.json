@@ -1,0 +1,720 @@
+{
+  "generatedAt": "2026-10-21T07:41:33.956Z",
+  "summaries": {
+    "Employees_Loyalis": {
+      "scanned": 254,
+      "employeesWithOld": 32,
+      "oldEntries": 49,
+      "countsOnly": 30
+    },
+    "Employees_BlueCollar": {
+      "scanned": 66,
+      "employeesWithOld": 0,
+      "oldEntries": 0,
+      "countsOnly": 0
+    },
+    "Employees_WhiteCollar": {
+      "scanned": 0,
+      "employeesWithOld": 0,
+      "oldEntries": 0,
+      "countsOnly": 0
+    }
+  },
+  "findings": [
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_010",
+      "name": "H. M. Abd. Natsir, M.AB.",
+      "status": "KELUAR",
+      "countsOnly": true,
+      "totalEntries": 2,
+      "oldEntries": [
+        {
+          "id": "legacy-SLTA-1",
+          "level": "SLTA",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        },
+        {
+          "id": "legacy-PT-1",
+          "level": "PT",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_017",
+      "name": "M. Achyar, S.AB.",
+      "status": "AKTIF",
+      "countsOnly": true,
+      "totalEntries": 2,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        },
+        {
+          "id": "legacy-SD-2",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_020",
+      "name": "H. M. Zahrul Azhar, S.IP., M.Kes.",
+      "status": "AKTIF",
+      "countsOnly": true,
+      "totalEntries": 2,
+      "oldEntries": [
+        {
+          "id": "legacy-SLTA-1",
+          "level": "SLTA",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        },
+        {
+          "id": "legacy-PT-1",
+          "level": "PT",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_028",
+      "name": "Achmad Mundzir, S.HI.",
+      "status": "KELUAR",
+      "countsOnly": true,
+      "totalEntries": 2,
+      "oldEntries": [
+        {
+          "id": "legacy-SLTA-1",
+          "level": "SLTA",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        },
+        {
+          "id": "legacy-SLTA-2",
+          "level": "SLTA",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_041",
+      "name": "Sholahuddin, S.Pd.I.",
+      "status": "AKTIF",
+      "countsOnly": true,
+      "totalEntries": 2,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        },
+        {
+          "id": "legacy-SD-2",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_044",
+      "name": "A. Khaerudin, S.Ag.",
+      "status": "AKTIF",
+      "countsOnly": true,
+      "totalEntries": 1,
+      "oldEntries": [
+        {
+          "id": "legacy-SLTA-1",
+          "level": "SLTA",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_045",
+      "name": "Emy Irsyadi, S.E.",
+      "status": "KELUAR",
+      "countsOnly": true,
+      "totalEntries": 2,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        },
+        {
+          "id": "legacy-SD-2",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_055",
+      "name": "Hj. Sabrina Dwi Prihatini, S.KM., M.Kes.",
+      "status": "AKTIF",
+      "countsOnly": true,
+      "totalEntries": 2,
+      "oldEntries": [
+        {
+          "id": "legacy-SLTA-1",
+          "level": "SLTA",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        },
+        {
+          "id": "legacy-PT-1",
+          "level": "PT",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_063",
+      "name": "Dr. H. Nasrudin, S.KM., M.Kes.",
+      "status": "AKTIF",
+      "countsOnly": true,
+      "totalEntries": 2,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        },
+        {
+          "id": "legacy-SD-2",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_068",
+      "name": "Anggrea Maduratih, S.AB.",
+      "status": "KELUAR",
+      "countsOnly": true,
+      "totalEntries": 1,
+      "oldEntries": [
+        {
+          "id": "legacy-PT-1",
+          "level": "PT",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_076",
+      "name": "Siti Muniroh, S.Kep., Ners.",
+      "status": "KELUAR",
+      "countsOnly": true,
+      "totalEntries": 2,
+      "oldEntries": [
+        {
+          "id": "legacy-SLTP-1",
+          "level": "SLTP",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        },
+        {
+          "id": "legacy-PT-1",
+          "level": "PT",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_079",
+      "name": "Khoiro Ummah, S.AB.",
+      "status": "AKTIF",
+      "countsOnly": true,
+      "totalEntries": 1,
+      "oldEntries": [
+        {
+          "id": "legacy-PT-1",
+          "level": "PT",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_098",
+      "name": "Didik Saudin, S.Kep., Ners., M.Kep.",
+      "status": "KELUAR",
+      "countsOnly": true,
+      "totalEntries": 2,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        },
+        {
+          "id": "legacy-SLTP-1",
+          "level": "SLTP",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_099",
+      "name": "Edi Wibowo Suwandi, S.Kep., Ners.",
+      "status": "KELUAR",
+      "countsOnly": true,
+      "totalEntries": 1,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_117",
+      "name": "Diema Hernyka Satyareni, S.Kom. M.Kom.",
+      "status": "AKTIF",
+      "countsOnly": true,
+      "totalEntries": 1,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_120",
+      "name": "Indra Kusuma Wardani, S.Si., M.Pd.",
+      "status": "AKTIF",
+      "countsOnly": true,
+      "totalEntries": 2,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        },
+        {
+          "id": "legacy-SD-2",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_125",
+      "name": "Nurul Khoirun Nisa', S.Kep., Ners.",
+      "status": "KELUAR",
+      "countsOnly": true,
+      "totalEntries": 1,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_128",
+      "name": "Yuyun Fitriani, A.Md.Keb.",
+      "status": "KELUAR",
+      "countsOnly": true,
+      "totalEntries": 1,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_132",
+      "name": "Ivan Dwi Fibrian, S.Kom., M.I.Kom.",
+      "status": "KELUAR",
+      "countsOnly": true,
+      "totalEntries": 2,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        },
+        {
+          "id": "legacy-SD-2",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_135",
+      "name": "Dr. Miftakhul Ilmi, M.Pd",
+      "status": "AKTIF",
+      "countsOnly": true,
+      "totalEntries": 2,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        },
+        {
+          "id": "legacy-SD-2",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_142",
+      "name": "Yuliasnita Verlandes, S.E., M.S.M.",
+      "status": "KELUAR",
+      "countsOnly": true,
+      "totalEntries": 2,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        },
+        {
+          "id": "legacy-SD-2",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_158",
+      "name": "Ardian Syaifuddin, A.Md.Kep.",
+      "status": "KELUAR",
+      "countsOnly": true,
+      "totalEntries": 1,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_160",
+      "name": "Hendy, S.Si., M.Si.",
+      "status": "KELUAR",
+      "countsOnly": true,
+      "totalEntries": 1,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_174",
+      "name": "Endang Kurniawan, S.Kom., M.M.",
+      "status": "KELUAR",
+      "countsOnly": true,
+      "totalEntries": 1,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_179",
+      "name": "Mokhamad Dafid Andianto, S.Kep., Ners.",
+      "status": "AKTIF",
+      "countsOnly": true,
+      "totalEntries": 1,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_191",
+      "name": "Kusuma Wardhani Mas'udah, S.Si., M.Si.",
+      "status": "KELUAR",
+      "countsOnly": true,
+      "totalEntries": 1,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_195",
+      "name": "Nisa Ayunda, S.Si., M.Si.",
+      "status": "KELUAR",
+      "countsOnly": true,
+      "totalEntries": 2,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        },
+        {
+          "id": "legacy-SD-2",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_208",
+      "name": "Moh. Faizal Fuad Aziz, M.Pd.",
+      "status": "KELUAR",
+      "countsOnly": true,
+      "totalEntries": 2,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        },
+        {
+          "id": "legacy-SD-2",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_219",
+      "name": "Riftin Zakia Darajad, S.Kom.",
+      "status": "KELUAR",
+      "countsOnly": true,
+      "totalEntries": 1,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_227",
+      "name": "Ahmad Farhan, S.Kom., M.M.",
+      "status": "AKTIF",
+      "countsOnly": false,
+      "totalEntries": 2,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        },
+        {
+          "id": "legacy-SD-2",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_238",
+      "name": "Moh. Shohibul Wafa, S.Kom., M.Kom.",
+      "status": "AKTIF",
+      "countsOnly": true,
+      "totalEntries": 1,
+      "oldEntries": [
+        {
+          "id": "legacy-SD-1",
+          "level": "SD",
+          "enrolled_at": "",
+          "birth_date": "",
+          "reason": "no_enrolment_date"
+        }
+      ],
+      "mixedChildIds": []
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_253",
+      "name": "Muhammad Ghinan Navsih, S.Si.D.",
+      "status": "AKTIF",
+      "countsOnly": false,
+      "totalEntries": 1,
+      "oldEntries": [
+        {
+          "id": "family-enrollment_149806ba0025415cb69986e43d618c87",
+          "level": "SD",
+          "enrolled_at": "2024-09-10",
+          "birth_date": "",
+          "reason": "sd_without_birth_date"
+        }
+      ],
+      "mixedChildIds": []
+    }
+  ]
+}

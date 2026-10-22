@@ -46,7 +46,7 @@ function writeEmployeeEvent(tx: FirebaseFirestore.Transaction, snapshot: Firebas
   const after = { ...before, eventName: REFERRAL_LABEL, period, sourceKind: REFERRAL_SOURCE, isEndOfMonth: true, departmentUnit: null,
     eventWorkers: workers, ownedEarningLabelsByEmployee: labels, totalPayout: Object.values(workers).reduce((sum: number, w) => sum + Number((w as {payGiven: number}).payGiven), 0),
     status: Object.keys(workers).length ? 'approved' : 'pending_review', revision: Number(before.revision || 0) + 1,
-    referralDetails: { ...(before.referralDetails || {}), [claimId]: { employeeName, prospectName: detail.prospectName, cycleId: detail.cycleId, qualifiedAt: detail.qualifiedAt } },
+    referralDetails: { ...(before.referralDetails || {}), [claimId]: { employeeName, prospectName: detail.prospectName, cycleId: detail.cycleId, qualifiedAt: detail.qualifiedAt, ...(detail.payrollTest ? { payrollTest: true } : {}) } },
     referralStates: { ...(before.referralStates || {}), [claimId]: state }, createdAt: before.createdAt || now, createdBy: before.createdBy || SYSTEM.uid,
     submittedBy: SYSTEM.uid, submittedByName: 'Integrasi PMB', updatedAt: now, updatedBy: SYSTEM.uid, schemaVersion: 3 };
   tx.set(snapshot.ref, after);

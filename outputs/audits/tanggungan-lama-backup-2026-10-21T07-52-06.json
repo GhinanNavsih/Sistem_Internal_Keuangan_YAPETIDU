@@ -1,0 +1,415 @@
+{
+  "takenAt": "2026-10-21T07:52:06.959Z",
+  "employees": [
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_010",
+      "name": "H. M. Abd. Natsir, M.AB.",
+      "family_allowance_metrics": {
+        "children_sd": 0,
+        "children_pt": 1,
+        "children_sltp": 0,
+        "children_slta": 1,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_017",
+      "name": "M. Achyar, S.AB.",
+      "family_allowance_metrics": {
+        "children_sd": 2,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_020",
+      "name": "H. M. Zahrul Azhar, S.IP., M.Kes.",
+      "family_allowance_metrics": {
+        "children_sd": 0,
+        "children_pt": 1,
+        "children_sltp": 0,
+        "children_slta": 1,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_028",
+      "name": "Achmad Mundzir, S.HI.",
+      "family_allowance_metrics": {
+        "children_sd": 0,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 2,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_041",
+      "name": "Sholahuddin, S.Pd.I.",
+      "family_allowance_metrics": {
+        "children_sd": 2,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_044",
+      "name": "A. Khaerudin, S.Ag.",
+      "family_allowance_metrics": {
+        "children_sd": 0,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 1,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_045",
+      "name": "Emy Irsyadi, S.E.",
+      "family_allowance_metrics": {
+        "children_sd": 2,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_055",
+      "name": "Hj. Sabrina Dwi Prihatini, S.KM., M.Kes.",
+      "family_allowance_metrics": {
+        "children_sd": 0,
+        "children_pt": 1,
+        "children_sltp": 0,
+        "children_slta": 1,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_063",
+      "name": "Dr. H. Nasrudin, S.KM., M.Kes.",
+      "family_allowance_metrics": {
+        "children_sd": 2,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_068",
+      "name": "Anggrea Maduratih, S.AB.",
+      "family_allowance_metrics": {
+        "children_sd": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1,
+        "children_pt": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_076",
+      "name": "Siti Muniroh, S.Kep., Ners.",
+      "family_allowance_metrics": {
+        "children_sd": 0,
+        "children_pt": 1,
+        "children_sltp": 1,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_079",
+      "name": "Khoiro Ummah, S.AB.",
+      "family_allowance_metrics": {
+        "children_sd": 0,
+        "children_pt": 1,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_098",
+      "name": "Didik Saudin, S.Kep., Ners., M.Kep.",
+      "family_allowance_metrics": {
+        "children_sd": 1,
+        "children_pt": 0,
+        "children_sltp": 1,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_099",
+      "name": "Edi Wibowo Suwandi, S.Kep., Ners.",
+      "family_allowance_metrics": {
+        "children_sd": 1,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_117",
+      "name": "Diema Hernyka Satyareni, S.Kom. M.Kom.",
+      "family_allowance_metrics": {
+        "children_sd": 1,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_120",
+      "name": "Indra Kusuma Wardani, S.Si., M.Pd.",
+      "family_allowance_metrics": {
+        "children_sd": 2,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_125",
+      "name": "Nurul Khoirun Nisa', S.Kep., Ners.",
+      "family_allowance_metrics": {
+        "children_sd": 1,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_128",
+      "name": "Yuyun Fitriani, A.Md.Keb.",
+      "family_allowance_metrics": {
+        "children_sd": 1,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_132",
+      "name": "Ivan Dwi Fibrian, S.Kom., M.I.Kom.",
+      "family_allowance_metrics": {
+        "children_sd": 2,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_135",
+      "name": "Dr. Miftakhul Ilmi, M.Pd",
+      "family_allowance_metrics": {
+        "children_sd": 2,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_142",
+      "name": "Yuliasnita Verlandes, S.E., M.S.M.",
+      "family_allowance_metrics": {
+        "children_sd": 2,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_158",
+      "name": "Ardian Syaifuddin, A.Md.Kep.",
+      "family_allowance_metrics": {
+        "children_sd": 1,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_160",
+      "name": "Hendy, S.Si., M.Si.",
+      "family_allowance_metrics": {
+        "children_sd": 1,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_174",
+      "name": "Endang Kurniawan, S.Kom., M.M.",
+      "family_allowance_metrics": {
+        "children_sd": 1,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_179",
+      "name": "Mokhamad Dafid Andianto, S.Kep., Ners.",
+      "family_allowance_metrics": {
+        "children_sd": 1,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_191",
+      "name": "Kusuma Wardhani Mas'udah, S.Si., M.Si.",
+      "family_allowance_metrics": {
+        "children_sd": 1,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_195",
+      "name": "Nisa Ayunda, S.Si., M.Si.",
+      "family_allowance_metrics": {
+        "children_sd": 2,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_208",
+      "name": "Moh. Faizal Fuad Aziz, M.Pd.",
+      "family_allowance_metrics": {
+        "children_sd": 2,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_219",
+      "name": "Riftin Zakia Darajad, S.Kom.",
+      "family_allowance_metrics": {
+        "children_sd": 1,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_227",
+      "name": "Ahmad Farhan, S.Kom., M.M.",
+      "family_allowance_metrics": {
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1,
+        "children_sd": 1,
+        "dependents": [
+          {
+            "id": "legacy-SD-1",
+            "level": "SD",
+            "enrolled_at": ""
+          },
+          {
+            "id": "legacy-SD-2",
+            "level": "SD",
+            "enrolled_at": "",
+            "ended_at": "2026-10-01"
+          }
+        ],
+        "children_s2": 0,
+        "children_s1": 0
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_238",
+      "name": "Moh. Shohibul Wafa, S.Kom., M.Kom.",
+      "family_allowance_metrics": {
+        "children_sd": 1,
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 1
+      }
+    },
+    {
+      "collection": "Employees_Loyalis",
+      "id": "Loyalis_253",
+      "name": "Muhammad Ghinan Navsih, S.Si.D.",
+      "family_allowance_metrics": {
+        "children_pt": 0,
+        "children_sltp": 0,
+        "children_slta": 0,
+        "spouse_count": 0,
+        "children_s1": 0,
+        "children_s2": 0,
+        "children_sd": 0,
+        "dependents": [
+          {
+            "level": "SD",
+            "enrolled_at": "2024-09-10",
+            "id": "family-enrollment_149806ba0025415cb69986e43d618c87",
+            "child_id": "family-enrollment_149806ba0025415cb69986e43d618c87",
+            "ended_at": "2026-09-01"
+          }
+        ]
+      }
+    }
+  ]
+}

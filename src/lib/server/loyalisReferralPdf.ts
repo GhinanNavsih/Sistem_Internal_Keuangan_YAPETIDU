@@ -17,8 +17,10 @@ export async function generateLoyalisReferralPdf(letter: ReferralLetter, origin:
     doc.addImage(new Uint8Array(letterhead), 'JPEG', 0, 0, 210, 297, 'unipdu-letterhead');
     doc.setTextColor(25, 35, 45); doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
     doc.text('SURAT REKOMENDASI CALON MAHASISWA', 105, 44, { align: 'center' });
+    // PMB's admin types this code to approve the scholarship; letters issued before codes show their ID.
+    doc.setFontSize(12);
+    doc.text(letter.code ? `Kode surat: ${letter.code}` : `ID: ${letter.id}`, 105, 52, { align: 'center' });
     doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
-    doc.text(`ID: ${letter.id}`, 105, 52, { align: 'center' });
   };
   drawLetterhead();
   const date = new Date(letter.issuedAt).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', dateStyle: 'long' });
@@ -38,7 +40,7 @@ export async function generateLoyalisReferralPdf(letter: ReferralLetter, origin:
   paragraph('Saya yang tercantum di bawah ini:');
   field('Nama Loyalis', letter.owner.name); field('NIPY', letter.owner.nipy); field('Jabatan', letter.owner.job); field('Unit kerja', letter.owner.unit);
   y += 3; paragraph('Dengan ini merekomendasikan calon mahasiswa berikut:');
-  if (letter.testOnly) paragraph('SURAT UJI - TIDAK BERLAKU UNTUK PENGAJUAN RESMI', 11);
+  if (letter.testOnly) paragraph(letter.payrollTest ? 'SURAT UJI - PENGUJIAN ALUR REKOMENDASI' : 'SURAT UJI - TIDAK BERLAKU UNTUK PENGAJUAN RESMI', 11);
   field('Nama calon mahasiswa', letter.prospectName); field('Tahun akademik', letter.cycleLabel);
   y += 3; paragraph('Untuk dipertimbangkan sebagai penerima Beasiswa Khusus Rekom Loyalis UNIPDU. Persetujuan dan besaran potongan ditetapkan oleh PMB setelah pemeriksaan dokumen sesuai ketentuan yang berlaku.');
   paragraph('Surat ini hanya berlaku bagi nama dan tahun akademik di atas. Keaslian, kepemilikan, serta status terkini dapat diperiksa melalui kode QR berikut.', 10);

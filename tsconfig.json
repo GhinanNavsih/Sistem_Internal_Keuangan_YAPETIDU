@@ -38,7 +38,9 @@
     ".next-referral-integration/types/**/*.ts",
     ".next-referral-integration/dev/types/**/*.ts",
     ".next-referral-build/types/**/*.ts",
-    ".next-referral-build/dev/types/**/*.ts"
+    ".next-referral-build/dev/types/**/*.ts",
+    ".next-referral-payroll-test/types/**/*.ts",
+    ".next-referral-payroll-test/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"
