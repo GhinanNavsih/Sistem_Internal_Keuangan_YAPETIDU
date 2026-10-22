@@ -9,7 +9,11 @@ runConfig:
 # Environment variables
 env:
   - variable: LOYALIS_REFERRALS_ENABLED
-    value: "false"
+    value: "true"
+    availability:
+      - RUNTIME
+  - variable: LOYALIS_REFERRAL_SECRET
+    secret: loyalis-referral-secret
     availability:
       - RUNTIME
   - variable: PMB_REFERRAL_ORIGIN
