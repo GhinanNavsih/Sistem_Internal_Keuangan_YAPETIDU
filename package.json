@@ -31,6 +31,8 @@
     "audit:driver-seed-date": "tsx scripts/auditDriverJourneySeedDateBug.ts",
     "fix:driver-seed-date": "tsx scripts/fixDriverJourneySeedDateBug.ts",
     "audit:pekarya-spj": "tsx scripts/auditPekaryaSpjReadOnly.ts",
+    "audit:tanggungan-lama": "tsx scripts/auditOldTanggunganKeluargaReadOnly.ts",
+    "fix:tanggungan-lama": "tsx scripts/removeOldTanggunganKeluargaEntries.ts",
     "migrate:satpam-bonus": "tsx scripts/migrateSatpamBonusMutlakToTunjanganJabatan.ts",
     "migrate:salary-matrix": "tsx scripts/migrateSalaryMatrix.ts",
     "migrate:employees": "tsx scripts/migrateEmployees.ts",

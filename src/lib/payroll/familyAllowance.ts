@@ -146,6 +146,19 @@ export function dependentChildren(metrics: FamilyAllowanceMetrics | null | undef
   return [...children].map(([id, stages]) => ({ id, stages, latest: stages[stages.length - 1] }));
 }
 
+export type OldDependentReason = 'malformed' | 'no_enrolment_date' | 'sd_without_birth_date';
+
+/**
+ * Why a history row was saved before the form required its date: no Tanggal
+ * masuk, or an SD child without a birth date. Null for a dated row.
+ */
+export function oldDependentReason(dependent: DependentEnrollment): OldDependentReason | null {
+  if (!dependent || typeof dependent.id !== 'string' || !dependent.id) return 'malformed';
+  if (!isDateOnly(dependent.enrolled_at)) return 'no_enrolment_date';
+  if (dependent.level === 'SD' && !isDateOnly(dependent.birth_date)) return 'sd_without_birth_date';
+  return null;
+}
+
 export function pendingGraduatedChildren(metrics: FamilyAllowanceMetrics | null | undefined, asOf: Date | string) {
   const day = dateOnly(asOf);
   return dependentChildren(metrics).flatMap((child, index) => {
