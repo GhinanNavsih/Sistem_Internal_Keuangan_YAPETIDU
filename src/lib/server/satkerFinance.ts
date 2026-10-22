@@ -1,6 +1,6 @@
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { AuthenticatedProfile, HttpError } from '@/lib/server/auth';
-import { DEFAULT_ACCOUNTS, FinancialAccount, OpeningBalances, type YearClosing } from '@/lib/satker-finance/core';
+import { DEFAULT_ACCOUNTS, defaultCashFlowSection, FinancialAccount, groupNormalBalance, OpeningBalances, type YearClosing } from '@/lib/satker-finance/core';
 import type { FixedAsset } from '@/lib/satker-finance/depreciation';
 import biroUmumAkunData from '@/lib/satker-finance/biro-umum-26-27-akun.json';
 
@@ -201,7 +201,30 @@ export async function loadAccounts(unitId?: string): Promise<FinancialAccount[]>
     if (!local) return { ...account, localAccountId, revision: 0 };
     const code = typeof local.code === 'string' ? local.code : account.code;
     const name = typeof local.name === 'string' ? local.name : account.name;
-    return { ...account, id: account.id || account.code, code, name, localAccountId, revision: Number(local.revision || 0), postable: !!name && !!account.normalBalance && !!account.reportTarget };
+    const isCashBank = typeof local.cashEquivalent === 'boolean'
+      ? local.cashEquivalent
+      : (account.cashEquivalent || (account.type === 'AKTIVA' && (code === '10000' || code.startsWith('11'))));
+    const cashEquivalent = isCashBank;
+    const normalBalance: FinancialAccount['normalBalance'] = (local.normalBalance === 'DEBIT' || local.normalBalance === 'CREDIT' ? local.normalBalance : null)
+      ?? account.normalBalance
+      ?? groupNormalBalance(account.type);
+    const reportTarget: FinancialAccount['reportTarget'] = (local.reportTarget === 'BALANCE_SHEET' || local.reportTarget === 'INCOME_STATEMENT' ? local.reportTarget : null)
+      ?? account.reportTarget
+      ?? (['TERIMA', 'KELUAR'].includes(account.type) ? 'INCOME_STATEMENT' : 'BALANCE_SHEET');
+    const cashFlowSection = cashEquivalent ? null : (local.cashFlowSection as FinancialAccount['cashFlowSection'] ?? account.cashFlowSection ?? defaultCashFlowSection(account.type, code));
+    return {
+      ...account,
+      id: account.id || account.code,
+      code,
+      name,
+      localAccountId,
+      normalBalance,
+      reportTarget,
+      cashEquivalent,
+      cashFlowSection,
+      revision: Number(local.revision || 0),
+      postable: !!name && !!normalBalance && !!reportTarget,
+    };
   });
   for (const doc of localSnapshot.docs) {
     if (doc.id === '_meta' || doc.id.startsWith('base_')) continue;

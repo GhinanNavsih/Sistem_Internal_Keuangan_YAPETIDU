@@ -16,6 +16,8 @@ function entry(id: string, date: string, raw: Record<string, unknown>): JournalE
 
 test('catalog faithfully includes 129 workbook codes and rejects empty placeholders', () => {
   assert.equal(DEFAULT_ACCOUNTS.length, 129);
+  assert.equal(DEFAULT_ACCOUNTS.find((account) => account.code === '11000')?.postable, true);
+  assert.equal(DEFAULT_ACCOUNTS.find((account) => account.code === '11000')?.cashEquivalent, true);
   assert.equal(DEFAULT_ACCOUNTS.find((account) => account.code === '11001')?.name, 'Bank Mandiri');
   assert.equal(DEFAULT_ACCOUNTS.find((account) => account.code === '11002')?.postable, false);
   assert.throws(() => entry('invalid', '2026-09-02', { kind: 'EXPENSE', accountCode: '11002', paymentAccountCode: '10000', amount: 1 }), /tidak dapat diposting|memerlukan/);

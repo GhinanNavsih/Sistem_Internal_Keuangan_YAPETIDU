@@ -13,11 +13,11 @@
     "code": "11000",
     "name": "BANK",
     "type": "AKTIVA",
-    "normalBalance": null,
-    "reportTarget": null,
-    "postable": false,
-    "cashEquivalent": false,
-    "cashFlowSection": "OPERATING"
+    "normalBalance": "DEBIT",
+    "reportTarget": "BALANCE_SHEET",
+    "postable": true,
+    "cashEquivalent": true,
+    "cashFlowSection": null
   },
   {
     "code": "11001",

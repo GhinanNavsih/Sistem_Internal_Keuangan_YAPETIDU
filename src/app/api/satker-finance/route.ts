@@ -333,7 +333,16 @@ export async function POST(request: NextRequest) {
       const chosenCashFlowSection = CASH_FLOW_SECTIONS.includes(raw.cashFlowSection as typeof CASH_FLOW_SECTIONS[number]) ? raw.cashFlowSection as typeof CASH_FLOW_SECTIONS[number] : null;
       let accountData: Record<string, unknown>;
       if (sourceAccount) {
-        accountData = { baseCode: sourceCode, code, name };
+        const type = sourceAccount.type;
+        const isCashBank = typeof raw.cashEquivalent === 'boolean'
+          ? (raw.cashEquivalent && type === 'AKTIVA' && (code === '10000' || code.startsWith('11')))
+          : (sourceAccount.cashEquivalent || (type === 'AKTIVA' && (code === '10000' || code.startsWith('11'))));
+        const cashEquivalent = isCashBank;
+        const contra = raw.contra === true && !cashEquivalent;
+        const normalBalance = groupNormalBalance(type, contra);
+        const reportTarget = ['TERIMA', 'KELUAR'].includes(type) ? 'INCOME_STATEMENT' : 'BALANCE_SHEET';
+        const cashFlowSection = cashEquivalent ? null : (chosenCashFlowSection ?? sourceAccount.cashFlowSection ?? defaultCashFlowSection(type, code));
+        accountData = { baseCode: sourceCode, code, name, normalBalance, reportTarget, cashEquivalent, cashFlowSection, postable: true };
       } else if (current) {
         // The unit's own accounts may also change their contra flag and cash-flow classification; journals keep the split they were posted with.
         accountData = { ...current, code, name,

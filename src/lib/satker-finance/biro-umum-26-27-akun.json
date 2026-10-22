@@ -12,8 +12,8 @@
       "code": "11000",
       "name": "BANK",
       "type": "AKTIVA",
-      "normalBalance": null,
-      "reportTarget": null
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
     },
     {
       "code": "11001",
