@@ -108,6 +108,53 @@ export const FACILITY_REPORT_STATUS_LABELS: Record<FacilityReportStatus, string>
   declined: 'Ditolak',
 };
 
+/**
+ * Priority order for sorting reports: active issues (`pending` / Menunggu)
+ * appear first so they get prompt attention, followed by completed
+ * (`resolved` / Selesai), and finally declined (`declined` / Ditolak).
+ */
+export const FACILITY_REPORT_STATUS_ORDER: Record<FacilityReportStatus, number> = {
+  pending: 0,
+  resolved: 1,
+  declined: 2,
+};
+
+export interface SortableFacilityReport {
+  status?: unknown;
+  reportedAtMillis?: unknown;
+  reportedDate?: unknown;
+}
+
+/**
+ * Sorts facility reports primarily by status (Menunggu first, then Selesai,
+ * then Ditolak) and secondarily by submission timestamp/date (newest to oldest).
+ */
+export function compareFacilityReports(
+  a: SortableFacilityReport,
+  b: SortableFacilityReport,
+): number {
+  const orderA =
+    typeof a.status === 'string' && a.status in FACILITY_REPORT_STATUS_ORDER
+      ? FACILITY_REPORT_STATUS_ORDER[a.status as FacilityReportStatus]
+      : 99;
+  const orderB =
+    typeof b.status === 'string' && b.status in FACILITY_REPORT_STATUS_ORDER
+      ? FACILITY_REPORT_STATUS_ORDER[b.status as FacilityReportStatus]
+      : 99;
+
+  if (orderA !== orderB) {
+    return orderA - orderB;
+  }
+
+  const timestampA = Number(a.reportedAtMillis || 0);
+  const timestampB = Number(b.reportedAtMillis || 0);
+  if (timestampA !== timestampB) {
+    return timestampB - timestampA;
+  }
+
+  return String(b.reportedDate || '').localeCompare(String(a.reportedDate || ''));
+}
+
 /** Terminal states can no longer be edited or withdrawn by the reporter. */
 export const FACILITY_REPORT_OPEN_STATUSES: readonly FacilityReportStatus[] = [
   'pending',

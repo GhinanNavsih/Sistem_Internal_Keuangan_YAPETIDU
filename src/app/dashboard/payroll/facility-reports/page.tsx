@@ -47,6 +47,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
 import {
+  compareFacilityReports,
   FACILITY_REPORT_STATUS_LABELS,
   FACILITY_REPORT_STATUSES,
   facilityReportStatusTone,
@@ -420,12 +421,7 @@ function FacilityReportReviewContent() {
           ...report,
           status: isFacilityReportStatus(report.status) ? report.status : 'pending',
         }))
-        .sort((a, b) => {
-          const timestampA = Number(a.reportedAtMillis || 0);
-          const timestampB = Number(b.reportedAtMillis || 0);
-          if (timestampA !== timestampB) return timestampB - timestampA;
-          return String(b.reportedDate || '').localeCompare(String(a.reportedDate || ''));
-        });
+        .sort(compareFacilityReports);
       setReports(nextReports);
     } catch (error) {
       console.error('Error loading facility reports:', error);

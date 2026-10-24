@@ -4,6 +4,7 @@ import admin, { adminDb } from '@/lib/firebase-admin';
 import {
   canSubmitFacilityReport,
   canTransitionFacilityReport,
+  compareFacilityReports,
   FACILITY_REPORTS_COLLECTION,
   isBlueCollarFacilityDashboardUser,
   isFacilityReportOpen,
@@ -346,16 +347,7 @@ export async function GET(request: NextRequest) {
           updatedAtMillis: updatedAt?.toMillis?.() ?? null,
         };
       })
-      .sort(
-        (a, b) => {
-          const timestampA = Number(a.reportedAtMillis || 0);
-          const timestampB = Number(b.reportedAtMillis || 0);
-          if (timestampA !== timestampB) return timestampB - timestampA;
-          return String((b as Record<string, unknown>).reportedDate || '').localeCompare(
-            String((a as Record<string, unknown>).reportedDate || ''),
-          );
-        },
-      );
+      .sort(compareFacilityReports);
 
     return NextResponse.json({
       reports,

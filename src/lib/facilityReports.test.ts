@@ -4,6 +4,7 @@ import {
   canSubmitFacilityReport,
   canTransitionFacilityReport,
   canUploadFacilityRepairProof,
+  compareFacilityReports,
   FACILITY_REPORT_DASHBOARD_PATH,
   FACILITY_REPORT_STATUSES,
   EMPLOYEE_FACILITY_REPORTS_PATH,
@@ -95,4 +96,38 @@ test('satker_head, super_admin, and blue-collar repairers can upload facility re
   assert.equal(canUploadFacilityRepairProof({ role: 'loyalis' }), false);
   assert.equal(canUploadFacilityRepairProof(null), false);
 });
+
+test('compareFacilityReports orders pending reports above resolved and declined, and newest to oldest within status', () => {
+  const reports = [
+    { id: '1', status: 'resolved', reportedDate: '2026-10-24', reportedAtMillis: 2000 },
+    { id: '2', status: 'pending', reportedDate: '2026-10-20', reportedAtMillis: 1000 },
+    { id: '3', status: 'pending', reportedDate: '2026-10-24', reportedAtMillis: 3000 },
+    { id: '4', status: 'declined', reportedDate: '2026-10-25', reportedAtMillis: 4000 },
+    { id: '5', status: 'resolved', reportedDate: '2026-10-19', reportedAtMillis: 500 },
+  ];
+
+  const sorted = [...reports].sort(compareFacilityReports);
+
+  // Pending first (newest to oldest: 3 then 2), then resolved (newest to oldest: 1 then 5), then declined (4)
+  assert.deepEqual(
+    sorted.map((r) => r.id),
+    ['3', '2', '1', '5', '4'],
+  );
+});
+
+test('compareFacilityReports falls back to reportedDate when reportedAtMillis is absent', () => {
+  const reports = [
+    { id: '1', status: 'pending', reportedDate: '2026-10-18' },
+    { id: '2', status: 'pending', reportedDate: '2026-10-22' },
+    { id: '3', status: 'resolved', reportedDate: '2026-10-25' },
+  ];
+
+  const sorted = [...reports].sort(compareFacilityReports);
+
+  assert.deepEqual(
+    sorted.map((r) => r.id),
+    ['2', '1', '3'],
+  );
+});
+
 

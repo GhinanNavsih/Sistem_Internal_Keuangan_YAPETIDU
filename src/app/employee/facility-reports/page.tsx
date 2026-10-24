@@ -27,6 +27,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAuth } from '@/lib/AuthContext';
 import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
 import {
+  compareFacilityReports,
   DEFAULT_FACILITY_AREA,
   FACILITY_AREA_OTHER,
   FACILITY_AREAS,
@@ -117,12 +118,7 @@ export default function FacilityReportsPage() {
           ...report,
           status: isFacilityReportStatus(report.status) ? report.status : 'pending',
         }))
-        .sort((a, b) => {
-          const timestampA = Number(a.reportedAtMillis || 0);
-          const timestampB = Number(b.reportedAtMillis || 0);
-          if (timestampA !== timestampB) return timestampB - timestampA;
-          return String(b.reportedDate || '').localeCompare(String(a.reportedDate || ''));
-        });
+        .sort(compareFacilityReports);
       setReports(nextReports);
     } catch (error) {
       console.error('Error loading facility reports:', error);
