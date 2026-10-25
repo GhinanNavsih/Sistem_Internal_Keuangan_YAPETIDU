@@ -335,3 +335,19 @@ Physical presence printouts are parsed via the [/api/parse-rekap](file:///Users/
 - Edits use an `expected` snapshot and return 409 on conflict. `FinancialAuditLogs` and `FinancialIdempotencyKeys/{uid}__{requestId}` live in SAKU. Cross-project edits/sync reserve a pending receipt before the Koperasi write, then atomically finish the audit and receipt in SAKU. This small extension to the three-step flow prevents concurrent request-ID reuse and preserves bank before-values across a lost response. Pending receipts are resumed, never replayed as success. Bank batches also check document versions. Link writes and their audit are one SAKU transaction; a pending bank-sync step can be retried without relinking.
 - The member page reload invalidates both employee and Koperasi payroll query caches. The former Simpan Pinjam audit body is `src/components/koperasi/SimpanPinjamAuditView.tsx`; both views share one data load and retain URL-selected navigation.
 - Verification: `npm test`, `npm run test:koperasi-members:integration` (Auth + Firestore emulators only, `firebase.koperasi-test.json` with `singleProjectMode: false` for `koperasi-unipdu`), `npm run build`, and a lint comparison against the pre-existing baseline. Production edits must use an agreed test member first.
+
+---
+
+## Agent skills
+
+### Issue tracker
+
+Before publishing or fetching issues and specs, read `docs/agents/issue-tracker.md`. Use GitHub Issues in `GhinanNavsih/Sistem_Internal_Keuangan_YAPETIDU`.
+
+### Triage labels
+
+Before triaging issues, read `docs/agents/triage-labels.md` for the five default label names.
+
+### Domain docs
+
+Before exploring a domain, read `docs/agents/domain.md`. This is a single-context repo: `CONTEXT.md` is the glossary and `docs/adr/` holds decisions.
