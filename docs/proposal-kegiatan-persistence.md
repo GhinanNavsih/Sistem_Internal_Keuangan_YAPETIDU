@@ -44,6 +44,16 @@ isolated transport boundaries. The second uses the real APIs and Firestore/Auth
 emulators, including the legacy write payload that formerly changed ownership.
 The page checks also run automatically after `npm test`.
 
+## Report quantity expressions
+
+Saving an expense report previously inserted the sum of its evaluated child
+quantities into the leading number of the LPJ expression while retaining its
+multipliers. Saving an unchanged `30 Botol x 2 sesi` therefore produced
+`60 Botol x 2 sesi`. The modal's confirmation preview repeated this mistake.
+Both paths now share a formatter that preserves the expression's numeric total.
+Page regressions open the actual report editor and cover unchanged quantities,
+edited quantities, confirmation values, and repeated saves.
+
 ## Release and historical data
 
 Deploy the new application/API before publishing the Firestore rules that deny

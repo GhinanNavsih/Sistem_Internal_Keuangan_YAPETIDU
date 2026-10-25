@@ -33,6 +33,8 @@ globalThis.setTimeout = (fn, delay = 0) => {
   return id;
 };
 globalThis.clearTimeout = (id) => timers.delete(id);
+dom.window.setTimeout = globalThis.setTimeout;
+dom.window.clearTimeout = globalThis.clearTimeout;
 Date.now = () => now;
 const clone = (value) => structuredClone(value);
 const T = (globalThis.__proposalTest = {
@@ -136,10 +138,11 @@ const mocks = {
   '@/utils/generateProposalKegiatanPdf': `exports.generateProposalKegiatanPdf=()=>{};`,
   '@/utils/generateLpjPdf': `exports.generateLpjPdf=async()=>{};`,
   '@/utils/generateLpjExpenseReportPdf': `exports.generateLpjExpenseReportPdf=async()=>{};`,
-  './ExpenseReportStage': `exports.default=()=>null;`,
+  '@/lib/uploads': `exports.uploadProofFile=async()=>{throw new Error('Unexpected upload in page test')};`,
+  '@/utils/ocrParser': `exports.renderFileToCanvas=async()=>{throw new Error('Unexpected receipt rendering in page test')};`,
   './SignatureSettings': `exports.default=()=>null;`,
 };
-const ui = `const React=require('react'); const element=(tag)=>(props)=>{const {children,variant,size,asChild,render,showCloseButton,...rest}=props;return React.createElement(tag,rest,children)}; exports.Button=element('button');exports.Input=element('input');exports.Card=element('div');exports.FloatingSnackbar=()=>null;exports.ConfirmDialog=()=>null;exports.Dialog=()=>null;exports.DialogContent=element('div');exports.DialogHeader=element('div');exports.DialogTitle=element('h3');exports.Select=({value,onValueChange,disabled})=>React.createElement('select',{'data-testid':'department',value,disabled,onChange:e=>onValueChange(e.target.value)},React.createElement('option',{value:''},'Pilih'),React.createElement('option',{value:'REKTORAT'},'REKTORAT'));exports.SelectTrigger=()=>null;exports.SelectContent=()=>null;exports.SelectItem=()=>null;exports.SelectValue=()=>null;`;
+const ui = `const React=require('react'); const element=(tag)=>(props)=>{const {children,variant,size,asChild,render,showCloseButton,...rest}=props;return React.createElement(tag,rest,children)}; exports.Button=element('button');exports.Input=element('input');exports.Card=element('div');exports.FloatingSnackbar=()=>null;exports.ConfirmDialog=()=>null;exports.Dialog=({open,children})=>open?React.createElement('div',{role:'dialog'},children):null;exports.DialogContent=element('div');exports.DialogHeader=element('div');exports.DialogTitle=element('h3');exports.Select=({value,onValueChange,disabled})=>React.createElement('select',{'data-testid':'department',value,disabled,onChange:e=>onValueChange(e.target.value)},React.createElement('option',{value:''},'Pilih'),React.createElement('option',{value:'REKTORAT'},'REKTORAT'));exports.SelectTrigger=()=>null;exports.SelectContent=()=>null;exports.SelectItem=()=>null;exports.SelectValue=()=>null;`;
 async function bundle() {
   const pagePath = path.join(root, 'src/app/dashboard/payroll/uraian/proposal-kegiatan/page.tsx');
   const source = process.env.PROPOSAL_TEST_REVISION
@@ -263,6 +266,76 @@ async function reset() {
   localStorage.clear();
 }
 const tests = [
+  ...[
+    ['report save preserves 30 Botol x 2 sesi and its Rp180000 budget', true, '30 Botol x 2 sesi', 180000],
+    ['single report item preserves a multiplied quantity on save', false, '30 Botol x 2 sesi', 180000],
+    ['single report item preserves a quantity with one session', false, '30 Botol x 1 sesi', 90000],
+    ['single report item preserves a quantity with three sessions', false, '30 Botol x 3 sesi', 270000],
+    ['report save previews and applies an edited multiplied quantity once', false, '30 Botol x 2 sesi', 180000, '40 Botol x 2 sesi', 240000],
+  ].map(([name, includeRice, sourceQty, sourceAmount, editedQty, editedAmount]) => [
+    name,
+    async () => {
+      const record = fixture();
+      const rows = [
+        { rowId: 'consumption', type: 'group_header', uraian: 'Konsumsi Seminar', rincianQty: '', rincianRate: 0, reportId: 'consumption-report' },
+        ...(includeRice ? [{ rowId: 'rice', type: 'item', uraian: 'Nasi kotak', rincianQty: '30 Nasi x 1 sesi', rincianRate: 16000, realisasi: 480000 }] : []),
+        { rowId: 'water', type: 'item', uraian: 'SahDu Botol 600ml', rincianQty: sourceQty, rincianRate: 3000, realisasi: sourceAmount },
+      ];
+      record.status = 'lpj_draft';
+      record.pengeluaranRows = clone(rows);
+      record.lpjPengeluaranRows = clone(rows);
+      record.expenseReports = [{
+        id: 'consumption-report', expenseRowId: 'consumption', expenseLabel: 'Konsumsi Seminar',
+        title: 'Laporan Konsumsi Seminar', mode: 'expense', notes: '', source: 'custom',
+        receipts: {},
+        rows: rows.slice(1).map((row) => ({
+          id: `detail-${row.rowId}`, parentRowId: row.rowId, parentUraian: row.uraian,
+          uraian: row.uraian, rincianQty: row.rincianQty, rincianRate: row.rincianRate,
+          realisasi: row.realisasi, employeeId: '', employeeName: '', note: '',
+        })),
+      }];
+      T.records.set('saved-event', record);
+      await mount(admin);
+      await clickText('Saved event fixture');
+      await clickText('Buka Laporan');
+      await advance(0);
+      assert.ok(document.body.textContent.includes('Hubungkan Header Grup ke Laporan'));
+      assert.ok([...document.querySelector('[role=dialog]').querySelectorAll('input')].some((input) => input.value === sourceQty), 'modal detail preserves the original quantity');
+      await advance(400);
+      assert.ok([...document.querySelectorAll('input')].some((input) => input.value === sourceQty), 'modal autosave preserves the original quantity');
+      if (editedQty) {
+        const input = [...document.querySelector('[role=dialog]').querySelectorAll('input')].find((input) => input.value === sourceQty);
+        await act(async () => {
+          Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(input, editedQty);
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+      }
+      await clickText('Simpan & Selesai');
+      if (editedQty) {
+        const confirmation = [...document.querySelectorAll('[role=dialog]')].at(-1);
+        assert.ok(confirmation.textContent.includes('Konfirmasi Perubahan Nilai SPJ'));
+        assert.ok(confirmation.textContent.includes(`${sourceQty} → ${editedQty}`), 'confirmation must show the same expression that will be saved');
+        await clickText('Konfirmasi & Simpan');
+      }
+      assert.equal(document.querySelectorAll('[role=dialog]').length, 0, 'unchanged report must save without confirmation');
+      const expectedQty = editedQty || sourceQty;
+      const expectedAmount = editedAmount || sourceAmount;
+      const qty = [...document.querySelectorAll('input')].find((input) => input.value.includes('Botol x'))?.value;
+      assert.equal(qty, expectedQty, 'saving a report must not multiply the LPJ quantity again');
+      await advance(1000);
+      const saved = T.records.get('saved-event');
+      const water = saved.lpjPengeluaranRows.find((row) => row.rowId === 'water');
+      assert.equal(water.rincianQty, expectedQty);
+      assert.equal(water.realisasi, expectedAmount);
+      assert.equal(saved.pengeluaranRows.find((row) => row.rowId === 'water').rincianQty, sourceQty);
+      await clickText('Buka Laporan');
+      await advance(0);
+      await clickText('Simpan & Selesai');
+      assert.equal(document.querySelectorAll('[role=dialog]').length, 0, 'saving the same report again must not require confirmation');
+      await advance(1000);
+      assert.equal(T.records.get('saved-event').lpjPengeluaranRows.find((row) => row.rowId === 'water').rincianQty, expectedQty);
+    },
+  ]),
   [
     'switching accounts during a pending first save cannot transfer the new event',
     async () => {
@@ -551,7 +624,9 @@ const tests = [
 (async () => {
   Page = await bundle();
   let failed = 0;
-  for (const [name, run] of tests) {
+  const selectedTests = tests.filter(([name]) => !process.env.PROPOSAL_TEST_FILTER || name.includes(process.env.PROPOSAL_TEST_FILTER));
+  assert.ok(selectedTests.length, 'test filter must select at least one scenario');
+  for (const [name, run] of selectedTests) {
     await reset();
     try {
       await run();
@@ -562,7 +637,7 @@ const tests = [
     }
   }
   await reset();
-  console.log(`${tests.length - failed}/${tests.length} lifecycle scenarios passed`);
+  console.log(`${selectedTests.length - failed}/${selectedTests.length} lifecycle scenarios passed`);
   fs.rmSync(buildDir, { recursive: true, force: true });
   process.exitCode = failed ? 1 : 0;
 })().catch((error) => {

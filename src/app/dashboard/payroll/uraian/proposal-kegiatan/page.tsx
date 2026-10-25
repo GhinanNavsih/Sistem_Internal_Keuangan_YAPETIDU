@@ -54,6 +54,7 @@ import {
   createStableId,
   ensureExpenseRowIds,
   ExpenseReport,
+  formatProposalQuantityLike,
   getExpenseGroupRows,
   getExpenseReportRowsForItem,
   getExpenseReportRowsQuantity,
@@ -74,17 +75,6 @@ const clearExpenseReportLink = (row: ProposalExpenseRow): ProposalExpenseRow => 
   delete cleanRow.reportId;
   delete cleanRow.reportType;
   return cleanRow;
-};
-
-const formatQuantityValue = (value: number): string => {
-  if (Number.isInteger(value)) return String(value);
-  return String(Number(value.toFixed(2)));
-};
-
-const formatQuantityLike = (value: number, source: string): string => {
-  const trimmedSource = source.trim();
-  const suffix = trimmedSource.replace(/^[\d.\s]+/, '').trim();
-  return suffix ? `${formatQuantityValue(value)} ${suffix}` : formatQuantityValue(value);
 };
 
 const LONG_PRESS_MS = 500;
@@ -798,7 +788,7 @@ export default function ProposalKegiatanPage() {
 
         return {
           ...row,
-          rincianQty: formatQuantityLike(getExpenseReportRowsQuantity(childRows, parseQty), row.rincianQty),
+          rincianQty: formatProposalQuantityLike(getExpenseReportRowsQuantity(childRows, parseQty), row.rincianQty, parseQty),
           realisasi: getExpenseReportRowsSubtotal(childRows, parseQty),
         };
       });

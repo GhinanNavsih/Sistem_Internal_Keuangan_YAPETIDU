@@ -4,6 +4,7 @@ import {
   createExpenseReport,
   createExpenseReportRow,
   ensureExpenseRowIds,
+  formatProposalQuantityLike,
   getExpenseGroupRows,
   getExpenseReportActualTotal,
   getExpenseReportBudgetTotal,
@@ -61,6 +62,31 @@ test('sums report child quantities and subtotals for an LPJ detail item', () => 
 
   assert.equal(getExpenseReportRowsQuantity(rows), 158);
   assert.equal(getExpenseReportRowsSubtotal(rows), 15_000_000);
+});
+
+test('formats report quantity totals without multiplying their dimensions again', () => {
+  const cases: Array<[number, string, string]> = [
+    [60, '30 Botol x 2 sesi', '30 Botol x 2 sesi'],
+    [80, '30 Botol x 2 sesi', '40 Botol x 2 sesi'],
+    [60, '30 Botol X 2 Sesi', '30 Botol X 2 Sesi'],
+    [80, '30 Botol*2', '40 Botol*2'],
+    [40, '30 Botol X 2 sesi * 50%', '40 Botol X 2 sesi * 50%'],
+    [158, '100 Mahasiswa', '158 Mahasiswa'],
+    [1.5, '2 x 50%', '3 x 50%'],
+    [0.5, '25%', '50%'],
+    [2, 'Penanggung Jawab', '2 Penanggung Jawab'],
+    [60, 'Botol x 2 sesi', '60'],
+    [60, '0 Botol x 2 sesi', '30 Botol x 2 sesi'],
+    [60, '30 Botol x 0 sesi', '60'],
+    [1, '2 x 3', '1'],
+    [0.3, '0.1 x 3', '0.1 x 3'],
+  ];
+  for (const [total, source, expected] of cases) {
+    const result = formatProposalQuantityLike(total, source);
+    assert.equal(result, expected, `format ${total} like ${source}`);
+    assert.ok(Math.abs(parseProposalQty(result) - total) < 1e-9, `quantity must still equal ${total}`);
+    assert.equal(formatProposalQuantityLike(total, result), result, 'repeated saves must not change the expression');
+  }
 });
 
 test('does not treat an untouched report draft as linked content', () => {

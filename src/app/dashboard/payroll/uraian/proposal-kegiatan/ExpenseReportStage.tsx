@@ -36,6 +36,7 @@ import {
   ExpenseReport,
   ExpenseReportMode,
   ExpenseReportRow,
+  formatProposalQuantityLike,
   getExpenseGroupRows,
   getExpenseReportActualTotal,
   getExpenseReportBudgetTotal,
@@ -153,11 +154,6 @@ const parseMoney = (value: string): number => {
 const formatQuantity = (value: number): string => {
   if (Number.isInteger(value)) return String(value);
   return String(Number(value.toFixed(2)));
-};
-
-const formatQuantityLike = (value: number, source: string): string => {
-  const suffix = source.trim().replace(/^[\d.\s]+/, '').trim();
-  return suffix ? `${formatQuantity(value)} ${suffix}` : formatQuantity(value);
 };
 
 function modeLabel(mode: ExpenseReportMode): string {
@@ -437,7 +433,7 @@ export default function ExpenseReportStage({
       return [{
         headerLabel: headerItem.uraian,
         currentQty: headerItem.rincianQty || '-',
-        nextQty: formatQuantityLike(childQty, headerItem.rincianQty),
+        nextQty: formatProposalQuantityLike(childQty, headerItem.rincianQty, parseQty),
         currentRealisasi,
         nextRealisasi,
         qtyChanged,

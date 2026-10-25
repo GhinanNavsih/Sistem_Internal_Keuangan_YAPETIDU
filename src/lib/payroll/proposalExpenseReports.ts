@@ -117,6 +117,41 @@ export function parseProposalQty(value: string): number {
   return match ? parseFloat(match[0]) : 1;
 }
 
+/**
+ * Formats an aggregate in the source quantity's units without applying its
+ * multipliers again: 60 units expressed like "30 Botol x 2 sesi" stays 30 x 2.
+ */
+export function formatProposalQuantityLike(
+  value: number,
+  source: string,
+  parseQty: (value: string) => number = parseProposalQty,
+): string {
+  const sameQuantity = (left: number, right: number) => (
+    Math.abs(left - right) <= Number.EPSILON * 16 * Math.max(1, Math.abs(left), Math.abs(right))
+  );
+  if (!Number.isFinite(value) || sameQuantity(value, parseQty(source))) return source;
+
+  const formatNumber = (quantity: number) => quantity.toLocaleString('en-US', {
+    useGrouping: false,
+    maximumFractionDigits: 12,
+  });
+  const leadingNumber = source.match(/^(\s*)[\d.]+/);
+  if (!leadingNumber) {
+    const candidate = [formatNumber(value), source.trim()].filter(Boolean).join(' ');
+    return sameQuantity(parseQty(candidate), value) ? candidate : formatNumber(value);
+  }
+
+  const suffix = source.slice(leadingNumber[0].length);
+  const multiplier = parseQty(`${leadingNumber[1]}1${suffix}`);
+  if (Number.isFinite(multiplier) && multiplier > 0) {
+    const candidate = `${leadingNumber[1]}${formatNumber(value / multiplier)}${suffix}`;
+    if (sameQuantity(parseQty(candidate), value)) return candidate;
+  }
+
+  // A zero multiplier or inexact division cannot safely retain the expression.
+  return formatNumber(value);
+}
+
 export function createProposalExpenseRow(type: 'item' | 'group_header' = 'item'): ProposalExpenseRow {
   const row: ProposalExpenseRow = {
     rowId: createStableId('expense-row'),
