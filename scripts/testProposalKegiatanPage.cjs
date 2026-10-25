@@ -141,7 +141,8 @@ const mocks = {
   '@/utils/generateProposalKegiatanPdf': `exports.generateProposalKegiatanPdf=()=>{};`,
   '@/utils/generateLpjPdf': `exports.generateLpjPdf=async()=>{};`,
   '@/utils/generateLpjExpenseReportPdf': `exports.generateLpjExpenseReportPdf=async()=>{};`,
-  '@/lib/uploads': `exports.uploadProofFile=async()=>{throw new Error('Unexpected upload in page test')};`,
+  '@/lib/uploads': `exports.uploadProofFile=async(endpoint,file,fields)=>{globalThis.__proposalTest.receiptUploads.push({endpoint,file,fields});return 'https://receipt.test/uploaded.jpg'};`,
+  '@/lib/payroll/expenseReportReceipt': `exports.prepareExpenseReportReceipt=async(file)=>{globalThis.__proposalTest.receiptInputs.push(file);return new File([new Uint8Array([255,216,255,217])],'processed-receipt.jpg',{type:'image/jpeg'})};`,
   '@/utils/ocrParser': `exports.renderFileToCanvas=async()=>{throw new Error('Unexpected receipt rendering in page test')};`,
   './SignatureSettings': `exports.default=()=>null;`,
 };
@@ -266,12 +267,48 @@ async function reset() {
   T.enforceRevision = false;
   T.deleteCalls = [];
   T.deleteFailure = null;
+  T.receiptInputs = [];
+  T.receiptUploads = [];
   T.holdRequests = false;
   T.held = [];
   app = null;
   localStorage.clear();
 }
 const tests = [
+  [
+    'non-pegawai receipt upload accepts the shared formats and processes large untyped files before uploading',
+    async () => {
+      const rows = [
+        { rowId: 'group', type: 'group_header', uraian: 'Konsumsi', rincianQty: '', rincianRate: 0, reportId: 'receipt-report' },
+        { rowId: 'item', type: 'item', uraian: 'Konsumsi rapat', rincianQty: '1', rincianRate: 1000, realisasi: 1000 },
+      ];
+      T.records.set('saved-event', { ...fixture(), status: 'lpj_draft', pengeluaranRows: rows, lpjPengeluaranRows: rows,
+        expenseReports: [{ id: 'receipt-report', expenseRowId: 'group', expenseLabel: 'Konsumsi', title: 'Bukti Konsumsi', mode: 'expense', source: 'custom', notes: '', receipts: {},
+          rows: [{ id: 'detail', parentRowId: 'item', uraian: 'Konsumsi rapat', rincianQty: '1', rincianRate: 1000, realisasi: 1000, employeeId: '', employeeName: '', note: '' }],
+        }],
+      });
+      await mount(admin);
+      await clickText('Saved event fixture');
+      await clickText('Buka Laporan');
+      await advance(0);
+      const input = document.querySelector('[role=dialog] input[type=file]');
+      assert.ok(input);
+      for (const extension of ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.tiff', '.pdf']) {
+        assert.ok(input.accept.includes(extension), `${extension} must be selectable`);
+      }
+      const original = new File([new Uint8Array(26 * 1024 * 1024)], 'iphone.heic', { type: '' });
+      Object.defineProperty(input, 'files', { value: [original], configurable: true });
+      await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
+      assert.equal(T.receiptInputs[0], original, 'file size and missing MIME must not block compression');
+      assert.equal(T.receiptUploads.length, 1);
+      assert.equal(T.receiptUploads[0].file.name, 'processed-receipt.jpg');
+      assert.ok(T.receiptUploads[0].file.size <= 1024 * 1024, 'only the processed receipt should be uploaded');
+      await advance(1000);
+      const receipt = T.records.get('saved-event').expenseReports[0].receipts.item;
+      assert.equal(receipt.url, 'https://receipt.test/uploaded.jpg');
+      assert.equal(receipt.fileName, 'processed-receipt.jpg');
+    },
+  ],
   [
     'deleting a saved event with no local edits reaches Firestore',
     async () => {

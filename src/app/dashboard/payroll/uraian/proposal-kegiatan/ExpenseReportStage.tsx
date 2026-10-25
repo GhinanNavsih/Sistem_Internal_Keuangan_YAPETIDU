@@ -28,7 +28,8 @@ import {
   X,
 } from 'lucide-react';
 import { uploadProofFile } from '@/lib/uploads';
-import { renderFileToCanvas } from '@/utils/ocrParser';
+import { prepareExpenseReportReceipt } from '@/lib/payroll/expenseReportReceipt';
+import { UPLOAD_ACCEPT, UPLOAD_TYPES_TEXT } from '@/lib/uploadFileTypes';
 import {
   createExpenseReport,
   createExpenseReportRow,
@@ -53,47 +54,6 @@ import {
   validateExpenseReport,
 } from '@/lib/payroll/proposalExpenseReports';
 import { focusCellInDirection, focusFirstCellInAdjacentRow, handleRowCellKeyDown } from '@/lib/tableKeyboardNav';
-
-const MAX_RECEIPT_INPUT_BYTES = 25 * 1024 * 1024;
-const RECEIPT_MAX_DIMENSION = 1600;
-const RECEIPT_ACCEPT_TYPES = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-
-function canvasToJpegBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Gagal mengompresi gambar bukti.'))), 'image/jpeg', quality);
-  });
-}
-
-function scaleCanvas(source: HTMLCanvasElement, scale: number): HTMLCanvasElement {
-  const target = document.createElement('canvas');
-  target.width = Math.max(1, Math.round(source.width * scale));
-  target.height = Math.max(1, Math.round(source.height * scale));
-  const ctx = target.getContext('2d');
-  if (!ctx) throw new Error('Perangkat tidak mendukung kompresi gambar.');
-  ctx.drawImage(source, 0, 0, target.width, target.height);
-  return target;
-}
-
-/** Rasterizes an image or PDF receipt (first page) and re-encodes it as a JPEG under the shared storage limit. */
-async function compressReceiptFile(file: File): Promise<File> {
-  const rendered = await renderFileToCanvas(file);
-  const initialScale = Math.min(1, RECEIPT_MAX_DIMENSION / Math.max(rendered.width, rendered.height));
-  let canvas = initialScale < 1 ? scaleCanvas(rendered, initialScale) : rendered;
-
-  let quality = 0.85;
-  let blob = await canvasToJpegBlob(canvas, quality);
-  while (blob.size > MAX_EXPENSE_REPORT_RECEIPT_BYTES && quality > 0.35) {
-    quality -= 0.15;
-    blob = await canvasToJpegBlob(canvas, quality);
-  }
-  while (blob.size > MAX_EXPENSE_REPORT_RECEIPT_BYTES && Math.max(canvas.width, canvas.height) > 500) {
-    canvas = scaleCanvas(canvas, 0.75);
-    blob = await canvasToJpegBlob(canvas, 0.6);
-  }
-
-  const baseName = file.name.replace(/\.[^/.]+$/, '').replace(/[^A-Za-z0-9_-]/g, '_') || 'bukti';
-  return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
-}
 
 async function uploadExpenseReceipt(
   file: File,
@@ -491,18 +451,10 @@ export default function ExpenseReportStage({
   };
 
   const handleReceiptFileChange = async (headerRowId: string, headerLabel: string, file: File) => {
-    if (!RECEIPT_ACCEPT_TYPES.includes(file.type)) {
-      setReceiptError('Format bukti tidak valid. Gunakan PDF, JPG, atau PNG.');
-      return;
-    }
-    if (file.size > MAX_RECEIPT_INPUT_BYTES) {
-      setReceiptError('Ukuran file terlalu besar untuk diproses (maks 25MB).');
-      return;
-    }
     setReceiptError(null);
     setUploadingReceiptKey(headerRowId);
     try {
-      const compressed = await compressReceiptFile(file);
+      const compressed = await prepareExpenseReportReceipt(file);
       if (compressed.size > MAX_EXPENSE_REPORT_RECEIPT_BYTES) {
         throw new Error('Bukti masih melebihi batas 1MB setelah dikompresi.');
       }
@@ -514,7 +466,7 @@ export default function ExpenseReportStage({
       }));
     } catch (error) {
       console.error('Error uploading expense receipt:', error);
-      setReceiptError('Gagal mengunggah bukti. Coba lagi.');
+      setReceiptError(error instanceof Error ? error.message : 'Gagal mengunggah bukti. Coba lagi.');
     } finally {
       setUploadingReceiptKey(null);
     }
@@ -696,6 +648,11 @@ export default function ExpenseReportStage({
                       <ReportModeCard mode="employee" selected={draftReport.mode === 'employee'} disabled={readOnly} onClick={() => updateDraft((report) => ({ ...report, mode: 'employee' }))} />
                       <ReportModeCard mode="expense" selected={draftReport.mode === 'expense'} disabled={readOnly} onClick={() => updateDraft((report) => ({ ...report, mode: 'expense' }))} />
                     </div>
+                    {draftReport.mode === 'expense' && (
+                      <p className="text-[11px] leading-relaxed text-slate-500">
+                        {UPLOAD_TYPES_TEXT}. Berkas besar diperkecil otomatis hingga maksimal 1 MB.
+                      </p>
+                    )}
                   </div>
 
                   {formErrors.length > 0 && (
@@ -901,7 +858,7 @@ export default function ExpenseReportStage({
                                       {!isEmployeeMode && (
                                         isUploadingReceipt ? (
                                           <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-semibold text-indigo-600">
-                                            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Mengunggah...
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Menyiapkan & mengunggah...
                                           </span>
                                         ) : receipt ? (
                                           <span className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-slate-200 bg-white px-1.5 py-1">
@@ -925,7 +882,7 @@ export default function ExpenseReportStage({
                                               id={receiptUploadId}
                                               type="file"
                                               className="hidden"
-                                              accept=".pdf,image/*"
+                                              accept={UPLOAD_ACCEPT}
                                               onChange={(event) => {
                                                 const file = event.target.files?.[0];
                                                 if (file) handleReceiptFileChange(headerItem.rowId || '', headerItem.uraian, file);

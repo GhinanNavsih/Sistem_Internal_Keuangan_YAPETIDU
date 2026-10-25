@@ -59,6 +59,16 @@ Both paths now share a formatter that preserves the expression's numeric total.
 Page regressions open the actual report editor and cover unchanged quantities,
 edited quantities, confirmation values, and repeated saves.
 
+## Receipt uploads
+
+The non-pegawai report mode uses the shared image/PDF format list, detects the
+actual format from the bytes, and prepares files before sending them. There is
+no input file-size cap. Images above 1 MB are compressed, HEIC/HEIF and TIFF are
+converted for viewing, and PDF compression retains all pages. Small images and
+PDFs remain intact when no conversion is needed. The server validates the actual
+type, enforces the 1 MB stored result, and keeps its extension and content type
+consistent. Existing evidence files remain in Storage when links are removed.
+
 ## Release and historical data
 
 Deploy the new application/API before publishing the Firestore rules that deny

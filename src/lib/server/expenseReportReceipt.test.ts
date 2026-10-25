@@ -13,7 +13,7 @@ function fileFromBytes(bytes: Uint8Array, name: string, type: string): File {
 }
 
 test('keeps a receipt at or below the storage limit unchanged', async () => {
-  const file = fileFromBytes(new Uint8Array([1, 2, 3]), 'receipt.pdf', 'application/pdf');
+  const file = fileFromBytes(new TextEncoder().encode('%PDF-1.7\n'), 'receipt.pdf', 'application/pdf');
   const result = await compressExpenseReportReceipt(file);
 
   assert.equal(result, file);
@@ -45,8 +45,10 @@ test('compresses an oversized image receipt below 1MB', async () => {
 });
 
 test('does not store an oversized PDF without browser rasterization', async () => {
+  const bytes = new Uint8Array(MAX_EXPENSE_REPORT_RECEIPT_BYTES + 1);
+  bytes.set(new TextEncoder().encode('%PDF-1.7\n'));
   const oversizedPdf = fileFromBytes(
-    new Uint8Array(MAX_EXPENSE_REPORT_RECEIPT_BYTES + 1),
+    bytes,
     'large-receipt.pdf',
     'application/pdf',
   );
@@ -55,4 +57,23 @@ test('does not store an oversized PDF without browser rasterization', async () =
     () => compressExpenseReportReceipt(oversizedPdf),
     /maksimal 1MB/,
   );
+});
+
+test('normalizes the detected image type and extension instead of trusting browser metadata', async () => {
+  const png = await sharp({ create: { width: 10, height: 10, channels: 3, background: '#ffffff' } }).png().toBuffer();
+  const result = await compressExpenseReportReceipt(fileFromBytes(png, 'receipt.jpg', 'application/octet-stream'));
+  assert.equal(result.type, 'image/png');
+  assert.equal(result.name, 'receipt.png');
+  assert.deepEqual(Buffer.from(await result.arrayBuffer()), png);
+  await assert.rejects(
+    compressExpenseReportReceipt(fileFromBytes(new TextEncoder().encode('not an image'), 'fake.jpg', 'image/jpeg')),
+    /tidak didukung/,
+  );
+});
+
+test('accepts an image larger than the former endpoint limit and compresses before storage', async () => {
+  const png = await sharp({ create: { width: 800, height: 1200, channels: 3, background: '#ffffff' } }).png().toBuffer();
+  const result = await compressExpenseReportReceipt(fileFromBytes(Buffer.concat([png, Buffer.alloc(26 * 1024 * 1024)]), 'large.png', ''));
+  assert.equal(result.type, 'image/jpeg');
+  assert.ok(result.size <= MAX_EXPENSE_REPORT_RECEIPT_BYTES);
 });

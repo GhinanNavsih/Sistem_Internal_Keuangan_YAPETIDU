@@ -1,6 +1,7 @@
 import sharp from 'sharp';
 import { HttpError } from '@/lib/server/auth';
 import { MAX_EXPENSE_REPORT_RECEIPT_BYTES } from '@/lib/payroll/proposalExpenseReports';
+import { detectUploadFileType, UPLOAD_TYPES_TEXT } from '@/lib/uploadFileTypes';
 
 const INITIAL_MAX_DIMENSION = 1600;
 const MIN_MAX_DIMENSION = 500;
@@ -12,13 +13,20 @@ function safeJpegBaseName(fileName: string): string {
 
 /**
  * Compresses an oversized image receipt before it reaches Firebase Storage.
- * PDFs are already rasterized by the browser uploader; oversized PDFs sent
- * directly to this endpoint are rejected rather than stored uncompressed.
+ * The browser prepares PDFs with all pages retained; oversized PDFs sent
+ * directly to this endpoint must be prepared through that uploader first.
  */
 export async function compressExpenseReportReceipt(file: File): Promise<File> {
-  if (file.size <= MAX_EXPENSE_REPORT_RECEIPT_BYTES) return file;
+  if (!file.size) throw new HttpError(400, 'Berkas bukti kosong.');
+  const detected = detectUploadFileType(new Uint8Array(await file.slice(0, 128).arrayBuffer()));
+  if (!detected) throw new HttpError(400, `Jenis berkas tidak didukung. Gunakan ${UPLOAD_TYPES_TEXT}.`);
+  const canonicalName = `${file.name.replace(/\.[^/.]+$/, '') || 'bukti'}.${detected.extension}`;
+  const normalized = file.type === detected.mime && file.name === canonicalName
+    ? file
+    : new File([file], canonicalName, { type: detected.mime, lastModified: file.lastModified });
+  if (normalized.size <= MAX_EXPENSE_REPORT_RECEIPT_BYTES) return normalized;
 
-  if (file.type === 'application/pdf') {
+  if (detected.extension === 'pdf') {
     throw new HttpError(400, 'Bukti PDF harus berukuran maksimal 1MB.');
   }
 
