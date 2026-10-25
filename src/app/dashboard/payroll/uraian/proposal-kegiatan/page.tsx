@@ -43,6 +43,12 @@ import { generateProposalKegiatanPdf } from '@/utils/generateProposalKegiatanPdf
 import { generateLpjPdf } from '@/utils/generateLpjPdf';
 import { generateLpjExpenseReportPdf } from '@/utils/generateLpjExpenseReportPdf';
 import ExpenseReportStage from './ExpenseReportStage';
+import SignatureSettings from './SignatureSettings';
+import {
+  createProposalSignatures,
+  loadProposalSignatureState,
+  ProposalSignature,
+} from '@/lib/payroll/proposalSignatures';
 import {
   createProposalExpenseRow,
   createStableId,
@@ -189,17 +195,7 @@ export default function ProposalKegiatanPage() {
   const [pengeluaranRows, setPengeluaranRows] = useState<ProposalExpenseRow[]>([createProposalExpenseRow('group_header')]);
   const [kepanitiaaanPercentage, setKepanitiaaanPercentage] = useState(10);
 
-  const [proposalSignatures, setProposalSignatures] = useState<{
-    label: string;
-    name: string;
-    title: string;
-    searchText?: string;
-    showDropdown?: boolean;
-  }[]>([
-    { label: '', name: '', title: 'Wakil Rektor Bid. Keuangan, SDM dan Umum', searchText: '', showDropdown: false },
-    { label: '', name: '', title: 'Ketua BAK', searchText: '', showDropdown: false },
-    { label: '', name: '', title: 'Kepala SatKer', searchText: '', showDropdown: false },
-  ]);
+  const [proposalSignatures, setProposalSignatures] = useState<ProposalSignature[]>(createProposalSignatures);
 
   // ── Stage 2: LPJ / Pelaporan States (Exact 4 Sections like PelaporanKegiatanPage) ──
   const [realisasiEnabled, setRealisasiEnabled] = useState(true);
@@ -270,17 +266,9 @@ export default function ProposalKegiatanPage() {
   }[]>([{ itemName: '', qty: 1, unitPrice: 0 }]);
 
   // LPJ Signatures
-  const [lpjSignatures, setLpjSignatures] = useState<{
-    label: string;
-    name: string;
-    title: string;
-    searchText?: string;
-    showDropdown?: boolean;
-  }[]>([
-    { label: '', name: '', title: 'Wakil Rektor Bid. Keuangan, SDM dan Umum', searchText: '', showDropdown: false },
-    { label: '', name: '', title: '', searchText: '', showDropdown: false },
-    { label: '', name: '', title: 'Direktur', searchText: '', showDropdown: false },
-  ]);
+  const [lpjSignatureOverrides, setLpjSignatureOverrides] = useState<ProposalSignature[]>(createProposalSignatures);
+  const [lpjSignaturesFollowProposal, setLpjSignaturesFollowProposal] = useState(true);
+  const lpjSignatures = lpjSignaturesFollowProposal ? proposalSignatures : lpjSignatureOverrides;
 
   // Review Dialog for Super Admin
   const [showReviewDialog, setShowReviewDialog] = useState(false);
@@ -388,11 +376,7 @@ export default function ProposalKegiatanPage() {
     setPengeluaranRows([createProposalExpenseRow('group_header')]);
     setKepanitiaaanPercentage(10);
 
-    setProposalSignatures([
-      { label: '', name: '', title: 'Wakil Rektor Bid. Keuangan, SDM dan Umum', searchText: '', showDropdown: false },
-      { label: '', name: '', title: 'Ketua BAK', searchText: '', showDropdown: false },
-      { label: '', name: '', title: 'Kepala SatKer', searchText: '', showDropdown: false },
-    ]);
+    setProposalSignatures(createProposalSignatures());
 
     // LPJ Reset
     setRealisasiEnabled(true);
@@ -405,11 +389,8 @@ export default function ProposalKegiatanPage() {
     setVakasiPengujiRows([{ employeeId: '', employeeName: '', roleQtys: {}, searchText: '', showDropdown: false }]);
     setKepanitiaaanRows([{ name: '', phaseAmounts: {}, searchText: '', showDropdown: false }]);
     setReceiptRows([{ itemName: '', qty: 1, unitPrice: 0 }]);
-    setLpjSignatures([
-      { label: '', name: '', title: 'Wakil Rektor Bid. Keuangan, SDM dan Umum', searchText: '', showDropdown: false },
-      { label: '', name: '', title: '', searchText: '', showDropdown: false },
-      { label: '', name: '', title: 'Direktur', searchText: '', showDropdown: false },
-    ]);
+    setLpjSignatureOverrides(createProposalSignatures());
+    setLpjSignaturesFollowProposal(true);
 
     setTimeout(() => {
       skipAutoSaveRef.current = false;
@@ -474,9 +455,10 @@ export default function ProposalKegiatanPage() {
     } else {
       setPengeluaranRows(normalizedProposalExpenseRows);
     }
-    if (item.signatures && item.signatures.length > 0) {
-      setProposalSignatures(item.signatures);
-    }
+    const signatureState = loadProposalSignatureState(item);
+    setProposalSignatures(signatureState.proposalSignatures);
+    setLpjSignatureOverrides(signatureState.lpjSignatures);
+    setLpjSignaturesFollowProposal(signatureState.lpjSignaturesFollowProposal);
 
     // Load Stage 2 LPJ Data (if available)
     if (item.lpjPemasukanRows) setLpjPemasukanRows(item.lpjPemasukanRows);
@@ -514,7 +496,6 @@ export default function ProposalKegiatanPage() {
     if (item.vakasiPengujiRows) setVakasiPengujiRows(item.vakasiPengujiRows);
     if (item.kepanitiaaanRows) setKepanitiaaanRows(item.kepanitiaaanRows);
     if (item.receiptRows) setReceiptRows(item.receiptRows);
-    if (item.lpjSignatures) setLpjSignatures(item.lpjSignatures);
 
     setTimeout(() => {
       skipAutoSaveRef.current = false;
@@ -614,6 +595,7 @@ export default function ProposalKegiatanPage() {
           receiptTitle,
           receiptRows,
           lpjSignatures,
+          lpjSignaturesFollowProposal,
           expenseReports,
           updatedAt: serverTimestamp(),
         };
@@ -654,6 +636,7 @@ export default function ProposalKegiatanPage() {
     receiptTitle,
     receiptRows,
     lpjSignatures,
+    lpjSignaturesFollowProposal,
     expenseReports,
     canManageProposal,
     periodClosed,
@@ -747,6 +730,8 @@ export default function ProposalKegiatanPage() {
         pengeluaranRows,
         kepanitiaaanPercentage,
         signatures: proposalSignatures,
+        lpjSignatures,
+        lpjSignaturesFollowProposal,
         status: currentProposalStatus || 'proposal_draft',
         submittedBy: profile?.uid || null,
         submittedByName: profile?.displayName || null,
@@ -962,6 +947,8 @@ export default function ProposalKegiatanPage() {
         kepanitiaaanPercentage,
         signatures: proposalSignatures,
         status: 'proposal_submitted',
+        lpjSignatures,
+        lpjSignaturesFollowProposal,
         proposalQueueNumber: nextProposalQueueNo,
         submittedBy: profile?.uid || null,
         submittedByName: profile?.displayName || null,
@@ -1025,7 +1012,9 @@ export default function ProposalKegiatanPage() {
         kepanitiaaanRows,
         receiptTitle,
         receiptRows,
+        signatures: proposalSignatures,
         lpjSignatures,
+        lpjSignaturesFollowProposal,
         expenseReports,
         status: nextLpjStatus,
         updatedAt: serverTimestamp(),
@@ -1073,7 +1062,9 @@ export default function ProposalKegiatanPage() {
         kepanitiaaanRows,
         receiptTitle,
         receiptRows,
+        signatures: proposalSignatures,
         lpjSignatures,
+        lpjSignaturesFollowProposal,
         expenseReports,
         status: 'lpj_submitted',
         lpjSubmittedAt: serverTimestamp(),
@@ -2005,6 +1996,16 @@ export default function ProposalKegiatanPage() {
               </div>
             </div>
 
+            <SignatureSettings
+              stage="Proposal"
+              signatures={proposalSignatures}
+              employees={loyalisEmployees}
+              loading={loyalisQuery.isLoading}
+              loadError={loyalisQuery.isError}
+              readOnly={Boolean(isProposalReadOnly) || !canManageProposal}
+              onSave={setProposalSignatures}
+            />
+
             {/* Stage 1 Actions */}
             <div className="flex flex-wrap justify-between items-center gap-3 pt-6 border-t border-slate-100 mt-6">
               <div>
@@ -2738,113 +2739,20 @@ export default function ProposalKegiatanPage() {
                   </div>
                 )}
 
-                {/* Shared LPJ Signatures Config */}
-                <div className="space-y-4 pt-2 border-t border-slate-100">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Konfigurasi Tanda Tangan LPJ (Maks 3)</span>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {lpjSignatures.map((sig, sIdx) => {
-                      return (
-                        <div key={sIdx} className="p-4 rounded-md border border-slate-150 bg-slate-50/30 space-y-3">
-                          <span className="text-[10px] font-bold text-indigo-500 uppercase">Posisi {sIdx + 1}</span>
-                          <div className="space-y-2">
-                            <div className="relative">
-                              <Input
-                                type="text"
-                                placeholder="Cari nama pegawai..."
-                                value={sig.searchText ?? sig.name ?? ''}
-                                onChange={(e) => {
-                                  const text = e.target.value;
-                                  setLpjSignatures(prev => {
-                                    const c = [...prev];
-                                    c[sIdx] = { ...c[sIdx], searchText: text, name: '', showDropdown: true };
-                                    return c;
-                                  });
-                                  setActivePelaporanSuggestionIndex(0);
-                                }}
-                                onFocus={() => {
-                                  setLpjSignatures(prev => {
-                                    const c = [...prev];
-                                    c[sIdx] = { ...c[sIdx], showDropdown: true };
-                                    return c;
-                                  });
-                                  setActivePelaporanSuggestionIndex(0);
-                                }}
-                                onBlur={() => {
-                                  setTimeout(() => {
-                                    setLpjSignatures(prev => {
-                                      const c = [...prev];
-                                      if (c[sIdx]) c[sIdx] = { ...c[sIdx], showDropdown: false };
-                                      return c;
-                                    });
-                                  }, 200);
-                                }}
-                                className={`rounded-sm text-xs h-8 w-full pr-8 font-bold transition-all ${sig.name
-                                  ? 'bg-emerald-50/40 border-emerald-300 text-emerald-900 placeholder-emerald-400'
-                                  : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'
-                                  }`}
-                              />
-                              {sig.name && (
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600 absolute right-2.5 top-2" />
-                              )}
-                              {sig.showDropdown && (
-                                <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50">
-                                  {(() => {
-                                    const queryText = (sig.searchText ?? sig.name ?? '').toLowerCase();
-                                    const filtered = loyalisEmployees.filter(emp =>
-                                      emp.name.toLowerCase().includes(queryText)
-                                    );
-                                    if (filtered.length === 0) {
-                                      return <div className="p-3 text-center text-slate-400 text-xs font-semibold">Tidak ditemukan</div>;
-                                    }
-                                    return filtered.map((emp, empIdx) => (
-                                      <div
-                                        key={emp.id}
-                                        onClick={() => {
-                                          setLpjSignatures(prev => {
-                                            const c = [...prev];
-                                            c[sIdx] = {
-                                              ...c[sIdx],
-                                              name: emp.name,
-                                              title: emp.role || '',
-                                              searchText: emp.name,
-                                              showDropdown: false,
-                                            };
-                                            return c;
-                                          });
-                                        }}
-                                        className={`px-3 py-2 text-xs font-semibold cursor-pointer transition-colors text-left ${empIdx === activePelaporanSuggestionIndex
-                                          ? 'bg-indigo-50 text-indigo-600 font-bold'
-                                          : 'hover:bg-indigo-50 hover:text-indigo-600 text-slate-900'
-                                          }`}
-                                      >
-                                        <p>{emp.name}</p>
-                                        <p className="text-[9px] text-slate-400 mt-0.5">{emp.role} · {emp.id}</p>
-                                      </div>
-                                    ));
-                                  })()}
-                                </div>
-                              )}
-                            </div>
-                            <Input
-                              type="text"
-                              placeholder="Jabatan / Gelar..."
-                              value={sig.title}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setLpjSignatures(prev => {
-                                  const c = [...prev];
-                                  c[sIdx] = { ...c[sIdx], title: val };
-                                  return c;
-                                });
-                              }}
-                              className="rounded-sm border-slate-200 text-xs h-8 font-medium"
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                <SignatureSettings
+                  stage="LPJ"
+                  signatures={lpjSignatures}
+                  proposalSignatures={proposalSignatures}
+                  employees={loyalisEmployees}
+                  loading={loyalisQuery.isLoading}
+                  loadError={loyalisQuery.isError}
+                  readOnly={isLpjReadOnly || !canManageProposal}
+                  followsProposal={lpjSignaturesFollowProposal}
+                  onSave={(signatures, followsProposal) => {
+                    setLpjSignatureOverrides(signatures);
+                    setLpjSignaturesFollowProposal(followsProposal);
+                  }}
+                />
 
                 {/* LPJ Actions */}
                 <div className="flex flex-wrap justify-between items-center gap-3 pt-6 border-t border-slate-100 mt-6">

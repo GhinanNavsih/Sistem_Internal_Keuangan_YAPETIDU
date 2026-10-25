@@ -457,7 +457,7 @@ export async function POST(request: NextRequest) {
     const unit = await getUnit(actor, unitId);
     const year = yearRef(unitId, academicYear);
     if (action === 'SAVE_OPENING') {
-      requireRole(actor, ['super_admin']);
+      assertUnitEdit(actor, unit);
       const [accounts, catalogMeta, unitCatalogMeta] = await Promise.all([loadAccounts(unitId), CATALOG_META_REF.get(), unitAccountCatalogMetaRef(unitId).get()]);
       const opening = openingFrom(raw.openingBalances);
       try { validateOpeningBalances(opening, accounts); } catch (error) { inputError(error); }
@@ -472,11 +472,14 @@ export async function POST(request: NextRequest) {
         if (data?.openingSource === 'CARRIED_FORWARD' || openingComesFromPreviousYear(previous)) {
           throw new HttpError(409, `Saldo awal tahun ${academicYear} dibawa otomatis dari penutupan tahun buku ${previous.academicYear}, tidak diketik ulang.`);
         }
-        if (Number(data?.entryCount || 0) > 0 || data?.status === 'CLOSED') throw new HttpError(409, 'Saldo awal terkunci setelah jurnal pertama diposting.');
+        if (data?.status === 'CLOSED') throw new HttpError(409, 'Tahun buku sudah ditutup.');
         if (Number(data?.revision || 0) !== raw.expectedRevision) throw new HttpError(409, 'Tahun buku berubah. Muat ulang sebelum menyimpan.');
         const reportDocs = await Promise.all(fiscalMonths(academicYear).map((month) => tx.get(year.collection('reports').doc(reportId(month.monthIndex)))));
         if (reportDocs.some((report) => report.exists)) throw new HttpError(409, 'Saldo awal terkunci setelah laporan pertama dibuat.');
-        tx.set(year, { satkerId: unitId, academicYear, startDate: `${academicYear.slice(0, 4)}-09-01`, endDate: `${academicYear.slice(5)}-08-31`, status: 'ACTIVE', openingBalances: opening, revision: Number(data?.revision || 0) + 1, entryCount: 0, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+        const after = { satkerId: unitId, academicYear, startDate: `${academicYear.slice(0, 4)}-09-01`, endDate: `${academicYear.slice(5)}-08-31`, status: 'ACTIVE', openingBalances: opening, revision: Number(data?.revision || 0) + 1, entryCount: Number(data?.entryCount || 0), updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+        // Replace the entire map so clearing an account removes its previous opening balance.
+        if (current.exists) tx.update(year, after);
+        else tx.create(year, after);
         const openingCodes = Object.entries(opening).filter(([, balance]) => balance.debit || balance.credit).map(([code]) => code);
         if (openingCodes.length) tx.set(CATALOG_META_REF, { usedCodes: admin.firestore.FieldValue.arrayUnion(...openingCodes) }, { merge: true });
         audit(tx, year, actor, 'OPENING_BALANCE_UPDATED', { before: data?.openingBalances || {}, after: opening });

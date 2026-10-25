@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { LOGO_UNIPDU_BASE64 } from './logoConstants';
+import { getPrintableProposalSignatures } from '@/lib/payroll/proposalSignatures';
 
 export interface ProposalKegiatanSignature {
   label: string;
@@ -96,7 +97,7 @@ function renderTitle(doc: jsPDF, title: string, startY: number): number {
   return startY + splitTitle.length * 5 + 4;
 }
 
-export function generateProposalKegiatanPdf(data: ProposalKegiatanPdfData) {
+export function generateProposalKegiatanPdf(data: ProposalKegiatanPdfData, saveToFile = true): jsPDF {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [210, 330] });
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginSide = 15;
@@ -275,8 +276,8 @@ export function generateProposalKegiatanPdf(data: ProposalKegiatanPdfData) {
 
   const finalY = (doc as any).lastAutoTable?.finalY || tableStartY + 20;
 
-  // Signatures (keeping exact original signature layout)
-  if (data.signatures && data.signatures.length > 0) {
+  const signatures = getPrintableProposalSignatures(data.signatures || []);
+  if (signatures.length > 0) {
     const pageHeight = doc.internal.pageSize.getHeight();
     let currentY = finalY + 12;
 
@@ -290,11 +291,11 @@ export function generateProposalKegiatanPdf(data: ProposalKegiatanPdfData) {
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(71, 85, 105);
 
-    const sigCount = data.signatures.length;
+    const sigCount = signatures.length;
     const contentWidth = pageWidth - 2 * marginSide;
     const colWidth = contentWidth / sigCount;
 
-    data.signatures.forEach((sig, idx) => {
+    signatures.forEach((sig, idx) => {
       const sigX = marginSide + idx * colWidth + colWidth / 2;
       doc.text(sig.title || 'Mengetahui,', sigX, currentY, { align: 'center' });
       doc.text('Pimpinan / Pejabat Berwenang', sigX, currentY + 4, { align: 'center' });
@@ -303,5 +304,8 @@ export function generateProposalKegiatanPdf(data: ProposalKegiatanPdfData) {
     });
   }
 
-  doc.save(`Proposal_Anggaran_${(data.reportName || 'Event').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`);
+  if (saveToFile) {
+    doc.save(`Proposal_Anggaran_${(data.reportName || 'Event').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`);
+  }
+  return doc;
 }

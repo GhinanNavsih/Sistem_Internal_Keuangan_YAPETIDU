@@ -19,9 +19,13 @@ they are used.
    Pengaturan** and assign its actual head and secretary accounts. Existing
    Loyalis employee fields do not identify a unique financial SatKer, so the
    assignment must be made by a human who knows the organization.
-4. For each academic year, enter balanced September 1 opening balances.
-   Opening balances lock when the first journal entry or monthly report is
-   posted. Review the balances against approved prior year records.
+4. In **Akun**, the unit's assigned head, finance secretary, or Super
+   Administrator can enter balanced September 1 opening balances for each
+   balance-sheet account in the book's first year. They can correct these
+   balances even after journals have been posted, until the first monthly
+   report is created. Closed years remain locked; later years receive their
+   opening balances automatically from the previous year's closing. Review
+   the balances against approved prior year records.
 5. Enable scheduled Firestore backups in the production Google Cloud project
    and periodically verify a restore in a separate environment. A backup
    schedule is infrastructure configuration and is not created by this code.

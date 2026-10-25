@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf';
 import autoTable, { RowInput, Styles } from 'jspdf-autotable';
 import { LOGO_UNIPDU_BASE64 } from './logoConstants';
 import { renderFileToCanvas } from './ocrParser';
+import { getPrintableProposalSignatures } from '@/lib/payroll/proposalSignatures';
 import {
   ExpenseReport,
   getExpenseGroupRows,
@@ -65,7 +66,8 @@ export function getLastTableY(doc: jsPDF, fallback: number): number {
 
 /** Draws a signature block at an explicit Y, paging first if it wouldn't fit. */
 export function renderSignaturesAt(doc: jsPDF, signatures: ProposalExpenseReportSignature[], startY: number): void {
-  if (!signatures.length) return;
+  const printableSignatures = getPrintableProposalSignatures(signatures);
+  if (!printableSignatures.length) return;
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const y = startY + 16;
@@ -77,8 +79,8 @@ export function renderSignaturesAt(doc: jsPDF, signatures: ProposalExpenseReport
 
   const margin = 15;
   const contentWidth = pageWidth - margin * 2;
-  const columns = signatures.length;
-  signatures.forEach((signature, index) => {
+  const columns = printableSignatures.length;
+  printableSignatures.forEach((signature, index) => {
     const x = margin + (index + 0.5) * (contentWidth / columns);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);

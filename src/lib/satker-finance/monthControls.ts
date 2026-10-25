@@ -48,7 +48,7 @@ export function monthChecks(args: {
 
   const previous = args.previousYear;
   let openingOk = true;
-  let openingDetail = 'Saldo awal diisi BAK (tahun pertama di aplikasi).';
+  let openingDetail = 'Saldo awal diisi pengelola SatKer pada tab Akun (tahun pertama di aplikasi).';
   if (previous && openingComesFromPreviousYear(previous)) {
     if (previous.status !== 'CLOSED') {
       openingOk = false;

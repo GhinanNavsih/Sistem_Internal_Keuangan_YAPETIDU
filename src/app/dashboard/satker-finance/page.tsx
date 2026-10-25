@@ -7,7 +7,7 @@ import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import AccountSwitcher from '@/components/AccountSwitcher';
 import {
   accountId as financialAccountId, academicYearFor, buildFinancialStatements, cashFlowAllocation, CASH_FLOW_SECTIONS, defaultCashFlowSection,
-  fiscalMonths, FinancialAccount, groupNormalBalance, hasAbnormalBalance, JournalEntry, MAX_ENTRY_RECEIPT_BYTES, MAX_ENTRY_RECEIPTS, OpeningBalances, type AccountType, type CashFlowSection, type YearClosing,
+  fiscalMonths, FinancialAccount, groupNormalBalance, hasAbnormalBalance, JournalEntry, MAX_ENTRY_RECEIPT_BYTES, MAX_ENTRY_RECEIPTS, OpeningBalances, validateOpeningBalances, type AccountType, type CashFlowSection, type YearClosing,
 } from '@/lib/satker-finance/core';
 import { canCorrectByReversal, entryChangeBlocker, fiscalPeriod, lockedThroughPeriod, reversedEntryIds } from '@/lib/satker-finance/entryEditing';
 import type { FixedAsset } from '@/lib/satker-finance/depreciation';
@@ -39,6 +39,7 @@ type Report = {
   revisionNotes?: string; verificationCode?: string;
 };
 type ResponseData = {
+  academicYear: string;
   units: FinancialUnit[]; accounts: FinancialAccount[]; globalAccounts?: FinancialAccount[]; accountCatalogRevision?: number; accountCatalogSource?: string | null; editorUsers?: { uid: string; displayName: string; role: string }[];
   unit?: FinancialUnit;
   year?: { status: string; revision: number; entryCount: number; openingBalances: OpeningBalances; openingSource?: 'MANUAL' | 'CARRIED_FORWARD'; openingCarriedFrom?: string | null;
@@ -55,11 +56,11 @@ type Tab = 'ringkasan' | 'jurnal' | 'buku_besar' | 'neraca_saldo' | 'laba_rugi' 
 type DraftLine = { accountCode: string; description: string; debit: string; credit: string };
 
 const tabs: { id: Tab; label: string }[] = [
-  { id: 'ringkasan', label: 'Ringkasan' }, { id: 'jurnal', label: 'Jurnal' }, { id: 'buku_besar', label: 'Buku Besar' },
+  { id: 'ringkasan', label: 'Ringkasan' }, { id: 'jurnal', label: 'Jurnal' }, { id: 'akun', label: 'Akun' }, { id: 'buku_besar', label: 'Buku Besar' },
   { id: 'neraca_saldo', label: 'Neraca Saldo' }, { id: 'laba_rugi', label: 'Laba Rugi' }, { id: 'arus_kas', label: 'Arus Kas' },
   { id: 'neraca', label: 'Neraca' }, { id: 'rekonsiliasi', label: 'Rekonsiliasi Bank' }, { id: 'aset_tetap', label: 'Aset Tetap' },
   { id: 'tahunan', label: 'Neraca Lajur Tahunan' }, { id: 'audit', label: 'Jejak Audit' },
-  { id: 'akun', label: 'Akun' }, { id: 'pengaturan', label: 'Pengaturan' },
+  { id: 'pengaturan', label: 'Pengaturan' },
 ];
 // Tabs about one unit's own book; the consolidated view has no register, reconciliation, or catalog of its own.
 const unitOnlyTabs: Tab[] = ['rekonsiliasi', 'aset_tetap', 'akun'];
@@ -178,7 +179,7 @@ export default function SatkerFinancePage() {
       if (!response.ok) throw new Error(body.error || 'Gagal memuat buku SatKer.');
       if (sequence !== loadSequence.current) return;
       setData(body);
-      if (body.year) setOpeningDraft(body.year.openingBalances || {});
+      setOpeningDraft(body.year?.openingBalances || {});
       if (body.unit && body.unit.id !== 'ALL') setUnitDraft({ id: body.unit.id, name: body.unit.name, headName: body.unit.headName || '', adminName: body.unit.adminName || '', editorUids: body.unit.editorUids || [], expectedRevision: body.unit.revision || 0 });
       if (!unitId && body.units?.length) setUnitId(body.units[0].id);
     } catch (cause) { if (sequence === loadSequence.current) setError(cause instanceof Error ? cause.message : 'Gagal memuat buku SatKer.'); }
@@ -397,6 +398,28 @@ export default function SatkerFinancePage() {
   // A book whose previous year is in use gets its opening balance from that year's closing, never typed in.
   const openingCarried = data?.year?.openingSource === 'CARRIED_FORWARD';
   const openingAwaitsClosing = !openingCarried && openingComesFromPreviousYear(data?.previousYear ?? null);
+  const openingLockReason = openingCarried
+    ? `Saldo awal dibawa otomatis dari penutupan tahun buku ${data?.year?.openingCarriedFrom} dan tidak dapat diubah.`
+    : openingAwaitsClosing ? `Saldo awal akan dibawa otomatis saat tahun buku ${data?.previousYear?.academicYear} ditutup.`
+    : data?.year?.status === 'CLOSED' ? 'Tahun buku sudah ditutup. Saldo awal tidak dapat diubah.'
+    : data?.reports?.length ? 'Saldo awal terkunci karena laporan pertama sudah dibuat.' : '';
+  const openingDisabled = busy || loading || data?.unit?.id !== unitId || data?.academicYear !== academicYear || !!openingLockReason;
+  const openingDebit = Object.values(openingDraft).reduce((sum, balance) => sum + balance.debit, 0);
+  const openingCredit = Object.values(openingDraft).reduce((sum, balance) => sum + balance.credit, 0);
+  let openingError = '';
+  try { validateOpeningBalances(openingDraft, data?.accounts || []); }
+  catch (cause) { openingError = cause instanceof Error ? cause.message : 'Saldo awal tidak valid.'; }
+  const changeOpening = (account: FinancialAccount, side: 'debit' | 'credit', value: number) => {
+    const id = financialAccountId(account);
+    setOpeningDraft((current) => {
+      const balance = { debit: current[id]?.debit || 0, credit: current[id]?.credit || 0, [side]: value };
+      if (value) balance[side === 'debit' ? 'credit' : 'debit'] = 0;
+      const next = { ...current };
+      if (balance.debit || balance.credit) next[id] = balance;
+      else delete next[id];
+      return next;
+    });
+  };
   // A sealed month (its report, or a later one, is with BAK or Rektorat) takes no reconciliation or depreciation changes.
   const monthOpen = month !== 'ANNUAL' && (fiscalPeriod(academicYear, month) ?? 0) > lockedThrough;
 
@@ -582,16 +605,32 @@ export default function SatkerFinancePage() {
             <p className="mt-3 text-xs text-slate-500">Nomor akun dapat berupa angka atau desimal (misalnya 52199 atau 52199.1). Kelompok akun ditetapkan saat akun baru dibuat. Akun pengurang mengurangi kelompoknya, misalnya akumulasi penyusutan (Aktiva bersaldo Kredit). Klasifikasi arus kas menentukan ke bagian mana kas yang dibayar atau diterima lewat akun ini dicatat; perubahannya hanya berlaku untuk jurnal berikutnya.</p>
             <div className="mt-4 flex gap-2"><button type="button" className={button} disabled={busy || !/^\d+(\.\d+)?$/.test(unitAccountDraft.code.trim()) || !unitAccountDraft.name.trim()} onClick={() => void saveUnitAccount()}>{creatingUnitAccount ? 'Buat akun' : 'Simpan perubahan'}</button><button type="button" className={lightButton} onClick={() => { setUnitAccountId(''); setCreatingUnitAccount(false); }}>Batal</button></div>
           </div>}
-          <div className="max-h-[32rem] overflow-auto"><table className="w-full text-sm"><thead className="sticky top-0 bg-white"><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>Nomor</th><th className={leftCell}>Nama akun</th><th className={leftCell}>Kelompok</th><th className={leftCell}>Pos saldo</th><th className={leftCell}>Arus kas</th><th className={leftCell}>Aksi</th></tr></thead><tbody>{[...(data.accounts)].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })).map((account) => <tr key={account.localAccountId || financialAccountId(account)}><td className={leftCell}>{account.code}</td><td className={leftCell}>{account.name || '—'}</td><td className={leftCell}>{accountTypeItems[account.type]}</td>
+          <div className="mb-4 space-y-3 border-y border-slate-200 py-4">
+            <h3 className="text-sm font-semibold text-slate-900">Saldo awal · 1 September {yearStart}</h3>
+            <p className="text-sm text-slate-600">Isi saldo awal setiap akun neraca pada kolom Debet atau Kredit. Total keduanya harus sama. Saldo awal berlaku untuk SatKer dan tahun buku yang dipilih, dan dapat diubah sebelum laporan pertama dibuat. Akun penerimaan dan pengeluaran dimulai dari nol.</p>
+            {openingLockReason && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">{openingLockReason}</p>}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm font-semibold" aria-live="polite">
+                <p>Total debet {money(openingDebit)} · kredit {money(openingCredit)}</p>
+                <p className={openingDebit === openingCredit ? 'text-green-700' : 'text-amber-700'}>{openingDebit === openingCredit ? 'Seimbang' : `Belum seimbang · selisih ${money(Math.abs(openingDebit - openingCredit))}`}</p>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" className={lightButton} disabled={openingDisabled} onClick={() => setOpeningDraft(data.year?.openingBalances || {})}>Batal perubahan saldo</button>
+                <button type="button" className={button} disabled={openingDisabled || !!openingError} onClick={() => void post('SAVE_OPENING', { openingBalances: openingDraft, expectedRevision: data.year?.revision || 0 })}>Simpan saldo awal</button>
+              </div>
+            </div>
+            {openingError && <p role="status" className="text-sm text-amber-700">{openingError}</p>}
+          </div>
+          <div className="max-h-[32rem] overflow-auto"><table className="w-full text-sm"><thead className="sticky top-0 bg-white"><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>Nomor</th><th className={leftCell}>Nama akun</th><th className={cell}>Saldo awal Debet</th><th className={cell}>Saldo awal Kredit</th><th className={leftCell}>Kelompok</th><th className={leftCell}>Pos saldo</th><th className={leftCell}>Arus kas</th><th className={leftCell}>Aksi</th></tr></thead><tbody>{[...(data.accounts)].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })).map((account) => <tr key={account.localAccountId || financialAccountId(account)}><td className={leftCell}>{account.code}</td><td className={leftCell}>{account.name || '—'}</td>
+            {(['debit', 'credit'] as const).map((side) => <td key={side} className={cell}>{account.postable && account.reportTarget === 'BALANCE_SHEET'
+              ? <div className="ml-auto min-w-40 max-w-48"><CurrencyInput className={`${field} text-right`} aria-label={`Saldo awal ${side === 'debit' ? 'Debet' : 'Kredit'} ${account.code} ${account.name}`} disabled={openingDisabled} value={openingDraft[financialAccountId(account)]?.[side] || 0} onValue={(value) => changeOpening(account, side, value)} /></div>
+              : <span className="text-slate-400" title={account.postable ? 'Akun penerimaan dan pengeluaran dimulai dari nol.' : 'Aktifkan akun sebelum mengisi saldo awal.'}>—</span>}</td>)}
+            <td className={leftCell}>{accountTypeItems[account.type]}</td>
             <td className={leftCell}>{account.normalBalance ? normalBalanceItems[account.normalBalance] : '—'}{account.normalBalance && account.normalBalance !== groupNormalBalance(account.type) && <span className="text-xs text-slate-500"> (pengurang)</span>}</td>
             <td className={leftCell}>{account.cashEquivalent ? 'Kas/bank' : account.cashFlowSection ? cashFlowItems[account.cashFlowSection] : '—'}</td>
             <td className={leftCell}><button type="button" className="text-accent-700 hover:underline" onClick={() => { setUnitAccountId(account.localAccountId || financialAccountId(account)); setCreatingUnitAccount(false); setUnitAccountDraft({ code: account.code, name: account.name, type: account.type, cashEquivalent: account.cashEquivalent, contra: !!account.normalBalance && account.normalBalance !== groupNormalBalance(account.type), cashFlowSection: account.cashFlowSection || defaultCashFlowSection(account.type, account.code) }); }}>Ubah</button></td></tr>)}</tbody></table></div>
         </Section>}
         {tab === 'pengaturan' && isAdmin && <div className="space-y-5"><Section title="Unit SatKer & pengelola"><div className="grid gap-3 md:grid-cols-2"><label className="text-xs font-medium text-slate-500">ID unik<input className={`${field} mt-1`} value={unitDraft.id} onChange={(event) => setUnitDraft({ ...unitDraft, id: event.target.value })} placeholder="puskomnet" /></label><label className="text-xs font-medium text-slate-500">Nama SatKer<input className={`${field} mt-1`} value={unitDraft.name} onChange={(event) => setUnitDraft({ ...unitDraft, name: event.target.value })} /></label><label className="text-xs font-medium text-slate-500">Nama Kepala SatKer<input className={`${field} mt-1`} value={unitDraft.headName} onChange={(event) => setUnitDraft({ ...unitDraft, headName: event.target.value })} /></label><label className="text-xs font-medium text-slate-500">Nama sekretariat / bendahara<input className={`${field} mt-1`} value={unitDraft.adminName} onChange={(event) => setUnitDraft({ ...unitDraft, adminName: event.target.value })} /></label></div><p className="mt-4 text-xs font-medium text-slate-500">Akun yang boleh mencatat dan mengirim laporan unit ini</p><div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{data.editorUsers?.map((editor) => <label key={editor.uid} className="flex items-center gap-2 rounded-md border border-slate-100 p-2 text-sm"><input type="checkbox" checked={unitDraft.editorUids.includes(editor.uid)} onChange={(event) => setUnitDraft({ ...unitDraft, editorUids: event.target.checked ? [...unitDraft.editorUids, editor.uid] : unitDraft.editorUids.filter((uid) => uid !== editor.uid) })} />{editor.displayName} <span className="text-xs text-slate-400">{editor.role}</span></label>)}</div><div className="mt-4 flex gap-2"><button className={button} disabled={busy} onClick={() => void post('SAVE_UNIT', unitDraft)}>Simpan SatKer</button><button className={lightButton} onClick={() => setUnitDraft({ id: '', name: '', headName: '', adminName: '', editorUids: [], expectedRevision: 0 })}>Unit baru</button></div></Section>
-          {unitId !== 'ALL' && <Section title="Saldo awal 1 September"><p className="mb-3 text-sm text-slate-600">Saldo awal disetujui BAK dan harus seimbang. Terkunci setelah transaksi pertama. Hanya tahun pertama sebuah buku yang diisi di sini; tahun berikutnya mendapat saldo awal dari penutupan tahun sebelumnya.</p>
-            {openingCarried && <p className="mb-3 rounded-lg bg-green-50 p-3 text-sm text-green-800">Saldo awal ini dibawa otomatis dari penutupan tahun buku {data.year?.openingCarriedFrom} dan tidak dapat diubah di sini.</p>}
-            {openingAwaitsClosing && <p className="mb-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Saldo awal tahun ini akan dibawa otomatis saat tahun buku {data.previousYear?.academicYear} ditutup. Jurnal tetap dapat dicatat, tetapi laporan bulanan baru dapat dikirim setelah penutupan itu.</p>}
-            <div className="max-h-96 overflow-auto"><table className="w-full text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>Akun</th><th className={cell}>Debet</th><th className={cell}>Kredit</th></tr></thead><tbody>{postable.map((account) => <tr key={account.code}><td className={leftCell}>{account.code} · {account.name}</td>{(['debit', 'credit'] as const).map((side) => <td key={side} className={cell}><div className="ml-auto max-w-44"><CurrencyInput className={`${field} text-right`} aria-label={`${side === 'debit' ? 'Debet' : 'Kredit'} ${account.name}`} disabled={openingCarried || openingAwaitsClosing} value={openingDraft[financialAccountId(account)]?.[side] || 0} onValue={(value) => setOpeningDraft((current) => ({ ...current, [financialAccountId(account)]: { debit: current[financialAccountId(account)]?.debit || 0, credit: current[financialAccountId(account)]?.credit || 0, [side]: value } }))} /></div></td>)}</tr>)}</tbody></table></div><p className="my-3 text-sm font-semibold">Total debet {money(Object.values(openingDraft).reduce((sum, item) => sum + item.debit, 0))} · kredit {money(Object.values(openingDraft).reduce((sum, item) => sum + item.credit, 0))}</p><button className={button} disabled={busy || !!data.year?.entryCount || data.year?.status === 'CLOSED' || openingCarried || openingAwaitsClosing} onClick={() => void post('SAVE_OPENING', { openingBalances: openingDraft, expectedRevision: data.year?.revision || 0 })}>Simpan saldo awal</button></Section>}
           <Section title="Katalog akun umum · 129 kode">
             <p className="mb-3 text-sm text-slate-600">Perubahan di katalog umum berlaku untuk semua SatKer. Gunakan tab Akun untuk mengubah nomor atau nama pada satu unit saja.</p>
             <p className="mb-3 text-sm text-slate-600">Kode kosong pada buku sumber dapat diberi nama dan diaktifkan sebelum kode itu dipakai di saldo awal atau jurnal.</p>

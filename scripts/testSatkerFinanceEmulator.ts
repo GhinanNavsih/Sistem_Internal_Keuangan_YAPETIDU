@@ -70,9 +70,10 @@ async function main() {
   await succeeds(await invoke(bak, { action: 'SAVE_UNIT', id: ownUnit.id, name: ownUnit.name, headName: ownUnit.headName, adminName: '', editorUids: [], expectedRevision: ownUnit.revision }));
   assert.equal((await succeeds(await read(outsider, { academicYear: '2026-2027', month: '9' }))).units.length, 0);
   assert.equal((await invoke(outsider, { ...base, action: 'POST_ENTRY', entryId: 'outsider-01', monthIndex: 9, date: '2026-09-01', kind: 'INFLOW', accountCode: '41000', paymentAccountCode: '10000', amount: 100, description: 'Tidak boleh' })).status, 403);
-  assert.equal((await invoke(head, { ...base, action: 'SAVE_OPENING', openingBalances: {}, expectedRevision: 0 })).status, 403);
+  assert.equal((await invoke(outsider, { ...base, action: 'SAVE_OPENING', openingBalances: {}, expectedRevision: 0 })).status, 403);
+  assert.equal((await invoke(rector, { ...base, action: 'SAVE_OPENING', openingBalances: {}, expectedRevision: 0 })).status, 403);
   assert.equal((await invoke(bak, { ...base, action: 'SAVE_OPENING', openingBalances: { '10000': { debit: 1000, credit: 0 } }, expectedRevision: 0 })).status, 400);
-  await succeeds(await invoke(bak, { ...base, action: 'SAVE_OPENING', openingBalances: { '10000': { debit: 1000, credit: 0 }, '30000': { debit: 0, credit: 1000 } }, expectedRevision: 0 }));
+  await succeeds(await invoke(head, { ...base, action: 'SAVE_OPENING', openingBalances: { '10000': { debit: 1000, credit: 0 }, '30000': { debit: 0, credit: 1000 } }, expectedRevision: 0 }));
   const receiptDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/3ocAAAAASUVORK5CYII=';
   const voucher = { ...base, action: 'POST_ENTRY', entryId: 'voucher-sep-001', monthIndex: 9, date: '2026-09-02', kind: 'EXPENSE', accountCode: '52101', paymentAccountCode: '10000', amount: 100, description: 'Perawatan lab', receiptDataUrl };
   await succeeds(await invoke(secretary, voucher));
@@ -358,6 +359,57 @@ async function main() {
   await succeeds(await reconcile(nextBase, 9, '10000', 910));
   await succeeds(await reconcile(nextBase, 9, '11001', 600));
   await succeeds(await invoke(head, { ...nextBase, action: 'SUBMIT_REPORT', monthIndex: 9 }));
+
+  // Existing books can enter and correct their first opening balances until a report is created.
+  const openingBase = { unitId: 'opening-test', academicYear: '2026-2027' };
+  await succeeds(await invoke(bak, { action: 'SAVE_UNIT', id: openingBase.unitId, name: 'Opening balance test', editorUids: [head.uid, secretary.uid] }));
+  await succeeds(await invoke(secretary, { ...openingBase, action: 'POST_ENTRY', entryId: 'opening-test-entry', monthIndex: 9, date: '2026-09-02', kind: 'INFLOW', accountCode: '41000', paymentAccountCode: '10000', amount: 25, description: 'Penerimaan sebelum saldo awal diisi' }));
+  const openingYear = adminDb.collection('SatkerFinancialYears').doc('opening-test_2026-2027');
+  const beforeOpening = (await openingYear.get()).data()!;
+  const unchangedOtherYear = (await yearDoc.get()).data()!;
+  assert.equal(beforeOpening.entryCount, 1);
+  await succeeds(await invoke(head, { unitId: openingBase.unitId, action: 'SAVE_UNIT_ACCOUNT', code: '11099.5', name: 'Bank SatKer', type: 'AKTIVA', cashEquivalent: true, expectedCatalogRevision: 0 }));
+  const openingView = await succeeds(await read(head, { ...openingBase, month: '9' }));
+  const localBank = openingView.accounts.find((account: { code: string }) => account.code === '11099.5');
+  assert.ok(localBank.id.startsWith('custom_'));
+  const openingBalances = { [localBank.id]: { debit: 250, credit: 0 }, '30000': { debit: 0, credit: 250 } };
+  const saveOpening = (openingBalances: Record<string, { debit: number; credit: number }>, expectedRevision: number) => ({ ...openingBase, action: 'SAVE_OPENING', openingBalances, expectedRevision });
+  assert.equal((await invoke(outsider, saveOpening(openingBalances, beforeOpening.revision))).status, 403);
+  assert.equal((await invoke(rector, saveOpening(openingBalances, beforeOpening.revision))).status, 403);
+  assert.equal((await invoke(head, saveOpening({ '10000': { debit: 250, credit: 0 } }, beforeOpening.revision))).status, 400);
+  assert.equal((await invoke(head, saveOpening({ '52101': { debit: 250, credit: 0 }, '30000': { debit: 0, credit: 250 } }, beforeOpening.revision))).status, 400, 'expense accounts begin at zero');
+  await succeeds(await invoke(secretary, saveOpening(openingBalances, beforeOpening.revision)));
+  const savedOpening = (await openingYear.get()).data()!;
+  assert.deepEqual(savedOpening.openingBalances, openingBalances);
+  assert.equal(savedOpening.entryCount, 1, 'saving the opening does not reset the journal count');
+  assert.equal(savedOpening.revision, beforeOpening.revision + 1);
+  assert.equal((await openingYear.collection('entries').get()).size, 1);
+  assert.deepEqual((await yearDoc.get()).data(), unchangedOtherYear, 'another SatKer is untouched');
+  const openingAudit = (await openingYear.collection('audit').where('action', '==', 'OPENING_BALANCE_UPDATED').get()).docs[0].data();
+  assert.equal(openingAudit.actorUid, secretary.uid);
+  assert.deepEqual(openingAudit.details.after, openingBalances);
+
+  // Changing an account's displayed number keeps its opening balance attached to its stable identity.
+  await succeeds(await invoke(head, { unitId: openingBase.unitId, action: 'SAVE_UNIT_ACCOUNT', accountId: localBank.localAccountId, code: '11099.6', name: 'Bank SatKer baru', expectedRevision: localBank.revision, expectedCatalogRevision: openingView.accountCatalogRevision }));
+  const renamedOpening = await succeeds(await read(head, { ...openingBase, month: '9' }));
+  const bankRow = renamedOpening.statements.rows.find((row: { account: { id: string } }) => row.account.id === localBank.id);
+  assert.equal(bankRow.account.code, '11099.6');
+  assert.equal(bankRow.openingDebit, 250);
+  assert.equal(renamedOpening.statements.cashFlow.endingCash, 275, 'the statements combine the opening and the existing journal');
+
+  const replacementOpening = { '10000': { debit: 100, credit: 0 }, '30000': { debit: 0, credit: 100 } };
+  await succeeds(await invoke(head, saveOpening(replacementOpening, savedOpening.revision)));
+  assert.deepEqual((await openingYear.get()).data()!.openingBalances, replacementOpening, 'cleared accounts are removed from the stored map');
+  assert.equal((await invoke(secretary, saveOpening(openingBalances, savedOpening.revision))).status, 409, 'a stale editor cannot overwrite the new balance');
+  await succeeds(await invoke(head, saveOpening({}, savedOpening.revision + 1)));
+  assert.deepEqual((await openingYear.get()).data()!.openingBalances, {}, 'all balances can be cleared before reporting');
+  await succeeds(await reconcile(openingBase, 9, '10000', 25));
+  await succeeds(await invoke(head, { ...openingBase, action: 'SUBMIT_REPORT', monthIndex: 9 }));
+  const reportedOpening = (await openingYear.get()).data()!;
+  assert.equal((await invoke(head, saveOpening(replacementOpening, reportedOpening.revision))).status, 409, 'the first report locks the opening');
+  assert.deepEqual((await openingYear.get()).data(), reportedOpening);
+  assert.equal((await invoke(head, { ...base, action: 'SAVE_OPENING', openingBalances: closedYear.openingBalances, expectedRevision: closedYear.revision })).status, 409, 'a closed year stays locked');
+  assert.equal((await invoke(secretary, { ...nextBase, action: 'SAVE_OPENING', openingBalances: nextView.year.openingBalances, expectedRevision: nextView.year.revision })).status, 409, 'carried openings stay locked for unit editors');
   console.log('SatKer finance emulator workflow passed.');
   await admin.app().delete();
 }
