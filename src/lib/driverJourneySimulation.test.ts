@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { journeyFormFromResult } from '@/components/driver-simulation/simulationForm';
+import { journeyFormFromResult, sameSimulationInput } from '@/components/driver-simulation/simulationForm';
 import {
   calculateSimulation,
   calculateSimulationJourney,
@@ -17,6 +17,7 @@ import {
   simulationTollMark,
   SimulationInputError,
   tollNeedsTyping,
+  upahBersihLines,
   type RouteQuote,
   type SimulationJourneyInput,
 } from './driverJourneySimulation';
@@ -55,6 +56,7 @@ test('the simulation path is its own page', () => {
 test('Ndalem cannot be borrowed for an event', () => {
   assert.equal(SIMULATION_VEHICLES.includes('Ndalem'), false);
   assert.equal(SIMULATION_VEHICLES.includes('Bis'), true);
+  assert.equal(SIMULATION_VEHICLES.includes('Kendaraan Sendiri'), true);
 });
 
 test('every route starts and ends at UNIPDU as the sopir report measures it', () => {
@@ -85,6 +87,24 @@ test('a Simulasi Perjalanan costs fuel, toll, parking and the Upah Bersih the so
   assert.equal(result.pay.upahBersih, 103_000);
   assert.equal(result.total, 232_000 + 64_000 + 10_000 + 103_000);
   assert.equal(simulationTollMark(result), null);
+});
+
+test('Kendaraan Sendiri costs Rp1.000/km and Tanpa Sopir omits the driver fee entirely', () => {
+  const result = calculateSimulationJourney(
+    { ...surabayaDay, vehicleName: 'Kendaraan Sendiri', withoutDriver: true },
+    surabayaQuote,
+  );
+  assert.equal(result.vehicleRate, 1_000);
+  assert.equal(result.fuelCost, 160_000); // 160 km × Rp1.000
+  assert.equal(result.tollFee, 64_000);
+  assert.equal(result.parkingFee, 10_000);
+  assert.equal(result.withoutDriver, true);
+  assert.equal(result.pay.upahBersih, 0);
+  assert.equal(result.pay.componentJarak, 0);
+  assert.equal(result.pay.componentWaktu, 0);
+  assert.equal(result.pay.mealWage, 0);
+  assert.equal(result.total, 160_000 + 64_000 + 10_000); // 234_000, zero driver fee
+  assert.deepEqual(upahBersihLines(result), []);
 });
 
 test('toll access directions survive the saved calculation and reopening the simulation form', () => {
@@ -167,11 +187,15 @@ test('a measured route is reused for seven days', () => {
 test('the form input is validated with messages for the user', () => {
   const valid = {
     eventName: '  Seminar Nasional ',
-    journeys: [{ ...surabayaDay, tollAmount: 999 }],
+    journeys: [{ ...surabayaDay, tollAmount: 999, withoutDriver: true }],
   };
   const parsed = parseSimulationInput(valid);
   assert.equal(parsed.eventName, 'Seminar Nasional');
   assert.equal(parsed.journeys[0].tollAmount, 0); // ignored unless typed
+  assert.equal(parsed.journeys[0].withoutDriver, true);
+
+  const parsedDefault = parseSimulationInput({ ...valid, journeys: [surabayaDay] });
+  assert.equal(parsedDefault.journeys[0].withoutDriver, false);
 
   const invalid: Array<[unknown, RegExp]> = [
     [{ ...valid, eventName: ' ' }, /Nama kegiatan/],
@@ -187,4 +211,11 @@ test('the form input is validated with messages for the user', () => {
   for (const [input, message] of invalid) {
     assert.throws(() => parseSimulationInput(input), message);
   }
+});
+
+test('sameSimulationInput notices when withoutDriver is changed', () => {
+  const formA = { eventName: 'Acara', journeys: [journeyFormFromResult(calculateSimulationJourney(surabayaDay, surabayaQuote))] };
+  const formB = { eventName: 'Acara', journeys: [{ ...formA.journeys[0], withoutDriver: true }] };
+  assert.equal(sameSimulationInput(formA, formA), true);
+  assert.equal(sameSimulationInput(formA, formB), false);
 });

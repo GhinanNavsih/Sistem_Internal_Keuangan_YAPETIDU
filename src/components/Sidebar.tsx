@@ -14,6 +14,7 @@ import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
 import { SENAM_PAGI_PATH } from '@/lib/payroll/bonusTriwulan';
 import { Button } from '@/components/ui/button';
 import AccountSwitcher from '@/components/AccountSwitcher';
+import { usePendingFacilityReportsCount } from '@/lib/usePendingFacilityReportsCount';
 import {
   LayoutDashboard,
   UserCog,
@@ -47,6 +48,7 @@ type SidebarMenuItem = {
   exact?: boolean;
   activePattern?: string;
   startsGroup?: boolean;
+  badge?: number;
 };
 
 export default function Sidebar() {
@@ -63,6 +65,7 @@ export default function Sidebar() {
   const currentYear = yearParam || String(now.getFullYear());
 
   const currentProfile = activeProfile || profile;
+  const pendingFacilityCount = usePendingFacilityReportsCount();
 
   // Restore collapsed state from localStorage
   useEffect(() => {
@@ -244,6 +247,7 @@ export default function Sidebar() {
           path: '/dashboard/payroll/facility-reports',
           icon: Wrench,
           activePattern: '/dashboard/payroll/facility-reports',
+          badge: pendingFacilityCount,
         }]
       : []),
     ...(canSeeJourneys
@@ -365,7 +369,15 @@ export default function Sidebar() {
               className={getLinkStyle(isActive)}
             >
               <Icon className={`w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110 ${isActive ? 'text-indigo-500' : 'text-slate-400 group-hover:text-indigo-500'}`} />
-              <span>{item.name}</span>
+              <span className="flex-1 text-left">{item.name}</span>
+              {typeof item.badge === 'number' && item.badge > 0 && (
+                <span
+                  className="ml-auto inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-bold shadow-sm leading-none tabular-nums shrink-0"
+                  title={`${item.badge} laporan menunggu`}
+                >
+                  {item.badge > 99 ? '99+' : item.badge}
+                </span>
+              )}
             </Link>
           </React.Fragment>
         );
@@ -390,9 +402,14 @@ export default function Sidebar() {
               title={item.name}
             >
               <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-indigo-500' : ''}`} />
+              {typeof item.badge === 'number' && item.badge > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white shadow-sm leading-none tabular-nums">
+                  {item.badge > 99 ? '99+' : item.badge}
+                </span>
+              )}
               {/* Tooltip */}
               <span className="absolute left-full ml-3 px-2.5 py-1.5 rounded-lg bg-slate-800 text-white text-xs font-semibold whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-200 shadow-lg z-50">
-                {item.name}
+                {item.name} {typeof item.badge === 'number' && item.badge > 0 ? `(${item.badge})` : ''}
               </span>
             </Link>
           </React.Fragment>
@@ -563,9 +580,22 @@ export default function Sidebar() {
           variant="outline"
           size="icon"
           onClick={() => setIsMobileOpen(true)}
-          className="rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer"
+          className="relative rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer"
+          aria-label={
+            pendingFacilityCount > 0
+              ? `Buka menu navigasi (${pendingFacilityCount} laporan fasilitas menunggu)`
+              : 'Buka menu navigasi'
+          }
         >
           <Menu className="w-5 h-5" />
+          {pendingFacilityCount > 0 && (
+            <span
+              className="absolute -top-1.5 -right-1.5 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white shadow-sm leading-none tabular-nums"
+              aria-hidden="true"
+            >
+              {pendingFacilityCount > 99 ? '99+' : pendingFacilityCount}
+            </span>
+          )}
         </Button>
       </div>
 

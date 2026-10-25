@@ -2,6 +2,8 @@
 
 import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useQueryClient } from '@tanstack/react-query';
+import { FACILITY_PENDING_COUNT_QUERY_KEY } from '@/lib/usePendingFacilityReportsCount';
 import {
   Camera,
   CheckCircle2,
@@ -387,6 +389,7 @@ function FacilityReportMobileCard({
 }
 
 function FacilityReportReviewContent() {
+  const queryClient = useQueryClient();
   const { profile: rawProfile, activeProfile} = useAuth();
   const requestLogout = useConfirmLogout();
   const profile = activeProfile || rawProfile;
@@ -548,6 +551,7 @@ function FacilityReportReviewContent() {
       setReviewNote('');
       setReviewPhotos([]);
       await loadReports();
+      void queryClient.invalidateQueries({ queryKey: FACILITY_PENDING_COUNT_QUERY_KEY });
     } catch (error) {
       console.error('Error reviewing facility report:', error);
       setMessage({
@@ -634,7 +638,7 @@ function FacilityReportReviewContent() {
           </div>
         )}
 
-        {isReviewer && (
+        {profile?.role === 'super_admin' && (
           <div className="hidden lg:block">
             <UraianNavToggles />
           </div>
@@ -1076,6 +1080,7 @@ function FacilityReportReviewContent() {
               onCompleted={async () => {
                 setRepairTarget(null);
                 await loadReports();
+                void queryClient.invalidateQueries({ queryKey: FACILITY_PENDING_COUNT_QUERY_KEY });
               }}
             />
           )}

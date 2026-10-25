@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react';
 import { ArrowDown, ArrowUp, Loader2, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/callout';
+import { Checkbox } from '@/components/ui/checkbox';
 import { DetailList, DetailRow } from '@/components/ui/detail-list';
 import {
   DropdownMenu,
@@ -358,16 +359,34 @@ export function JourneySection({
       </div>
 
       <div className="@container min-w-0 space-y-4">
-        <div className="grid gap-4 @lg:grid-cols-2 @3xl:grid-cols-3">
-          <Field label="Kendaraan" htmlFor={`${idPrefix}-vehicle`} required className="min-w-0 @lg:col-span-2 @3xl:col-span-1">
-            <OptionSelect
-              id={`${idPrefix}-vehicle`}
-              value={journey.vehicleName}
-              placeholder="Pilih kendaraan"
-              options={VEHICLE_OPTIONS}
-              onValueChange={(value) => onChange((current) => ({ ...current, vehicleName: value as DriverVehicleName }))}
-            />
-          </Field>
+        <Field label="Kendaraan" htmlFor={`${idPrefix}-vehicle`} required className="min-w-0">
+          <div className="flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <OptionSelect
+                id={`${idPrefix}-vehicle`}
+                value={journey.vehicleName}
+                placeholder="Pilih kendaraan"
+                options={VEHICLE_OPTIONS}
+                onValueChange={(value) => onChange((current) => ({ ...current, vehicleName: value as DriverVehicleName }))}
+              />
+            </div>
+            <label
+              htmlFor={`${idPrefix}-without-driver`}
+              className="flex cursor-pointer items-center gap-2 select-none whitespace-nowrap text-sm text-slate-700 hover:text-slate-900"
+            >
+              <Checkbox
+                id={`${idPrefix}-without-driver`}
+                checked={journey.withoutDriver}
+                onCheckedChange={(checked) =>
+                  onChange((current) => ({ ...current, withoutDriver: Boolean(checked) }))
+                }
+              />
+              <span>Tanpa Sopir</span>
+            </label>
+          </div>
+        </Field>
+
+        <div className="grid gap-4 @sm:grid-cols-2">
           <Field label="Berangkat" htmlFor={`${idPrefix}-departure-date`} required>
             <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
               <Input
@@ -467,12 +486,20 @@ export function JourneySection({
                 </DetailRow>
                 <DetailRow label={tollLineLabel(preview.result)}>{formatRupiah(preview.result.tollFee)}</DetailRow>
                 <DetailRow label="Parkir">{formatRupiah(preview.result.parkingFee)}</DetailRow>
-                <DetailRow label="Upah Bersih sopir">{formatRupiah(preview.result.pay.upahBersih)}</DetailRow>
-                {upahBersihLines(preview.result).map((line) => (
-                  <DetailRow key={line.label} label={<span className="pl-4 text-xs">{line.label}</span>} className="py-1.5 text-xs text-slate-500">
-                    <span className="text-xs text-slate-500">{formatRupiah(line.amount)}</span>
+                {!preview.result.withoutDriver ? (
+                  <>
+                    <DetailRow label="Upah Bersih sopir">{formatRupiah(preview.result.pay.upahBersih)}</DetailRow>
+                    {upahBersihLines(preview.result).map((line) => (
+                      <DetailRow key={line.label} label={<span className="pl-4 text-xs">{line.label}</span>} className="py-1.5 text-xs text-slate-500">
+                        <span className="text-xs text-slate-500">{formatRupiah(line.amount)}</span>
+                      </DetailRow>
+                    ))}
+                  </>
+                ) : (
+                  <DetailRow label="Upah Bersih sopir">
+                    <span className="text-slate-500">Rp0 (Tanpa Sopir)</span>
                   </DetailRow>
-                ))}
+                )}
                 <DetailRow label={`Total perjalanan ${index + 1}`} emphasis>
                   {formatRupiah(preview.result.total)}
                 </DetailRow>

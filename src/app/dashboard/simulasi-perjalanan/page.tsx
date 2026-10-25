@@ -13,6 +13,7 @@ import {
   sameSimulationInput,
   toSimulationInput,
   type JourneyForm,
+  type SimulationDraft,
   type SimulationForm,
 } from '@/components/driver-simulation/simulationForm';
 import { Button } from '@/components/ui/button';
@@ -46,6 +47,13 @@ function formatCalculatedAt(iso: string): string {
   });
 }
 
+function hasDraftContent(form: SimulationForm): boolean {
+  if (form.eventName.trim() !== '') return true;
+  return form.journeys.some(
+    (j) => j.stops.length > 0 || j.vehicleName !== '' || j.tollInput !== '' || j.parkingInput !== '' || j.withoutDriver,
+  );
+}
+
 type Editor = {
   /** The saved Simulasi being edited; null for a new one. */
   saved: SimulationView | null;
@@ -61,6 +69,7 @@ export default function SimulasiPerjalananPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [editor, setEditor] = useState<Editor | null>(null);
+  const [draftStatus, setDraftStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [quoting, setQuoting] = useState<Record<string, boolean>>({});
   const [quoteErrors, setQuoteErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -71,19 +80,55 @@ export default function SimulasiPerjalananPage() {
   // Latest route request per Perjalanan, so a slower earlier answer never
   // overwrites the route that is on screen now.
   const quoteRequests = useRef<Record<string, number>>({});
+  const draftCheckedRef = useRef(false);
+  const saveDraftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedDraftHashRef = useRef<string>('');
 
   const loadSimulations = useCallback(async () => {
     setLoading(true);
     setLoadError('');
     try {
-      const result = await authenticatedJson<{ simulations: SimulationView[] }>('/api/driver-journey-simulations');
-      setSimulations(result.simulations);
+      const [simResult, draftResult] = await Promise.all([
+        authenticatedJson<{ simulations: SimulationView[] }>('/api/driver-journey-simulations'),
+        !draftCheckedRef.current
+          ? authenticatedJson<{ draft: SimulationDraft | null }>('/api/driver-journey-simulations/draft').catch(() => ({ draft: null }))
+          : Promise.resolve({ draft: null }),
+      ]);
+      setSimulations(simResult.simulations);
+
+      if (!draftCheckedRef.current) {
+        draftCheckedRef.current = true;
+        const localKey = profile?.uid ? `simulasi_perjalanan_draft_${profile.uid}` : null;
+        let localDraft: SimulationDraft | null = null;
+        if (localKey && typeof window !== 'undefined') {
+          try {
+            const raw = window.localStorage.getItem(localKey);
+            if (raw) localDraft = JSON.parse(raw);
+          } catch {}
+        }
+
+        const candidate = (localDraft && (!draftResult.draft || (localDraft.updatedAt && localDraft.updatedAt > (draftResult.draft.updatedAt || ''))))
+          ? localDraft
+          : draftResult.draft;
+
+        if (candidate && candidate.form && Array.isArray(candidate.form.journeys) && candidate.form.journeys.length > 0) {
+          if (hasDraftContent(candidate.form)) {
+            const matchingSaved = candidate.savedId
+              ? simResult.simulations.find((s) => s.id === candidate.savedId) ?? null
+              : null;
+            setEditor({ saved: matchingSaved, form: candidate.form });
+            setDraftStatus('saved');
+            lastSavedDraftHashRef.current = JSON.stringify(candidate.form) + String(candidate.savedId);
+            setMessage({ type: 'success', text: 'Draf simulasi otomatis dipulihkan.' });
+          }
+        }
+      }
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : 'Simulasi gagal dimuat.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [profile?.uid]);
 
   useEffect(() => {
     if (allowed) void loadSimulations();
@@ -110,6 +155,69 @@ export default function SimulasiPerjalananPage() {
           ? 'Lengkapi setiap perjalanan'
           : null;
 
+  const clearDraft = useCallback(async () => {
+    if (profile?.uid && typeof window !== 'undefined') {
+      try {
+        window.localStorage.removeItem(`simulasi_perjalanan_draft_${profile.uid}`);
+      } catch {}
+    }
+    lastSavedDraftHashRef.current = '';
+    setDraftStatus('idle');
+    try {
+      await authenticatedJson('/api/driver-journey-simulations/draft', { method: 'DELETE' });
+    } catch {}
+  }, [profile?.uid]);
+
+  // Auto-save draft to server and localStorage on edit
+  useEffect(() => {
+    if (!editor) {
+      setDraftStatus('idle');
+      return;
+    }
+
+    const shouldDraft = editor.saved ? dirty : hasDraftContent(editor.form);
+    if (!shouldDraft) {
+      setDraftStatus('idle');
+      return;
+    }
+
+    const draftData = {
+      savedId: editor.saved ? editor.saved.id : null,
+      form: editor.form,
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Instant local backup
+    if (profile?.uid && typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(`simulasi_perjalanan_draft_${profile.uid}`, JSON.stringify(draftData));
+      } catch {}
+    }
+
+    const currentHash = JSON.stringify(editor.form) + String(draftData.savedId);
+    if (currentHash === lastSavedDraftHashRef.current) return;
+
+    setDraftStatus('saving');
+    if (saveDraftTimerRef.current) clearTimeout(saveDraftTimerRef.current);
+    saveDraftTimerRef.current = setTimeout(async () => {
+      try {
+        await authenticatedJson('/api/driver-journey-simulations/draft', {
+          method: 'PUT',
+          body: JSON.stringify(draftData),
+        });
+        lastSavedDraftHashRef.current = currentHash;
+        setDraftStatus('saved');
+      } catch (err) {
+        console.warn('Gagal menyimpan draf ke server:', err);
+        setDraftStatus('idle');
+      }
+    }, 1000);
+
+    return () => {
+      if (saveDraftTimerRef.current) clearTimeout(saveDraftTimerRef.current);
+    };
+  }, [editor, dirty, profile?.uid]);
+
   const updateForm = (update: (form: SimulationForm) => SimulationForm) =>
     setEditor((current) => (current ? { ...current, form: update(current.form) } : current));
 
@@ -122,19 +230,24 @@ export default function SimulasiPerjalananPage() {
   const openNew = () => {
     setEditor({ saved: null, form: emptyForm() });
     setQuoteErrors({});
+    lastSavedDraftHashRef.current = '';
+    setDraftStatus('idle');
   };
 
   const openSaved = (simulation: SimulationView) => {
     setEditor({ saved: simulation, form: formFromView(simulation) });
     setQuoteErrors({});
+    lastSavedDraftHashRef.current = '';
+    setDraftStatus('idle');
   };
 
   const closeEditor = (force = false) => {
-    if (!force && dirty && editor && (editor.saved || editor.form.eventName.trim() || editor.form.journeys.some(
-      (journey) => journey.stops.length > 0,
-    ))) {
+    if (!force && dirty && editor && (editor.saved || hasDraftContent(editor.form))) {
       setConfirm('discard');
       return;
+    }
+    if (force) {
+      void clearDraft();
     }
     setConfirm(null);
     setEditor(null);
@@ -201,6 +314,9 @@ export default function SimulasiPerjalananPage() {
           });
       setEditor({ saved: simulation, form: formFromView(simulation) });
       setSimulations((current) => [simulation, ...current.filter((item) => item.id !== simulation.id)]);
+      if (mode === 'save') {
+        void clearDraft();
+      }
       setMessage({
         type: 'success',
         text: mode === 'save' ? 'Simulasi disimpan.' : 'Simulasi dihitung ulang dengan tarif hari ini.',
@@ -219,6 +335,7 @@ export default function SimulasiPerjalananPage() {
       await authenticatedJson(`/api/driver-journey-simulations/${editor.saved.id}`, { method: 'DELETE' });
       const id = editor.saved.id;
       setSimulations((current) => current.filter((item) => item.id !== id));
+      void clearDraft();
       setConfirm(null);
       setEditor(null);
       setMessage({ type: 'success', text: 'Simulasi dihapus.' });
@@ -312,9 +429,16 @@ export default function SimulasiPerjalananPage() {
                 <ChevronLeft />
               </Button>
               <div className="min-w-0">
-                <h1 className="truncate text-lg font-semibold text-slate-900">
-                  {editor.saved ? editor.saved.eventName : 'Simulasi baru'}
-                </h1>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="truncate text-lg font-semibold text-slate-900">
+                    {editor.saved ? editor.saved.eventName : (editor.form.eventName || 'Simulasi baru')}
+                  </h1>
+                  {(dirty || !editor.saved) && hasDraftContent(editor.form) && (
+                    <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                      {draftStatus === 'saving' ? 'Menyimpan draf…' : 'Draf tersimpan di server'}
+                    </span>
+                  )}
+                </div>
                 {editor.saved && (
                   <p className="text-xs text-slate-500">
                     Dihitung pada {formatCalculatedAt(editor.saved.calculatedAt)} WIB

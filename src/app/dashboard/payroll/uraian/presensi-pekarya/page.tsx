@@ -2381,17 +2381,6 @@ export default function PekaryaAttendancePage() {
         </div>
       </section>
 
-      {data && (
-          <div className="rounded-md border border-blue-200 bg-blue-50 p-5 text-blue-900">
-            <p className="font-bold">Semua pegawai blue collar</p>
-            <p className="mt-1 text-sm">
-              Daftar ini menggabungkan seluruh kategori yang memakai upah
-              presensi beserta seluruh pengajuan presensi, cuti, dan ganti libur (termasuk Satpam) dalam satu card utama.
-              Pembayaran shift Satpam mengikuti laporan Ketua Shift atau izin resmi disetujui. Izin disetujui menjadi dasar pembayaran jika keduanya ada pada tanggal yang sama.
-            </p>
-          </div>
-        )}
-
       {loading && (
         <div className="rounded-md border border-slate-200 bg-white p-8 text-center text-slate-500">
           Memuat hasil presensi…
@@ -2469,14 +2458,6 @@ export default function PekaryaAttendancePage() {
                 </Button>
               )}
             </div>
-            {!data.importRevisionId && (
-              <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                Publikasi menunggu presensi bulanan diimpor. Menyetujui atau
-                menolak pengajuan di bawah tetap bisa dilakukan sekarang — begitu
-                presensi bulanan diimpor, keputusan yang sudah diambil ikut
-                terhitung otomatis dan publikasi bisa dilanjutkan.
-              </div>
-            )}
             {data.employees.some((employee) => employee.publishBlocked) && (
               <div className="mt-4 rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
                 Publikasi ditahan sampai semua pegawai aktif memiliki NIPY yang

@@ -3,6 +3,7 @@
 import React, { useMemo, useCallback } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { usePendingFacilityReportsCount } from '@/lib/usePendingFacilityReportsCount';
 import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
 import {
   ScanLine,
@@ -19,9 +20,9 @@ import {
 /**
  * Shared navigation toggles for Loyalis & Pekarya uraian-related payroll pages.
  * Renders two rows:
- *   1. Loyalis row – visible to super_admin and the Loyalis/Pekarya SatKer roles
+ *   1. Loyalis row – visible to super_admin and satker_head_loyalis
  *   2. Pekarya row – visible to super_admin and finance_verifier
- * Admin Karyawan (loyalis_admin) navigates from the sidebar instead.
+ * SatKer Pekarya heads (satker_head) and Admin Karyawan (loyalis_admin) navigate from the sidebar instead.
  *
  * This component is self-contained: it reads the current pathname and
  * search params to determine the active tab and builds clean navigation URLs.
@@ -31,6 +32,7 @@ export default function UraianNavToggles() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { profile } = useAuth();
+  const pendingFacilityCount = usePendingFacilityReportsCount();
 
   // Derive the active tab from the current pathname
   const activeTab = useMemo(() => {
@@ -85,7 +87,6 @@ export default function UraianNavToggles() {
   if (
     profile.role !== 'super_admin' &&
     profile.role !== 'satker_head_loyalis' &&
-    profile.role !== 'satker_head' &&
     profile.role !== 'finance_verifier'
   ) {
     return null;
@@ -136,8 +137,7 @@ export default function UraianNavToggles() {
           )}
 
           {(profile.role === 'super_admin' ||
-            profile.role === 'satker_head_loyalis' ||
-            profile.role === 'satker_head') && (
+            profile.role === 'satker_head_loyalis') && (
             <button
               onClick={() => router.push(`/dashboard/payroll/uraian/presensi-loyalis-raw${getCleanParamsString('presensi_loyalis_raw')}`)}
               className={btnCls(activeTab === 'presensi_loyalis_raw')}
@@ -205,7 +205,15 @@ export default function UraianNavToggles() {
                 className={btnCls(activeTab === 'facility_reports')}
               >
                 <Wrench className="w-4 h-4" />
-                Kondisi Fasilitas
+                <span>Kondisi Fasilitas</span>
+                {pendingFacilityCount > 0 && (
+                  <span
+                    className="ml-1 inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold shadow-sm leading-none tabular-nums"
+                    title={`${pendingFacilityCount} laporan menunggu`}
+                  >
+                    {pendingFacilityCount > 99 ? '99+' : pendingFacilityCount}
+                  </span>
+                )}
               </button>
             )}
           </div>

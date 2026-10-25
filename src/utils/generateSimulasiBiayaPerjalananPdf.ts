@@ -83,7 +83,11 @@ export function generateSimulasiBiayaPerjalananPdf(simulation: SimulationView, s
       ...tableStyles,
       startY: y,
       head: [[
-        { content: `Perjalanan ${index + 1} · ${journey.vehicleName}`, colSpan: 2, styles: { fillColor: [79, 70, 229], textColor: [255, 255, 255], fontStyle: 'bold' } },
+        {
+          content: `Perjalanan ${index + 1} · ${journey.vehicleName}${journey.withoutDriver ? ' (Tanpa Sopir)' : ''}`,
+          colSpan: 2,
+          styles: { fillColor: [79, 70, 229], textColor: [255, 255, 255], fontStyle: 'bold' },
+        },
       ]],
       body: [
         [{ content: pdfText(`Rute: ${route}`), colSpan: 2 }],
@@ -95,8 +99,12 @@ export function generateSimulasiBiayaPerjalananPdf(simulation: SimulationView, s
         [`Biaya BBM (${formatKm(journey.route.distanceKm)} × ${formatRupiah(journey.vehicleRate)}/km)`, formatRupiah(journey.fuelCost)],
         [tollLineLabel(journey), formatRupiah(journey.tollFee)],
         ['Parkir', formatRupiah(journey.parkingFee)],
-        ...upahBersihLines(journey).map((line) => [`   ${line.label}`, formatRupiah(line.amount)]),
-        subtotal('Upah Bersih sopir', journey.pay.upahBersih),
+        ...(journey.withoutDriver
+          ? [['Upah Bersih sopir', 'Rp0 (Tanpa Sopir)']]
+          : [
+              ...upahBersihLines(journey).map((line) => [`   ${line.label}`, formatRupiah(line.amount)]),
+              subtotal('Upah Bersih sopir', journey.pay.upahBersih),
+            ]),
         subtotal(`Total Perjalanan ${index + 1}`, journey.total),
       ],
     });

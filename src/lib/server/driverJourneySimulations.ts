@@ -1,4 +1,5 @@
 import type { firestore } from 'firebase-admin';
+import type { SimulationDraft, SimulationForm } from '@/components/driver-simulation/simulationForm';
 import {
   calculateSimulation,
   simulationRoutePoints,
@@ -20,7 +21,10 @@ import { loadRouteQuote } from '@/lib/server/driverRouteQuotes';
 type Firestore = firestore.Firestore;
 
 export const DRIVER_JOURNEY_SIMULATIONS_COLLECTION = 'DriverJourneySimulations';
+export const DRIVER_JOURNEY_SIMULATION_DRAFTS_COLLECTION = 'DriverJourneySimulationDrafts';
 const SUPER_ADMIN_LIST_LIMIT = 200;
+
+export type { SimulationDraft };
 
 function isoOf(value: unknown): string {
   if (value instanceof Date) return value.toISOString();
@@ -154,5 +158,64 @@ export async function deleteDriverJourneySimulation(
   if (!snapshot.exists || !data || !canSee(actor, data)) {
     throw new HttpError(404, 'Simulasi tidak ditemukan.');
   }
+  await ref.delete();
+}
+
+export async function getDriverJourneySimulationDraft(
+  db: Firestore,
+  actor: AuthenticatedProfile,
+): Promise<SimulationDraft | null> {
+  const doc = await db.collection(DRIVER_JOURNEY_SIMULATION_DRAFTS_COLLECTION).doc(actor.uid).get();
+  if (!doc.exists) return null;
+  const data = doc.data();
+  if (!data || !data.form || typeof data.form !== 'object') return null;
+  const form = data.form as SimulationForm;
+  if (!Array.isArray(form.journeys)) return null;
+
+  return {
+    savedId: typeof data.savedId === 'string' && data.savedId ? data.savedId : null,
+    form: {
+      eventName: typeof form.eventName === 'string' ? form.eventName : '',
+      journeys: form.journeys.map((j) => ({
+        key: typeof j.key === 'string' ? j.key : `journey-${Date.now()}`,
+        stops: Array.isArray(j.stops) ? j.stops.map(String) : [],
+        stopLocations: Array.isArray(j.stopLocations) ? j.stopLocations : [],
+        vehicleName: typeof j.vehicleName === 'string' ? j.vehicleName : '',
+        withoutDriver: Boolean(j.withoutDriver),
+        departureDate: typeof j.departureDate === 'string' ? j.departureDate : '',
+        departureTime: typeof j.departureTime === 'string' ? j.departureTime : '',
+        returnDate: typeof j.returnDate === 'string' ? j.returnDate : '',
+        returnTime: typeof j.returnTime === 'string' ? j.returnTime : '',
+        tollSource: j.tollSource === 'manual' ? 'manual' : 'google',
+        tollInput: typeof j.tollInput === 'string' ? j.tollInput : '',
+        parkingInput: typeof j.parkingInput === 'string' ? j.parkingInput : '',
+        quote: j.quote && typeof j.quote === 'object' ? j.quote : null,
+        quoteKey: typeof j.quoteKey === 'string' ? j.quoteKey : '',
+      })),
+    },
+    updatedAt: isoOf(data.updatedAt),
+  };
+}
+
+export async function saveDriverJourneySimulationDraft(
+  db: Firestore,
+  actor: AuthenticatedProfile,
+  draft: { form: SimulationForm; savedId: string | null },
+  now: Date = new Date(),
+): Promise<void> {
+  const ref = db.collection(DRIVER_JOURNEY_SIMULATION_DRAFTS_COLLECTION).doc(actor.uid);
+  await ref.set({
+    ownerUid: actor.uid,
+    savedId: typeof draft.savedId === 'string' && draft.savedId ? draft.savedId : null,
+    form: draft.form,
+    updatedAt: now,
+  });
+}
+
+export async function deleteDriverJourneySimulationDraft(
+  db: Firestore,
+  actor: AuthenticatedProfile,
+): Promise<void> {
+  const ref = db.collection(DRIVER_JOURNEY_SIMULATION_DRAFTS_COLLECTION).doc(actor.uid);
   await ref.delete();
 }

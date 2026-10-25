@@ -11,12 +11,14 @@ import {
   getEmployeeActivityWorkflow,
 } from '@/lib/employeeActivities';
 import {
+  canViewFacilityNotifications,
   getFacilityReportsPath,
   isBlueCollarFacilityDashboardUser,
 } from '@/lib/facilityReports';
 import { VENUE_INSPECTION_PATH } from '@/lib/venueInspection';
 import { Button } from '@/components/ui/button';
 import { AccountSwitchMenuItems } from '@/components/AccountSwitcher';
+import { usePendingFacilityReportsCount } from '@/lib/usePendingFacilityReportsCount';
 import { FloatingSnackbar, type SnackbarMessage } from '@/components/ui/floating-snackbar';
 import {
   Banknote,
@@ -85,6 +87,8 @@ export default function EmployeeNavigationMenu() {
   const isLoyalis = currentProfile.role === 'loyalis';
   const isBlueCollarHonorer =
     currentProfile.role === 'honorer' || currentProfile.role === 'ketua_shift_satpam';
+  const pendingFacilityCount = usePendingFacilityReportsCount();
+  const showFacilityBadge = canViewFacilityNotifications(currentProfile);
 
   // Resolve through the shared workflow rule so the menu only ever offers links
   // the route guard will actually honour (Satpam wins over Sopir). Meaningless
@@ -105,13 +109,21 @@ export default function EmployeeNavigationMenu() {
             <Button
               variant="outline"
               size="icon"
-              className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border border-slate-200 bg-white rounded-sm h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer shrink-0"
+              className="relative text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border border-slate-200 bg-white rounded-sm h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer shrink-0"
               title="Menu"
               aria-label="Buka menu navigasi"
             />
           }
         >
           <MenuIcon className="w-4.5 h-4.5 text-indigo-500" />
+          {showFacilityBadge && pendingFacilityCount > 0 && (
+            <span
+              className="absolute -top-1.5 -right-1.5 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white shadow-sm leading-none tabular-nums"
+              aria-label={`${pendingFacilityCount} laporan fasilitas menunggu`}
+            >
+              {pendingFacilityCount > 99 ? '99+' : pendingFacilityCount}
+            </span>
+          )}
         </DropdownMenuTrigger>
         <DropdownMenuContent className="rounded-md min-w-[220px] p-2.5">
           {!isLoyalis && pathname !== activitiesHref && (
@@ -171,13 +183,25 @@ export default function EmployeeNavigationMenu() {
           )}
           {(isLoyalis || isBlueCollarHonorer) && pathname !== facilityReportsHref && (
             <DropdownMenuItem
-              className="min-h-11 rounded-sm px-3.5 py-2.5 text-sm"
+              className="min-h-11 rounded-sm px-3.5 py-2.5 text-sm flex items-center justify-between"
               render={<Link href={facilityReportsHref} />}
             >
-              <Wrench className="text-amber-500" />
-              {isBlueCollarFacilityDashboardUser(currentProfile)
-                ? 'Perbaiki Fasilitas'
-                : 'Lapor Fasilitas'}
+              <div className="flex items-center gap-2 min-w-0">
+                <Wrench className="text-amber-500 shrink-0" />
+                <span className="truncate">
+                  {isBlueCollarFacilityDashboardUser(currentProfile)
+                    ? 'Kondisi Fasilitas'
+                    : 'Lapor Fasilitas'}
+                </span>
+              </div>
+              {showFacilityBadge && pendingFacilityCount > 0 && (
+                <span
+                  className="ml-auto inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-bold shadow-sm leading-none tabular-nums shrink-0"
+                  title={`${pendingFacilityCount} laporan menunggu`}
+                >
+                  {pendingFacilityCount > 99 ? '99+' : pendingFacilityCount}
+                </span>
+              )}
             </DropdownMenuItem>
           )}
           {isBlueCollarFacilityDashboardUser(currentProfile) && pathname !== VENUE_INSPECTION_PATH && (

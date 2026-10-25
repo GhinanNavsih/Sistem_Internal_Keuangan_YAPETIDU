@@ -4,6 +4,7 @@ import {
   canSubmitFacilityReport,
   canTransitionFacilityReport,
   canUploadFacilityRepairProof,
+  canViewFacilityNotifications,
   compareFacilityReports,
   FACILITY_REPORT_DASHBOARD_PATH,
   FACILITY_REPORT_STATUSES,
@@ -129,5 +130,51 @@ test('compareFacilityReports falls back to reportedDate when reportedAtMillis is
     ['2', '1', '3'],
   );
 });
+
+test('canViewFacilityNotifications allows satker pekarya heads, teknisi, kebersihan, and super admin only', () => {
+  // Satker Pekarya authorized for facility repair (Teknisi / Kebersihan)
+  assert.equal(
+    canViewFacilityNotifications({ role: 'satker_head', permittedCategories: ['TEKNISI'] }),
+    true,
+  );
+  assert.equal(
+    canViewFacilityNotifications({ role: 'satker_head', permittedCategories: ['kebersihan'] }),
+    true,
+  );
+  assert.equal(
+    canViewFacilityNotifications({ role: 'satker_head', permittedCategories: ['SOPIR'] }),
+    false,
+  );
+
+  // Satker Loyalis head
+  assert.equal(
+    canViewFacilityNotifications({ role: 'satker_head_loyalis', permittedCategories: ['TEKNISI'] }),
+    false,
+  );
+
+  // Honorer repairers: Teknisi and Kebersihan
+  assert.equal(
+    canViewFacilityNotifications({ role: 'honorer', permittedCategories: ['TEKNISI'] }),
+    true,
+  );
+  assert.equal(
+    canViewFacilityNotifications({ role: 'honorer', permittedCategories: ['KEBERSIHAN'] }),
+    true,
+  );
+  assert.equal(
+    canViewFacilityNotifications({ role: 'honorer', permittedCategories: ['SATPAM'] }),
+    false,
+  );
+  assert.equal(
+    canViewFacilityNotifications({ role: 'honorer', permittedCategories: ['SOPIR'] }),
+    false,
+  );
+
+  // Loyalis and other roles
+  assert.equal(canViewFacilityNotifications({ role: 'loyalis' }), false);
+  assert.equal(canViewFacilityNotifications({ role: 'super_admin' }), true);
+  assert.equal(canViewFacilityNotifications(null), false);
+});
+
 
 

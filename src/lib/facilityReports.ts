@@ -30,6 +30,25 @@ export function isBlueCollarFacilityDashboardUser(
 }
 
 /**
+ * Only Satker Pekarya heads authorized for facility repair (Teknisi/Kebersihan),
+ * Teknisi & Kebersihan honorer repairers, and Super Admin see pending facility
+ * report notification badges.
+ */
+export function canViewFacilityNotifications(
+  profile: FacilityReportNavigationProfile | null | undefined,
+): boolean {
+  if (!profile) return false;
+  if (profile.role === 'super_admin') return true;
+  if (profile.role === 'satker_head') {
+    return (profile.permittedCategories || []).some((category) => {
+      const normalized = category.trim().toUpperCase();
+      return (FACILITY_REPORT_DASHBOARD_CATEGORIES as readonly string[]).includes(normalized);
+    });
+  }
+  return isBlueCollarFacilityDashboardUser(profile);
+}
+
+/**
  * Both authorized blue-collar repairers (Teknisi/Kebersihan) and review
  * authorities (Satker Head and Super Admin) may upload proof of a facility fix.
  */

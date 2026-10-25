@@ -322,6 +322,7 @@ export async function GET(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
     const searchParams = new URL(request.url).searchParams;
+    const countOnly = searchParams.get('countOnly') === 'true';
     const statusFilter = searchParams.get('status');
 
     let query: FirebaseFirestore.Query = adminDb.collection(FACILITY_REPORTS_COLLECTION);
@@ -330,6 +331,17 @@ export async function GET(request: NextRequest) {
     }
     if (statusFilter && isFacilityReportStatus(statusFilter)) {
       query = query.where('status', '==', statusFilter);
+    }
+
+    if (countOnly) {
+      const targetQuery =
+        statusFilter && isFacilityReportStatus(statusFilter)
+          ? query
+          : query.where('status', '==', 'pending');
+      const countSnapshot = await targetQuery.count().get();
+      return NextResponse.json({
+        openCount: countSnapshot.data().count,
+      });
     }
 
     const snapshot = await query.get();

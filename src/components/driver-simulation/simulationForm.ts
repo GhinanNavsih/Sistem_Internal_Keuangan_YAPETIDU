@@ -18,6 +18,7 @@ export interface JourneyForm {
   stops: string[];
   stopLocations: Array<DriverJourneyLocation | null>;
   vehicleName: DriverVehicleName | '';
+  withoutDriver: boolean;
   departureDate: string;
   departureTime: string;
   returnDate: string;
@@ -34,6 +35,12 @@ export interface JourneyForm {
 export interface SimulationForm {
   eventName: string;
   journeys: JourneyForm[];
+}
+
+export interface SimulationDraft {
+  savedId: string | null;
+  form: SimulationForm;
+  updatedAt: string;
 }
 
 let nextKey = 0;
@@ -54,6 +61,7 @@ export function emptyJourney(previous?: JourneyForm): JourneyForm {
     stops: [],
     stopLocations: [],
     vehicleName: '',
+    withoutDriver: previous?.withoutDriver ?? false,
     departureDate: date,
     departureTime: previous?.departureTime || '',
     returnDate: previous?.returnDate || date,
@@ -81,6 +89,7 @@ export function journeyFormFromResult(journey: SimulationJourneyResult): Journey
     // A Simulasi saved before stops were picked on the map has names only.
     stopLocations: journey.stops.map((_, index) => journey.stopLocations?.[index] ?? null),
     vehicleName: journey.vehicleName,
+    withoutDriver: Boolean(journey.withoutDriver),
     departureDate: journey.departureDate,
     departureTime: journey.departureTime,
     returnDate: journey.returnDate,
@@ -134,6 +143,7 @@ function toInput(journey: JourneyForm): SimulationJourneyInput | null {
     stops: [...journey.stops],
     stopLocations: journey.stops.map((_, index) => journey.stopLocations[index] ?? null),
     vehicleName: journey.vehicleName,
+    withoutDriver: journey.withoutDriver,
     departureDate: journey.departureDate,
     departureTime: journey.departureTime,
     returnDate: journey.returnDate,
@@ -196,6 +206,7 @@ export function sameSimulationInput(a: SimulationForm, b: SimulationForm): boole
     journeys: form.journeys.map((journey) => ({
       route: simulationRouteKey(journey.stops, journey.stopLocations),
       vehicleName: journey.vehicleName,
+      withoutDriver: Boolean(journey.withoutDriver),
       departureDate: journey.departureDate,
       departureTime: journey.departureTime,
       returnDate: journey.returnDate,

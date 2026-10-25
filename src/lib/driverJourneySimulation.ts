@@ -172,6 +172,7 @@ export interface SimulationJourneyInput {
   /** Only read when `tollSource` is `manual`. */
   tollAmount: number;
   parkingFee: number;
+  withoutDriver?: boolean;
 }
 
 export interface SimulationInput {
@@ -269,6 +270,7 @@ function parseJourney(raw: unknown, position: number): SimulationJourneyInput {
   const tollSource = raw.tollSource;
   const tollAmount = tollSource === 'manual' ? moneyField(raw.tollAmount, `${label}: biaya tol`) : 0;
   const parkingFee = moneyField(raw.parkingFee ?? 0, `${label}: biaya parkir`);
+  const withoutDriver = Boolean(raw.withoutDriver);
 
   return {
     stops,
@@ -281,6 +283,7 @@ function parseJourney(raw: unknown, position: number): SimulationJourneyInput {
     tollSource,
     tollAmount,
     parkingFee,
+    withoutDriver,
   };
 }
 
@@ -307,6 +310,7 @@ export function parseSimulationInput(raw: unknown): SimulationInput {
 // ── Cost ───────────────────────────────────────────────────────────────────
 
 export interface SimulationJourneyResult extends SimulationJourneyInput {
+  withoutDriver: boolean;
   route: RouteMeasurement & { measuredAt: string };
   tollQuote: TollQuote;
   /** The toll counted in the total. */
@@ -355,7 +359,8 @@ export function calculateSimulationJourney(
   quote: RouteQuote,
 ): SimulationJourneyResult {
   const { measurement } = quote;
-  const pay = calculatePlannedDriverJourney({
+  const withoutDriver = Boolean(journey.withoutDriver);
+  const rawPay = calculatePlannedDriverJourney({
     loopDistanceKm: measurement.distanceKm,
     loopDurationHours: measurement.durationHours,
     departureDate: journey.departureDate,
@@ -363,10 +368,22 @@ export function calculateSimulationJourney(
     returnDate: journey.returnDate,
     returnTime: journey.returnTime,
   });
+  const pay: PlannedDriverJourneyResult = withoutDriver
+    ? {
+        ...rawPay,
+        componentJarak: 0,
+        componentWaktu: 0,
+        shortTripMeal: 0,
+        mealWage: 0,
+        nightPremium: 0,
+        upahBersih: 0,
+      }
+    : rawPay;
   const fuelCost = calculateLoopFuelCost(measurement.distanceKm, journey.vehicleName);
   const tollFee = resolveSimulationToll(journey, quote.toll);
   return {
     ...journey,
+    withoutDriver,
     stops: [...journey.stops],
     stopLocations: journey.stops.map((_, index) => {
       const location = journey.stopLocations?.[index];
@@ -457,6 +474,7 @@ export interface CostLine {
 
 /** The Upah Bersih broken into the parts the sopir is paid, as the page and the printout show it. */
 export function upahBersihLines(journey: SimulationJourneyResult): CostLine[] {
+  if (journey.withoutDriver) return [];
   const { pay, route } = journey;
   const lines: CostLine[] = [
     { label: `Komponen jarak (${formatKm(route.distanceKm)} × Rp300)`, amount: pay.componentJarak },

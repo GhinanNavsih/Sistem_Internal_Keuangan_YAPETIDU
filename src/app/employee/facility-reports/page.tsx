@@ -2,6 +2,8 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useQueryClient } from '@tanstack/react-query';
+import { FACILITY_PENDING_COUNT_QUERY_KEY } from '@/lib/usePendingFacilityReportsCount';
 import {
   ChevronDown,
   ChevronLeft,
@@ -69,6 +71,7 @@ function formatReportDate(value: string): string {
 }
 
 export default function FacilityReportsPage() {
+  const queryClient = useQueryClient();
   const { profile: rawProfile, activeProfile } = useAuth();
   const requestLogout = useConfirmLogout();
   const profile = activeProfile || rawProfile;
@@ -223,6 +226,7 @@ export default function FacilityReportsPage() {
       resetForm();
       setShowForm(false);
       await loadReports();
+      void queryClient.invalidateQueries({ queryKey: FACILITY_PENDING_COUNT_QUERY_KEY });
     } catch (error) {
       console.error('Error submitting facility report:', error);
       setMessage({
@@ -245,6 +249,7 @@ export default function FacilityReportsPage() {
       });
       setMessage({ type: 'success', text: 'Laporan berhasil ditarik kembali.' });
       await loadReports();
+      void queryClient.invalidateQueries({ queryKey: FACILITY_PENDING_COUNT_QUERY_KEY });
     } catch (error) {
       console.error('Error withdrawing facility report:', error);
       setMessage({

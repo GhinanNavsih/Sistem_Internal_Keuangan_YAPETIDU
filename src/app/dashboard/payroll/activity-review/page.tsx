@@ -2597,7 +2597,7 @@ function ActivityReviewPageContent() {
         </div>
 
         {/* ── Uraian Navigation Toggles (Super Admin) ──────────────────── */}
-        <UraianNavToggles />
+        {profile?.role === 'super_admin' && <UraianNavToggles />}
 
         {/* ── Notifications ──────────────────────────────────────────── */}
         <FloatingSnackbar

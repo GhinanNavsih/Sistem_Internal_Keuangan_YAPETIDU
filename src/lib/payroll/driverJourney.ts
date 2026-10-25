@@ -11,6 +11,7 @@ export const DRIVER_VEHICLE_RATES = Object.freeze({
   'Innova Hitam': 1_250,
   'Innova Matic': 1_450,
   'Suzuki XL7': 1_000,
+  'Kendaraan Sendiri': 1_000,
   Ndalem: 0,
 } as const);
 

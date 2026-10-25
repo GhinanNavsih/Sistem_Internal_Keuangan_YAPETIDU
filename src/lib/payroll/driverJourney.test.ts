@@ -356,6 +356,7 @@ test('route coordinates survive past MAX_MAIN_DESTINATIONS and fall back per sto
 test('vehicle rates stay centralized for authorization and review calculations', () => {
   assert.equal(DRIVER_VEHICLE_RATES.Bis, 2_500);
   assert.equal(DRIVER_VEHICLE_RATES['Suzuki XL7'], 1_000);
+  assert.equal(DRIVER_VEHICLE_RATES['Kendaraan Sendiri'], 1_000);
   assert.equal(DRIVER_VEHICLE_RATES.Ndalem, 0);
   assert.equal(DEFAULT_DRIVER_VEHICLE_NAME, 'Ndalem');
 });
