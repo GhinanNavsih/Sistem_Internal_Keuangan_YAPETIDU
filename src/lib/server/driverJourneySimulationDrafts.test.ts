@@ -53,6 +53,7 @@ const mockActor: AuthenticatedProfile = {
   email: 'loyalis@unipdu.ac.id',
   role: 'satker_head_loyalis',
   displayName: 'Kepala SatKer Loyalis',
+  permittedCategories: [],
 };
 
 test('saves, reads, and deletes driver journey simulation drafts in Firestore', async () => {
