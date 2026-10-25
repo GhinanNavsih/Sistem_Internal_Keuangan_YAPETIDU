@@ -240,6 +240,50 @@ async function main() {
   const pngOver2Mb = `data:image/png;base64,${Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(2 * 1024 * 1024)]).toString('base64')}`;
   assert.equal((await invoke(secretary, edit('voucher-oct-001', { expectedRevision: 7, receiptDataUrl: pngOver2Mb }))).status, 400, 'a journal receipt over 2 MB is refused (the browser compresses to that size)');
   assert.equal((await entryDoc('voucher-oct-001').get()).data()!.revision, 7, 'a refused receipt changes nothing');
+  // Saved receipts can be removed individually, including while replacing files at the ten-receipt limit.
+  const beforeReceiptRemoval = (await entryDoc('voucher-oct-001').get()).data()!;
+  const originalReceiptPaths = beforeReceiptRemoval.receiptPaths as string[];
+  const removeReceipts = (removedReceiptIndexes: unknown, extra: Record<string, unknown> = {}) => edit('voucher-oct-001', { expectedRevision: 7, removedReceiptIndexes, ...extra });
+  for (const invalid of [null, '0', [-1], [0.5], ['0'], [0, 0], [10], Array(11).fill(0)]) {
+    assert.equal((await invoke(secretary, removeReceipts(invalid))).status, 400, `invalid removal list: ${JSON.stringify(invalid)}`);
+  }
+  assert.equal((await invoke(outsider, removeReceipts([0]))).status, 403);
+  assert.equal((await invoke(rector, removeReceipts([0]))).status, 403);
+  assert.equal((await invoke(head, edit('voucher-sep-001', { monthIndex: 9, date: '2026-09-02', removedReceiptIndexes: [0] }))).status, 409, 'receipt removal respects the sealed month');
+  assert.deepEqual((await entryDoc('voucher-oct-001').get()).data(), beforeReceiptRemoval, 'refused removals change nothing');
+  await succeeds(await invoke(secretary, removeReceipts([0, 2], { receiptDataUrls: [receiptDataUrl, pdfReceipt] })));
+  const replacedReceipts = (await entryDoc('voucher-oct-001').get()).data()!;
+  assert.equal(replacedReceipts.receiptPaths.length, 10);
+  assert.deepEqual(replacedReceipts.receiptPaths.slice(0, 8), originalReceiptPaths.filter((_, index) => index !== 0 && index !== 2));
+  assert.ok(!replacedReceipts.receiptPaths.includes(originalReceiptPaths[0]));
+  assert.ok(!replacedReceipts.receiptPaths.includes(originalReceiptPaths[2]));
+  assert.equal(replacedReceipts.revision, 8);
+  assert.equal((await invoke(head, removeReceipts([1]))).status, 409, 'a stale receipt index cannot remove a different file');
+  const retainedReceiptResponse = await receiptGet(new NextRequest(`http://localhost/api/satker-finance/receipt?${new URLSearchParams({ ...base, entryId: 'voucher-oct-001', index: '0' })}`, { headers: { authorization: `Bearer ${head.token}` } }));
+  assert.equal(retainedReceiptResponse.headers.get('content-type'), 'application/pdf', 'preview indexes follow the retained receipt order');
+  const receiptRemovalAudit = (await auditActions('ENTRY_UPDATED')).find((item) => JSON.stringify(item.details.after.receiptPaths) === JSON.stringify(replacedReceipts.receiptPaths))!;
+  assert.deepEqual(receiptRemovalAudit.details.before.receiptPaths, originalReceiptPaths);
+  assert.equal(receiptRemovalAudit.actorUid, secretary.uid);
+  assert.equal(await adminStorageFileExists(originalReceiptPaths[0]), true, 'removed files remain archived with the audit trail');
+  assert.equal(await adminStorageFileExists(originalReceiptPaths[2]), true);
+  await succeeds(await invoke(head, removeReceipts(Array.from({ length: 10 }, (_, index) => index), { expectedRevision: 8 })));
+  const withoutReceipts = (await entryDoc('voucher-oct-001').get()).data()!;
+  assert.deepEqual(withoutReceipts.receiptPaths, []);
+  assert.equal(withoutReceipts.receiptPath, undefined);
+  assert.deepEqual(withoutReceipts.lines, replacedReceipts.lines);
+  assert.equal(withoutReceipts.totalAmount, replacedReceipts.totalAmount);
+  const receiptFreeView = await succeeds(await read(head, { ...base, month: '10' }));
+  const receiptFreeEntry = receiptFreeView.entries.find((item: { id: string }) => item.id === 'voucher-oct-001');
+  assert.equal(receiptFreeEntry.receiptCount, 0);
+  assert.equal(receiptFreeEntry.hasReceipt, false);
+  assert.equal((await receiptGet(new NextRequest(`http://localhost/api/satker-finance/receipt?${new URLSearchParams({ ...base, entryId: 'voucher-oct-001' })}`, { headers: { authorization: `Bearer ${head.token}` } }))).status, 404);
+  // Legacy single-file journals clear both fields, so the old receipt cannot reappear through the fallback.
+  await entryDoc('voucher-oct-001').update({ receiptPaths: admin.firestore.FieldValue.delete(), receiptPath });
+  await succeeds(await invoke(head, removeReceipts([0], { expectedRevision: 9 })));
+  const clearedLegacy = (await entryDoc('voucher-oct-001').get()).data()!;
+  assert.deepEqual(clearedLegacy.receiptPaths, []);
+  assert.equal(clearedLegacy.receiptPath, undefined);
+  assert.equal(await adminStorageFileExists(receiptPath), true);
   // A journal and its reversal belong together: neither half is changed alone, a reversal can only be deleted.
   const entriesBeforeScratch = (await yearDoc.get()).data()!.entryCount;
   await succeeds(await invoke(secretary, { ...base, action: 'POST_ENTRY', entryId: 'voucher-oct-003', monthIndex: 10, date: '2026-10-04', kind: 'EXPENSE', accountCode: '54101', paymentAccountCode: '10000', amount: 20, description: 'Biaya sementara' }));

@@ -564,6 +564,13 @@ export async function POST(request: NextRequest) {
         throw new HttpError(400, 'Versi jurnal tidak valid. Muat ulang sebelum menyimpan.');
       }
       const reason = deleting ? string(raw.reason, 'Alasan penghapusan', 500) : '';
+      const removedReceiptIndexes = deleting || raw.removedReceiptIndexes === undefined ? [] : raw.removedReceiptIndexes;
+      if (!Array.isArray(removedReceiptIndexes) || removedReceiptIndexes.length > MAX_ENTRY_RECEIPTS ||
+          removedReceiptIndexes.some((index) => !Number.isInteger(index) || index < 0) ||
+          new Set(removedReceiptIndexes).size !== removedReceiptIndexes.length) {
+        throw new HttpError(400, 'Daftar bukti yang dihapus tidak valid.');
+      }
+      const removedReceipts = new Set<number>(removedReceiptIndexes);
       const [accounts, catalogMeta, unitCatalogMeta] = await Promise.all([loadAccounts(unitId), CATALOG_META_REF.get(), unitAccountCatalogMetaRef(unitId).get()]);
       let monthIndex = 0;
       let voucher: ReturnType<typeof buildVoucher> | undefined;
@@ -574,7 +581,7 @@ export async function POST(request: NextRequest) {
         // An edited journal is saved in the advanced form whatever form it was first posted in.
         try { voucher = buildVoucher({ ...raw, kind: 'ADVANCED', date }, accounts); } catch (error) { inputError(error); }
       }
-      // New receipts are added to the ones the journal already has.
+      // New receipts join the retained ones. Removed files stay in Storage for the audit trail.
       const newReceiptPaths = deleting ? [] : await storeReceipts(receiptInputs(raw), unitId, academicYear, entryId, MAX_ENTRY_RECEIPT_BYTES);
       const entryRef = year.collection('entries').doc(entryId);
       const months = fiscalMonths(academicYear);
@@ -598,7 +605,11 @@ export async function POST(request: NextRequest) {
             ...(deleting ? {} : { newMonthIndex: monthIndex }),
           });
           if (blocker) throw new HttpError(409, blocker);
-          const receiptPaths = [...entryReceiptPaths(current), ...newReceiptPaths];
+          const savedReceiptPaths = entryReceiptPaths(current);
+          if ([...removedReceipts].some((index) => index >= savedReceiptPaths.length)) {
+            throw new HttpError(400, 'Bukti yang akan dihapus tidak ditemukan. Muat ulang jurnal.');
+          }
+          const receiptPaths = [...savedReceiptPaths.filter((_, index) => !removedReceipts.has(index)), ...newReceiptPaths];
           if (receiptPaths.length > MAX_ENTRY_RECEIPTS) throw new HttpError(409, `Satu jurnal maksimal memiliki ${MAX_ENTRY_RECEIPTS} bukti.`);
           const now = admin.firestore.FieldValue.serverTimestamp();
           if (deleting) {
@@ -610,7 +621,7 @@ export async function POST(request: NextRequest) {
           const next = voucher!;
           tx.update(entryRef, {
             kind: next.kind, date: next.date, monthIndex, description: next.description, lines: next.lines, totalAmount: next.totalAmount,
-            cashFlowSection: next.cashFlowSection, cashFlows: next.cashFlows, isBalanced: true, ...(newReceiptPaths.length ? { receiptPaths, receiptPath: admin.firestore.FieldValue.delete() } : {}),
+            cashFlowSection: next.cashFlowSection, cashFlows: next.cashFlows, isBalanced: true, receiptPaths, receiptPath: admin.firestore.FieldValue.delete(),
             revision: Number(current.revision || 0) + 1, updatedBy: actor.uid, updatedAt: now,
           });
           tx.set(year, { revision: admin.firestore.FieldValue.increment(1), updatedAt: now }, { merge: true });

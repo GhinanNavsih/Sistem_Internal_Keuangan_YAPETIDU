@@ -291,7 +291,6 @@ export default function ProposalKegiatanPage() {
   const canManageProposal = Boolean(
     profile && ['super_admin', 'finance_verifier', 'satker_head_loyalis'].includes(profile.role),
   );
-  const isLoyalisSandbox = profile?.role === 'satker_head_loyalis';
 
   // Period open/closed gate. A missing or unreadable period counts as open,
   // matching the previous behaviour; the server-side rule remains authoritative
@@ -400,11 +399,10 @@ export default function ProposalKegiatanPage() {
   const hasLpjAccess = useMemo(() => {
     return Boolean(
       profile?.role === 'super_admin' ||
-      isLoyalisSandbox ||
       currentProposalStatus === 'proposal_approved' ||
       currentProposalStatus?.startsWith('lpj_'),
     );
-  }, [currentProposalStatus, isLoyalisSandbox, profile]);
+  }, [currentProposalStatus, profile]);
 
   // Mirrors the ProposalKegiatan delete rule: Super Admin may delete any
   // proposal, Kepala SatKer Loyalis only their own, and only while the period is open.
@@ -543,8 +541,8 @@ export default function ProposalKegiatanPage() {
     return danaOperasionalAnggaran - totalPengeluaranAnggaran;
   }, [danaOperasionalAnggaran, totalPengeluaranAnggaran]);
 
-  const isProposalReadOnly = periodClosed || (!isLoyalisSandbox && profile?.role !== 'super_admin' && (currentProposalStatus === 'proposal_approved' || currentProposalStatus === 'proposal_submitted' || currentProposalStatus?.startsWith('lpj_')));
-  const isLpjReadOnly = periodClosed || (!isLoyalisSandbox && (currentProposalStatus === 'lpj_submitted' || currentProposalStatus === 'lpj_approved'));
+  const isProposalReadOnly = periodClosed || (profile?.role !== 'super_admin' && (currentProposalStatus === 'proposal_approved' || currentProposalStatus === 'proposal_submitted' || currentProposalStatus?.startsWith('lpj_')));
+  const isLpjReadOnly = periodClosed || (currentProposalStatus === 'lpj_submitted' || currentProposalStatus === 'lpj_approved');
 
   // ── REAL-TIME DEBOUNCED AUTO-SAVE EFFECT ──
   useEffect(() => {
@@ -574,10 +572,15 @@ export default function ProposalKegiatanPage() {
           pengeluaranRows,
           kepanitiaaanPercentage,
           signatures: proposalSignatures,
-          status: currentProposalStatus || 'proposal_draft',
-          submittedBy: profile?.uid || null,
-          submittedByName: profile?.displayName || null,
-          submittedByEmail: profile?.email || null,
+          // Owner and status are written once, on create. Re-stamping them on
+          // every autosave let a Super Admin's copy take over a Kepala SatKer's
+          // proposal and write back a stale status after approval.
+          ...(selectedProposalId ? {} : {
+            status: currentProposalStatus || 'proposal_draft',
+            submittedBy: profile?.uid || null,
+            submittedByName: profile?.displayName || null,
+            submittedByEmail: profile?.email || null,
+          }),
           // Stage 2 LPJ Data
           realisasiEnabled,
           vakasiPengujiEnabled,
@@ -732,10 +735,12 @@ export default function ProposalKegiatanPage() {
         signatures: proposalSignatures,
         lpjSignatures,
         lpjSignaturesFollowProposal,
-        status: currentProposalStatus || 'proposal_draft',
-        submittedBy: profile?.uid || null,
-        submittedByName: profile?.displayName || null,
-        submittedByEmail: profile?.email || null,
+        ...(selectedProposalId ? {} : {
+          status: currentProposalStatus || 'proposal_draft',
+          submittedBy: profile?.uid || null,
+          submittedByName: profile?.displayName || null,
+          submittedByEmail: profile?.email || null,
+        }),
         expenseReports,
         updatedAt: serverTimestamp(),
       };
@@ -990,10 +995,7 @@ export default function ProposalKegiatanPage() {
 
     setSaving(true);
     try {
-      const nextLpjStatus = currentProposalStatus === 'proposal_approved' ||
-        (isLoyalisSandbox && !currentProposalStatus?.startsWith('lpj_'))
-        ? 'lpj_draft'
-        : currentProposalStatus;
+      const nextLpjStatus = currentProposalStatus === 'proposal_approved' ? 'lpj_draft' : currentProposalStatus;
       const payload = {
         realisasiEnabled,
         vakasiPengujiEnabled,
@@ -1338,9 +1340,7 @@ export default function ProposalKegiatanPage() {
                 )}
               </div>
               <p className="text-slate-400 text-xs mt-0.5">
-                {isLoyalisSandbox
-                  ? 'Mode Sandbox Kepala SatKer Loyalis — LPJ dapat diisi langsung tanpa menunggu approval proposal.'
-                  : 'Alur berurutan: Proposal Anggaran ➔ Approval Ketua BAK & WarKu ➔ Pelaporan Realisasi (LPJ).'}
+                Alur berurutan: Proposal Anggaran ➔ Approval Ketua BAK & WarKu ➔ Pelaporan Realisasi (LPJ).
               </p>
             </div>
 
@@ -1466,27 +1466,8 @@ export default function ProposalKegiatanPage() {
               </div>
             )}
 
-            {/* Direct LPJ access for the Loyalis sandbox */}
-            {isLoyalisSandbox && (
-              <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-md flex items-center justify-between gap-3 text-indigo-900 text-xs shadow-sm">
-                <div className="flex items-center gap-3">
-                  <Unlock className="w-6 h-6 text-indigo-600 shrink-0" />
-                  <div>
-                    <p className="font-bold text-indigo-800 text-sm">LPJ Sandbox Terbuka</p>
-                    <p className="leading-relaxed font-medium">Anda dapat mengisi dan menyimpan LPJ langsung. Persetujuan proposal tidak diperlukan untuk sandbox ini.</p>
-                  </div>
-                </div>
-                <Button
-                  onClick={() => setActiveStage('lpj')}
-                  className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-9 px-4 shrink-0 shadow"
-                >
-                  Buka Form LPJ <Unlock className="w-3.5 h-3.5 ml-1.5" />
-                </Button>
-              </div>
-            )}
-
             {/* Proposal Approved Banner */}
-            {hasLpjAccess && !isLoyalisSandbox && (
+            {hasLpjAccess && (
               <div className="p-4 bg-teal-50 border border-teal-200 rounded-md flex items-center justify-between gap-3 text-teal-900 text-xs shadow-sm">
                 <div className="flex items-center gap-3">
                   <CheckCircle2 className="w-6 h-6 text-teal-600 shrink-0" />

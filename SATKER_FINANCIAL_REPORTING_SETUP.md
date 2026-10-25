@@ -47,6 +47,11 @@ before entering any historical balances or transactions.
   with the months before it, and are corrected with a reversing journal in an
   open month instead. A journal and its reversal are only changed as a pair:
   neither can be edited alone, and the reversal can be deleted to undo it.
+- In a journal's editor, saved receipts can be previewed, marked for removal,
+  or replaced with new uploads. **Urungkan** restores a marked receipt;
+  **Batal** discards the edit. **Simpan perubahan** applies the removal to the
+  transaction and records the before/after attachments in its audit history.
+  Archived files remain in Storage, and the same journal-edit locks apply.
 - Super Administrator checks the submitted report as BAK, then Rektorat
   approves it. Either reviewer can request a documented revision; prior
   submitted snapshots and audit entries remain available.

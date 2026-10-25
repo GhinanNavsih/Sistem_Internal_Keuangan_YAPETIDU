@@ -111,8 +111,10 @@ export default function SatkerFinancePage() {
   const [preparingReceipts, setPreparingReceipts] = useState(false);
   // The journal being edited in the form above the table, and the draft that was in the form before the edit began.
   const [editingEntry, setEditingEntry] = useState<EntryRecord | null>(null);
-  // Receipts the journal being edited already has; files picked now are added to them.
-  const savedReceiptCount = editingEntry?.receiptCount ?? 0;
+  const [removedReceiptIndexes, setRemovedReceiptIndexes] = useState<number[]>([]);
+  // Saved receipts keep their original preview indexes until the edit is saved.
+  const originalReceiptCount = editingEntry?.receiptCount ?? 0;
+  const savedReceiptCount = originalReceiptCount - removedReceiptIndexes.length;
   const draftBeforeEdit = useRef<{ lines: DraftLine[]; voucherDate: string; receipts: File[] } | null>(null);
   const composerRef = useRef<HTMLTableSectionElement>(null);
   const receiptInputRef = useRef<HTMLInputElement>(null);
@@ -239,6 +241,7 @@ export default function SatkerFinancePage() {
     const draft = draftBeforeEdit.current;
     draftBeforeEdit.current = null;
     setEditingEntry(null);
+    setRemovedReceiptIndexes([]);
     setVoucherId(crypto.randomUUID());
     setReceipts(draft?.receipts ?? []);
     setLines(draft?.lines ?? [emptyLine(), emptyLine()]);
@@ -252,6 +255,7 @@ export default function SatkerFinancePage() {
     if (!editingEntry) draftBeforeEdit.current = { lines, voucherDate, receipts };
     const sharedDescription = entry.lines.some((line) => line.description) ? '' : entry.description;
     setEditingEntry(entry);
+    setRemovedReceiptIndexes([]);
     setVoucherId(crypto.randomUUID());
     setVoucherDate(entry.date);
     setReceipts([]);
@@ -292,7 +296,7 @@ export default function SatkerFinancePage() {
       ...(receiptDataUrls.length ? { receiptDataUrls } : {}),
     };
     if (editingEntry) {
-      if (await post('UPDATE_ENTRY', { ...voucher, entryId: editingEntry.id, expectedRevision: editingEntry.revision ?? 0 })) leaveEdit();
+      if (await post('UPDATE_ENTRY', { ...voucher, entryId: editingEntry.id, expectedRevision: editingEntry.revision ?? 0, removedReceiptIndexes })) leaveEdit();
       return;
     }
     const result = await post('POST_ENTRY', { entryId: voucherId, ...voucher });
@@ -445,9 +449,18 @@ export default function SatkerFinancePage() {
               event.target.value = '';
               if (picked.length) void addReceipts(picked);
             }} />
-            {receipts.length > 0 && <ul className="mb-2 space-y-1">{receipts.map((file, index) => <li key={`${file.name}-${index}`} className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700"><span className="min-w-0 truncate" title={file.name}>{file.name}</span><button type="button" aria-label={`Lepas ${file.name}`} title="Lepas bukti" className="shrink-0 text-slate-400 hover:text-red-700" onClick={() => setReceipts((current) => current.filter((_, i) => i !== index))}><X className="h-4 w-4" /></button></li>)}</ul>}
-            <button type="button" className={lightButton} disabled={preparingReceipts || savedReceiptCount + receipts.length >= MAX_ENTRY_RECEIPTS} onClick={() => receiptInputRef.current?.click()}>{preparingReceipts ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}{preparingReceipts ? 'Memproses bukti…' : savedReceiptCount + receipts.length > 0 ? 'Tambah bukti' : 'Lampirkan bukti'}</button>
+            {editingEntry && originalReceiptCount > 0 && <ul className="mb-2 space-y-1">{Array.from({ length: originalReceiptCount }, (_, index) => {
+              const removed = removedReceiptIndexes.includes(index);
+              const restoreFull = removed && savedReceiptCount + receipts.length >= MAX_ENTRY_RECEIPTS;
+              return <li key={index} className={`flex items-center justify-between gap-2 rounded-md border px-2 py-1.5 text-xs ${removed ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-white'}`}>
+                <button type="button" className={`text-accent-700 hover:underline ${removed ? 'line-through opacity-60' : ''}`} disabled={busy} onClick={() => void viewReceipt({ entryId: editingEntry.id, index: String(index) })}>Bukti tersimpan {index + 1}</button>
+                <button type="button" aria-label={`${removed ? 'Urungkan penghapusan' : 'Hapus'} bukti ${index + 1}`} title={restoreFull ? 'Lepas bukti baru terlebih dahulu; maksimal 10 bukti.' : removed ? 'Urungkan penghapusan' : 'Hapus bukti'} className="shrink-0 text-slate-500 hover:text-red-700 disabled:opacity-50" disabled={busy || preparingReceipts || restoreFull} onClick={() => setRemovedReceiptIndexes((current) => current.includes(index) ? current.filter((value) => value !== index) : [...current, index])}>{removed ? 'Urungkan' : <Trash2 className="h-4 w-4" />}</button>
+              </li>;
+            })}</ul>}
+            {receipts.length > 0 && <ul className="mb-2 space-y-1">{receipts.map((file, index) => <li key={`${file.name}-${index}`} className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700"><span className="min-w-0 truncate" title={file.name}>{file.name}</span><button type="button" aria-label={`Lepas ${file.name}`} title="Lepas bukti" className="shrink-0 text-slate-400 hover:text-red-700 disabled:opacity-50" disabled={busy || preparingReceipts} onClick={() => setReceipts((current) => current.filter((_, i) => i !== index))}><X className="h-4 w-4" /></button></li>)}</ul>}
+            <button type="button" className={lightButton} disabled={busy || preparingReceipts || savedReceiptCount + receipts.length >= MAX_ENTRY_RECEIPTS} onClick={() => receiptInputRef.current?.click()}>{preparingReceipts ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}{preparingReceipts ? 'Memproses bukti…' : savedReceiptCount + receipts.length > 0 ? 'Tambah bukti' : 'Lampirkan bukti'}</button>
             {savedReceiptCount > 0 && <p className="mt-1 text-xs text-slate-400">{savedReceiptCount} bukti sudah tersimpan.</p>}
+            {removedReceiptIndexes.length > 0 && <p role="status" className="mt-1 text-xs text-red-700">{removedReceiptIndexes.length} bukti akan dihapus saat Anda menyimpan perubahan.</p>}
           </div>
         </div></td>}
       </tr>)}
