@@ -16,6 +16,7 @@ import {
   requireRole,
 } from '@/lib/server/auth';
 import { FINANCE_ROLES } from '@/lib/payroll/roles';
+import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,13 +35,16 @@ interface NormalizedLpjData {
   reports: ExpenseReport[];
 }
 
-function parseCommand(raw: unknown): { proposalId: string; note: string } {
+function parseCommand(raw: unknown): { proposalId: string; note: string; expectedRevision?: number } {
   if (!raw || typeof raw !== 'object') throw new HttpError(400, 'Perintah persetujuan LPJ tidak valid.');
   const value = raw as Record<string, unknown>;
   const proposalId = typeof value.proposalId === 'string' ? value.proposalId.trim() : '';
   if (!proposalId || proposalId.length > 150) throw new HttpError(400, 'ID proposal tidak valid.');
   const note = typeof value.note === 'string' ? value.note.trim().slice(0, 2000) : '';
-  return { proposalId, note };
+  if (value.expectedRevision !== undefined && (!Number.isSafeInteger(value.expectedRevision) || Number(value.expectedRevision) < 0)) {
+    throw new HttpError(400, 'Versi LPJ tidak valid.');
+  }
+  return { proposalId, note, ...(typeof value.expectedRevision === 'number' ? { expectedRevision: value.expectedRevision } : {}) };
 }
 
 function asRows(value: unknown): ProposalExpenseRow[] {
@@ -141,6 +145,10 @@ export async function POST(request: NextRequest) {
         throw new HttpError(409, 'Periode payroll sudah ditutup sehingga LPJ tidak dapat disetujui.');
       }
       const currentData = proposalSnapshot.data() as ProposalData;
+      const revision = Number(proposalSnapshot.data()?.revision || 0);
+      if (command.expectedRevision !== undefined && revision !== command.expectedRevision) {
+        throw new HttpError(409, 'LPJ berubah di sesi lain. Muat ulang sebelum menyetujui.');
+      }
       const currentStatus = typeof currentData.status === 'string' ? currentData.status : '';
       if (currentStatus !== 'lpj_submitted' && currentStatus !== 'lpj_approved') {
         throw new HttpError(409, 'Status LPJ berubah. Muat ulang proposal sebelum mencoba lagi.');
@@ -174,6 +182,7 @@ export async function POST(request: NextRequest) {
 
       transaction.set(proposalRef, {
         status: 'lpj_approved',
+        revision: revision + 1,
         reviewedBy: actor.uid,
         reviewedByName: actor.displayName,
         reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -183,6 +192,12 @@ export async function POST(request: NextRequest) {
         payrollReportIds: [],
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
+      transaction.create(newFinancialAuditRef(), buildFinancialAuditRecord(actor, {
+        action: 'PROPOSAL_KEGIATAN_APPROVE_LPJ', entityType: 'ProposalKegiatan', entityId: command.proposalId,
+        reason: command.note || 'LPJ disetujui',
+        before: { status: currentStatus, revision },
+        after: { status: 'lpj_approved', revision: revision + 1 },
+      }));
 
       return {
         syncedReports: 0,

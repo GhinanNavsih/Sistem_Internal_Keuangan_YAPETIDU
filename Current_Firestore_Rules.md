@@ -530,16 +530,19 @@ service cloud.firestore {
 
     match /ProposalKegiatan/{docId} {
       allow read: if isFinanceRole() || roleIs('satker_head_loyalis');
-      allow create: if (isFinanceVerifier() || isSuperAdmin() ||
-        roleIs('satker_head_loyalis')) && createsOpenPeriodRecord();
-      allow update: if (isFinanceVerifier() || isSuperAdmin() ||
-        roleIs('satker_head_loyalis')) && updatesOpenPeriodRecord();
+      // The API derives the owner and checks the stored revision/status.
+      // Older tabs must not take ownership or roll an approval back by autosaving.
+      allow create, update: if false;
       // Super Admin may delete any proposal; Kepala SatKer Loyalis only the
       // ones they submitted. Both only while the period is open.
       allow delete: if (isSuperAdmin() ||
         (roleIs('satker_head_loyalis') &&
           resource.data.get('submittedBy', null) == request.auth.uid)) &&
         deletesOpenPeriodRecord();
+    }
+
+    match /ProposalKegiatanQueueCounters/{period} {
+      allow read, write: if false;
     }
 
     match /EmpEditLog/{docId} {

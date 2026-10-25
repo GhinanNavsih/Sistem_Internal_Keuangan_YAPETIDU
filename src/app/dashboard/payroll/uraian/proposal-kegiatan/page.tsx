@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import {
-  collection, doc, setDoc, deleteDoc, serverTimestamp, query, where, onSnapshot
+  collection, doc, deleteDoc, query, where, onSnapshot
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import {
@@ -66,6 +66,7 @@ import {
   sanitizeForFirestore,
 } from '@/lib/payroll/proposalExpenseReports';
 import { authenticatedJson } from '@/lib/payroll/client';
+import { useProposalDrafts } from '@/hooks/useProposalDrafts';
 import { focusFirstCellInAdjacentRow, handleRowCellKeyDown } from '@/lib/tableKeyboardNav';
 
 const clearExpenseReportLink = (row: ProposalExpenseRow): ProposalExpenseRow => {
@@ -156,10 +157,26 @@ export default function ProposalKegiatanPage() {
   const periodToken = `${year}-${String(month).padStart(2, '0')}`;
 
   // ── Main Page State ──
-  const [proposalList, setProposalList] = useState<any[]>([]);
+  const [remoteProposalList, setRemoteProposalList] = useState<any[]>([]);
+  const persistence = useProposalDrafts(profile, periodToken);
+  const { controller: draftController } = persistence;
+  const proposalList = useMemo(() => {
+    const merged = new Map(remoteProposalList.map((item) => [item.id, item]));
+    for (const draft of persistence.drafts) {
+      const remote = merged.get(draft.id);
+      merged.set(draft.id, { ...remote, ...draft.data, id: draft.id,
+        submittedBy: remote?.submittedBy || draft.ownerUid,
+        submittedByName: remote?.submittedByName || draft.ownerName,
+        revision: draft.revision, status: remote?.status || draft.status,
+        updatedAt: { seconds: draft.updatedAt / 1000 }, localDraft: true });
+    }
+    return [...merged.values()].sort((a, b) => (b.updatedAt?.seconds || 0) - (a.updatedAt?.seconds || 0));
+  }, [remoteProposalList, persistence.drafts]);
   const [loadingProposal, setLoadingProposal] = useState(false);
   const [activeStage, setActiveStage] = useState<'proposal' | 'lpj'>('proposal');
-  const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
+  const [selectedProposalState, setSelectedProposalId] = useState<string | null>(null);
+  const selectedProposalId = selectedProposalState || draftController.currentId();
+  const selectedProposalIdRef = useRef(selectedProposalId);
   const [reportEditorGroupId, setReportEditorGroupId] = useState<string | null>(null);
 
   // Common Header States
@@ -171,7 +188,7 @@ export default function ProposalKegiatanPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [activeInsertMenuIdx, setActiveInsertMenuIdx] = useState<number | null>(null);
   const [activePelaporanSuggestionIndex, setActivePelaporanSuggestionIndex] = useState<number>(0);
-  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const autoSaveStatus = persistence.status;
 
   // Proposal Status & Review States
   const [currentProposalStatus, setCurrentProposalStatus] = useState<string | null>(null);
@@ -181,7 +198,6 @@ export default function ProposalKegiatanPage() {
   const [currentProposalQueueNo, setCurrentProposalQueueNo] = useState<number | null>(null);
 
   // Ref to track loading state and prevent immediate auto-save on select
-  const isInitialMount = useRef(true);
   const skipAutoSaveRef = useRef(false);
 
   // ── Stage 1: Proposal States (Full Mirror of Seksi 1 without Realisasi column) ──
@@ -317,9 +333,11 @@ export default function ProposalKegiatanPage() {
   );
 
   // Live Sync ProposalKegiatan collection
+  useEffect(() => { selectedProposalIdRef.current = selectedProposalId; }, [selectedProposalId]);
   useEffect(() => {
     if (!profile || !canManageProposal) return;
     setLoadingProposal(true);
+    setRemoteProposalList([]);
     const q = query(
       collection(db, 'ProposalKegiatan'),
       where('period', '==', periodToken)
@@ -345,7 +363,14 @@ export default function ProposalKegiatanPage() {
         return getMs(b.updatedAt) - getMs(a.updatedAt);
       });
 
-      setProposalList(list);
+      draftController.observe(list);
+      const current = list.find((item) => item.id === selectedProposalIdRef.current);
+      if (current) {
+        setCurrentProposalStatus(current.status || 'proposal_draft');
+        setCurrentReviewNote(current.reviewNote || null);
+        setCurrentProposalQueueNo(current.proposalQueueNumber || null);
+      }
+      setRemoteProposalList(list);
       setLoadingProposal(false);
     }, (err) => {
       console.error('Error listening to ProposalKegiatan:', err);
@@ -353,10 +378,12 @@ export default function ProposalKegiatanPage() {
     });
 
     return () => unsubscribe();
-  }, [canManageProposal, periodToken, profile]);
+  }, [canManageProposal, periodToken, profile, draftController]);
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
+    if (saving) return;
     skipAutoSaveRef.current = true;
+    draftController.newDraft();
     setSelectedProposalId(null);
     setReportEditorGroupId(null);
     setReportName('');
@@ -388,13 +415,17 @@ export default function ProposalKegiatanPage() {
     setVakasiPengujiRows([{ employeeId: '', employeeName: '', roleQtys: {}, searchText: '', showDropdown: false }]);
     setKepanitiaaanRows([{ name: '', phaseAmounts: {}, searchText: '', showDropdown: false }]);
     setReceiptRows([{ itemName: '', qty: 1, unitPrice: 0 }]);
+    setRealisasiTitle('REALISASI ');
+    setVakasiPengujiTitle('VAKASI PENGUJI ');
+    setVakasiRoles([{ name: 'Ketua', rate: 200000 }, { name: 'Penguji', rate: 175000 }, { name: 'Sekretaris', rate: 125000 }]);
+    setKepanitiaaanTitle('VAKASI KEPANITIAAN ');
+    setKepanitiaaanPhases([{ name: 'Persiapan' }, { name: 'Pelaksanaan' }, { name: 'Kepanitiaan' }]);
+    setReceiptTitle('KWITANSI PEMBELIAN ');
     setLpjSignatureOverrides(createProposalSignatures());
     setLpjSignaturesFollowProposal(true);
 
-    setTimeout(() => {
-      skipAutoSaveRef.current = false;
-    }, 500);
-  };
+
+  }, [draftController, saving]);
 
   const hasLpjAccess = useMemo(() => {
     return Boolean(
@@ -418,6 +449,8 @@ export default function ProposalKegiatanPage() {
   );
 
   const handleSelectProposal = (item: any) => {
+    if (saving) return;
+    draftController.select(item);
     skipAutoSaveRef.current = true;
     setSelectedProposalId(item.id);
     setReportName(item.reportName || item.title || '');
@@ -441,9 +474,9 @@ export default function ProposalKegiatanPage() {
     } else {
       setPemasukanRows([{ uraian: '', rincianQty: '', rincianRate: 0 }]);
     }
-    if (item.yayasanPercentage !== undefined) setYayasanPercentage(item.yayasanPercentage);
-    if (item.unipduPercentage !== undefined) setUnipduPercentage(item.unipduPercentage);
-    if (item.kepanitiaaanPercentage !== undefined) setKepanitiaaanPercentage(item.kepanitiaaanPercentage);
+    setYayasanPercentage(item.yayasanPercentage ?? 20);
+    setUnipduPercentage(item.unipduPercentage ?? 20);
+    setKepanitiaaanPercentage(item.kepanitiaaanPercentage ?? 10);
 
     const normalizedProposalExpenseRows = item.pengeluaranRows && item.pengeluaranRows.length > 0
       ? ensureExpenseRowIds(item.pengeluaranRows)
@@ -461,6 +494,7 @@ export default function ProposalKegiatanPage() {
     // Load Stage 2 LPJ Data (if available)
     if (item.lpjPemasukanRows) setLpjPemasukanRows(item.lpjPemasukanRows);
     else if (item.pemasukanRows) setLpjPemasukanRows(item.pemasukanRows.map((r: any) => ({ ...r, realisasi: parseQty(r.rincianQty) * (r.rincianRate || 0) })));
+    else setLpjPemasukanRows([{ uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }]);
 
     const normalizedLpjExpenseRows: ProposalExpenseRow[] = item.lpjPengeluaranRows
       ? ensureExpenseRowIds(item.lpjPengeluaranRows).map((row: ProposalExpenseRow, index: number) => {
@@ -486,18 +520,19 @@ export default function ProposalKegiatanPage() {
     setLpjPengeluaranRows(normalizedLinks.rows);
     setExpenseReports(normalizedLinks.reports);
 
-    if (item.realisasiEnabled !== undefined) setRealisasiEnabled(item.realisasiEnabled);
-    if (item.vakasiPengujiEnabled !== undefined) setVakasiPengujiEnabled(item.vakasiPengujiEnabled);
-    if (item.kepanitiaaanEnabled !== undefined) setKepanitiaaanEnabled(item.kepanitiaaanEnabled);
-    if (item.receiptEnabled !== undefined) setReceiptEnabled(item.receiptEnabled);
-
-    if (item.vakasiPengujiRows) setVakasiPengujiRows(item.vakasiPengujiRows);
-    if (item.kepanitiaaanRows) setKepanitiaaanRows(item.kepanitiaaanRows);
-    if (item.receiptRows) setReceiptRows(item.receiptRows);
-
-    setTimeout(() => {
-      skipAutoSaveRef.current = false;
-    }, 500);
+    setRealisasiEnabled(item.realisasiEnabled ?? true);
+    setVakasiPengujiEnabled(item.vakasiPengujiEnabled ?? false);
+    setKepanitiaaanEnabled(item.kepanitiaaanEnabled ?? false);
+    setReceiptEnabled(item.receiptEnabled ?? false);
+    setRealisasiTitle(item.realisasiTitle ?? 'REALISASI ');
+    setVakasiPengujiTitle(item.vakasiPengujiTitle ?? 'VAKASI PENGUJI ');
+    setVakasiRoles(item.vakasiRoles ?? [{ name: 'Ketua', rate: 200000 }, { name: 'Penguji', rate: 175000 }, { name: 'Sekretaris', rate: 125000 }]);
+    setKepanitiaaanTitle(item.kepanitiaaanTitle ?? 'VAKASI KEPANITIAAN ');
+    setKepanitiaaanPhases(item.kepanitiaaanPhases ?? [{ name: 'Persiapan' }, { name: 'Pelaksanaan' }, { name: 'Kepanitiaan' }]);
+    setReceiptTitle(item.receiptTitle ?? 'KWITANSI PEMBELIAN ');
+    setVakasiPengujiRows(item.vakasiPengujiRows ?? [{ employeeId: '', employeeName: '', roleQtys: {}, searchText: '', showDropdown: false }]);
+    setKepanitiaaanRows(item.kepanitiaaanRows ?? [{ name: '', phaseAmounts: {}, searchText: '', showDropdown: false }]);
+    setReceiptRows(item.receiptRows ?? [{ itemName: '', qty: 1, unitPrice: 0 }]);
   };
 
   // ── Stage 1 Proposal Computations ──
@@ -544,106 +579,43 @@ export default function ProposalKegiatanPage() {
   const isProposalReadOnly = periodClosed || (profile?.role !== 'super_admin' && (currentProposalStatus === 'proposal_approved' || currentProposalStatus === 'proposal_submitted' || currentProposalStatus?.startsWith('lpj_')));
   const isLpjReadOnly = periodClosed || (currentProposalStatus === 'lpj_submitted' || currentProposalStatus === 'lpj_approved');
 
-  // ── REAL-TIME DEBOUNCED AUTO-SAVE EFFECT ──
+  const draftData = useMemo(() => ({
+    reportName, departmentUnit, totalBudget: totalPengeluaranAnggaran || totalPemasukanAnggaran,
+    pemasukanRows, yayasanPercentage, unipduPercentage, pengeluaranRows, kepanitiaaanPercentage,
+    signatures: proposalSignatures, realisasiEnabled, vakasiPengujiEnabled, kepanitiaaanEnabled,
+    receiptEnabled, realisasiTitle, lpjPemasukanRows, lpjPengeluaranRows, vakasiPengujiTitle,
+    vakasiRoles, vakasiPengujiRows, kepanitiaaanTitle, kepanitiaaanPhases, kepanitiaaanRows,
+    receiptTitle, receiptRows, lpjSignatures, lpjSignaturesFollowProposal, expenseReports,
+  }), [reportName, departmentUnit, totalPengeluaranAnggaran, totalPemasukanAnggaran,
+    pemasukanRows, yayasanPercentage, unipduPercentage, pengeluaranRows, kepanitiaaanPercentage,
+    proposalSignatures, realisasiEnabled, vakasiPengujiEnabled, kepanitiaaanEnabled,
+    receiptEnabled, realisasiTitle, lpjPemasukanRows, lpjPengeluaranRows, vakasiPengujiTitle,
+    vakasiRoles, vakasiPengujiRows, kepanitiaaanTitle, kepanitiaaanPhases, kepanitiaaanRows,
+    receiptTitle, receiptRows, lpjSignatures, lpjSignaturesFollowProposal, expenseReports]);
+  const lastCapturedDraft = useRef('');
+  const editorScope = `${profile?.uid || ''}:${periodToken}`;
+  const previousEditorScope = useRef(editorScope);
   useEffect(() => {
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
+    if (previousEditorScope.current === editorScope) return;
+    previousEditorScope.current = editorScope;
+    resetForm();
+  }, [editorScope, resetForm]);
+
+  // Skip only the hydration render, never a time window in which user edits can be lost.
+  useEffect(() => {
+    const serialized = JSON.stringify(draftData);
+    if (skipAutoSaveRef.current) {
+      skipAutoSaveRef.current = false;
+      lastCapturedDraft.current = serialized;
       return;
     }
-    if (skipAutoSaveRef.current) return;
-    if (!profile || !canManageProposal || periodClosed) return;
-    if (!reportName.trim() || !departmentUnit) return;
-    if (isProposalReadOnly && activeStage === 'proposal') return;
-
-    const timer = setTimeout(async () => {
-      setAutoSaveStatus('saving');
-      try {
-        const docId = selectedProposalId || `${periodToken}_prop_${Date.now()}`;
-        const totalBudget = totalPengeluaranAnggaran || totalPemasukanAnggaran;
-
-        const payload: Record<string, any> = {
-          reportName,
-          departmentUnit,
-          period: periodToken,
-          totalBudget,
-          pemasukanRows,
-          yayasanPercentage,
-          unipduPercentage,
-          pengeluaranRows,
-          kepanitiaaanPercentage,
-          signatures: proposalSignatures,
-          // Owner and status are written once, on create. Re-stamping them on
-          // every autosave let a Super Admin's copy take over a Kepala SatKer's
-          // proposal and write back a stale status after approval.
-          ...(selectedProposalId ? {} : {
-            status: currentProposalStatus || 'proposal_draft',
-            submittedBy: profile?.uid || null,
-            submittedByName: profile?.displayName || null,
-            submittedByEmail: profile?.email || null,
-          }),
-          // Stage 2 LPJ Data
-          realisasiEnabled,
-          vakasiPengujiEnabled,
-          kepanitiaaanEnabled,
-          receiptEnabled,
-          realisasiTitle,
-          lpjPemasukanRows,
-          lpjPengeluaranRows,
-          vakasiPengujiTitle,
-          vakasiRoles,
-          vakasiPengujiRows,
-          kepanitiaaanTitle,
-          kepanitiaaanPhases,
-          kepanitiaaanRows,
-          receiptTitle,
-          receiptRows,
-          lpjSignatures,
-          lpjSignaturesFollowProposal,
-          expenseReports,
-          updatedAt: serverTimestamp(),
-        };
-
-        await setDoc(doc(db, 'ProposalKegiatan', docId), sanitizeForFirestore(payload), { merge: true });
-        if (!selectedProposalId) setSelectedProposalId(docId);
-        setAutoSaveStatus('saved');
-        setTimeout(() => setAutoSaveStatus('idle'), 3000);
-      } catch (err) {
-        console.error('Error auto-saving proposal progress:', err);
-        setAutoSaveStatus('error');
-      }
-    }, 1200);
-
-    return () => clearTimeout(timer);
-  }, [
-    reportName,
-    departmentUnit,
-    pemasukanRows,
-    yayasanPercentage,
-    unipduPercentage,
-    pengeluaranRows,
-    kepanitiaaanPercentage,
-    proposalSignatures,
-    realisasiEnabled,
-    vakasiPengujiEnabled,
-    kepanitiaaanEnabled,
-    receiptEnabled,
-    realisasiTitle,
-    lpjPemasukanRows,
-    lpjPengeluaranRows,
-    vakasiPengujiTitle,
-    vakasiRoles,
-    vakasiPengujiRows,
-    kepanitiaaanTitle,
-    kepanitiaaanPhases,
-    kepanitiaaanRows,
-    receiptTitle,
-    receiptRows,
-    lpjSignatures,
-    lpjSignaturesFollowProposal,
-    expenseReports,
-    canManageProposal,
-    periodClosed,
-  ]);
+    if (!profile || !canManageProposal || periodClosed || !reportName.trim()) return;
+    if (serialized === lastCapturedDraft.current) return;
+    if ((activeStage === 'proposal' && isProposalReadOnly) || (activeStage === 'lpj' && isLpjReadOnly)) return;
+    lastCapturedDraft.current = serialized;
+    draftController.capture(selectedProposalId, sanitizeForFirestore(draftData), activeStage);
+  }, [draftData, profile, canManageProposal, periodClosed, reportName, activeStage,
+    isProposalReadOnly, isLpjReadOnly, draftController, selectedProposalId]);
 
   // ── Historical Baselines for the Clone dialog ──
   // Closed periods that no longer change, so this is fetched at most once per
@@ -696,6 +668,10 @@ export default function ProposalKegiatanPage() {
     setExpenseReports([]);
     setReportEditorGroupId(null);
 
+    // Cloning is a new edit, rather than loading an already saved snapshot.
+    skipAutoSaveRef.current = false;
+    lastCapturedDraft.current = '';
+
     setShowCloneModal(false);
     setMessage({
       type: 'success',
@@ -720,37 +696,12 @@ export default function ProposalKegiatanPage() {
 
     setSaving(true);
     try {
-      const docId = selectedProposalId || `${periodToken}_prop_${Date.now()}`;
-
-      const payload = {
-        reportName,
-        departmentUnit,
-        period: periodToken,
-        totalBudget: totalPengeluaranAnggaran || totalPemasukanAnggaran,
-        pemasukanRows,
-        yayasanPercentage,
-        unipduPercentage,
-        pengeluaranRows,
-        kepanitiaaanPercentage,
-        signatures: proposalSignatures,
-        lpjSignatures,
-        lpjSignaturesFollowProposal,
-        ...(selectedProposalId ? {} : {
-          status: currentProposalStatus || 'proposal_draft',
-          submittedBy: profile?.uid || null,
-          submittedByName: profile?.displayName || null,
-          submittedByEmail: profile?.email || null,
-        }),
-        expenseReports,
-        updatedAt: serverTimestamp(),
-      };
-
-      await setDoc(doc(db, 'ProposalKegiatan', docId), sanitizeForFirestore(payload), { merge: true });
-      setSelectedProposalId(docId);
+      const result = await draftController.save('save_draft', selectedProposalId, sanitizeForFirestore(draftData), 'proposal');
+      setSelectedProposalId(result.proposalId);
       setMessage({ type: 'success', text: `Draft Proposal "${reportName}" berhasil disimpan.` });
     } catch (err) {
       console.error(err);
-      setMessage({ type: 'error', text: 'Gagal menyimpan proposal.' });
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Gagal menyimpan proposal.' });
     } finally {
       setSaving(false);
     }
@@ -783,6 +734,8 @@ export default function ProposalKegiatanPage() {
     setDeleteState('deleting');
     setDeleteError(null);
     try {
+      await draftController.flush(id);
+      draftController.remove(id);
       await deleteDoc(doc(db, 'ProposalKegiatan', id));
       resetForm();
       setDeleteState('success');
@@ -933,50 +886,18 @@ export default function ProposalKegiatanPage() {
 
     setSaving(true);
     try {
-      const docId = selectedProposalId || `${periodToken}_prop_${Date.now()}`;
-
-      const existingQueues = proposalList
-        .map(p => p.proposalQueueNumber)
-        .filter((q): q is number => typeof q === 'number');
-      const nextProposalQueueNo = existingQueues.length > 0 ? Math.max(...existingQueues) + 1 : 1;
-
-      const payload = {
-        reportName,
-        departmentUnit,
-        period: periodToken,
-        totalBudget: totalPengeluaranAnggaran || totalPemasukanAnggaran,
-        pemasukanRows,
-        yayasanPercentage,
-        unipduPercentage,
-        pengeluaranRows,
-        kepanitiaaanPercentage,
-        signatures: proposalSignatures,
-        status: 'proposal_submitted',
-        lpjSignatures,
-        lpjSignaturesFollowProposal,
-        proposalQueueNumber: nextProposalQueueNo,
-        submittedBy: profile?.uid || null,
-        submittedByName: profile?.displayName || null,
-        submittedByEmail: profile?.email || null,
-        expenseReports,
-        proposalSubmittedAt: serverTimestamp(),
-        reviewNote: null,
-        reviewedBy: null,
-        reviewedAt: null,
-        updatedAt: serverTimestamp(),
-      };
-
-      await setDoc(doc(db, 'ProposalKegiatan', docId), sanitizeForFirestore(payload), { merge: true });
-      setSelectedProposalId(docId);
-      setCurrentProposalStatus('proposal_submitted');
-      setCurrentProposalQueueNo(nextProposalQueueNo);
+      const result = await draftController.save('submit_proposal', selectedProposalId, sanitizeForFirestore(draftData), 'proposal');
+      setSelectedProposalId(result.proposalId);
+      setCurrentProposalStatus(result.status);
+      setCurrentProposalQueueNo(result.proposalQueueNumber || null);
+      const nextProposalQueueNo = result.proposalQueueNumber;
       setMessage({
         type: 'success',
         text: `Proposal Anggaran "${reportName}" berhasil disubmit ke antrean verifikasi Super Admin (Antrean #${nextProposalQueueNo}).`
       });
     } catch (err) {
       console.error(err);
-      setMessage({ type: 'error', text: 'Gagal mengajukan proposal anggaran.' });
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Gagal mengajukan proposal anggaran.' });
     } finally {
       setSaving(false);
     }
@@ -995,39 +916,12 @@ export default function ProposalKegiatanPage() {
 
     setSaving(true);
     try {
-      const nextLpjStatus = currentProposalStatus === 'proposal_approved' ? 'lpj_draft' : currentProposalStatus;
-      const payload = {
-        realisasiEnabled,
-        vakasiPengujiEnabled,
-        kepanitiaaanEnabled,
-        receiptEnabled,
-        realisasiTitle,
-        lpjPemasukanRows,
-        yayasanPercentage,
-        unipduPercentage,
-        lpjPengeluaranRows,
-        vakasiPengujiTitle,
-        vakasiRoles,
-        vakasiPengujiRows,
-        kepanitiaaanTitle,
-        kepanitiaaanPhases,
-        kepanitiaaanRows,
-        receiptTitle,
-        receiptRows,
-        signatures: proposalSignatures,
-        lpjSignatures,
-        lpjSignaturesFollowProposal,
-        expenseReports,
-        status: nextLpjStatus,
-        updatedAt: serverTimestamp(),
-      };
-
-      await setDoc(doc(db, 'ProposalKegiatan', selectedProposalId), sanitizeForFirestore(payload), { merge: true });
-      if (nextLpjStatus && nextLpjStatus !== currentProposalStatus) setCurrentProposalStatus(nextLpjStatus);
+      const result = await draftController.save('save_lpj', selectedProposalId, sanitizeForFirestore(draftData), 'lpj');
+      setCurrentProposalStatus(result.status);
       setMessage({ type: 'success', text: `Draft LPJ / Realisasi "${reportName}" berhasil disimpan.` });
     } catch (err) {
       console.error(err);
-      setMessage({ type: 'error', text: 'Gagal menyimpan draft LPJ.' });
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Gagal menyimpan draft LPJ.' });
     } finally {
       setSaving(false);
     }
@@ -1046,43 +940,15 @@ export default function ProposalKegiatanPage() {
 
     setSaving(true);
     try {
-      const payload = {
-        realisasiEnabled,
-        vakasiPengujiEnabled,
-        kepanitiaaanEnabled,
-        receiptEnabled,
-        realisasiTitle,
-        lpjPemasukanRows,
-        yayasanPercentage,
-        unipduPercentage,
-        lpjPengeluaranRows,
-        vakasiPengujiTitle,
-        vakasiRoles,
-        vakasiPengujiRows,
-        kepanitiaaanTitle,
-        kepanitiaaanPhases,
-        kepanitiaaanRows,
-        receiptTitle,
-        receiptRows,
-        signatures: proposalSignatures,
-        lpjSignatures,
-        lpjSignaturesFollowProposal,
-        expenseReports,
-        status: 'lpj_submitted',
-        lpjSubmittedAt: serverTimestamp(),
-        reviewNote: null,
-        updatedAt: serverTimestamp(),
-      };
-
-      await setDoc(doc(db, 'ProposalKegiatan', selectedProposalId), sanitizeForFirestore(payload), { merge: true });
-      setCurrentProposalStatus('lpj_submitted');
+      const result = await draftController.save('submit_lpj', selectedProposalId, sanitizeForFirestore(draftData), 'lpj');
+      setCurrentProposalStatus(result.status);
       setMessage({
         type: 'success',
         text: `Laporan Realisasi (LPJ) "${reportName}" berhasil disubmit untuk pemeriksaan akhir BAK & Warek Keuangan.`
       });
     } catch (err) {
       console.error(err);
-      setMessage({ type: 'error', text: 'Gagal mengajukan LPJ.' });
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Gagal mengajukan LPJ.' });
     } finally {
       setSaving(false);
     }
@@ -1101,36 +967,14 @@ export default function ProposalKegiatanPage() {
     }
     setSaving(true);
     try {
-      const updatePayload: Record<string, any> = {
-        status: action,
-        reviewedBy: profile?.uid || null,
-        reviewedAt: serverTimestamp(),
-        reviewNote: note || null,
-        updatedAt: serverTimestamp(),
-      };
-
-      if (action === 'proposal_approved') {
-        const defaultLpjPemasukan = pemasukanRows.map((r: any) => ({
-          ...r,
-          realisasi: parseQty(r.rincianQty) * (r.rincianRate || 0)
-        }));
-        const defaultLpjPengeluaran = pengeluaranRows.map((r: any) => ({
-          ...r,
-          realisasi: r.type === 'group_header' ? 0 : parseQty(r.rincianQty) * (r.rincianRate || 0)
-        }));
-        updatePayload.lpjPemasukanRows = defaultLpjPemasukan;
-        updatePayload.lpjPengeluaranRows = defaultLpjPengeluaran;
-        setLpjPemasukanRows(defaultLpjPemasukan);
-        setLpjPengeluaranRows(defaultLpjPengeluaran);
-      }
-
       if (target === 'lpj' && action === 'lpj_approved') {
+        const version = await draftController.flush(selectedProposalId);
         await authenticatedJson('/api/payroll/proposal-kegiatan/approve', {
           method: 'POST',
-          body: JSON.stringify({ proposalId: selectedProposalId, note: note || null }),
+          body: JSON.stringify({ proposalId: selectedProposalId, expectedRevision: version.revision, note: note || null }),
         });
       } else {
-        await setDoc(doc(db, 'ProposalKegiatan', selectedProposalId), sanitizeForFirestore(updatePayload), { merge: true });
+        await draftController.save('review', selectedProposalId, sanitizeForFirestore(draftData), target, { decision: action, note });
       }
 
       let actionLabel = '';
@@ -1166,7 +1010,7 @@ export default function ProposalKegiatanPage() {
       setCurrentReviewNote(note || null);
     } catch (err) {
       console.error(err);
-      setMessage({ type: 'error', text: 'Gagal memproses review.' });
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Gagal memproses review.' });
     } finally {
       setSaving(false);
     }
@@ -1223,6 +1067,22 @@ export default function ProposalKegiatanPage() {
   return (
     <div className="space-y-6">
       <FloatingSnackbar message={message} />
+      {persistence.error && (
+        <div role="alert" className="flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">
+          <span>{persistence.error}</span>
+          <div className="flex shrink-0 gap-2">
+            <Button type="button" variant="outline" onClick={draftController.retry}>Coba simpan lagi</Button>
+            {remoteProposalList.some((item) => item.id === selectedProposalId) && persistence.drafts.some((item) => item.id === selectedProposalId) && (
+              <Button type="button" variant="outline" onClick={async () => {
+                const latest = remoteProposalList.find((item) => item.id === selectedProposalId);
+                if (!latest) return;
+                await draftController.recoverAndReload(latest);
+                handleSelectProposal(latest);
+              }}>Simpan salinan &amp; buka versi terbaru</Button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div role="status" className="flex gap-3 rounded-md border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900 shadow-sm">
         <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
@@ -1277,7 +1137,7 @@ export default function ProposalKegiatanPage() {
             </div>
 
             {/* Current Draft Card (If not selected from list) */}
-            {!selectedProposalId && (
+            {(!selectedProposalId || !proposalList.some((item) => item.id === selectedProposalId)) && (
               <div className="p-4 rounded-md border bg-indigo-50/40 border-indigo-200 shadow-sm flex flex-col justify-between min-h-[110px] scale-[1.02]">
                 <div>
                   <p className="font-bold text-indigo-700 text-sm line-clamp-1 italic">
@@ -1310,6 +1170,7 @@ export default function ProposalKegiatanPage() {
                       <p className="font-bold text-slate-800 text-sm line-clamp-1">{item.reportName || item.title}</p>
                     </div>
                     <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-wider">{item.departmentUnit || 'UMUM'}</p>
+                    {item.localDraft && <p className="mt-1 text-[10px] text-amber-700">Draft tersimpan di perangkat ini</p>}
                   </div>
                   <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100/60">
                     <div>{getStatusBadge(item)}</div>
