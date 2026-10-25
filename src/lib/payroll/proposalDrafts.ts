@@ -60,6 +60,8 @@ export class ProposalDraftQueue {
   private running: Promise<boolean> | null = null;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private paused = false;
+  private deleting = false;
+  private explicitWrite: Promise<ProposalWriteResult> | null = null;
   private failure: unknown = null;
   private version: ProposalWriteResult;
 
@@ -80,7 +82,7 @@ export class ProposalDraftQueue {
     return this.failure;
   }
   get busy() {
-    return Boolean(this.pending || this.running || this.paused);
+    return Boolean(this.pending || this.running || this.paused || this.deleting);
   }
   private getPending(): LocalProposalDraft | null {
     return this.pending;
@@ -98,15 +100,17 @@ export class ProposalDraftQueue {
     }
     this.onStatus('saving');
     clearTimeout(this.timer);
-    this.timer = setTimeout(() => {
-      void this.flush();
-    }, 600);
+    if (!this.deleting) {
+      this.timer = setTimeout(() => {
+        void this.flush();
+      }, 600);
+    }
   }
 
   flush(): Promise<boolean> {
     clearTimeout(this.timer);
     if (this.running) return this.running;
-    if (this.paused) return Promise.resolve(false);
+    if (this.paused || this.deleting) return Promise.resolve(false);
     this.running = this.drain().finally(() => {
       this.running = null;
     });
@@ -114,7 +118,7 @@ export class ProposalDraftQueue {
   }
 
   private async drain(): Promise<boolean> {
-    while (this.pending && !this.paused) {
+    while (this.pending && !this.paused && !this.deleting) {
       const draft = {
         ...this.pending,
         revision: this.version.revision,
@@ -148,16 +152,19 @@ export class ProposalDraftQueue {
     options: Record<string, unknown> = {},
   ) {
     // Serialize explicit saves and decisions with the same queue as autosave.
+    if (this.deleting) throw new Error('Proposal sedang dihapus.');
     if (!(await this.flush())) throw this.failure || new Error('Draft belum tersimpan.');
+    if (this.deleting) throw new Error('Proposal sedang dihapus.');
     this.paused = true;
     this.onStatus('saving');
     if (action !== 'review') this.onLocal(draft);
     try {
-      const result = await this.persist(
+      this.explicitWrite = this.persist(
         { ...draft, revision: this.version.revision, status: this.version.status },
         action,
         options,
       );
+      const result = await this.explicitWrite;
       this.version = result;
       this.onSaved(draft, result);
       this.onStatus('saved');
@@ -171,9 +178,23 @@ export class ProposalDraftQueue {
       this.onStatus('error', error);
       throw error;
     } finally {
+      this.explicitWrite = null;
       this.paused = false;
-      if (this.pending) void this.flush();
+      if (this.pending && !this.deleting) void this.flush();
     }
+  }
+
+  /** Stop new writes and let already-started requests settle before deletion. */
+  async prepareDeletion() {
+    this.deleting = true;
+    clearTimeout(this.timer);
+    await Promise.allSettled([this.running, this.explicitWrite]);
+  }
+
+  cancelDeletion(error: unknown) {
+    this.deleting = false;
+    this.failure = this.pending ? error : null;
+    this.onStatus(this.pending ? 'error' : 'saved', this.failure);
   }
 
   discard() {

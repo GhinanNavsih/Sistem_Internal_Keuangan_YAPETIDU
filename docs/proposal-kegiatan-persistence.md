@@ -30,6 +30,11 @@ direct Firestore writes were still accepted by the rules.
 - Browser create/update writes to `ProposalKegiatan` are denied. This blocks
   older tabs from taking ownership or reverting approval. Existing authorized
   reads and explicit deletions retain their role and open-period checks.
+- Confirmed deletion pauses the draft queue and waits for requests already in
+  progress without saving pending input. Previously, flushing a stale draft
+  first could fail its revision check and prevent deletion from even reaching
+  Firestore. Local drafts are now removed only after deletion succeeds; a failed
+  deletion retains them for recovery or retry.
 
 ## Regression commands
 

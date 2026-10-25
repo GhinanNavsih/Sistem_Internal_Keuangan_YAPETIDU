@@ -76,6 +76,9 @@ T.api = async (url, options) => {
   if (command.actorUid && command.actorUid !== actor.uid)
     throw new Error('Account changed; original local draft retained');
   const before = T.records.get(command.proposalId);
+  if (T.enforceRevision && command.expectedRevision !== Number(before?.revision || 0)) {
+    throw new Error('Proposal sudah diperbarui di sesi lain. Draft lokal tetap disimpan; buka versi terbaru sebelum melanjutkan.');
+  }
   const owner = before?.submittedBy || actor.uid;
   const status =
     command.action === 'review'
@@ -133,7 +136,7 @@ const mocks = {
   '@/lib/AuthContext': `exports.useAuth=()=>({profile:globalThis.__proposalTest.profile});`,
   '@/lib/firebase': `exports.db={};`,
   '@/lib/queries/hooks': `const T=globalThis.__proposalTest; exports.useDepartments=()=>({data:T.departments}); exports.useEmployeesLoyalis=()=>({data:T.employees,isLoading:false,isError:false}); exports.usePayrollPeriod=()=>({data:T.period}); exports.useKegiatanHistoricalBaselines=()=>({data:[],isLoading:false});`,
-  'firebase/firestore': `const T=globalThis.__proposalTest; exports.collection=(_,name)=>({name}); exports.doc=(_,name,id)=>({name,id}); exports.where=(...args)=>args; exports.query=(...args)=>args; exports.serverTimestamp=()=>({seconds:Math.floor(Date.now()/1000)}); exports.onSnapshot=(query,next)=>{const l={next,period:query[1][2]};T.listeners.add(l);T.notify();return()=>T.listeners.delete(l)}; exports.setDoc=T.setDoc; exports.deleteDoc=async(ref)=>{T.records.delete(ref.id);T.notify()};`,
+  'firebase/firestore': `const T=globalThis.__proposalTest; exports.collection=(_,name)=>({name}); exports.doc=(_,name,id)=>({name,id}); exports.where=(...args)=>args; exports.query=(...args)=>args; exports.serverTimestamp=()=>({seconds:Math.floor(Date.now()/1000)}); exports.onSnapshot=(query,next)=>{const l={next,period:query[1][2]};T.listeners.add(l);T.notify();return()=>T.listeners.delete(l)}; exports.setDoc=T.setDoc; exports.deleteDoc=async(ref)=>{T.deleteCalls.push(ref.id);if(T.deleteFailure)throw T.deleteFailure;T.records.delete(ref.id);T.notify()};`,
   '@/lib/payroll/client': `exports.authenticatedJson=(url,options)=>globalThis.__proposalTest.api(url,options);exports.createFinancialRequestId=(prefix)=>prefix+'_'+Date.now()+'_'+(++globalThis.__proposalTest.nextId);`,
   '@/utils/generateProposalKegiatanPdf': `exports.generateProposalKegiatanPdf=()=>{};`,
   '@/utils/generateLpjPdf': `exports.generateLpjPdf=async()=>{};`,
@@ -142,7 +145,7 @@ const mocks = {
   '@/utils/ocrParser': `exports.renderFileToCanvas=async()=>{throw new Error('Unexpected receipt rendering in page test')};`,
   './SignatureSettings': `exports.default=()=>null;`,
 };
-const ui = `const React=require('react'); const element=(tag)=>(props)=>{const {children,variant,size,asChild,render,showCloseButton,...rest}=props;return React.createElement(tag,rest,children)}; exports.Button=element('button');exports.Input=element('input');exports.Card=element('div');exports.FloatingSnackbar=()=>null;exports.ConfirmDialog=()=>null;exports.Dialog=({open,children})=>open?React.createElement('div',{role:'dialog'},children):null;exports.DialogContent=element('div');exports.DialogHeader=element('div');exports.DialogTitle=element('h3');exports.Select=({value,onValueChange,disabled})=>React.createElement('select',{'data-testid':'department',value,disabled,onChange:e=>onValueChange(e.target.value)},React.createElement('option',{value:''},'Pilih'),React.createElement('option',{value:'REKTORAT'},'REKTORAT'));exports.SelectTrigger=()=>null;exports.SelectContent=()=>null;exports.SelectItem=()=>null;exports.SelectValue=()=>null;`;
+const ui = `const React=require('react'); const element=(tag)=>(props)=>{const {children,variant,size,asChild,render,showCloseButton,...rest}=props;return React.createElement(tag,rest,children)}; exports.Button=element('button');exports.Input=element('input');exports.Card=element('div');exports.FloatingSnackbar=()=>null;exports.ConfirmDialog=({open,title,confirmLabel,onConfirm})=>open?React.createElement('div',{role:'dialog'},React.createElement('h3',{},title),React.createElement('button',{onClick:onConfirm},confirmLabel)):null;exports.Dialog=({open,children})=>open?React.createElement('div',{role:'dialog'},children):null;exports.DialogContent=element('div');exports.DialogHeader=element('div');exports.DialogTitle=element('h3');exports.Select=({value,onValueChange,disabled})=>React.createElement('select',{'data-testid':'department',value,disabled,onChange:e=>onValueChange(e.target.value)},React.createElement('option',{value:''},'Pilih'),React.createElement('option',{value:'REKTORAT'},'REKTORAT'));exports.SelectTrigger=()=>null;exports.SelectContent=()=>null;exports.SelectItem=()=>null;exports.SelectValue=()=>null;`;
 async function bundle() {
   const pagePath = path.join(root, 'src/app/dashboard/payroll/uraian/proposal-kegiatan/page.tsx');
   const source = process.env.PROPOSAL_TEST_REVISION
@@ -260,12 +263,107 @@ async function reset() {
   T.params = 'month=10&year=2026';
   T.apiOptions = [];
   T.failRequests = 0;
+  T.enforceRevision = false;
+  T.deleteCalls = [];
+  T.deleteFailure = null;
   T.holdRequests = false;
   T.held = [];
   app = null;
   localStorage.clear();
 }
 const tests = [
+  [
+    'deleting a saved event with no local edits reaches Firestore',
+    async () => {
+      T.records.set('saved-event', fixture());
+      await mount(admin);
+      await clickText('Saved event fixture');
+      await clickText('Hapus Laporan');
+      await clickText('Hapus');
+      assert.deepEqual(T.deleteCalls, ['saved-event']);
+      assert.equal(T.records.has('saved-event'), false);
+    },
+  ],
+  [
+    'deleting a stale local draft discards it without saving first',
+    async () => {
+      const record = { ...fixture(), status: 'proposal_draft', revision: 0 };
+      T.records.set('saved-event', record);
+      T.enforceRevision = true;
+      await mount(admin);
+      await clickText('Saved event fixture');
+      await fillName('Unsaved local edit');
+      await act(async () => {
+        T.records.set('saved-event', { ...record, revision: 1 });
+        T.notify();
+      });
+      await clickText('Hapus Laporan');
+      await clickText('Hapus');
+      assert.equal(T.records.has('saved-event'), false, 'a stale draft must not block confirmed deletion');
+      assert.equal(T.apiOptions.length, 0, 'confirmed deletion must not save edits that are being discarded');
+      assert.ok(document.body.textContent.includes('Proposal berhasil dihapus'));
+      await advance(1000);
+      await unmount();
+      await mount(admin);
+      assert.equal(T.records.has('saved-event'), false, 'discarded autosave must not recreate the deleted event');
+      assert.equal(localStorage.getItem('proposal_kegiatan_drafts_v1_admin-fixture_2026-10'), '[]');
+    },
+  ],
+  ...[false, true].map((conflict) => [
+    `deleting waits for an in-flight ${conflict ? 'conflicting' : 'successful'} save and discards later edits`,
+    async () => {
+      const record = { ...fixture(), status: 'proposal_draft', revision: 0 };
+      T.records.set('saved-event', record);
+      T.enforceRevision = true;
+      T.holdRequests = true;
+      await mount(admin);
+      await clickText('Saved event fixture');
+      await fillName('Already in flight');
+      await advance(600);
+      assert.equal(T.held.length, 1);
+      await fillName('Queued edit to discard');
+      if (conflict) {
+        await act(async () => {
+          T.records.set('saved-event', { ...record, revision: 1 });
+          T.notify();
+        });
+      }
+      await clickText('Hapus Laporan');
+      await clickText('Hapus');
+      const deletesBeforeRelease = T.deleteCalls.length;
+      await act(async () => {
+        T.holdRequests = false;
+        T.held.shift().resolve();
+      });
+      assert.equal(deletesBeforeRelease, 0, 'remote delete must wait so an older save cannot recreate the event');
+      assert.equal(T.records.has('saved-event'), false, 'a completed save must not block the confirmed deletion');
+      assert.equal(T.apiOptions.length, 1, 'queued edits must not start another save while deleting');
+      await advance(1000);
+      assert.equal(T.records.has('saved-event'), false);
+    },
+  ]),
+  [
+    'deleting failure retains the unsaved draft for retry',
+    async () => {
+      T.records.set('saved-event', { ...fixture(), status: 'proposal_draft' });
+      await mount(admin);
+      await clickText('Saved event fixture');
+      await fillName('Keep this local draft');
+      T.deleteFailure = Object.assign(new Error('Deletion denied'), { code: 'permission-denied' });
+      await clickText('Hapus Laporan');
+      await clickText('Hapus');
+      assert.ok(document.body.textContent.includes('Proposal gagal dihapus'));
+      assert.equal(T.records.get('saved-event').reportName, 'Saved event fixture', 'failed deletion must not force a draft save');
+      const local = JSON.parse(localStorage.getItem('proposal_kegiatan_drafts_v1_admin-fixture_2026-10'));
+      assert.equal(local.find((draft) => draft.id === 'saved-event')?.data.reportName, 'Keep this local draft');
+      await clickText('Tutup');
+      T.deleteFailure = null;
+      await clickText('Hapus Laporan');
+      await clickText('Hapus');
+      assert.equal(T.records.has('saved-event'), false);
+      assert.equal(localStorage.getItem('proposal_kegiatan_drafts_v1_admin-fixture_2026-10'), '[]');
+    },
+  ],
   ...[
     ['report save preserves 30 Botol x 2 sesi and its Rp180000 budget', true, '30 Botol x 2 sesi', 180000],
     ['single report item preserves a multiplied quantity on save', false, '30 Botol x 2 sesi', 180000],

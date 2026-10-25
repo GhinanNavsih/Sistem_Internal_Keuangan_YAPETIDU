@@ -138,6 +138,40 @@ test('a departed session abandons queued input superseded by a newer local draft
   queue.discard();
 });
 
+test('deletion waits for an explicit write and prevents queued or new saves', async () => {
+  let release!: () => void;
+  let started!: () => void;
+  const blocked = new Promise<void>((resolve) => { release = resolve; });
+  const writing = new Promise<void>((resolve) => { started = resolve; });
+  const calls: string[] = [];
+  const queue = new ProposalDraftQueue(
+    initial,
+    async (input) => {
+      calls.push(input.requestId);
+      started();
+      await blocked;
+      return { ...initial, revision: 1 };
+    },
+    () => {},
+    () => {},
+    () => {},
+  );
+  const save = queue.perform(draft('explicit-save'), 'save_lpj');
+  await writing;
+  queue.update(draft('queued-input'));
+  let readyToDelete = false;
+  const deletion = queue.prepareDeletion().then(() => { readyToDelete = true; });
+  await Promise.resolve();
+  assert.equal(readyToDelete, false, 'deleting before the explicit write finishes could recreate the document');
+  release();
+  await save;
+  await deletion;
+  assert.deepEqual(calls, ['explicit-save']);
+  assert.equal(await queue.flush(), false);
+  await assert.rejects(queue.perform(draft('late-save'), 'save_draft'), /sedang dihapus/);
+  queue.discard();
+});
+
 test('local proposal recovery is scoped to the authenticated account and payroll period', () => {
   const values = [
     draft('own'),

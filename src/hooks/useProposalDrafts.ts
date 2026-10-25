@@ -185,6 +185,16 @@ function createProposalDraftController(
   const flush = () => {
     for (const queue of sessions.values()) void queue.flush();
   };
+  const remove = (id: string) => {
+    sessions.get(id)?.discard();
+    sessions.delete(id);
+    statuses.delete(id);
+    cached.delete(id);
+    records.delete(id);
+    if (activeId === id) activeId = null;
+    publish(id);
+    reportStatus();
+  };
 
   return {
     mount() {
@@ -252,13 +262,17 @@ function createProposalDraftController(
       if (!(await queue.flush())) throw queue.lastError || new Error('Draft belum tersimpan.');
       return queue.currentVersion;
     },
-    remove(id: string) {
-      sessions.get(id)?.discard();
-      sessions.delete(id);
-      statuses.delete(id);
-      cached.delete(id);
-      publish(id);
-      reportStatus();
+    async delete(id: string, deleteRemote: () => Promise<void>) {
+      const queue = session(id);
+      await queue.prepareDeletion();
+      try {
+        await deleteRemote();
+        remove(id);
+      } catch (error) {
+        // Keep recoverable input until the server confirms the deletion.
+        queue.cancelDeletion(error);
+        throw error;
+      }
     },
     async recoverAndReload(record: ProposalRecord) {
       const local = cached.get(record.id);

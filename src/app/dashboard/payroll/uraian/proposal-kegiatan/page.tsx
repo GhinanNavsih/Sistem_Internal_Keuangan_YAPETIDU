@@ -724,9 +724,7 @@ export default function ProposalKegiatanPage() {
     setDeleteState('deleting');
     setDeleteError(null);
     try {
-      await draftController.flush(id);
-      draftController.remove(id);
-      await deleteDoc(doc(db, 'ProposalKegiatan', id));
+      await draftController.delete(id, () => deleteDoc(doc(db, 'ProposalKegiatan', id)));
       resetForm();
       setDeleteState('success');
     } catch (err) {
