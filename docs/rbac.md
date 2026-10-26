@@ -1,0 +1,29 @@
+# Roles and route access
+
+## Authentication & RBAC
+
+Roles are defined in `src/lib/payroll/roles.ts` (`USER_ROLES`) and enforced by route-level confinement in `src/components/ProtectedRoute.tsx`. There is **no generic `employee` role** — the closest equivalent is `honorer`.
+
+### Roles:
+- `super_admin`: Unrestricted. Redirected out of `/employee/*` back to `/dashboard/users` unless previewing.
+- `finance_verifier`: Confined to `/dashboard/payroll*`. Can verify/operate payments alongside `super_admin` (`canVerifyPayroll`, `canOperatePayments`).
+- `satker_head`: Department head for blue collar (Pekarya) operations. Confined to `/dashboard/payroll/activity-review`, `/dashboard/payroll/uraian*`, `/dashboard/payroll/driver-journeys*`, `/dashboard/payroll/pekarya-dashboard*`, `/dashboard/payroll/facility-reports*`.
+- `satker_head_loyalis`: Department head for Loyalis operations. Confined to `/dashboard/payroll/uraian*`, `/dashboard/satker-finance`, `/dashboard/reservasi-ruang` and `/dashboard/simulasi-perjalanan`, reached from the Sidebar (`loyalisMenuItems` in `Sidebar.tsx`).
+- `loyalis_admin` (shown as **Admin Karyawan**; the stored id stays `loyalis_admin` so rules and accounts needed no migration): the merger of the retired Employee Admin (`employee_admin`) and PJ Presensi Loyalis (`loyalis_presence_admin`) roles. Confined to `LOYALIS_ADMIN_PATHS` in `roles.ts`: `/dashboard/employees` (home), `/dashboard/santunan`, `/dashboard/payroll/uraian/presensi-loyalis-raw`, `/dashboard/payroll/uraian/senam-pagi`, `/dashboard/payroll/uraian/presensi-pekarya` and `/dashboard/payroll/uraian/presence-corrections`, reached from the Sidebar (`employeeAdminMenuItems` in `Sidebar.tsx`: Data Pegawai, Verifikasi Santunan, Presensi Loyalis, Senam Pagi, Presensi Pekarya), not the `UraianNavToggles` tabs. Records Senam Pagi (`SENAM_PAGI_EDITOR_ROLES`, with Super Admin; see `docs/features/bonus-triwulan.md`). Presensi Pekarya is **read-only** for this role (like `finance_verifier`): the GET endpoints it loads (`/api/attendance/pekarya`, `/api/satpam/absences`) accept it, but corrections, manual NIPY linking, official-leave review and publish stay `super_admin`/`satker_head`. Edits employee profiles (`EMPLOYEE_PROFILE_EDITOR_ROLES`) and attendance identities, issues Pekarya NIPY, uploads the monthly attendance workbook, runs the Loyalis presence calculator, reviews Loyalis presence corrections and Loyalis annual leave. `normalizeUserRole` reads a profile still stored with a retired id as `loyalis_admin`, and the Firestore/Storage rules' `isLoyalisAdmin()` accepts them, until `npm run migrate:loyalis-admin-role -- --apply` has rewritten every profile.
+- `honorer`: Generic honorer/blue-collar portal role. Confined to `/employee/*`, and further narrowed to a single activity workflow (see below). Teknisi/Kebersihan honorer (`isBlueCollarFacilityDashboardUser`) may also open `/dashboard/payroll/facility-reports` and `/dashboard/pemeriksaan-ruang` (`getEmployeeRouteRedirect`). Also has Loyalis-style access to `/employee/facility-reports` and `/employee/simpan-pinjam` (Koperasi UNIPDU membership isn't Loyalis-exclusive — a blue-collar employee's `koperasiAuthUid` lives on their `Employees_BlueCollar` doc).
+- `loyalis`: Confined to a fixed Loyalis route set: `/employee/payslip`, `/employee/leave`, `/employee/family-allowance`, `/employee/santunan`, `/employee/facility-reports`, `/employee/simpan-pinjam`. The legacy `/employee/presensi-correction` URL redirects to `/employee/leave`.
+- `ketua_shift_satpam`: Satpam shift lead. Confined to `/employee/activities/satpam`, `/employee/satpam-duty-plan`, `/employee/leave`, `/employee/payslip`, `/employee/facility-reports`, `/employee/simpan-pinjam` — reports daily work, maintains the once-per-period duty plan, views own payslip.
+
+`URAIAN_EDITOR_ROLES` (who may save an Uraian rekap / Loyalis presence calculator, triggering propagation to draft slips): `super_admin`, `finance_verifier`, `satker_head`, `satker_head_loyalis`.
+
+`DRIVER_JOURNEY_SIMULATION_ROLES` / `canSimulateDriverJourneys` (who may make a Simulasi Biaya Perjalanan, and so trigger its paid Google lookups): `super_admin`, `satker_head_loyalis`; not Kepala SatKer Pekarya. Route guard, both Sidebar menus and `/api/driver-journey-simulations` read it.
+
+`VENUE_RESERVATION_ROLES` / `canReserveVenues` (who may book venues in SIMPEL UNIPDU): `super_admin`, `satker_head_loyalis`. The route guard, the Sidebar link (Super Admin), the `SatkerPekaryaNavBar` tab (Loyalis) and the `/api/venue-reservations` routes all read it. `SatkerPekaryaNavBar` follows the *previewed* profile, so Super Admin's "Preview UI" shows the SatKer tabs.
+
+### Employee activity workflows
+
+`src/lib/employeeActivities.ts` is the **single source of truth** for which activity workflow an employee belongs to and which `/employee/*` routes they may open. `getEmployeeActivityWorkflow(profile)` resolves a profile to exactly one of `satpam` / `sopir` / `pekarya` by *set membership* over case/whitespace-normalized `permittedCategories` (never array position), with a deliberate priority rule for multi-category profiles: **Satpam wins over Sopir**, everything else falls through to Pekarya. `getEmployeeRouteRedirect` gates `/employee/driver-history` on the resolved workflow being `sopir`.
+
+Never re-derive the workflow locally (e.g. `permittedCategories[0] === 'SOPIR'`) — page-level access checks, nav-link visibility, and the route guard must all agree, or an employee gets a link that bounces them back or a page that silently renders empty. The retired `/employee/activities` and `/employee/activities/journey-report` URLs are listed in `RETIRED_EMPLOYEE_ACTIVITY_PATHS` and intentionally 404 rather than redirect.
+
+`getRoleHomePath(profile)` (`src/lib/roleHome.ts`) is the one role → landing-page map, used by login, account switching and both Super Admin preview/impersonation flows.

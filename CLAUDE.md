@@ -1,353 +1,70 @@
 # Internal-BAK — Project Knowledge
 
-## Stack
-
-- **Framework**: Next.js 16.2.5 (App Router, Turbopack), React 19.2.4
-- **Language**: TypeScript 5
-- **Styling**: Tailwind CSS 4, shadcn/ui primitives (`src/components/ui/`), `class-variance-authority` + `tailwind-merge` for variant styling, `lucide-react` icons
-- **Database**: Firebase Firestore & Storage (client SDK v12.12.1 + `firebase-admin` v13.8.0). A secondary Firebase project ("Koperasi Unipdu") is wired in alongside the primary one — see Database Collections below.
-- **Auth**: Firebase Authentication (email/password)
-- **OCR/AI Scanning**: Gemini API (`@google/generative-ai`) + `tesseract.js` + `pdfjs-dist`
-- **PDF Generation**: jsPDF 4 + jspdf-autotable 5 (see the many `src/utils/generate*Pdf.ts` files, one per document type)
-- **Excel Utilities**: XLSX (SheetJS) for spreadsheet imports/seeds/exports
-- **Other notable deps**: `date-fns` (date math), `exifreader` (photo EXIF metadata audit, see `src/lib/exif.ts`), `nodemailer` (payslip/notification email), `recharts` (dashboard charts), `dotenv` (script env loading via `scripts/initEnv.ts`)
-- **Tests**: no Jest/Vitest — `npm test` runs `tsx --test` directly over ~26 `*.test.ts` files, concentrated in `src/lib/payroll/`
-- **Domain docs**: `CONTEXT.md` is the glossary (Perjalanan, Upah Bersih, Durasi tempuh vs Durasi perjalanan, Biaya BBM vs Jatah BBM…); `docs/adr/` records decisions a reader would otherwise "fix".
-
----
-
-## Project Structure
-
-```text
-src/
-├── app/
-│   ├── api/                       # 18 route groups / ~59 endpoints: admin, attendance, auth, employee,
-│   │                              #   driver-journeys, events, facility-reports, koperasi, maps, payroll,
-│   │                              #   pekarya, satpam, uploads, parse-rekap, calculate-route, proxy-image,
-│   │                              #   venue-reservations (SIMPEL bridge, see Venue Reservations below),
-│   │                              #   venue-inspections (return checks, see Venue Inspections below),
-│   │                              #   payroll/senam-pagi + payroll/bonus-triwulan (see Bonus Triwulan below),
-│   │                              #   driver-journey-simulations (see Simulasi Biaya Perjalanan below)
-│   ├── dashboard/
-│   │   ├── employees/             # Employee master data admin
-│   │   ├── santunan/              # Verifikasi Santunan (Admin Karyawan decides; Super Admin views), see BanSos below
-│   │   ├── users/                 # User/role management
-│   │   ├── reservasi-ruang/       # Venue reservations in SIMPEL UNIPDU (Kepala SatKer Loyalis + Super Admin)
-│   │   ├── pemeriksaan-ruang/     # Return checks after a room is used (Teknisi/Kebersihan honorer + Super Admin)
-│   │   ├── simulasi-perjalanan/   # Simulasi Biaya Perjalanan for an event's budget (Kepala SatKer Loyalis + Super Admin)
-│   │   └── payroll/
-│   │       ├── page.tsx           # Payroll Bulanan landing
-│   │       ├── activity-review/   # Approve/audit honorer activity + SOPIR trip reports
-│   │       ├── driver-journeys/   # Driver trip assignment/dashboard
-│   │       ├── pekarya-dashboard/
-│   │       ├── facility-reports/
-│   │       ├── master/            # Salary matrix / master data editing
-│   │       ├── koperasi/          # Koperasi members + Simpan Pinjam audit (super admin)
-│   │       ├── simpan-pinjam/     # 308 redirect to koperasi?view=simpan-pinjam
-│   │       └── uraian/            # Blue-collar rekap module + subpages: kegiatan-satker,
-│   │                              #   presence-corrections, presensi-loyalis(-raw), presensi-pekarya,
-│   │                              #   rekap-pekarya, senam-pagi, spj-pekarya,
-│   │                              #   vakasi-karyawan (vakasi-loyalis redirects here)
-│   ├── employee/                  # Employee/honorer portal: activities/{satpam,sopir,pekarya} (one
-│   │                              #   route per workflow; sopir/journey-report nested under sopir),
-│   │                              #   payslip, driver-history, leave, satpam-duty-plan, santunan,
-│   │                              #   presensi-correction, facility-reports, simpan-pinjam
-│   ├── globals.css
-│   ├── layout.tsx
-│   └── page.tsx
-├── components/
-│   ├── Sidebar.tsx / GlobalHeader.tsx / EmployeeNavigationMenu.tsx / SatkerPekaryaNavBar.tsx
-│   ├── ProtectedRoute.tsx         # Auth + per-role route confinement (see RBAC below)
-│   ├── DriverJourneyAuditDialog.tsx  # SOPIR trip audit/edit modal
-│   ├── PaySlipDialog.tsx          # Individual pay slip modal
-│   ├── Cetak*Dialog.tsx           # Print/export dialogs (one per report type: Payroll, Rekap,
-│   │                              #   Kebutuhan Dana Gaji, Potongan Gaji, Tunjangan Jabatan,
-│   │                              #   Vakasi Lain-lain/Pimpinan-Staf, Kegiatan Loyalis, Gabungan)
-│   ├── pekarya/ , satpam/         # Domain-specific panels (leave, duty/absence, shift-swap)
-│   ├── venue/                     # VenueReservationDialog (3-step booking wizard) + OptionPicker (tap-to-choose cards)
-│   │                              #   + ReturnInspectionDialog (SIMPEL's "Pemeriksaan pengembalian" modal)
-│   ├── employee/activities/       # Split-out activity reporting: {Satpam,Sopir,Pekarya}ActivitiesView
-│   │                              #   + shared EmployeeActivitiesWorkspace, ActivityFormDialog,
-│   │                              #   ActivityHistoryPanel, activityModel (state hook), activityShared
-│   └── ui/                        # shadcn primitives (button, dialog, table, select, etc.) + calm-interface
-│                                  #   pieces (callout, status-dot, field, detail-list, confirm-dialog,
-│                                  #   receipt-attachments; Button `accent`/`danger`/`danger-ghost`). Rules:
-│                                  #   `UI_UX_PRINCIPLES.md`; the sopir journey report and driver history pages are converted.
-├── lib/
-│   ├── firebase.ts                # Primary + secondary (`secondaryApp`/`secondaryDb`) client config
-│   ├── firebase-admin.ts          # Admin SDK (adminDb/adminAuth/adminStorage)
-│   ├── koperasi-admin.ts          # Admin SDK for the secondary Koperasi project
-│   ├── simpel-admin.ts            # Admin SDK for the SIMPEL UNIPDU project (venue reservations)
-│   ├── venueReservation.ts        # Pure venue-reservation rules (+ .test.ts); see Venue Reservations
-│   ├── venueInspection.ts         # Pure return-check / repair-log rules (+ .test.ts); see Venue Inspections
-│   ├── AuthContext.tsx / DashboardDataContext.tsx / BulkEmailContext.tsx
-│   ├── server/                    # Server-only helpers: audit.ts, auth.ts, attendanceStore.ts,
-│   │                              #   satpamDutyPlan.ts, satpamFlexibility.ts, koperasiPayrollBridge.ts,
-│   │                              #   payrollKoperasiSaga.ts, payrollPeriod.ts, storageUpload.ts
-│   └── payroll/                   # ~29 modules (+23 test files), the core payroll library — see below
-├── types/index.ts
-└── utils/                         # PDF/XLSX generators (generate*Pdf.ts / generate*Xlsx.ts, one per
-                                   #   document) + payrollLogic.ts, salaryCalculator.ts, ocrParser.ts,
-                                   #   rekapConfig.ts, satpamRotation.ts, whatsappHelper.ts
-scripts/                           # ~125 files. Only ~16 are wired into package.json (see Key Scripts);
-                                   #   the rest are ad hoc one-off migration/inspection scripts run via
-                                   #   `tsx scripts/<file>.ts` directly — don't assume npm coverage.
-```
-
----
-
-## Authentication & RBAC
-
-Roles are defined in `src/lib/payroll/roles.ts` (`USER_ROLES`) and enforced by route-level confinement in `src/components/ProtectedRoute.tsx`. There is **no generic `employee` role** — the closest equivalent is `honorer`.
-
-### Roles:
-- `super_admin`: Unrestricted. Redirected out of `/employee/*` back to `/dashboard/users` unless previewing.
-- `finance_verifier`: Confined to `/dashboard/payroll*`. Can verify/operate payments alongside `super_admin` (`canVerifyPayroll`, `canOperatePayments`).
-- `satker_head`: Department head for blue collar (Pekarya) operations. Confined to `/dashboard/payroll/activity-review`, `/dashboard/payroll/uraian*`, `/dashboard/payroll/driver-journeys*`, `/dashboard/payroll/pekarya-dashboard*`, `/dashboard/payroll/facility-reports*`.
-- `satker_head_loyalis`: Department head for Loyalis operations. Confined to `/dashboard/payroll/uraian*`, `/dashboard/satker-finance`, `/dashboard/reservasi-ruang` and `/dashboard/simulasi-perjalanan`, reached from the Sidebar (`loyalisMenuItems` in `Sidebar.tsx`).
-- `loyalis_admin` (shown as **Admin Karyawan**; the stored id stays `loyalis_admin` so rules and accounts needed no migration): the merger of the retired Employee Admin (`employee_admin`) and PJ Presensi Loyalis (`loyalis_presence_admin`) roles. Confined to `LOYALIS_ADMIN_PATHS` in `roles.ts`: `/dashboard/employees` (home), `/dashboard/santunan`, `/dashboard/payroll/uraian/presensi-loyalis-raw`, `/dashboard/payroll/uraian/senam-pagi`, `/dashboard/payroll/uraian/presensi-pekarya` and `/dashboard/payroll/uraian/presence-corrections`, reached from the Sidebar (`employeeAdminMenuItems` in `Sidebar.tsx`: Data Pegawai, Verifikasi Santunan, Presensi Loyalis, Senam Pagi, Presensi Pekarya), not the `UraianNavToggles` tabs. Records Senam Pagi (`SENAM_PAGI_EDITOR_ROLES`, with Super Admin; see Bonus Triwulan below). Presensi Pekarya is **read-only** for this role (like `finance_verifier`): the GET endpoints it loads (`/api/attendance/pekarya`, `/api/satpam/absences`) accept it, but corrections, manual NIPY linking, official-leave review and publish stay `super_admin`/`satker_head`. Edits employee profiles (`EMPLOYEE_PROFILE_EDITOR_ROLES`) and attendance identities, issues Pekarya NIPY, uploads the monthly attendance workbook, runs the Loyalis presence calculator, reviews Loyalis presence corrections and Loyalis annual leave. `normalizeUserRole` reads a profile still stored with a retired id as `loyalis_admin`, and the Firestore/Storage rules' `isLoyalisAdmin()` accepts them, until `npm run migrate:loyalis-admin-role -- --apply` has rewritten every profile.
-- `honorer`: Generic honorer/blue-collar portal role. Confined to `/employee/*`, and further narrowed to a single activity workflow (see below). Teknisi/Kebersihan honorer (`isBlueCollarFacilityDashboardUser`) may also open `/dashboard/payroll/facility-reports` and `/dashboard/pemeriksaan-ruang` (`getEmployeeRouteRedirect`). Also has Loyalis-style access to `/employee/facility-reports` and `/employee/simpan-pinjam` (Koperasi UNIPDU membership isn't Loyalis-exclusive — a blue-collar employee's `koperasiAuthUid` lives on their `Employees_BlueCollar` doc).
-- `loyalis`: Confined to a fixed Loyalis route set: `/employee/payslip`, `/employee/leave`, `/employee/family-allowance`, `/employee/santunan`, `/employee/facility-reports`, `/employee/simpan-pinjam`. The legacy `/employee/presensi-correction` URL redirects to `/employee/leave`.
-- `ketua_shift_satpam`: Satpam shift lead. Confined to `/employee/activities/satpam`, `/employee/satpam-duty-plan`, `/employee/leave`, `/employee/payslip`, `/employee/facility-reports`, `/employee/simpan-pinjam` — reports daily work, maintains the once-per-period duty plan, views own payslip.
+Next.js 16 (App Router), React 19, TypeScript, Tailwind 4, shadcn/ui, Firebase (Auth, Firestore, Storage). This file holds what most tasks need. Each area below has its own doc: read it before changing that area.
 
-`URAIAN_EDITOR_ROLES` (who may save an Uraian rekap / Loyalis presence calculator, triggering propagation to draft slips): `super_admin`, `finance_verifier`, `satker_head`, `satker_head_loyalis`.
+## Commands
 
-`DRIVER_JOURNEY_SIMULATION_ROLES` / `canSimulateDriverJourneys` (who may make a Simulasi Biaya Perjalanan, and so trigger its paid Google lookups): `super_admin`, `satker_head_loyalis`; not Kepala SatKer Pekarya. Route guard, both Sidebar menus and `/api/driver-journey-simulations` read it.
+- `npm run dev`, `npm run build`
+- `npm test`: `tsx --test` over the `*.test.ts` files (no Jest or Vitest).
+- Emulator integration tests (`npm run test:*:integration`) need Java.
+- Scripts in `scripts/` are dry-run unless given `--apply`; some also need an `--ids` allowlist. Most are not in `package.json`: run them with `tsx scripts/<file>.ts`.
 
-`VENUE_RESERVATION_ROLES` / `canReserveVenues` (who may book venues in SIMPEL UNIPDU): `super_admin`, `satker_head_loyalis`. The route guard, the Sidebar link (Super Admin), the `SatkerPekaryaNavBar` tab (Loyalis) and the `/api/venue-reservations` routes all read it. `SatkerPekaryaNavBar` follows the *previewed* profile, so Super Admin's "Preview UI" shows the SatKer tabs.
+## Where code lives
 
-### Employee activity workflows
+- `src/lib/payroll/`: pure domain rules with tests. No Firebase imports.
+- `src/lib/server/`: server-only code (Admin SDK, transactions).
+- `src/lib/*-admin.ts`: Admin SDK handles for each Firebase project.
+- `src/utils/generate*Pdf.ts`, `generate*Xlsx.ts`: one generator per document.
+- `src/components/ui/`: shadcn primitives. UI rules: `UI_UX_PRINCIPLES.md`.
+- `CONTEXT.md` is the glossary. `docs/adr/` records decisions; don't "fix" what an ADR records.
 
-`src/lib/employeeActivities.ts` is the **single source of truth** for which activity workflow an employee belongs to and which `/employee/*` routes they may open. `getEmployeeActivityWorkflow(profile)` resolves a profile to exactly one of `satpam` / `sopir` / `pekarya` by *set membership* over case/whitespace-normalized `permittedCategories` (never array position), with a deliberate priority rule for multi-category profiles: **Satpam wins over Sopir**, everything else falls through to Pekarya. `getEmployeeRouteRedirect` gates `/employee/driver-history` on the resolved workflow being `sopir`.
+## Firebase projects
 
-Never re-derive the workflow locally (e.g. `permittedCategories[0] === 'SOPIR'`) — page-level access checks, nav-link visibility, and the route guard must all agree, or an employee gets a link that bounces them back or a page that silently renders empty. The retired `/employee/activities` and `/employee/activities/journey-report` URLs are listed in `RETIRED_EMPLOYEE_ACTIVITY_PATHS` and intentionally 404 rather than redirect.
+- **Primary** (`db` / `adminDb`): the default. Collections: `docs/firestore-collections.md`.
+- **Koperasi Unipdu** (`secondaryDb` on the client, `koperasiAdminDb()` on the server): write only through `koperasiAdminDb()`. See `docs/features/koperasi.md`.
+- **SIMPEL UNIPDU** (`simpelAdminDb()`, server-only): the key decides the project, so a scratch key means a scratch project. SAKU never changes bookings SIMPEL made itself. See `docs/features/venue-reservations.md`.
 
-`getRoleHomePath(profile)` (`src/lib/roleHome.ts`) is the one role → landing-page map, used by login, account switching and both Super Admin preview/impersonation flows.
+## Roles and access
 
-### Switching between one person's accounts ("Ganti Peran")
+Roles are in `src/lib/payroll/roles.ts` (`USER_ROLES`); route confinement is in `src/components/ProtectedRoute.tsx`. Route sets per role: `docs/rbac.md`.
 
-A person often holds one account per role (e.g. Kepala SatKer Pekarya + Kepala SatKer Loyalis + their own Karyawan Loyalis account). Accounts are linked **by employee, never by name**: each `users` doc names the employee it belongs to in `personEmployeeId` (an `Employees_*` doc id), and accounts naming the same employee can switch between each other. Rules are pure and tested in `src/lib/accountGroups.ts`. Super Admin accounts (either direction), disabled accounts and accounts naming no employee never link. The Users page shows "Bisa ganti peran ke N akun lain" on linked rows (`linkedAccountUids`, computed by `GET /api/admin/users`).
+- `super_admin`: unrestricted. Redirected out of `/employee/*` unless previewing.
+- `finance_verifier`: payroll pages; verifies and operates payments.
+- `satker_head`: Pekarya (blue collar) department head.
+- `satker_head_loyalis`: Loyalis department head.
+- `loyalis_admin` (shown as **Admin Karyawan**; the id is unchanged): employee data, santunan, presence.
+- `honorer`: blue-collar portal (`/employee/*`), narrowed to one activity workflow.
+- `loyalis`: Loyalis employee portal.
+- `ketua_shift_satpam`: Satpam shift lead.
 
-- **Setting it**: the Users page field "Pegawai (untuk ganti peran)" (also filled when a Nama Lengkap suggestion is picked). For honorer/loyalis/ketua_shift_satpam the server always stores their `linkedEmployeeId` (`EMPLOYEE_LINK_ROLES` in `roles.ts`); Super Admin always gets null. A PUT without the field keeps the stored value (the write merges); a new id must exist (collection by prefix, `employeeCollectionForId`). Unlike `linkedEmployeeId`, several accounts may share one.
-- **Converted Pekarya**: not rewritten. An account still naming the closed `BC_NNN` resolves through its `conversion.toEmployeeId` to the new `Loyalis_NNN` (`resolvePersonEmployeeId`; the conversion transaction is untouched).
-- **Accounts made before the field existed**: `npm run backfill:person-employee-id` (dry-run by default, `-- --apply` to write; `src/lib/personEmployeeBackfill.ts` is the pure planner). Employee-linked roles take `linkedEmployeeId`; other roles take the single *active* employee whose name matches; no/several matches or a one-word name is listed under `needsReview` for the Users page. Audited in `FinancialAuditLogs`; idempotent. Accounts created by ad hoc `scripts/create*` don't set the field, so rerun it after such scripts.
-- **A switch is a real sign-in as the other uid**, since rules and `requireAuthenticatedProfile` all read `users/{token uid}`: `POST /api/auth/switch-account` re-derives the group server-side, refuses anything else (403), checks Auth-disabled, writes `audit_logs` `ACCOUNT_SWITCHED`, and returns a custom token (claim `switchedFrom`); the browser calls `signInWithCustomToken` and hard-navigates to the target's home. `GET /api/auth/linked-accounts` feeds the menu (clients cannot list `users`); it reads only the caller's doc, the employee ids that stand for the person, and the accounts naming those ids (`where personEmployeeId in …`). Server code: `src/lib/server/linkedAccounts.ts`.
-- **Not inside Super Admin preview/impersonation**: hidden in both, and a session whose token carries `impersonatedBy` gets 409. So Super Admin cannot test it through "Login via Custom Token"; test with throwaway accounts that name the same employee.
-- **UI**: `AuthContext` loads `linkedAccounts` and exposes `switchAccount`; `src/components/AccountSwitcher.tsx` holds the "Ganti Peran" button (SatkerPekaryaNavBar, Sidebar, satker-finance header for its two finance roles, and the Sidebar footer for Admin Karyawan), `AccountSwitchMenuItems` (inside EmployeeNavigationMenu) and `AccountSwitchStatus` (root layout: overlay while switching, error snackbar).
-- Uid-keyed data (`VenueReservationContacts`, `satkerFinancialNotifications`, `createdByUid`…) stays per account; nothing is merged.
-- **Test**: `npm run test:account-switch:integration` (Auth + Firestore emulators, project `demo-account-switch`; needs Java).
+There is no generic `employee` role.
 
----
+- Never re-derive an employee's activity workflow. Use `getEmployeeActivityWorkflow(profile)` (`src/lib/employeeActivities.ts`); page checks, nav links and the route guard must agree.
+- Landing pages come from `getRoleHomePath(profile)` (`src/lib/roleHome.ts`) only.
+- Accounts of one person switch roles by `personEmployeeId`, never by name. See `docs/features/account-switching.md`.
 
-## Database Collections (Firestore)
+## Payroll
 
-**Primary app** (`db`/`adminDb`) unless noted. ~43 active top-level collections; grouped by domain:
+- Slip statuses: `draft`, `locked`, `payment_created`, `paid`. `confirmed` is legacy and read-only. `pending` belongs to `PayrollCorrectionRequests`, never to a slip.
+- Profile and presence edits reach draft slips through the propagation modules; locked and paid slips keep their figures.
+- Calculation rules: `docs/features/payroll-calculation.md`. Module map and name matching: `docs/features/payroll-library.md`.
 
-**Employee master data**: `Employees_WhiteCollar`, `Employees_BlueCollar`, `Employees_Loyalis` (nested `personal_info.*`), `JabatanStruktural` (position lookup).
+## Feature areas
 
-**Salary matrices** — four independently-versioned top-level collections (each keyed by a version doc like `2026_v1` with a `rows` subcollection + `_config.activeVersion`): `SalaryMatrix` (blue-collar gapok), `SalaryMatrix_WhiteCollar` (white-collar gapok), `SalaryMatrix_Functional` (functional allowance tiers), `SalaryMatrix_Kepangkatan` (rank/promotion allowance).
+Read the linked doc before changing the area.
 
-**Attendance / presence**: `LoyalisPresence` (monthly import, keyed by period), `LoyalisPresenceCorrections`, `AttendanceImports` (blue-collar/Pekarya raw import batches), `GantiLiburRequests` + `GantiLiburRequestRevisions` (Loyalis compensatory day off, server-only; see `gantiLibur.ts` below).
-
-**Activity / SPJ reporting**: `ActivityReports` (SOPIR/SATPAM/PEKARYA activity & journey submissions), `ActivityReportRevisions` (audit trail), `ActivityReportsIndex` / `PekaryaActivityIndexes` (dedup indexes), `KegiatanSpj` (per-event SPJ fees), `DriverJourneys` (driver trip records), `DriverPiketSchedules` (driver standby roster), `ProposalKegiatan` (combined Kegiatan SatKer proposals and LPJ; client page `/dashboard/payroll/uraian/kegiatan-satker`), `VakasiTambahan` (supplemental duty allowance events, filtered by `period`), `UraianGaji` (itemized pay component breakdown).
-
-**Satpam duty/shift**: `SatpamDutyPlans` (8-day rotation plans), `SatpamShiftTeams`, `ShiftOccurrences` (materialized per-date/post/team shifts), `GuardDutyIndexes` (dedup index), `SatpamAbsenceRequestRevisions`.
-
-**Payroll core**: `PayrollPeriods`, `PayrollSlipStates` (per-employee-per-period slip — holds the earnings/deductions/taxes money rows, not just a status; doc id `{period}_{employeeId}`, shape in `PayrollSlipStateDocument`. Writable statuses are draft/locked/payment_created/paid (`PayrollStatus`); `confirmed` is read-only legacy that `isImmutablePayrollStatus` and the employee payslip query still honour; `pending` is not a slip status — it belongs to `PayrollCorrectionRequests`), `PayrollPayments`, `PayrollLedgerEntries`, `PayrollDeliveryEvents` (email delivery idempotency), `PayrollHolidayCalendars`, `PayrollCorrectionRequests`, `PayrollHistoricalCorrections`, `PayrollKoperasiProgressions` (payroll↔Koperasi bridge saga state), `FinancialIdempotencyKeys`, `FinancialAuditLogs`.
-
-**BanSos**: `BansosRequests` (server-only; one doc per Ajuan Duka / Melahirkan, see BanSos below).
-
-**Bonus Triwulan**: `SenamPagi` (server-only; one doc per month: sessions keyed by date, each listing who was present) and `BonusTriwulan` (server-only; one doc per month: who was paid). See Bonus Triwulan below.
-
-**Admin / auth / misc**: `users` (one per login account; `personEmployeeId` names the employee it belongs to, for role switching, see "Ganti Peran" above), `EmpEditLog`, `admin_impersonation_sessions`, `audit_logs`, `reactivation_tokens`, `VenueReservationContacts` (server-only; one doc per account holding the WhatsApp number and unit name last used for a venue booking), `DriverJourneySimulations` (server-only; one doc per saved Simulasi Biaya Perjalanan) and `DriverRouteQuotes` (server-only; Google route + toll answers keyed by a hash of the route points, reused for 7 days).
-
-**`Koperasi Unipdu` (secondary Firebase app)**: accessed via `secondaryApp`/`secondaryDb` (client) and `koperasiAdminDb()` in `src/lib/koperasi-admin.ts` (server, separate service-account credential). Collections: `simpanPinjam` (loan/savings records — writes go through `koperasiAdminDb()` only) and `users` (Koperasi-project member records, matched to primary-app employees via `koperasiAuthUid`).
-
-**`SIMPEL UNIPDU` (third Firebase project, `peminjaman-fasilitas-be85b`)**: the campus facility-lending app (separate repo `~/Documents/simpel-unipdu`, client-only Next.js, no server of its own). Accessed only server-side via `simpelAdminDb()` in `src/lib/simpel-admin.ts` (key: `simpel-service-account.json`, `SIMPEL_SERVICE_ACCOUNT`, or `SIMPEL_CLIENT_EMAIL` + `SIMPEL_PRIVATE_KEY`; the project comes from the key, so a scratch key means a scratch project). SAKU reads `simpel_gedung`, `simpel_fasilitas`, `simpel_bookings`, `simpel_maintenance`, and writes `simpel_bookings` (reservations, return checks), `simpel_emails` (SIMPEL's in-app notification bell), `simpel_saku_locks` (per-date transaction lock, SAKU-only), and — from Pemeriksaan Ruang only — `simpel_maintenance` (repair log), stock fields of `simpel_fasilitas` and the `inventarisList`/`ruanganList` arrays of `simpel_gedung`.
-
-Legacy/migration-only collections (`MasterData`, unsuffixed `Employees`) exist only in one-off `scripts/`, superseded by the collections above — don't treat them as live schema.
-
----
-
-## Venue Reservations (SIMPEL UNIPDU bridge)
-
-Kepala SatKer Loyalis books a room plus equipment at `/dashboard/reservasi-ruang`; SIMPEL's staff do the physical work in SIMPEL (Pekarya hand over, then check in). A reservation is **approved automatically when free**: it is written as an ordinary SIMPEL booking with `status: 'disetujui'`, `tipePemohon: 'tu'`, plus additive fields SIMPEL ignores except `source: 'saku'` (its "SAKU" badge) and `cancelledBy`.
-
-- **Rules** (`src/lib/venueReservation.ts`, pure and tested) mirror SIMPEL's so both apps agree on "free": a clash is the same room, same date, overlapping hours (`slotsOverlap`; touching ends are fine; an unreadable `jam` counts as the whole day); pending SIMPEL requests hold the room; equipment uses SIMPEL's three tiers (room built-in → building inventory → campus-wide stock), counting only approved bookings at overlapping hours. SIMPEL matches buildings/rooms/items by name, so SAKU only sends names read from SIMPEL's catalog. When changing these, change simpel-unipdu's `src/app/utils/timeSlots.ts` and its `checkRoomConflict` / `checkFacilityStockAvailability` too.
-- **Server** (`src/lib/server/venueReservations.ts`): create runs in one transaction on SIMPEL's database, serialized per date by the `simpel_saku_locks/{date}` document; owner actions (`cancel` before any handover, `confirm-receipt`, `ready-return`) write only their own fields; bookings SIMPEL made itself are never touched from SAKU. Audit entries go to SAKU's `audit_logs`.
-- **The booking form** is a 3-step wizard (Kegiatan & waktu → Tempat → Konfirmasi) built to `combating_form_fatigue_guide.md`: easy question first and phone number last, progress that starts at a third, one column, tap-to-choose photo cards instead of dropdowns, the optional equipment picker beside the venue cards on the (wide, desktop-only) Tempat step, errors only after a field is left or "Lanjut" is tapped, and a review step before the booking becomes real. What each step needs lives in `src/lib/venueReservationForm.ts` (pure, tested); `venueReservation.ts` still owns whether the booking is possible. `formatPhoneInput` there is the phone-number mask (its contract is pinned by `venueReservationForm.test.ts`).
-- **Venue photos**: the "Di ruangan mana?" step shows one cover photo per building and room (`GET /api/venue-reservations/photos`, fetched once when the form opens and cached by the browser for 5 minutes, separate from the per-date catalog because the photos, embedded in SIMPEL's documents as ~40 KB data URLs, are the heavy part). Only embedded raster images and https links are passed through (`pickVenuePhoto`); a missing photo shows a placeholder. The dialog is desktop-only, hence the wide 2-column photo cards.
-- **Saved progress**: closing the form half-way keeps what was entered (event, date, hours, building, room, equipment, and the step) in `localStorage` as `saku:venue-draft:{uid}`, saved a moment after each change, restored on the next open, dropped after a week or once a booking is made; the phone number is never stored there. "Mulai dari awal" (step 1, only after a restore) discards it. The pure save/restore rules are `parseSavedDraft` / `serializeDraft` in `src/lib/venueReservationForm.ts`.
-- **Contact autofill**: the form starts with the user's WhatsApp number and unit name (`GET /api/venue-reservations/contact`, `src/lib/server/venueContact.ts`, rules in `src/lib/venueReservationContact.ts`). Order: what they used for their last booking (saved per account in the server-only `VenueReservationContacts` collection after each booking), else the phone on their own employee record. A Kepala SatKer's login account carries no phone and no `linkedEmployeeId` (the Users screen only sets that for honorer/loyalis/ketua shift), so the record is found by name (`normalizeName`, titles ignored) across `Employees_Loyalis`/`WhiteCollar`/`BlueCollar`, and only when exactly one record matches; otherwise the user types the number once. Numbers are shown in the local `0812…` form, since stored ones are mostly `+62…`. The form always displays a filled-in number with an "Ubah" link.
-- **Testing**: Super Admin sees every SAKU reservation. Point the key at a scratch project before test bookings, since they are instantly real for Pekarya.
-
----
-
-## Venue Inspections (Pemeriksaan Ruang)
-
-Teknisi and Kebersihan honorer check a room in after use at `/dashboard/pemeriksaan-ruang` (employee menu item "Pemeriksaan Ruang"; Super Admin via the sidebar). It is a port of SIMPEL's maintenance page (`src/app/dashboard/maintenance/page.tsx` in simpel-unipdu): tab **Pengembalian** (the return check, modal replicated in `ReturnInspectionDialog`) and tab **Perbaikan** (SIMPEL's repair log). It covers **every** SIMPEL booking waiting for a check, not only SAKU-made ones (the user's decision), so it is the one place SAKU writes to bookings SIMPEL created. Access: `canInspectVenues` (Super Admin or `isBlueCollarFacilityDashboardUser`), checked by the route guard, the menu and `/api/venue-inspections`.
-
-- **Rules** (`src/lib/venueInspection.ts`, pure and tested): which bookings wait (`awaitsReturnCheck`: `disetujui`, or `selesai` with equipment, and no `checkInSelesai`), the checklist (`buildInspectionChecklist`: room `fasilitasBawaan` + handed-over/requested equipment minus fixtures), submission validation (every item decided; the client's item keys must match the checklist rebuilt from SIMPEL's current data, else 409), and the write plans `planCheckIn` / `planRepairResolution`. They reproduce SIMPEL's `submitCheckIn` / `handleResolveRepair`: booking → `selesai` + `checkInSelesai`; campus item `terpinjam` −= borrowed, "Rusak Berat" units leave `totalStok`; building item "Rusak Berat" units leave `inventarisList[].jumlah`; a room needing care becomes `status: 'Maintenance'` (blocks new SAKU bookings); a `simpel_maintenance` log per problem; notifications to SIMPEL's bell. Deliberate differences, all safe-side: exact names win over SIMPEL's contains-either-way match; damage to an item in no catalog is still logged (SIMPEL drops it); closing a SAKU log (`source: 'saku'`, `sakuTarget`) also restores building stock and reopens the room once its last open log is closed (SIMPEL leaves both). SIMPEL's own logs close the SIMPEL way. If SIMPEL's check-in logic changes, change these too.
-- **Server** (`src/lib/server/venueInspections.ts`): check-in and repair each run in one transaction on SIMPEL's database; the booking/log is re-read inside it, so a room checked in a moment ago (in either app, or by another Pekarya) is refused with 409, and stock/building docs are read fresh before arrays are written back whole (other fields such as photos are preserved). Audit entries (`VENUE_RETURN_CHECKED`, `VENUE_REPAIR_RESOLVED`) go to SAKU's `audit_logs`.
-- **Testing**: `npm run test:venue-inspection:integration` (Firestore emulator, project `demo-venue-inspection`; needs Java). A check in the real app writes to SIMPEL immediately.
-
-## Simulasi Biaya Perjalanan (driver journey cost for an event budget)
-
-Kepala SatKer Loyalis prices the university cars and Sopir an event needs at `/dashboard/simulasi-perjalanan` (Sidebar "Simulasi Perjalanan"; Super Admin too). It books nothing: the real journey is still authorized by Kepala SatKer Pekarya. Terms are in `CONTEXT.md`.
-
-- **What it is**: a saved Simulasi has an event name and up to 10 Perjalanan; each starts and ends at UNIPDU Jombang (the sopir waits throughout, so two runs out and back in a day are one Perjalanan), with stops, a vehicle (not Ndalem), planned departure and return, toll and parking. Stops are picked like the sopir report's route: a timeline Berangkat → Tujuan 1…n → Pulang with up/down reordering and a ⋯ menu, each stop chosen in `LocationPickerDialog` (place search or draggable map pin), and the route is measured again automatically after every change (no "Hitung" button); stops are sent to Google as their pins. Cost = Biaya BBM (loop km × vehicle rate, rounded up) + Tol + Parkir + Upah Bersih, no buffer.
-- **Same figure as the real pay**: Upah Bersih comes from `calculatePlannedDriverJourney` (`driverJourney.ts`), which uses the sopir report's rules: km and Durasi tempuh from the Google Directions loop, meals and nights from departure-to-return clock time (`calculateEditableDriverJourneyTimeline`), meal folded into the wage. Journey authorization uses the same function (docs/adr/0001), so the figure matches as long as the trip follows the plan.
-- **Rules** (`src/lib/driverJourneySimulation.ts`, pure and tested): input validation, route points (UNIPDU's coordinates at both ends, as the report measures), toll resolution, the "diubah manual"/"diisi manual" mark, display lines shared by page and PDF (`src/utils/generateSimulasiBiayaPerjalananPdf.ts`).
-- **Google and billing**: km/time from Directions (`src/lib/server/googleDirections.ts`, shared with `/api/calculate-route`); toll from Google **Routes** with `ID_E_TOLL` (`googleRoutesToll.ts`, never throws: `unavailable` makes the toll a typed field, `unknown_price` too). Google is asked only on "Hitung rute", save or "Hitung ulang", and `DriverRouteQuotes` (`driverRouteQuotes.ts`) answers the same route for 7 days without a new request (a failed toll lookup is retried, the km are not). The daily cap lives in Google Cloud, not in code: Routes API is enabled on `internal-bak` (the Maps key allows it, no referrer/IP restriction) and `ComputeRoutesRequestsPerDay` is set to 200 (`gcloud beta quotas preferences create … --allow-high-percentage-quota-decrease`, preference `saku-compute-routes-per-day-200`); over the cap, or with Routes off, every toll is typed.
-- **Server** (`src/lib/server/driverJourneySimulations.ts`): figures are always recomputed from the stored route answers, never taken from the browser. Owner sees own; Super Admin sees and may change all.
-
-## Santunan / BanSos (Ajuan Duka & Ajuan Melahirkan)
-
-Loyalis (`loyalis`) and Pekarya (`honorer`, `ketua_shift_satpam`) employees claim social assistance at `/employee/santunan` (menu "Ajuan Santunan"; the old `/employee/bansos` URL redirects): a death in the family (birth mother, father or child, or "Lainnya" with a typed-in relationship; Admin Karyawan judges) or a birth, with required proof (shared upload types, checked by bytes, Storage `bansos_requests/{employeeId}/`). Rules are pure and tested in `src/lib/payroll/santunan.ts`; the service is `src/lib/server/santunan.ts` behind `/api/employee/santunan` (GET/POST/DELETE = withdraw) and `/api/payroll/santunan` (GET list, POST decision).
-
-- **Two decisions, either order.** Admin Karyawan decides the "admin" side of every ajuan at `/dashboard/santunan` (old `/dashboard/bansos` redirects). Super Admin decides the "finance" side of Duka on that page too, and of Melahirkan in the Vakasi Tambahan page (`SantunanEventPanel` replaces the Rincian Kegiatan form for a BanSos event). The side comes from the role, so neither can decide for the other; Badan Keuangan only views the panel. A rejection by either side ends it (the reason is shown to the employee); each side can "Batalkan keputusan" (reset) while the slip is not locked and the Duka cash not handed over. Status is derived (`bansosStatus`), never stored.
-- **Two ways to pay** (`bansosPaidInCash`): Melahirkan is paid on the slip when the second acceptance lands (`paid`). Duka is paid in cash: both acceptances make it `awaiting_handover` (tab "Menunggu Penyerahan"), then Admin Karyawan or Super Admin marks it handed over (`action: 'handover'`, stored `handedOver`/`handedOverBy`/`handedOverAt`, status `handed_over`), after which neither decision can change. Duka never gets a Vakasi event or a slip row.
-- **Amount**: defaults (`BANSOS_DEFAULT_AMOUNTS`) are Duka Rp1.000.000 Loyalis / Rp750.000 Pekarya, Melahirkan Rp500.000 Loyalis / Rp300.000 Pekarya, stored on the ajuan at submission. Either side may change it when accepting, but Admin Karyawan not once Super Admin has accepted (Super Admin has the last word). The employee is never told the amount until it is paid or handed over (`bansosEmployeeView` strips it from `/api/employee/santunan`).
-- **Melahirkan payout** goes through one server-owned VakasiTambahan event per month, `BANSOS_{YYYY-MM}_MELAHIRKAN` (`sourceKind: 'bansos'`, name "Ajuan Melahirkan", which becomes the slip earning label). It is created at the first submission and rebuilt in the decision transaction from the paid ajuan (summed per employee): Loyalis rows reach draft slips through `propagateVakasiEmployees` (`src/lib/server/vakasiPropagation.ts`), Pekarya rows become KegiatanSpj projections. The shared write steps (slip-lock check, projections, owned labels) live in `src/lib/server/vakasiEventWrite.ts`, also used by `/api/payroll/vakasi-events`, which refuses BanSos events; the Firestore rules refuse browser writes to `BANSOS_*`.
-- **Period**: an ajuan belongs to the Jakarta month it was submitted in; if that month closed before it is paid, it is paid in the current month (`paidPeriod`). A "mungkin ganda" hint (`possibleDuplicate`) flags another live ajuan of the same employee, kind and date (and, for Duka, person).
-- **Test**: `npm run test:santunan:integration` (Auth + Firestore + Storage emulators, project `demo-bansos`; needs Java). It also covers a regular Vakasi event through the shared write helpers.
-
-## Bonus Triwulan & Senam Pagi
-
-Rp500.000 for a Loyalis who qualifies **three payroll months in a row**, paid on the slip of the third. It needs **Strata 1** Bonus Presensi in each of the three months and **at most one missed Senam Pagi session counted over all sessions of the three months together** (not per month). **Every streak starts fresh**: months that paid can't count again, so month M pays when M-2, M-1 and M all have Strata 1, the window has at most one miss, and neither M-2 nor M-1 paid (someone who always qualifies is paid every third month). The full rules, with examples, are in `BONUS_TRIWULAN_RULES.md`. Rules are pure and tested in `src/lib/payroll/bonusTriwulan.ts`; the service is `src/lib/server/bonusTriwulan.ts` behind `/api/payroll/senam-pagi` (GET; POST `save_session`/`delete_session`/`set_no_sessions`) and `/api/payroll/bonus-triwulan` (GET evaluation; POST recalculate).
-
-- **Senam Pagi** is its own roll call at `/dashboard/payroll/uraian/senam-pagi` (Admin Karyawan + Super Admin record, Badan Keuangan reads), independent of scans, cuti and ganti libur: every absence counts. A session stores who was **present**, so an unrecorded month never counts as attended; a month with no senam must be marked "Tidak ada Senam Pagi" (it adds no sessions and no misses). A paper month stores `paperSessionCount` and `paperMisses` (anyone unlisted missed every session); an older record with only `paperMetEmployeeIds` is read as not recorded. Sessions can't be in the future; writes check `expectedRevision` and are refused once the period is closed.
-- **Strata** come from `loadEffectiveLoyalisPresence` (`src/lib/server/loyalisPresence.ts`: the saved `LoyalisPresence` with approved cuti/ganti libur applied), the same figure the slip's Bonus Presensi and `uraian-propagation` use. A person missing from presence doesn't qualify; a month without saved presence is "missing data".
-- **Payout** is one server-owned VakasiTambahan event per month, `BONUS_TRIWULAN_{YYYY-MM}` (`sourceKind: 'bonus_triwulan'`, name "Bonus Triwulan" = the slip label), rebuilt like BanSos (`vakasiEventWrite.ts` helpers) and pushed to draft slips by `propagateVakasiEmployees`. The `BonusTriwulan/{period}` doc is written in the same transaction; the next two months read it for the fresh-start rule. Any missing input (presence, Senam Pagi, a previous month's result) pays nobody and lists why. A locked recipient slip refuses the change (409). Changing month M recalculates M+1 too when it already has a SAKU result and is open.
-- **Triggers**: every Senam Pagi save, every "Simpan Data Presensi" (best-effort, from period `BONUS_TRIWULAN_START_PERIOD` = 2026-10), and "Hitung ulang" on the page. The **period close** (`/api/payroll/periods`) refuses until Senam Pagi is recorded and the stored result matches a fresh evaluation (`bonusTriwulanCloseBlocker`), which catches changes no save saw (e.g. a correction approved later).
-- **Guards**: `/api/payroll/vakasi-events` and the Firestore rules refuse `BONUS_TRIWULAN_*` / `bonus_triwulan`; the Vakasi Tambahan page shows the event read-only (`BonusTriwulanEventPanel`).
-- **August/September 2026** came from paper (`src/lib/payroll/bonusTriwulanSeed.ts`; those months are read-only on the page, and nothing is computed for them). `npm run seed:bonus-triwulan -- --senam-sheet recap.xlsx --month 2026-09 [--map map.json] [--apply]` loads a month's attendance recap (NAMA + dd/mm columns of 1s): names are matched to the roster (exact, truncated, typo-sized; `--map` settles the rest, `{"sheet name": id | null}`), it stores each Loyalis's misses, and nothing is written while someone who could still qualify (at most one miss that month) is unmatched. It writes only `SenamPagi/{month}` with `source: 'paper'`. Who was *paid* has no recap: `-- --template x.xlsx` makes a Y/T sheet (hidden ID column), `-- --file x.xlsx` validates it and previews October, `--apply` writes `BonusTriwulan` for 2026-08/09.
-- **Test**: `npm run test:bonus-triwulan:integration` (Auth + Firestore emulators, project `demo-bonus-triwulan`; needs Java).
-
-## Pekarya → Loyalis conversion ("Alihkan ke Loyalis")
-
-Super Admin and Admin Karyawan (`EMPLOYEE_PROFILE_EDITOR_ROLES`) convert a Pekarya from the Pekarya tab of `/dashboard/employees` (row button → `ConvertToLoyalisDialog`, 3 steps: Pemeriksaan → Data Loyalis → Konfirmasi). Rules are pure in `src/lib/employeeConversion.ts` (+ test); the transaction is `src/lib/server/employeeConversion.ts` behind `GET`/`POST /api/admin/employee-conversions`.
-
-- **Never a rename.** The person gets a new `Employees_Loyalis/Loyalis_NNN` (server-allocated, `transaction.create`) and the old `Employees_BlueCollar/BC_NNN` is closed (`employment.status: 'inactive'`, flags false, `endDate` = last day before the switch), so every slip, report, journey and leave balance stays under the old id. Both records carry `conversion` (`fromEmployeeId` / `toEmployeeId` + `effectivePeriod`); browsers can never write it, and the rules refuse reactivating a converted Pekarya record.
-- **Whole months only.** `effectivePeriod` is the current Jakarta month; the previous month must already be closed (its last Pekarya slip is sealed on the old id). `employeeInPayrollPeriod` decides which record pays a month — used by `buildPayrollRoster`/`isPayrollEmployeeEligible(…, period)`, the payroll dashboard lists, `save_draft` for a new slip, Loyalis uraian propagation and the Loyalis presence calculator.
-- **What moves:** the NIPY (deleted from the BC record, kept as `conversion.previousNipy`; `AttendanceIdentityIndex` re-pointed), the login account (`honorer` → `loyalis`, `linkedEmployeeId`, `permittedCategories: [department_unit]`), and a copy of the Koperasi link. `koperasiAuthUid` deliberately stays on the BC record too (Verifikasi & Kunci of the final Pekarya slip reads it); `buildKoperasiPayrollAmountMaps` and the simpan-pinjam view skip converted-away records so nothing counts twice. Cuti starts fresh under the new id; both service dates carry over by default.
-- **Blockers** (`collectConversionIssues`): previous month open, slips already at/after the switch month, pending or switch-month Pekarya work (activity reports, driver journeys, future piket, SPJ events, non-zero Uraian rekap), pending Pekarya/Satpam/annual leave, Satpam team membership, a linked account that isn't a plain `honorer`, a NIPY held elsewhere. Everything is re-checked inside the transaction; `FinancialAuditLogs` gets `EMPLOYEE_CONVERTED_TO_LOYALIS` + `USER_PROFILE_UPDATED`.
-- **Payslip history:** `/employee/payslip` shows months before `effectivePeriod` from the old Pekarya slip in the Pekarya layout (`conversionSourceForPeriod`).
-- **Outside the app:** attendance rows are still routed by the scanner's department column, so the fingerprint machine's department must change from TEKNISI/CS/SECURITY/DRIVER; the Loyalis presence page warns about a newly converted employee with no matched scans.
-- **Test:** `npm run test:employee-conversion:integration` (Auth + Firestore emulators, project `demo-conversion`; needs Java).
-
-## SatKer Finance (Buku keuangan satuan kerja)
-
-Double-entry books per unit at `/dashboard/satker-finance` (API `/api/satker-finance`, Firestore `SatkerFinancialYears/{unitId}_{academicYear}` with `entries`, `reports`, `bankReconciliations`, `audit`; units in `SatkerFinancialUnits`, each with `accountCatalog` and `fixedAssets`). Fiscal year September–August. Pure rules live in `src/lib/satker-finance/` (core, entryEditing, depreciation, bankReconciliation, monthControls), each with a test; the page and server import the same functions. A month's report goes to BAK only when every item of `monthChecks` passes (the page shows it as a checklist):
-
-- **Trial balance and cash flow** balance. Each journal's cash-flow split (`cashFlows`) is derived when posted from each counter account's catalog `cashFlowSection` (`cashFlowAllocation`), never chosen per journal; older journals keep their single hand-picked `cashFlowSection`. Hutang defaults to Operasional, Modal to Pendanaan, 13xxx to Investasi (`defaultCashFlowSection`).
-- **Opening balance**: only a book's first year in the app is typed in (Pengaturan, Super Admin). `CLOSE_YEAR` (all 12 months approved) stores the closing journal (`buildYearClosing`: income-statement accounts to zero, surplus/deficit into the chosen Modal account, default 30000) on the year and writes the next year's opening (`openingSource: 'CARRIED_FORWARD'`). While the previous year is in use (`yearInUse`: has journals or is closed) and not closed, the new year may journal but not submit; `SAVE_OPENING` refuses.
-- **Depreciation**: the unit's fixed-asset register (tab Aset Tetap) is straight-line from the acquisition month, whole Rupiah, exact total. `POST_DEPRECIATION` writes the month's one journal `depreciation-MM` (kind `DEPRECIATION`, dated month end, grouped by account), never editable by hand; a month cannot be submitted while that journal differs from the register. An asset's figures freeze once its depreciation is in a sealed month or closed year (`assetChangeBlocker`).
-- **Bank reconciliation** (tab Rekonsiliasi Bank): every cash/bank account with a balance or movement that month needs a saved statement balance (or cash count) that, with deposits in transit and outstanding payments, equals the book balance. Bank charges must be journaled, not listed. Optional statement file served by `/api/satker-finance/receipt?reconciliationId=`.
-- **Normal balance** (`normalBalance`) drives the Buku Besar direction and the "saldo tidak normal" warnings (warnings only). Unit accounts can be marked contra (akun pengurang); a used catalog code may still change its normal side and cash-flow section, not its name, report target or cash flag.
-- **Test**: `npm run test:satker-finance:integration` (Auth + Firestore + Storage emulators, project `demo-satker-finance`; needs Java).
-
-## Payroll Calculation Logic
-
-### White-collar salary (`src/utils/payrollLogic.ts`, pure logic split into `src/lib/payroll/salaryMatrix.ts` so it's importable from API routes without the client SDK)
-
-1. **Gaji Pokok (Base Salary)**: `calculateGapok()`. Years of service from `joinDate`/`dateRecognized`, adjusted forward to the 5th of the target payslip month, mapped to the active `SalaryMatrix_WhiteCollar` version with lower-bound clamping.
-2. **Tunjangan Keluarga**: Spouse 5% of Gapok; children SD 5% / SLTP 7.5% / SLTA 10% / PT 12.5%.
-   - An SD child is entered by **birth date** (`birth_date`, mirrored into `enrolled_at` as the allowance start): paid from birth, so a child not yet in school counts, and it stops in the month of the 13th birthday (`stageGraduationDate` in `familyAllowance.ts`, same month-end rule as graduation). Older SD rows saved with a masuk date and no `birth_date` keep ending at masuk + 6 years. The employee request page (`/employee/family-allowance`) asks for the birth date and an akta/KK proof for SD.
-3. **Tunjangan Fungsional**: matches a 6-char standardized `educationLevel` prefix in `SalaryMatrix_Functional`.
-4. **Tunjangan Struktural**: multi-position stacking — highest position 100%, subsequent positions 50% each.
-5. **Tunjangan Hari Tua**: flat 10% of Gapok.
-6. **Tunjangan BPJS**: from `bpjs.t_bpjs_tk` / `bpjs.t_bpjs_kes`.
-7. **Beras**: `salaryProfile.tunjanganBeras`.
-8. **Presensi Penalty**: `Working Days * Expected Hours * Rp 1.650` earnings; shortfall deduction `Round(Absence Minutes / 60 * Rp 1.650)`.
-
-### The wider payroll library (`src/lib/payroll/`, ~30 modules, most load-bearing ones have a paired `.test.ts`)
-
-- **`domain.ts`** — shared kernel: Satpam post/pay-type constants and resolvers, the dated Satpam rules (`satpamRatesForDutyDate`/`satpamRatesForPeriod`, `satpamShiftTimes`, `satpamPayTypeIssue`: from duty date `SATPAM_POLICY_V2_START_DATE` = 2026-10-01, Harian Rp15.000, 8-hour shifts 07–15/15–23/23–07 (each shift ends at the next one's start, so the 30 Sep night runs 22–07), no Lembur Sendiri; never read an undated table), payroll-period-token helpers, `calculatePayrollTotals`, and the status guards `isImmutablePayrollStatus`/`isTransferEligibleStatus` that gate whether a slip can still be edited. Most other payroll modules import from here.
-- **`driverJourney.ts`** — SOPIR trip wages: per-vehicle rate table, distance/duration/night-premium (`calculateNightPremium`) constants, meal allowance tiers, fuel procurement modes (hold_accumulate/procure_release/standard_direct), reimbursement settlement (`calculateDriverReimbursementSettlement`), net wage (`calculateDriverNetWage`), and journey timeline normalization (`calculateEditableDriverJourneyTimeline` — the single source of truth for overnight/lintas-hari inference, shared by submission and audit). **Authorization since docs/adr/0001** (`authorizationRule: 'measured_loop'`): the Kepala SatKer measures the closed loop and plans departure (on `activityDate`) and return; Jatah BBM = loop × rate (`calculateDriverJourneyLoopOperationalCosts`) and the estimate is the exact `calculatePlannedDriverJourney` Upah Bersih (no 1.25× range; `authorizedDriverWageEstimate` shows older journeys' range). Such a journey stores `totalDistanceKm`/`plannedRouteDurationHours` (the loop), half the loop in `distanceKm`/`durationHours` for readers that double them, and the planned Durasi perjalanan in `customDurationPP`; the sopir report seeds its Komponen Waktu from `plannedRouteDurationHours`. The API refuses the old one-way body with 409.
-- **`vehicleFuel.ts`** — Firestore-backed vehicle fuel ledger (reservation state machine: none→reserved→committed→released) supporting `driverJourney.ts`'s procurement modes.
-- **`driverPiket.ts`** — driver standby ("piket") duty scheduling across 5 fixed stations + ad-hoc extras. Also the sopir's vehicle switch (`driverVehicleChangeBlocker` / `planDriverVehicleChange`, action `change_vehicle` on `/api/driver-journeys`, opened from the vehicle pill on the journey report): only on a self-authorized journey still `claimed` with no BBM held, since nothing is priced or held there until submission. To Ndalem forces Standard; from Ndalem the sopir picks the mode; car to car keeps it. Each switch is appended to the journey's `driverVehicleChanges`, copied onto the ActivityReport at submission and shown in the audit dialog. Kepala-Satker-authorized journeys stay correctable only in the audit.
-- **`satpamDutyPlan.ts`** — generates/validates the 8-day Satpam rotation plan, handles Libur swaps, classifies duty assignments into pay types (Harian/Jumat & Libur/Lembur Sendiri/Lembur Cover/Off-Duty).
-- **`satpamAttendance.ts`** — default scan-in/out times per Satpam shift + scan-range validation.
-- **`pekaryaSpj.ts`** — Pekarya job categories (SATPAM/SOPIR/PEKARYA/TEKNISI/KEBERSIHAN/KEBERSIHAN_PONTI/PONTI) and activity types; computes approved SPJ amounts and payroll period windows.
-- **`pekaryaOfficialLeave.ts`** — official-leave (`izin_resmi`) fixed scan times and request lifecycle.
-- **`attendance.ts`** — general Pekarya attendance normalization/consolidation (NIPY/PIN resolution, duplicate-day consolidation, `PEKARYA_ATTENDANCE_RATES`).
-- **`loyalisPresenceWindow.ts`** / **`loyalisPresenceWorkbook.ts`** — Loyalis presence: single-scan auto-fill and work-window (07:30–14:00) duration calculation; parsing of uploaded presence Excel workbooks into normalized rows with issue flagging.
-- **`gantiLibur.ts`** — Loyalis-only ganti libur (compensatory day off): working a full 07:30–14:00 on a Jumat/Tanggal Merah earns one working day off (less is lembur, which SAKU does not pay — the request is declined); max 2 days off per Saturday–Friday week (the week ends on the Loyalis weekly day off); the worked holiday and the day off may come in either order. Employees submit from `/employee/leave`; Admin Karyawan/Super Admin approve on `/dashboard/payroll/uraian/presence-corrections` only once the worked date's `LoyalisPresence` shows the full window. An approved day off is overlaid onto presence as a `GANTI LIBUR` row by the same `applyApprovedPaidLeaveToLoyalisEntry` that writes `CUTI` rows. A request may carry up to 5 optional surat resmi files (`gantiLiburAttachments.ts`): uploaded through `/api/uploads/ganti-libur` into Storage `ganti_libur/{employeeId}/`, then named by path on submit — the server re-reads each object's metadata (`loadGantiLiburAttachments`) instead of trusting a client-sent URL.
-- **`loyalisAutoLeave.ts`** — automatic annual cuti for a Loyalis absent (`TIDAK HADIR`) on a working day (not Jumat/Tanggal Merah) with no leave submission: each such day spends one day of the balance and counts as `CUTI`; with no balance left (or before the first entitlement, each day held to its own date's tier) it stays an absence. Only fully absent days, earliest first; a day with any pending/approved cuti, ganti libur or presence correction is left alone. It applies from period `LOYALIS_AUTO_LEAVE_START_PERIOD` (2026-09) and never touches closed periods or final slips. `POST /api/attendance/loyalis/auto-leave` (`src/lib/server/loyalisAutoLeave.ts`) runs from "Simpan Data Presensi" (never autosave), after pending corrections are resolved and before slip propagation, and re-derives the whole month from the saved presence each time: it creates approved `AnnualPaidLeaveRequests` marked `source: 'auto_absence'` (plus payroll post, balance `usedDays`, revision and audit records) and releases days that no longer qualify (request → `withdrawn`, post deleted, `usedDays` back). Payroll and payslips see the CUTI through the posts (`applyApprovedLoyalisDayCreditsToPresence`); the presence page skips `auto_absence` requests in its own overlay so the table stays raw. Test: `npm run test:loyalis-auto-leave:integration`.
-- **`presenceCorrections.ts`** — employee-submitted presence correction requests (tap_in/tap_out/both/izin_resmi) and their pending/approved/rejected lifecycle.
-- **`calendar.ts`** — per-period work calendar and premium-date (Friday/holiday) resolution.
-- **`koperasiLoan.ts`** — read-only loan status/installment/balance projection at a given period, restructuring lineage.
-- **`koperasiLoanApplication.ts`** — write-side application rules: min/max amount & tenor, admin fees, eligibility, restructuring quotes.
-- **`koperasiAmounts.ts`** / **`koperasiNames.ts`** — builds per-employee deduction/savings maps for payslips, matched by normalized name.
-- **`proposalExpenseReports.ts`** / **`proposalExpenseApproval.ts`** — LPJ expense-report CRUD, budget-vs-actual totals, approval validation.
-- **`slipBuilders.ts`** — canonical earnings/deductions row builders for a payslip (Firebase-free, reachable from API routes).
-- **`payrollTax.ts`** — income tax as a slip category of its own (never a deduction row): a slip whose pre-tax Gaji Bersih reaches Rp 6.000.000 is charged a flat 5% of that same figure. Selection is manual (a super admin toggles it in Tinjau Slip Gaji) and is persisted as `taxApplied`; the *amount* is always derived server-side from the rows being written, so every propagation re-derives it.
-- **`slipPropagation.ts`** — rules for pushing an employee-profile edit onto an already-saved slip (which fields are profile-owned vs. owned by koperasi/presence/SPJ systems).
-- **`uraianPropagation.ts`** — counterpart for pushing Uraian rekap / Loyalis presence data onto draft slips; also computes Loyalis presence bonus/hourly rate.
-- **`dashboardSlipData.ts`** — assembles the dashboard's period-level slip view across all the above.
-- **`payrollRoster.ts`** — builds the eligible-employee roster per payroll run.
-- **`nipy.ts`** — generates/validates Pekarya NIPY employee-ID codes (category-prefixed: KEBERSIHAN=13, SOPIR=14, SATPAM=15, TEKNISI=16).
-- **`vakasiTambahan.ts`** — guards against LPJ/proposal sandbox data leaking into real payroll earnings; also the counterpart for pushing an approved VakasiTambahan event onto draft slips (`POST /api/payroll/vakasi-propagation`), one earnings row per event name.
-- **`roles.ts`** — `UserRole` union and capability checks (see RBAC above).
-- **`client.ts`** — browser-side authenticated fetch helpers for payroll API routes.
-
----
-
-## Name Matching & Overrides
-
-Since names in raw spreadsheet imports often mismatch official Firestore user documents:
-- **`normalizeName(fullName)`**: strips trailing academic degrees, prepended titles (KH, Hj, Ust, Prof, etc.), lowercases/trims.
-- **`MANUAL_OVERRIDES`**: hardcoded exact-match dictionary for edge cases (e.g. `Siti Rofiah` → `Siti Rofi'ah, A. Md.`).
-- **`src/lib/payroll/koperasiNames.ts`**: equivalent name-normalization used specifically to match Koperasi loan/member records to payroll employees.
-
----
-
-## OCR Processing Pipeline (Uraian)
-
-Physical presence printouts are parsed via the [/api/parse-rekap](file:///Users/ghinannavsih/Documents/Internal-BAK/src/app/api/parse-rekap/route.ts) route: an uploaded PNG/JPEG is sent to Gemini (`gemini-1.5-flash`) with a structured-extraction prompt that returns per-row `y_top`/`y_bottom` coordinates plus column values; outputs then flow to `UraianTable` components matching [rekapConfig.ts](file:///Users/ghinannavsih/Documents/Internal-BAK/src/utils/rekapConfig.ts) indices.
-
----
-
-## Key Scripts & Commands
-
-- **Run dev environment**: `npm run dev`
-- **Build application**: `npm run build`
-- **Test**: `npm test` (runs `tsx --test` over the payroll/server/util test suite directly); emulator integration tests: `test:kjm:integration`, `test:santunan:integration`, `test:bonus-triwulan:integration`, `test:employee-conversion:integration`, `test:venue-inspection:integration`, `test:loyalis-auto-leave:integration`, `test:account-switch:integration`, `test:satker-finance:integration`
-
-`scripts/` holds ~125 files; only the ones below are wired into `package.json`. The rest are ad hoc one-off migration/inspection scripts (`inspect*`, `check*`, `compare*`, `find*`, etc.) run directly via `tsx scripts/<file>.ts` — don't assume every script has an npm entry.
-
-- **Migration**: `migrate:salary-matrix`, `migrate:employees`, `migrate:employees-master`, `migrate:top-level`, `migrate:blue-collar`, `migrate:koperasi-rochmad`, `migrate:loyalis-admin-role` and `backfill:person-employee-id` (both dry-run by default, `--apply` to write)
-- **Seed / one-off data patch**: `seed:white-collar-matrix`, `update:tunjangan-beras`, `reset:koperasi-rochmad`, `seed:bonus-triwulan` (Aug/Sep 2026 paper records; dry-run unless `--apply`)
-- **Audit (read-only, safe to run anytime)**: `audit:satpam-payroll`, `audit:pekarya-spj`, `audit:driver-seed-date`
-- **Reconcile**: `reconcile:satpam-flexible`, `recompute:driver-komponen-waktu`
-- **Fix/repair (dry-run by default; require an explicit `--apply` flag, some also require an `--ids` allowlist)**: `fix:driver-short-trip-meal`, `fix:driver-seed-date`
-
-
-### Koperasi page
-
-- `/dashboard/payroll/koperasi` is Super Admin only. `?view=koperasi` (default) manages users/members; `?view=simpan-pinjam` retains the loan audit. The old `/dashboard/payroll/simpan-pinjam` redirects with HTTP 308, preserving other query parameters. The employee portal, `simpanPinjam` collection and `/api/koperasi/loans` are unchanged.
-- Editable: Status Pembayaran, Iuran Pokok, Iuran Wajib, Role, and Status keanggotaan, plus an optional audit note. Rupiah inputs accept whole amounts from 1 to 10,000,000. `Pending Verification` can only be retained when already current. Staff roles require explicit confirmation because they grant permissions in the Koperasi app at next login. Every member edit also mirrors legacy `status` (`Pending` becomes `pending`). Names, identity/contact data and savings balances are not edited here.
-- Payroll uses `koperasiMonthlyIuranWajib`: `(membershipStatus ?? status) === 'approved'` and `paymentStatus === 'Payroll Deduction'` deduct the member's `iuranWajib`, with zero/missing falling back to 25,000. Other payment/membership states deduct zero. Explicit member links take precedence over name fallbacks. Payroll Refresh applies changes to drafts; locked/paid snapshots remain authoritative. Iuran Pokok is still not deducted, including the first month.
-- Link candidates must be active and unlinked. Suggestions rank NIK, email, then normalized names with Koperasi overrides; search includes all available employees. Both employee collections are checked transactionally for `koperasiAuthUid` and `koperasiUserId`. UID falls back to the Koperasi document ID. Replacing a link explicitly checks the previous holder and clears it atomically. Converted-away Pekarya records are excluded from current matches but keep their historical links for the final Pekarya slip.
-- Banks are read-only in this page: Loyalis `banking_info.bank_name/account_number` or Pekarya `bankAccount.bankName/accountNumber` is copied to Koperasi `bankDetails`. Bank names are preserved (BRIS remains BRIS); account numbers retain digits, including leading zeroes. Bulk sync previews differences and skips incomplete/empty SAKU banks. Employee bank saves, reverts and Pekarya-to-Loyalis conversions request a server sync as a best-effort step; a failure leaves the employee save intact and shows a message. The page continues to show differing banks.
-- All Koperasi writes use `koperasiAdminDb()`, with HTTP 503 when credentials are absent. `PATCH /api/admin/koperasi-members`, `POST .../link`, and bulk `POST .../bank-sync` require Super Admin. Single-employee bank sync also permits `EMPLOYEE_PROFILE_EDITOR_ROLES`; browser bank values are never accepted. Browser rules prohibit creating non-null cooperative link fields or changing existing links, including for Super Admin; server link/conversion flows own them.
-- Edits use an `expected` snapshot and return 409 on conflict. `FinancialAuditLogs` and `FinancialIdempotencyKeys/{uid}__{requestId}` live in SAKU. Cross-project edits/sync reserve a pending receipt before the Koperasi write, then atomically finish the audit and receipt in SAKU. This small extension to the three-step flow prevents concurrent request-ID reuse and preserves bank before-values across a lost response. Pending receipts are resumed, never replayed as success. Bank batches also check document versions. Link writes and their audit are one SAKU transaction; a pending bank-sync step can be retried without relinking.
-- The member page reload invalidates both employee and Koperasi payroll query caches. The former Simpan Pinjam audit body is `src/components/koperasi/SimpanPinjamAuditView.tsx`; both views share one data load and retain URL-selected navigation.
-- Verification: `npm test`, `npm run test:koperasi-members:integration` (Auth + Firestore emulators only, `firebase.koperasi-test.json` with `singleProjectMode: false` for `koperasi-unipdu`), `npm run build`, and a lint comparison against the pre-existing baseline. Production edits must use an agreed test member first.
-
----
+- Venue reservations, `/dashboard/reservasi-ruang`: `docs/features/venue-reservations.md`
+- Venue return checks, `/dashboard/pemeriksaan-ruang`: `docs/features/venue-inspections.md`
+- Driver cost simulation, `/dashboard/simulasi-perjalanan`: `docs/features/simulasi-perjalanan.md`
+- Santunan (Ajuan Duka / Melahirkan): `docs/features/santunan-bansos.md`
+- Bonus Triwulan and Senam Pagi: `docs/features/bonus-triwulan.md`
+- Pekarya → Loyalis conversion: `docs/features/employee-conversion.md`
+- SatKer finance books: `docs/features/satker-finance.md`
+- Koperasi page and loans: `docs/features/koperasi.md`
+- Account switching (Ganti Peran): `docs/features/account-switching.md`
+- Uraian OCR (`/api/parse-rekap`): `docs/features/uraian-ocr.md`
 
 ## Agent skills
 
-### Issue tracker
-
-Before publishing or fetching issues and specs, read `docs/agents/issue-tracker.md`. Use GitHub Issues in `GhinanNavsih/Sistem_Internal_Keuangan_YAPETIDU`.
-
-### Triage labels
-
-Before triaging issues, read `docs/agents/triage-labels.md` for the five default label names.
-
-### Domain docs
-
-Before exploring a domain, read `docs/agents/domain.md`. This is a single-context repo: `CONTEXT.md` is the glossary and `docs/adr/` holds decisions.
+- Issues: `docs/agents/issue-tracker.md` (GitHub Issues). Triage labels: `docs/agents/triage-labels.md`.
+- Domain: `docs/agents/domain.md`.
