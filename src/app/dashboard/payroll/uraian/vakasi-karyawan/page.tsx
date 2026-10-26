@@ -39,6 +39,7 @@ import {
   useEmployeesLoyalis,
 } from '@/lib/queries/hooks';
 import { uploadProofFile } from '@/lib/uploads';
+import { MAX_UPLOAD_BYTES, UPLOAD_ACCEPT, UPLOAD_TYPES_TEXT, uploadFileProblem, uploadFileTypeFor } from '@/lib/uploadFileTypes';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import CetakKegiatanLoyalisDialog from '@/components/CetakKegiatanLoyalisDialog';
 import { generateKegiatanLoyalisRecapPdf } from '@/utils/generateKegiatanLoyalisRecapPdf';
@@ -161,6 +162,9 @@ export default function VakasiKaryawanPage() {
     _setReportFileName(value);
   };
   const [uploadingReport, setUploadingReport] = useState(false);
+  const uploadingReportRef = useRef(false);
+  const reportInputRef = useRef<HTMLInputElement>(null);
+  const [reportFileError, setReportFileError] = useState<string | null>(null);
 
   // Review dialog for Super Admin
   const [showReviewDialog, setShowReviewDialog] = useState(false);
@@ -170,6 +174,11 @@ export default function VakasiKaryawanPage() {
 
   // Lightbox for file preview
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [lightboxPreviewFailed, setLightboxPreviewFailed] = useState(false);
+  const openReportPreview = (url: string) => {
+    setLightboxPreviewFailed(false);
+    setLightboxUrl(url);
+  };
 
   // A BanSos event (Ajuan Duka / Melahirkan) opens its own panel instead of the form.
   const [selectedBansosEventId, setSelectedBansosEventId] = useState<string | null>(null);
@@ -272,6 +281,8 @@ export default function VakasiKaryawanPage() {
   }, [periodToken, profile]);
 
   const selectEventFromList = (evt: (typeof existingEvents)[number]) => {
+    if (uploadingReportRef.current) return;
+    setReportFileError(null);
     setSelectedBansosEventId(null);
     setSelectedEventId(evt.id);
     setEventName(evt.eventName);
@@ -350,31 +361,28 @@ export default function VakasiKaryawanPage() {
   };
 
   const handleReportFileChange = async (fileToUpload: File) => {
-    const validTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
-    if (!validTypes.includes(fileToUpload.type)) {
-      setMessage({ type: 'error', text: 'Format file tidak valid. Gunakan PDF, JPG, JPEG, atau PNG.' });
-      return;
-    }
-    if (fileToUpload.size > 10 * 1024 * 1024) {
-      setMessage({ type: 'error', text: 'Ukuran file terlalu besar (maks 10MB).' });
-      return;
-    }
+    if (uploadingReportRef.current || isReadOnly) return;
+    const problem = uploadFileProblem(fileToUpload) || (fileToUpload.size < 1 ? 'Berkas kosong.' : null);
+    setReportFileError(problem);
+    if (problem) return;
+    uploadingReportRef.current = true;
     setReportFile(fileToUpload);
-    setReportFileName(fileToUpload.name);
 
     setUploadingReport(true);
     try {
+      await cancelPendingAutosaveAndWait();
       const eventSeg = sanitizeEventId(eventNameRef.current || 'unnamed');
       const result = await uploadReportFile(fileToUpload, periodToken, eventSeg);
       setReportFileUrl(result.url);
+      setReportFileName(result.name);
       setMessage({ type: 'success', text: `File "${result.name}" berhasil diunggah.` });
       triggerAutosave();
     } catch (err) {
       console.error('Error uploading report file:', err);
-      setMessage({ type: 'error', text: 'Gagal mengunggah file laporan.' });
-      setReportFile(null);
-      setReportFileName(null);
+      setReportFileError(err instanceof Error ? err.message : 'Gagal mengunggah berkas laporan.');
     } finally {
+      setReportFile(null);
+      uploadingReportRef.current = false;
       setUploadingReport(false);
     }
   };
@@ -452,7 +460,7 @@ export default function VakasiKaryawanPage() {
   });
 
   const handleSubmitForReview = async () => {
-    if (isSavingRef.current) return;
+    if (isSavingRef.current || uploadingReportRef.current) return;
     isSavingRef.current = true;
     setSaving(true);
     try {
@@ -566,7 +574,7 @@ export default function VakasiKaryawanPage() {
   };
 
   const handleSaveEvent = async () => {
-    if (isSavingRef.current) return;
+    if (isSavingRef.current || uploadingReportRef.current) return;
     isSavingRef.current = true;
     setSaving(true);
     try {
@@ -730,10 +738,8 @@ export default function VakasiKaryawanPage() {
         submittedByName: finalSubmittedByName,
         submittedByEmail: finalSubmittedByEmail,
       };
-      if (currentReportFileUrl) {
-        payload.reportFileUrl = currentReportFileUrl;
-        payload.reportFileName = currentReportFileName;
-      }
+      payload.reportFileUrl = currentReportFileUrl;
+      payload.reportFileName = currentReportFileName;
 
       await setDoc(doc(db, 'VakasiTambahan', documentId), payload, { merge: true });
       if (isNewDocument) {
@@ -1002,6 +1008,7 @@ export default function VakasiKaryawanPage() {
               <h3 className="font-bold text-slate-800 text-sm">Daftar Kegiatan Vakasi Pegawai</h3>
               {(!isReadOnly || profile?.role === 'super_admin') && (
                 <Button
+                  disabled={uploadingReport}
                   onClick={() => {
                     setSelectedBansosEventId(null);
                     setSelectedEventId(null);
@@ -1012,6 +1019,7 @@ export default function VakasiKaryawanPage() {
                     setReportFile(null);
                     setReportFileUrl(null);
                     setReportFileName(null);
+                    setReportFileError(null);
                     setCurrentEventStatus(null);
                     setCurrentEventReviewNote(null);
                     setCurrentEventSubmittedBy(null);
@@ -1418,44 +1426,67 @@ export default function VakasiKaryawanPage() {
             {profile?.role === 'satker_head_loyalis' && selectedEventId && (
               <div className="border border-slate-100 rounded-md overflow-hidden bg-slate-50/50 p-4 space-y-3">
                 <h4 className="font-bold text-slate-700 text-xs uppercase tracking-wider">Unggah Laporan Bertandatangan</h4>
-                <p className="text-[10px] text-slate-400">Silakan cetak laporan, minta tanda tangan pimpinan, lalu pindai/foto dan unggah file PDF/JPG/PNG ke sini sebelum mengajukan review.</p>
-                <div className="flex flex-col md:flex-row items-center gap-4">
-                  <div className="flex-1 w-full">
-                    {uploadingReport ? (
-                      <div className="flex items-center gap-2 text-xs text-indigo-600 font-semibold py-2">
-                        <Loader2 className="w-4 h-4 animate-spin" /> Mengunggah berkas...
-                      </div>
-                    ) : reportFileUrl ? (
-                      <div className="flex items-center justify-between bg-white border border-slate-150 p-2.5 rounded-md">
-                        <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 truncate max-w-[250px]">
-                          <FileText className="w-4 h-4 text-indigo-500 flex-shrink-0" />
-                          <span className="truncate">{reportFileName || 'File Unggahan'}</span>
-                        </div>
-                        <div className="flex gap-1.5">
-                          <Button size="icon" variant="ghost" onClick={() => setLightboxUrl(reportFileUrl)} className="h-7 w-7 rounded-sm text-indigo-600"><Eye className="w-4 h-4" /></Button>
+                <p className="text-xs text-slate-500">Cetak laporan, minta tanda tangan pimpinan, lalu lampirkan hasil pindai atau berkas sebelum mengajukan review.</p>
+                <div className="flex flex-wrap items-center gap-3">
+                  {!isReadOnly && (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={uploadingReport}
+                        onClick={() => reportInputRef.current?.click()}
+                        aria-describedby="report-upload-hint report-upload-error"
+                        className="rounded-sm border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 bg-white font-semibold transition-all shadow-sm"
+                      >
+                        {uploadingReport ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                        {uploadingReport ? 'Mengunggah berkas...' : reportFileUrl ? 'Ganti berkas' : 'Lampirkan berkas'}
+                      </Button>
+                      <input
+                        ref={reportInputRef}
+                        type="file"
+                        hidden
+                        disabled={uploadingReport}
+                        accept={UPLOAD_ACCEPT}
+                        onChange={event => {
+                          const file = event.target.files?.[0];
+                          event.target.value = '';
+                          if (file) void handleReportFileChange(file);
+                        }}
+                      />
+                    </>
+                  )}
+                  {(uploadingReport || reportFileUrl) && (
+                    <div className="flex min-w-0 max-w-full items-center gap-2 rounded-sm border border-slate-200 bg-white px-3 py-2">
+                      <FileText className="w-4 h-4 shrink-0 text-indigo-500" />
+                      <span className="min-w-0 truncate text-xs font-semibold text-slate-700" title={(uploadingReport ? reportFile?.name : reportFileName) || undefined}>
+                        {(uploadingReport ? reportFile?.name : reportFileName) || 'Berkas laporan'}
+                      </span>
+                      {!uploadingReport && reportFileUrl && (
+                        <>
+                          <Button type="button" size="icon" variant="ghost" onClick={() => openReportPreview(reportFileUrl)} aria-label="Lihat berkas laporan" title="Lihat berkas laporan" className="h-7 w-7 shrink-0 rounded-sm text-indigo-600"><Eye className="w-4 h-4" /></Button>
                           {!isReadOnly && (
                             <Button
+                              type="button"
                               size="icon"
                               variant="ghost"
+                              aria-label="Lepas berkas laporan"
+                              title="Lepas berkas laporan"
                               onClick={() => {
                                 setReportFileUrl(null);
                                 setReportFileName(null);
+                                setReportFileError(null);
                                 triggerAutosave();
                               }}
-                              className="h-7 w-7 rounded-sm text-red-500"
-                            ><Trash2 className="w-4 h-4" /></Button>
+                              className="h-7 w-7 shrink-0 rounded-sm text-rose-600 hover:bg-rose-50"
+                            ><X className="w-4 h-4" /></Button>
                           )}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="relative border-2 border-dashed border-slate-200 hover:border-indigo-300 rounded-sm p-6 text-center bg-white cursor-pointer transition-colors" onClick={() => document.getElementById('report-upload-input')?.click()}>
-                        <Upload className="w-6 h-6 text-slate-400 mx-auto mb-1" />
-                        <span className="text-[11px] font-bold text-slate-500">Pilih Berkas Laporan</span>
-                        <input id="report-upload-input" type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => e.target.files?.[0] && handleReportFileChange(e.target.files[0])} />
-                      </div>
-                    )}
-                  </div>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
+                <p id="report-upload-hint" className="text-xs text-slate-500">Wajib sebelum mengajukan review. {UPLOAD_TYPES_TEXT}, maks. {MAX_UPLOAD_BYTES / (1024 * 1024)} MB.</p>
+                {reportFileError && <p id="report-upload-error" role="alert" className="text-xs text-rose-600">{reportFileError}</p>}
               </div>
             )}
 
@@ -1468,7 +1499,7 @@ export default function VakasiKaryawanPage() {
                     <FileText className="w-4 h-4 text-indigo-500" />
                     <span className="truncate">{reportFileName || 'Lihat berkas pertanggungjawaban...'}</span>
                   </div>
-                  <Button size="icon" variant="ghost" onClick={() => setLightboxUrl(reportFileUrl)} className="h-7 w-7 rounded-sm text-indigo-600"><Eye className="w-4 h-4" /></Button>
+                  <Button type="button" size="icon" variant="ghost" onClick={() => openReportPreview(reportFileUrl)} aria-label="Lihat berkas laporan" title="Lihat berkas laporan" className="h-7 w-7 rounded-sm text-indigo-600"><Eye className="w-4 h-4" /></Button>
                 </div>
               </div>
             )}
@@ -1487,6 +1518,7 @@ export default function VakasiKaryawanPage() {
               {selectedEventId && (!isReadOnly || profile?.role === 'super_admin') && (
                 <Button
                   onClick={() => handleDeleteEvent(selectedEventId)}
+                  disabled={uploadingReport}
                   variant="ghost"
                   className="rounded-sm text-rose-500 hover:text-rose-700 hover:bg-rose-50 font-bold px-5 text-xs h-10 flex items-center gap-1.5"
                 >
@@ -1498,7 +1530,7 @@ export default function VakasiKaryawanPage() {
               {profile?.role === 'satker_head_loyalis' && (
                 <Button
                   onClick={handleSubmitForReview}
-                  disabled={saving || isReadOnly || !reportFileUrl}
+                  disabled={saving || uploadingReport || isReadOnly || !reportFileUrl}
                   className="rounded-sm px-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-lg shadow-indigo-100 transition-all flex items-center gap-2 h-10 text-xs cursor-pointer"
                 >
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
@@ -1510,7 +1542,7 @@ export default function VakasiKaryawanPage() {
               {(!isReadOnly || profile?.role === 'super_admin') && (
                 <Button
                   onClick={handleSaveEvent}
-                  disabled={saving}
+                  disabled={saving || uploadingReport}
                   className="rounded-sm px-6 bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-lg shadow-emerald-100 transition-all flex items-center gap-2 h-10 text-xs cursor-pointer"
                 >
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
@@ -1620,11 +1652,12 @@ export default function VakasiKaryawanPage() {
 
       {/* Image / PDF Lightbox Viewer */}
       {lightboxUrl && (() => {
-        const isPdf = Boolean(
-          reportFileName?.toLowerCase().endsWith('.pdf') ||
-          lightboxUrl.toLowerCase().includes('.pdf') ||
-          lightboxUrl.toLowerCase().includes('application/pdf')
-        );
+        // New uploads use the detected extension in Storage, even if the
+        // original file was misnamed. Fall back to the name for legacy URLs.
+        const storedExtension = decodeURIComponent(new URL(lightboxUrl).pathname).split('.').pop() || '';
+        const fileType = uploadFileTypeFor(storedExtension) || uploadFileTypeFor(reportFileName?.split('.').pop() || '');
+        const isPdf = fileType?.mime === 'application/pdf';
+        const cannotPreview = fileType?.inlinePreview === false || lightboxPreviewFailed;
 
         return (
           <div
@@ -1668,7 +1701,14 @@ export default function VakasiKaryawanPage() {
 
               {/* Content Area */}
               <div className="w-full flex-1 flex items-center justify-center overflow-hidden rounded-md bg-slate-950/60 relative">
-                {isPdf ? (
+                {cannotPreview ? (
+                  <div className="space-y-4 p-6 text-center text-sm text-slate-200">
+                    <p>{fileType?.inlinePreview === false ? `Berkas ${fileType.label} tidak dapat ditampilkan langsung di peramban ini.` : 'Pratinjau berkas tidak tersedia.'} Unduh berkas untuk membukanya.</p>
+                    <a href={lightboxUrl} target="_blank" rel="noopener noreferrer" download={reportFileName || true} className="inline-flex items-center gap-2 rounded-sm bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-500">
+                      <FileDown className="w-4 h-4" /> Unduh berkas
+                    </a>
+                  </div>
+                ) : isPdf ? (
                   <iframe
                     src={lightboxUrl}
                     className="w-full h-full rounded-sm border-none bg-white"
@@ -1678,6 +1718,7 @@ export default function VakasiKaryawanPage() {
                   <img
                     src={lightboxUrl}
                     alt={reportFileName || 'File LPJ'}
+                    onError={() => setLightboxPreviewFailed(true)}
                     className="max-w-full max-h-full rounded-sm object-contain shadow-2xl"
                   />
                 )}

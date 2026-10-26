@@ -154,7 +154,7 @@ const mocks = {
   '@/utils/generateProposalKegiatanPdf': `exports.generateProposalKegiatanPdf=()=>{};`,
   '@/utils/generateLpjPdf': `exports.generateLpjPdf=async()=>{};`,
   '@/utils/generateLpjExpenseReportPdf': `exports.generateLpjExpenseReportPdf=async()=>{};`,
-  '@/lib/uploads': `exports.uploadProofFile=async(endpoint,file,fields)=>{globalThis.__proposalTest.receiptUploads.push({endpoint,file,fields});return 'https://receipt.test/uploaded.jpg'};`,
+  '@/lib/uploads': `exports.uploadProofFile=async(endpoint,file,fields)=>{const T=globalThis.__proposalTest;T.receiptUploads.push({endpoint,file,fields});if(T.uploadGate)await T.uploadGate;if(T.uploadFailure)throw T.uploadFailure;return T.uploadUrl||'https://receipt.test/uploaded.jpg'};`,
   '@/lib/payroll/expenseReportReceipt': `exports.prepareExpenseReportReceipt=async(file)=>{globalThis.__proposalTest.receiptInputs.push(file);return new File([new Uint8Array([255,216,255,217])],'processed-receipt.jpg',{type:'image/jpeg'})};`,
   '@/utils/ocrParser': `exports.renderFileToCanvas=async()=>{throw new Error('Unexpected receipt rendering in page test')};`,
 };
@@ -303,6 +303,9 @@ async function reset() {
   T.deleteFailure = null;
   T.receiptInputs = [];
   T.receiptUploads = [];
+  T.uploadGate = null;
+  T.uploadFailure = null;
+  T.uploadUrl = null;
   T.holdRequests = false;
   T.held = [];
   app = null;
@@ -371,6 +374,74 @@ const tests = [
     assert.equal([...document.querySelectorAll('button')].some(button => ['Simpan Event', 'Batalkan Persetujuan'].includes(button.textContent.trim())), false);
     await advance(2000);
     assert.equal(T.apiOptions.length, 0);
+  }],
+  ['vakasi release: signed reports reject unsupported and oversized files immediately', async () => {
+    T.params += '&eventId=report-event';
+    T.records.set('report-event', { period: '2026-10', eventName: 'Signed report fixture', submittedBy: head.uid, status: 'draft', eventWorkers: {} });
+    await mount(head);
+    const input = document.querySelector('input[type="file"]');
+    for (const extension of ['.heic', '.heif', '.tiff', '.avif', '.pdf']) assert.ok(input.accept.includes(extension), extension);
+    assert.ok(input.hidden);
+    const pick = async file => {
+      Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+      await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
+    };
+    await pick(new File(['executable'], 'report.exe', { type: 'application/octet-stream' }));
+    assert.ok(document.querySelector('[role="alert"]').textContent.includes('tidak didukung'));
+    await pick(new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'report.pdf', { type: 'application/pdf' }));
+    assert.ok(document.querySelector('[role="alert"]').textContent.includes('5 MB'));
+    assert.equal(T.receiptUploads.length, 0);
+    T.uploadUrl = 'https://storage.test/report.heic';
+    await pick(new File(['heic fixture'], 'IMG_001.HEIC', { type: '' }));
+    assert.equal(T.receiptUploads.length, 1, 'HEIC with no declared MIME type reaches the upload API');
+    assert.equal(document.querySelector('[role="alert"]'), null);
+    await act(async () => document.querySelector('[aria-label="Lihat berkas laporan"]').click());
+    assert.ok(document.body.textContent.includes('Unduh berkas'));
+    assert.equal(document.querySelector('img[src="https://storage.test/report.heic"]'), null, 'HEIC never produces a broken image');
+  }],
+  ['vakasi release: removing a signed report persists cleared attachment fields', async () => {
+    T.params += '&eventId=report-event';
+    T.records.set('report-event', { period: '2026-10', eventName: 'Signed report fixture', submittedBy: head.uid, status: 'draft', eventWorkers: {}, reportFileUrl: 'https://storage.test/original.pdf', reportFileName: 'original.pdf' });
+    await mount(head);
+    await act(async () => document.querySelector('[aria-label="Lepas berkas laporan"]').click());
+    await advance(1500);
+    assert.equal(T.records.get('report-event').reportFileUrl, null);
+    assert.equal(T.records.get('report-event').reportFileName, null);
+    assert.ok([...document.querySelectorAll('button')].find(button => button.textContent.includes('Submit ke Admin')).disabled);
+  }],
+  ['vakasi release: a failed replacement keeps the old report and blocks saves during upload', async () => {
+    T.params += '&eventId=report-event';
+    T.records.set('report-event', { period: '2026-10', eventName: 'Signed report fixture', submittedBy: head.uid, status: 'draft', eventWorkers: {}, reportFileUrl: 'https://storage.test/original.pdf', reportFileName: 'original.pdf' });
+    await mount(head);
+    let release;
+    T.uploadGate = new Promise(resolve => { release = resolve; });
+    T.uploadFailure = new Error('Server refused this report');
+    const input = document.querySelector('input[type="file"]');
+    Object.defineProperty(input, 'files', { configurable: true, value: [new File(['new'], 'replacement.png', { type: 'image/png' })] });
+    await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
+    for (const label of ['Simpan Event', 'Submit ke Admin', 'Baru']) assert.ok([...document.querySelectorAll('button')].find(button => button.textContent.trim() === label).disabled, label);
+    assert.equal(document.querySelector('[aria-label="Lepas berkas laporan"]'), null);
+    await act(async () => release());
+    assert.ok(document.querySelector('[role="alert"]').textContent.includes('Server refused this report'));
+    assert.ok(document.querySelector('[title="original.pdf"]'));
+    await advance(1500);
+    assert.equal(T.records.get('report-event').reportFileUrl, 'https://storage.test/original.pdf');
+    assert.equal(T.records.get('report-event').reportFileName, 'original.pdf');
+  }],
+  ['vakasi release: stored format controls previews and reviewed reports cannot be changed', async () => {
+    T.params += '&eventId=report-event';
+    T.records.set('report-event', { period: '2026-10', eventName: 'Signed report fixture', submittedBy: head.uid, status: 'pending_review', eventWorkers: {}, reportFileUrl: 'https://storage.test/detected.pdf', reportFileName: 'wrong-name.jpg' });
+    await mount(head);
+    assert.equal(document.querySelector('input[type="file"]'), null);
+    assert.equal(document.querySelector('[aria-label="Lepas berkas laporan"]'), null);
+    await act(async () => document.querySelector('[aria-label="Lihat berkas laporan"]').click());
+    assert.ok(document.querySelector('iframe[src="https://storage.test/detected.pdf"]'), 'detected PDF previews as a document despite its original name');
+    await unmount();
+    T.records.set('report-event', { ...T.records.get('report-event'), reportFileUrl: 'https://storage.test/scan.tiff', reportFileName: 'scan.tiff' });
+    await mount(head);
+    await act(async () => document.querySelector('[aria-label="Lihat berkas laporan"]').click());
+    assert.equal(document.querySelector('img[src="https://storage.test/scan.tiff"]'), null);
+    assert.ok([...document.querySelectorAll('a')].some(anchor => anchor.textContent.includes('Unduh berkas')));
   }],
   ['release: approved employee report links to its generated Vakasi entry', async () => {
     T.records.set('saved-event', { ...fixture(), status: 'lpj_approved', payrollReportIdsByReport: { 'report-pay': 'LPJ_PAYROLL_fixture' },
