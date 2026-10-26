@@ -4,8 +4,8 @@ import type { DocumentReference, Transaction } from 'firebase-admin/firestore';
 import admin, { adminDb, adminStorage } from '@/lib/firebase-admin';
 import { errorResponse, HttpError, requireAuthenticatedProfile, requireRole, type AuthenticatedProfile } from '@/lib/server/auth';
 import {
-  ACCOUNT_COLLECTION, CATALOG_META_REF, assertUnitEdit, canReadAll, ensureOwnUnit, fixedAssetCollection, fixedAssetFrom, getUnit,
-  listUnits, loadAccounts, loadFixedAssets, unitAccountCatalogSource, openingFrom, publicYear, UNIT_COLLECTION, unitAccountCatalogMetaRef,
+  ACCOUNT_COLLECTION, CATALOG_META_REF, assertUnitEdit, canReadAll, ensureOwnUnit, ensureUnassignedHeadUnits, fixedAssetCollection, fixedAssetFrom, getUnit,
+  inactiveHeadUids, isInactiveHeadBook, listUnits, loadAccounts, loadFixedAssets, unitAccountCatalogSource, openingFrom, publicYear, UNIT_COLLECTION, unitAccountCatalogMetaRef,
   unitAccountCollection, YEAR_COLLECTION, yearRef,
 } from '@/lib/server/satkerFinance';
 import {
@@ -190,8 +190,11 @@ export async function GET(request: NextRequest) {
       throw new HttpError(403, 'Akses pelaporan SatKer tidak tersedia.');
     }
     let units = await listUnits(actor);
-    // A Kepala SatKer Loyalis on no book yet gets their own, without Super Admin listing them.
-    if (!units.length && await ensureOwnUnit(actor)) units = await listUnits(actor);
+    // A Kepala SatKer Loyalis on no book yet gets their own. Super Admin's list covers every such head, so it gives them all theirs.
+    const created = actor.role === 'super_admin'
+      ? await ensureUnassignedHeadUnits(actor, units)
+      : !units.length && await ensureOwnUnit(actor);
+    if (created) units = await listUnits(actor);
     const academicYear = request.nextUrl.searchParams.get('academicYear') || academicYearFor(new Date());
     fiscalMonths(academicYear);
     const monthParam = request.nextUrl.searchParams.get('month') || 'ANNUAL';
@@ -200,7 +203,9 @@ export async function GET(request: NextRequest) {
     const globalAccounts = await loadAccounts();
     let accounts = globalAccounts;
     const notifications = await adminDb.collection('users').doc(actor.uid).collection('satkerFinancialNotifications').orderBy('at', 'desc').limit(30).get();
-    const base: Record<string, unknown> = { units, accounts, academicYear, monthIndex,
+    // Books of disabled Kepala SatKer Loyalis are left out of the lists; consolidated totals still count them.
+    const inactiveHeads = canReadAll(actor) ? await inactiveHeadUids() : new Set<string>();
+    const base: Record<string, unknown> = { units: units.filter((unit) => !isInactiveHeadBook(unit, inactiveHeads)), accounts, academicYear, monthIndex,
       notifications: notifications.docs.map((doc) => ({ id: doc.id, ...doc.data() })) };
     if (actor.role === 'super_admin') {
       const users = await adminDb.collection('users').get();
@@ -232,7 +237,7 @@ export async function GET(request: NextRequest) {
       const statements = buildFinancialStatements({ accounts: consolidatedAccounts, opening, entries, academicYear, monthIndex });
       const annualStatements = monthIndex === 'ANNUAL' ? statements : buildFinancialStatements({ accounts: consolidatedAccounts, opening, entries, academicYear, monthIndex: 'ANNUAL' });
       return Response.json({ ...base, accounts: consolidatedAccounts, unit: { id: 'ALL', name: 'Konsolidasi Seluruh SatKer' }, statements, annualStatements, monthlyTrial: monthlyTrial(consolidatedAccounts, opening, entries, academicYear), year: { status: 'ACTIVE', openingBalances: opening }, entries: [], reports: [], events: [], reportRevisions: [],
-        unitSummaries: years.map((year) => ({
+        unitSummaries: years.filter((year) => !isInactiveHeadBook(year.unit, inactiveHeads)).map((year) => ({
           unit: year.unit, year: year.year,
           statements: buildFinancialStatements({ accounts: year.unitAccounts, opening: year.year.openingBalances, entries: year.entries, academicYear, monthIndex }),
           report: monthIndex === 'ANNUAL' ? null : year.reports.find((report) => report.id === reportId(monthIndex)) || null,

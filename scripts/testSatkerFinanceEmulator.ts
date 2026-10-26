@@ -138,6 +138,25 @@ async function main() {
   assert.equal(consolidated.statements.incomeStatement.expense, 100);
   assert.equal(consolidated.statements.cashFlow.physicalCash, 1150);
   assert.equal(consolidated.statements.cashFlow.reconciliationDelta, 0);
+  // Super Admin's list shows every active Kepala SatKer Loyalis on no book, each once; a disabled head gets none, and a head removed from their own book stays off it.
+  const unassignedHead = await signUp('unassigned-head@example.test');
+  const disabledHead = await signUp('disabled-head@example.test');
+  await adminDb.collection('users').doc(unassignedHead.uid).set({ role: 'satker_head_loyalis', displayName: 'Kepala Tanpa Buku', satkerName: 'SatKer Tanpa Buku', disabled: false });
+  await adminDb.collection('users').doc(disabledHead.uid).set({ role: 'satker_head_loyalis', displayName: 'Kepala Nonaktif', disabled: true });
+  const bakUnits = (await succeeds(await read(bak, { academicYear: '2026-2027', month: '9' }))).units;
+  const created = bakUnits.filter((unit: { editorUids: string[] }) => unit.editorUids.includes(unassignedHead.uid));
+  assert.equal(created.length, 1);
+  assert.equal(created[0].name, 'SatKer Tanpa Buku');
+  assert.equal(bakUnits.some((unit: { editorUids: string[] }) => unit.editorUids.includes(disabledHead.uid)), false);
+  assert.deepEqual(bakUnits.find((unit: { id: string }) => unit.id === ownUnit.id).editorUids, []);
+  assert.equal((await succeeds(await read(bak, { academicYear: '2026-2027', month: '9' }))).units.length, bakUnits.length);
+  assert.equal((await adminDb.collection('SatkerFinancialConfigAudit').where('target', '==', created[0].id).get()).size, 1);
+  // Once disabled, the head's book leaves the lists but still counts in the consolidated totals.
+  await adminDb.collection('users').doc(unassignedHead.uid).update({ disabled: true });
+  assert.equal((await succeeds(await read(bak, { academicYear: '2026-2027', month: '9' }))).units.some((unit: { id: string }) => unit.id === created[0].id), false);
+  const consolidatedAfterDisable = await succeeds(await read(bak, { unitId: 'ALL', academicYear: '2026-2027', month: '9' }));
+  assert.equal(consolidatedAfterDisable.unitSummaries.some((item: { unit: { id: string } }) => item.unit.id === created[0].id), false);
+  assert.equal(consolidatedAfterDisable.unitSummaries.length, 3);
   await succeeds(await invoke(secretary, { ...base, action: 'POST_ENTRY', entryId: 'voucher-oct-001', monthIndex: 10, date: '2026-10-01', kind: 'INFLOW', accountCode: '41000', paymentAccountCode: '11001', amount: 500, description: 'Droping' }));
   assert.equal((await invoke(secretary, { ...base, action: 'POST_ENTRY', entryId: 'depreciation-10', monthIndex: 10, date: '2026-10-01', kind: 'INFLOW', accountCode: '41000', paymentAccountCode: '11001', amount: 1, description: 'x' })).status, 400, 'server-made journal ids are reserved');
   // KAS still holds a balance in October, so it is counted again alongside the bank.

@@ -49,6 +49,17 @@ export async function listUnits(actor: AuthenticatedProfile): Promise<FinancialU
     .sort((a, b) => a.name.localeCompare(b.name, 'id'));
 }
 
+/** Kepala SatKer Loyalis accounts that are disabled. */
+export async function inactiveHeadUids(): Promise<Set<string>> {
+  const heads = await adminDb.collection('users').where('role', '==', 'satker_head_loyalis').get();
+  return new Set(heads.docs.filter((head) => head.data().disabled === true).map((head) => head.id));
+}
+
+/** A book whose editors are all disabled Kepala SatKer Loyalis belongs to a non-active head. */
+export function isInactiveHeadBook(unit: FinancialUnit, inactiveHeads: Set<string>) {
+  return unit.editorUids.length > 0 && unit.editorUids.every((uid) => inactiveHeads.has(uid));
+}
+
 /** Deterministic, so a head's own book is found again (and never duplicated) without a lookup by name. */
 export function ownUnitId(uid: string) {
   return `loyalis-${uid.toLowerCase().replace(/[^a-z0-9]/g, '')}`.slice(0, 50);
@@ -66,14 +77,33 @@ export function ownUnitId(uid: string) {
  */
 export async function ensureOwnUnit(actor: AuthenticatedProfile): Promise<boolean> {
   if (actor.role !== 'satker_head_loyalis') return false;
-  const id = ownUnitId(actor.uid);
+  return createOwnUnit({ uid: actor.uid, displayName: actor.displayName, satkerName: actor.satkerName }, actor);
+}
+
+/**
+ * A head only gets a book when they open the page, so Super Admin's book list
+ * would miss every head who has not. Gives each active head who is pengelola of
+ * no book the same book now, so the list shows all of them. Heads on a book
+ * already are left alone, and so is anyone Super Admin removed from their own book.
+ * Returns true only when it created at least one book.
+ */
+export async function ensureUnassignedHeadUnits(actor: AuthenticatedProfile, units: FinancialUnit[]): Promise<boolean> {
+  const assigned = new Set(units.flatMap((unit) => unit.editorUids));
+  const heads = await adminDb.collection('users').where('role', '==', 'satker_head_loyalis').get();
+  const unassigned = heads.docs.filter((head) => head.data().disabled !== true && !assigned.has(head.id));
+  const created = await Promise.all(unassigned.map((head) => createOwnUnit({ ...head.data(), uid: head.id }, actor)));
+  return created.some(Boolean);
+}
+
+async function createOwnUnit(head: { uid: string; displayName?: unknown; satkerName?: unknown }, actor: AuthenticatedProfile): Promise<boolean> {
+  const id = ownUnitId(head.uid);
   const ref = adminDb.collection(UNIT_COLLECTION).doc(id);
-  const displayName = actor.displayName.trim().slice(0, 150);
-  const satkerName = actor.satkerName?.trim().slice(0, 150) || displayName;
+  const displayName = trimmedText(head.displayName);
+  const satkerName = trimmedText(head.satkerName) || displayName;
   return adminDb.runTransaction(async (tx) => {
     if ((await tx.get(ref)).exists) return false;
     const after = {
-      name: satkerName || 'SatKer Loyalis', headName: displayName, adminName: '', editorUids: [actor.uid],
+      name: satkerName || 'SatKer Loyalis', headName: displayName, adminName: '', editorUids: [head.uid],
       revision: 1, autoProvisioned: true, updatedAt: admin.firestore.FieldValue.serverTimestamp(), updatedBy: actor.uid,
     };
     tx.create(ref, after);
@@ -83,6 +113,10 @@ export async function ensureOwnUnit(actor: AuthenticatedProfile): Promise<boolea
     });
     return true;
   });
+}
+
+function trimmedText(value: unknown) {
+  return typeof value === 'string' ? value.trim().slice(0, 150) : '';
 }
 
 export async function getUnit(actor: AuthenticatedProfile, id: string): Promise<FinancialUnit> {
