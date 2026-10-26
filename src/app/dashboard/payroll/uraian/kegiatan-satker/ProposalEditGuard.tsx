@@ -53,6 +53,9 @@ export default function ProposalEditGuard({ enabled, ownerName, children }: {
       }}
     >{children}</div>
     <ConfirmDialog open={Boolean(pending)} title="Ubah data kegiatan?"
+      // The pointer press opens this popup before release. Its trailing click
+      // may land on the new backdrop and must not dismiss the confirmation.
+      disablePointerDismissal
       description={`Kegiatan ini dibuat oleh ${ownerName || 'akun lain'}. Lanjutkan untuk mengubah nilai pada kolom atau kontrol yang dipilih.`}
       confirmLabel="Ya, ubah nilai" cancelLabel="Kembali"
       onOpenChange={(open) => {

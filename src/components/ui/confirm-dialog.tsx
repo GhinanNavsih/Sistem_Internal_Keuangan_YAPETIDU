@@ -26,6 +26,8 @@ interface ConfirmDialogProps {
   loading?: boolean
   onConfirm: () => void
   finalFocus?: React.ComponentProps<typeof DialogContent>["finalFocus"]
+  /** Require an explicit answer when the dialog opens during a pointer press. */
+  disablePointerDismissal?: boolean
 }
 
 /** The one confirmation dialog: a title, the consequence, Kembali + a confirm. */
@@ -40,9 +42,10 @@ function ConfirmDialog({
   loading,
   onConfirm,
   finalFocus,
+  disablePointerDismissal,
 }: ConfirmDialogProps) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange} disablePointerDismissal={disablePointerDismissal}>
       <DialogContent finalFocus={finalFocus} showCloseButton={false} className="rounded-md sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-base font-semibold text-slate-900">{title}</DialogTitle>

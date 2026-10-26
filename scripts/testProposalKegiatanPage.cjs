@@ -309,6 +309,35 @@ async function reset() {
   localStorage.clear();
 }
 const tests = [
+  ...['mouse', 'touch', 'pen'].map(pointerType => [`release: opening pointer gesture (${pointerType}) cannot dismiss the confirmation`, async () => {
+    T.autoConfirmEdits = false;
+    T.records.set('saved-event', { ...fixture(), revision: 1, creatorRole: 'satker_head_loyalis' });
+    await mount(admin);
+    await clickText('Saved event fixture');
+    const input = document.querySelector('input[placeholder="Contoh: Reuni SainTek 2026"]');
+    const pointer = (type, target) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: type.endsWith('down') ? 1 : 0, detail: type === 'click' ? 1 : 0, clientX: 20, clientY: 20 });
+      Object.defineProperties(event, { pointerId: { value: 1 }, pointerType: { value: pointerType }, isPrimary: { value: true } });
+      target.dispatchEvent(event);
+    };
+    await act(async () => pointer('pointerdown', input));
+    assert.ok(document.body.textContent.includes('Ubah data kegiatan?'), 'pointerdown opens confirmation');
+    const releaseTarget = document.querySelector('[data-slot="dialog-overlay"]') || input;
+    await act(async () => pointer('pointerup', releaseTarget));
+    await act(async () => pointer('mouseup', releaseTarget));
+    await act(async () => pointer('click', releaseTarget));
+    await advance(500);
+    const dialog = document.querySelector(testingRealDialog ? '[role="dialog"][data-open]' : '[role="dialog"]');
+    assert.ok(dialog?.textContent.includes('Ubah data kegiatan?'), 'confirmation disappeared before the user answered');
+    assert.equal(T.apiOptions.length, 0, 'opening gesture must never save');
+    assert.equal(input.value, 'Saved event fixture', 'opening gesture must never edit');
+    if (testingRealDialog) {
+      await act(async () => document.activeElement.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+      await advance(500);
+      assert.equal(document.querySelector('[role="dialog"][data-open]'), null, 'Escape still cancels the confirmation');
+      assert.equal(T.apiOptions.length, 0, 'Escape cancellation must never save');
+    }
+  }]),
   ['release: a report edit cannot adopt a newer revision before its autosave', async () => {
     const rows = [{ rowId: 'group', type: 'group_header', uraian: 'Honor', rincianQty: '', rincianRate: 0, reportId: 'report-pay' }, { rowId: 'item', type: 'item', uraian: 'Honor satu', rincianQty: '1', rincianRate: 1000, realisasi: 1000 }];
     const report = { id: 'report-pay', expenseRowId: 'group', expenseLabel: 'Honor', title: 'Original report', mode: 'expense', rows: [{ id: 'detail', parentRowId: 'item', uraian: 'Honor satu', rincianQty: '1', rincianRate: 1000, realisasi: 1000, employeeId: '', employeeName: '' }], receipts: {}, source: 'custom' };
@@ -973,7 +1002,7 @@ const tests = [
 (async () => {
   Page = await bundle();
   let failed = 0;
-  const selectedTests = tests.filter(([name]) => name.startsWith('vakasi release:') === testingVakasi && (!testingRealDialog || name.includes('confirmation cancels safely') || name.includes('readonly viewing and modal closing')) && (!process.env.PROPOSAL_TEST_FILTER || name.includes(process.env.PROPOSAL_TEST_FILTER)));
+  const selectedTests = tests.filter(([name]) => name.startsWith('vakasi release:') === testingVakasi && (!testingRealDialog || name.includes('opening pointer gesture') || name.includes('confirmation cancels safely') || name.includes('readonly viewing and modal closing')) && (!process.env.PROPOSAL_TEST_FILTER || name.includes(process.env.PROPOSAL_TEST_FILTER)));
   assert.ok(selectedTests.length, 'test filter must select at least one scenario');
   for (const [name, run] of selectedTests) {
     await reset();

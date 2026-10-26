@@ -127,6 +127,12 @@ immutable `creatorRole` is not `super_admin`. Unknown creator roles are protecte
 Related mutation controls use the same guard, including portal-based report
 editors. Cancelling and opening/closing an unchanged report never save data.
 
+The edit confirmation disables pointer dismissal: an input's pointer press
+opens the popup before release, so that same gesture's trailing click can land
+on the newly mounted backdrop. Without this protection the dialog immediately
+closes as an outside press. Real-dialog regressions exercise complete mouse,
+touch and pen gesture sequences; explicit cancellation and Escape still work.
+
 The displayed form owns its expected revision. A clean form refreshes when
 another editor saves; a dirty form keeps its local values and conflicts instead
 of adopting the other editor's revision. Unsaved report and signature edits also
