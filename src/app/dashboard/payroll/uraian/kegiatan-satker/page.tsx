@@ -136,7 +136,7 @@ function InsertRowButton({
   );
 }
 
-export default function ProposalKegiatanPage() {
+export default function KegiatanSatkerPage() {
   const { profile } = useAuth();
   const searchParams = useSearchParams();
 
@@ -203,7 +203,7 @@ export default function ProposalKegiatanPage() {
 
   const [proposalSignatures, setProposalSignatures] = useState<ProposalSignature[]>(createProposalSignatures);
 
-  // ── Stage 2: LPJ / Pelaporan States (Exact 4 Sections like PelaporanKegiatanPage) ──
+  // ── Stage 2: LPJ / Pelaporan States ──
   const [realisasiEnabled, setRealisasiEnabled] = useState(true);
   // These fields remain in storage and are still passed to the legacy LPJ PDF
   // adapter. The visible workflow now uses generic reports below the LPJ
@@ -1086,7 +1086,7 @@ export default function ProposalKegiatanPage() {
           <div>
             <h3 className="font-bold text-slate-800 text-sm md:text-base flex items-center gap-2">
               <Layers className="w-5 h-5 text-indigo-500" />
-              Daftar Event & Proposal Kegiatan Periode {MONTHS_ID[month - 1]} {year}
+              Daftar Kegiatan SatKer Periode {MONTHS_ID[month - 1]} {year}
             </h3>
             <p className="text-slate-400 text-xs mt-0.5">Pilih event untuk mengedit proposal anggaran atau mengisi Laporan LPJ pertanggungjawaban.</p>
           </div>
@@ -1121,7 +1121,7 @@ export default function ProposalKegiatanPage() {
               className="p-4 rounded-md border-2 border-dashed border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/10 transition-all cursor-pointer flex flex-col items-center justify-center min-h-[110px] gap-2 text-center group"
             >
               <Plus className="w-6 h-6 text-slate-400 group-hover:text-indigo-600 group-hover:scale-110 transition-all" />
-              <span className="text-xs font-bold text-slate-600 group-hover:text-indigo-600">Buat Proposal Event Baru</span>
+              <span className="text-xs font-bold text-slate-600 group-hover:text-indigo-600">Buat Kegiatan Baru</span>
             </div>
 
             {/* Current Draft Card (If not selected from list) */}
@@ -1179,7 +1179,7 @@ export default function ProposalKegiatanPage() {
             <div>
               <div className="flex items-center gap-2.5">
                 <h2 className="font-bold text-slate-800 text-base md:text-lg flex items-center gap-2">
-                  {reportName.trim() !== '' ? reportName : 'Form Event & Realisasi Kegiatan'}
+                  {reportName.trim() !== '' ? reportName : 'Form Kegiatan SatKer'}
                 </h2>
                 {isProposalReadOnly && activeStage === 'proposal' && (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-sm text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200/80 shadow-2xs">
@@ -1827,6 +1827,7 @@ export default function ProposalKegiatanPage() {
             </div>
 
             <SignatureSettings
+              key={selectedProposalId || 'new-proposal'}
               stage="Proposal"
               signatures={proposalSignatures}
               employees={loyalisEmployees}
@@ -2570,6 +2571,7 @@ export default function ProposalKegiatanPage() {
                 )}
 
                 <SignatureSettings
+                  key={selectedProposalId || 'new-proposal'}
                   stage="LPJ"
                   signatures={lpjSignatures}
                   proposalSignatures={proposalSignatures}
@@ -2684,7 +2686,7 @@ export default function ProposalKegiatanPage() {
             <DialogTitle className="text-slate-800 flex items-center gap-2.5 font-bold text-lg">
               <Copy className="w-5 h-5 text-purple-600" /> Kloning Anggaran dari Event Lalu
             </DialogTitle>
-            <p className="text-slate-500 text-xs mt-1">Pilih event dari proposal/LPJ sebelumnya untuk mengkloning struktur anggaran & rincian pengeluaran ke proposal baru.</p>
+            <p className="text-slate-500 text-xs mt-1">Pilih kegiatan sebelumnya untuk mengkloning struktur anggaran dan rincian pengeluaran ke proposal baru.</p>
           </DialogHeader>
           <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
             <div className="relative">
@@ -2724,7 +2726,6 @@ export default function ProposalKegiatanPage() {
                       >
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-sm bg-purple-100 text-purple-700 uppercase">{hItem.sourceType}</span>
                             <h4 className="font-bold text-slate-800 text-xs">{name}</h4>
                           </div>
                           <p className="text-[10px] text-slate-400 font-medium mt-1">

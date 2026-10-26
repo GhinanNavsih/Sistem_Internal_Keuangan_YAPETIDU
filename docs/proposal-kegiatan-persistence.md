@@ -1,4 +1,16 @@
-# Proposal kegiatan persistence
+# Kegiatan SatKer persistence
+
+## Unified route
+
+`/dashboard/payroll/uraian/kegiatan-satker` provides both the proposal and LPJ
+stages. The former `proposal-kegiatan` and `pelaporan-kegiatan` page URLs redirect
+there permanently, preserving period query parameters. The API endpoints,
+`ProposalKegiatan` collection, and local draft keys keep their existing names so
+existing drafts and older API clients remain compatible.
+
+The standalone reporting page is retired. Historical budget cloning reads only
+`ProposalKegiatan`; client writes to the former `PelaporanKegiatan` collection
+are denied to prevent older tabs from recreating deleted test reports.
 
 ## Why events disappeared
 

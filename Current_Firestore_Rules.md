@@ -521,11 +521,8 @@ service cloud.firestore {
 
     match /PelaporanKegiatan/{docId} {
       allow read: if isFinanceRole() || roleIs('satker_head_loyalis');
-      allow create: if (isFinanceVerifier() || isSuperAdmin() ||
-        roleIs('satker_head_loyalis')) && createsOpenPeriodRecord();
-      allow update: if (isFinanceVerifier() || isSuperAdmin() ||
-        roleIs('satker_head_loyalis')) && updatesOpenPeriodRecord();
-      allow delete: if false;
+      // Retired standalone reporting workflow. Old tabs must not recreate its test data.
+      allow create, update, delete: if false;
     }
 
     match /ProposalKegiatan/{docId} {

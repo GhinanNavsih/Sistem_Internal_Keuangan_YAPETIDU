@@ -323,6 +323,32 @@ async function main() {
   assert.equal(read.status, 200, 'the head can still read their approved event');
   assert.equal((await doc.get()).data()?.submittedBy, head.uid);
   console.log('PASS Firestore rules: legacy browser writes cannot steal or revert proposals.');
+
+  const verifier = await signup('verifier', 'finance_verifier');
+  const retiredRef = adminDb.doc('PelaporanKegiatan/retired-existing');
+  const retiredFixture = { period: '2026-10', reportName: 'Retired test report', submittedBy: head.uid };
+  await retiredRef.set(retiredFixture);
+  const retiredBase = `http://${process.env.FIRESTORE_EMULATOR_HOST}/v1/projects/${PROJECT}/databases/(default)/documents/PelaporanKegiatan`;
+  for (const actor of [head, finance, verifier]) {
+    const headers = { Authorization: `Bearer ${actor.token}`, 'Content-Type': 'application/json' };
+    const create = await fetch(`${retiredBase}/retired-new-${actor.uid}`, {
+      method: 'PATCH', headers,
+      body: JSON.stringify({ fields: { period: { stringValue: '2026-10' }, reportName: { stringValue: 'Recreated by old tab' } } }),
+    });
+    assert.equal(create.status, 403, 'retired reporting tabs cannot recreate deleted test reports');
+    const update = await fetch(`${retiredBase}/retired-existing?updateMask.fieldPaths=reportName`, {
+      method: 'PATCH', headers,
+      body: JSON.stringify({ fields: { reportName: { stringValue: 'Old tab autosave' } } }),
+    });
+    assert.equal(update.status, 403, 'retired reports cannot be updated by former editors');
+    const remove = await fetch(`${retiredBase}/retired-existing`, { method: 'DELETE', headers });
+    assert.equal(remove.status, 403, 'retired reports can only be cleaned up by the trusted server');
+    const legacyRead = await fetch(`${retiredBase}/retired-existing`, { headers });
+    assert.equal(legacyRead.status, 200, 'older application versions retain their existing read access');
+  }
+  assert.deepEqual((await retiredRef.get()).data(), retiredFixture);
+  assert.equal((await adminDb.collection('PelaporanKegiatan').get()).size, 1);
+  console.log('PASS Firestore rules: retired reporting writes are denied for heads, Super Admin and finance verifiers.');
   await admin.app().delete();
 }
 

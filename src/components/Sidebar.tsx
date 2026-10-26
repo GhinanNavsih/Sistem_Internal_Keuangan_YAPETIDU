@@ -193,22 +193,16 @@ export default function Sidebar() {
 
   const loyalisMenuItems: SidebarMenuItem[] = [
     {
-      name: 'Pengajuan Anggaran',
-      path: `/dashboard/payroll/uraian/proposal-kegiatan${withPeriod('')}`,
+      name: 'Kegiatan SatKer',
+      path: `/dashboard/payroll/uraian/kegiatan-satker${withPeriod('')}`,
       icon: FileSpreadsheet,
-      activePattern: '/dashboard/payroll/uraian/proposal-kegiatan',
+      activePattern: '/dashboard/payroll/uraian/kegiatan-satker',
     },
     {
       name: 'Vakasi Tambahan (Karyawan)',
       path: `/dashboard/payroll/uraian/vakasi-karyawan${withPeriod('')}`,
       icon: Banknote,
       activePattern: '/dashboard/payroll/uraian/vakasi-karyawan',
-    },
-    {
-      name: 'Pelaporan Kegiatan',
-      path: `/dashboard/payroll/uraian/pelaporan-kegiatan${withPeriod('')}`,
-      icon: ClipboardCheck,
-      activePattern: '/dashboard/payroll/uraian/pelaporan-kegiatan',
     },
     {
       name: 'Keuangan SatKer',

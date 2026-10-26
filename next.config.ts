@@ -10,6 +10,11 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
+      ...['proposal-kegiatan', 'pelaporan-kegiatan'].map((legacyPath) => ({
+        source: `/dashboard/payroll/uraian/${legacyPath}`,
+        destination: '/dashboard/payroll/uraian/kegiatan-satker',
+        permanent: true,
+      })),
       {
         // Preserve existing bookmarks and their payroll period query parameters.
         source: '/dashboard/payroll/uraian/vakasi-loyalis',

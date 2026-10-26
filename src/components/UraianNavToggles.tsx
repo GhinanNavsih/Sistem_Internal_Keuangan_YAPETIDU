@@ -40,8 +40,7 @@ export default function UraianNavToggles() {
     if (pathname.includes('/rekap-pekarya')) return 'presensi';
     if (pathname.includes('/vakasi-karyawan')) return 'vakasi_karyawan';
     if (pathname.includes('/kjm')) return 'kjm';
-    if (pathname.includes('/proposal-kegiatan')) return 'proposal_kegiatan';
-    if (pathname.includes('/pelaporan-kegiatan')) return 'pelaporan_kegiatan';
+    if (pathname.includes('/kegiatan-satker')) return 'kegiatan_satker';
     if (pathname.includes('/presensi-loyalis-raw')) return 'presensi_loyalis_raw';
     if (pathname.includes('/senam-pagi')) return 'senam_pagi';
     if (pathname.includes('/spj-pekarya')) return 'kegiatan_spj';
@@ -60,8 +59,7 @@ export default function UraianNavToggles() {
     const params = new URLSearchParams(searchParams.toString());
     if (
       tab === 'vakasi_karyawan' || tab === 'kjm' ||
-      tab === 'proposal_kegiatan' ||
-      tab === 'pelaporan_kegiatan' ||
+      tab === 'kegiatan_satker' ||
       tab === 'presensi_loyalis_raw' ||
       tab === 'senam_pagi' ||
       tab === 'driver-journeys' ||
@@ -113,11 +111,11 @@ export default function UraianNavToggles() {
                 <Banknote className="w-4 h-4" /> Kelebihan Jam Mengajar
               </button>
               <button
-                onClick={() => router.push(`/dashboard/payroll/uraian/proposal-kegiatan${getCleanParamsString('proposal_kegiatan')}`)}
-                className={btnCls(activeTab === 'proposal_kegiatan')}
+                onClick={() => router.push(`/dashboard/payroll/uraian/kegiatan-satker${getCleanParamsString('kegiatan_satker')}`)}
+                className={btnCls(activeTab === 'kegiatan_satker')}
               >
                 <FileText className="w-4 h-4" />
-                Pengajuan Anggaran (Proposal)
+                Kegiatan SatKer
               </button>
               <button
                 onClick={() => router.push(`/dashboard/payroll/uraian/vakasi-karyawan${getCleanParamsString('vakasi_karyawan')}`)}
@@ -125,13 +123,6 @@ export default function UraianNavToggles() {
               >
                 <Banknote className="w-4 h-4" />
                 Vakasi Tambahan (Karyawan)
-              </button>
-              <button
-                onClick={() => router.push(`/dashboard/payroll/uraian/pelaporan-kegiatan${getCleanParamsString('pelaporan_kegiatan')}`)}
-                className={btnCls(activeTab === 'pelaporan_kegiatan')}
-              >
-                <ClipboardCheck className="w-4 h-4" />
-                Pelaporan Kegiatan
               </button>
             </>
           )}

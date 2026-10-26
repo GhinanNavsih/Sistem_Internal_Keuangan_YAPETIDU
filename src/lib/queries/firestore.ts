@@ -197,20 +197,13 @@ export async function fetchLoyalisPresenceCorrections(): Promise<any[]> {
 }
 
 /**
- * Every proposal and LPJ ever filed, for the "clone from historical baseline"
+ * Every Kegiatan SatKer record, for the "clone from historical baseline"
  * dialog. Unbounded by period by design — the dialog offers past periods as
  * templates.
  */
 export async function fetchKegiatanHistoricalBaselines(): Promise<any[]> {
-  const [snapProp, snapLpj] = await Promise.all([
-    getDocs(collection(db, 'ProposalKegiatan')),
-    getDocs(collection(db, 'PelaporanKegiatan')),
-  ]);
-
-  const listProp = snapProp.docs.map(d => ({ id: d.id, sourceType: 'PROPOSAL', ...d.data() }));
-  const listLpj = snapLpj.docs.map(d => ({ id: d.id, sourceType: 'LPJ', ...d.data() }));
-
-  const combined = [...listProp, ...listLpj].filter((e: any) => (e.reportName || '').trim() !== '');
+  const snapshot = await getDocs(collection(db, 'ProposalKegiatan'));
+  const combined = withId<any>(snapshot.docs).filter((event) => (event.reportName || '').trim() !== '');
   combined.sort((a: any, b: any) => (b.period || '').localeCompare(a.period || ''));
   return combined;
 }

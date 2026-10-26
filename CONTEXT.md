@@ -10,6 +10,11 @@ UNIPDU's internal finance and payroll system: employee pay, attendance, activity
 A university work unit (satuan kerja) with its own head and its own event budgets.
 _Avoid_: department, unit kerja
 
+**Kegiatan SatKer**:
+A SatKer's event finance workflow: propose its budget, obtain approval, and
+report actual spending through an LPJ in the same workspace. It currently runs
+as a reporting sandbox without creating payroll earnings.
+
 **Sopir**:
 A Pekarya employee who drives the university's vehicles and is paid per Perjalanan.
 _Avoid_: driver (in user-facing text)

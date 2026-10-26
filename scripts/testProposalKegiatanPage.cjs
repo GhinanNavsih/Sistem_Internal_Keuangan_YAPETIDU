@@ -148,13 +148,23 @@ const mocks = {
 };
 const ui = `const React=require('react'); const element=(tag)=>(props)=>{const {children,variant,size,asChild,render,showCloseButton,...rest}=props;return React.createElement(tag,rest,children)}; exports.Button=element('button');exports.Input=element('input');exports.Card=element('div');exports.FloatingSnackbar=()=>null;exports.ConfirmDialog=({open,title,confirmLabel,onConfirm})=>open?React.createElement('div',{role:'dialog'},React.createElement('h3',{},title),React.createElement('button',{onClick:onConfirm},confirmLabel)):null;exports.Dialog=({open,children})=>open?React.createElement('div',{role:'dialog'},children):null;exports.DialogContent=element('div');exports.DialogHeader=element('div');exports.DialogTitle=element('h3');exports.Select=({value,onValueChange,disabled})=>React.createElement('select',{'data-testid':'department',value,disabled,onChange:e=>onValueChange(e.target.value)},React.createElement('option',{value:''},'Pilih'),React.createElement('option',{value:'REKTORAT'},'REKTORAT'));exports.SelectTrigger=()=>null;exports.SelectContent=()=>null;exports.SelectItem=()=>null;exports.SelectValue=()=>null;`;
 async function bundle() {
-  const pagePath = path.join(root, 'src/app/dashboard/payroll/uraian/proposal-kegiatan/page.tsx');
+  const currentPage = 'src/app/dashboard/payroll/uraian/kegiatan-satker/page.tsx';
+  const legacyPage = 'src/app/dashboard/payroll/uraian/proposal-kegiatan/page.tsx';
+  const pagePath = path.join(root, currentPage);
+  let revisionPage = currentPage;
+  if (process.env.PROPOSAL_TEST_REVISION) {
+    try {
+      childProcess.execFileSync('git', ['cat-file', '-e', `${process.env.PROPOSAL_TEST_REVISION}:${currentPage}`], { cwd: root, stdio: 'ignore' });
+    } catch {
+      revisionPage = legacyPage;
+    }
+  }
   const source = process.env.PROPOSAL_TEST_REVISION
     ? childProcess.execFileSync(
         'git',
         [
           'show',
-          `${process.env.PROPOSAL_TEST_REVISION}:src/app/dashboard/payroll/uraian/proposal-kegiatan/page.tsx`,
+          `${process.env.PROPOSAL_TEST_REVISION}:${revisionPage}`,
         ],
         { cwd: root, encoding: 'utf8' },
       )
@@ -567,7 +577,7 @@ const tests = [
       await mount(head);
       await fillName('First quick event');
       await chooseDepartment();
-      await clickText('Buat Proposal Event Baru');
+      await clickText(document.body.textContent.includes('Buat Kegiatan Baru') ? 'Buat Kegiatan Baru' : 'Buat Proposal Event Baru');
       await fillName('Second quick event');
       await chooseDepartment();
       await unmount();

@@ -44,9 +44,9 @@ src/
 │   │       ├── master/            # Salary matrix / master data editing
 │   │       ├── koperasi/          # Koperasi members + Simpan Pinjam audit (super admin)
 │   │       ├── simpan-pinjam/     # 308 redirect to koperasi?view=simpan-pinjam
-│   │       └── uraian/            # Blue-collar rekap module + subpages: pelaporan-kegiatan,
+│   │       └── uraian/            # Blue-collar rekap module + subpages: kegiatan-satker,
 │   │                              #   presence-corrections, presensi-loyalis(-raw), presensi-pekarya,
-│   │                              #   proposal-kegiatan, rekap-pekarya, senam-pagi, spj-pekarya,
+│   │                              #   rekap-pekarya, senam-pagi, spj-pekarya,
 │   │                              #   vakasi-karyawan (vakasi-loyalis redirects here)
 │   ├── employee/                  # Employee/honorer portal: activities/{satpam,sopir,pekarya} (one
 │   │                              #   route per workflow; sopir/journey-report nested under sopir),
@@ -149,7 +149,7 @@ A person often holds one account per role (e.g. Kepala SatKer Pekarya + Kepala S
 
 **Attendance / presence**: `LoyalisPresence` (monthly import, keyed by period), `LoyalisPresenceCorrections`, `AttendanceImports` (blue-collar/Pekarya raw import batches), `GantiLiburRequests` + `GantiLiburRequestRevisions` (Loyalis compensatory day off, server-only; see `gantiLibur.ts` below).
 
-**Activity / SPJ reporting**: `ActivityReports` (SOPIR/SATPAM/PEKARYA activity & journey submissions), `ActivityReportRevisions` (audit trail), `ActivityReportsIndex` / `PekaryaActivityIndexes` (dedup indexes), `KegiatanSpj` (per-event SPJ fees), `DriverJourneys` (driver trip records), `DriverPiketSchedules` (driver standby roster), `ProposalKegiatan` (LPJ budget proposal headers), `PelaporanKegiatan` (LPJ realization reports), `VakasiTambahan` (supplemental duty allowance events, filtered by `period`), `UraianGaji` (itemized pay component breakdown).
+**Activity / SPJ reporting**: `ActivityReports` (SOPIR/SATPAM/PEKARYA activity & journey submissions), `ActivityReportRevisions` (audit trail), `ActivityReportsIndex` / `PekaryaActivityIndexes` (dedup indexes), `KegiatanSpj` (per-event SPJ fees), `DriverJourneys` (driver trip records), `DriverPiketSchedules` (driver standby roster), `ProposalKegiatan` (combined Kegiatan SatKer proposals and LPJ; client page `/dashboard/payroll/uraian/kegiatan-satker`), `VakasiTambahan` (supplemental duty allowance events, filtered by `period`), `UraianGaji` (itemized pay component breakdown).
 
 **Satpam duty/shift**: `SatpamDutyPlans` (8-day rotation plans), `SatpamShiftTeams`, `ShiftOccurrences` (materialized per-date/post/team shifts), `GuardDutyIndexes` (dedup index), `SatpamAbsenceRequestRevisions`.
 

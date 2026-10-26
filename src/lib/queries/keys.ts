@@ -110,9 +110,9 @@ export const loyalisPresenceCorrectionsKeys = {
 };
 
 /**
- * Combined `ProposalKegiatan` + `PelaporanKegiatan` across every period —
+ * `ProposalKegiatan` records across every period —
  * feeds only the "clone from historical baseline" dialog.
  */
 export const kegiatanHistoryKeys = {
-  all: ['kegiatanHistory'] as const,
+  all: ['kegiatanHistory', 'ProposalKegiatan'] as const,
 };
