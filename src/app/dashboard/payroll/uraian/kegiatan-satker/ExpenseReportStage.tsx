@@ -89,6 +89,8 @@ interface ExpenseReportStageProps {
   printingReport?: boolean;
   fmtRp: (amount: number) => string;
   parseQty?: (value: string) => number;
+  payrollLinks?: Record<string, string>;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 interface ReportSaveChange {
@@ -161,7 +163,7 @@ function ReportModeCard({
 }) {
   const employee = mode === 'employee';
   return (
-    <button
+    <button data-proposal-mutation
       type="button"
       disabled={disabled}
       onClick={onClick}
@@ -178,7 +180,7 @@ function ReportModeCard({
       </div>
       <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
         {employee
-          ? 'Setiap rincian harus terhubung ke pegawai aktif. Nominal hanya untuk simulasi laporan dan tidak dikirim ke payroll.'
+          ? 'Setiap rincian terhubung ke pegawai aktif. REALISASI dikirim ke Vakasi Karyawan setelah LPJ disetujui.'
           : 'Gunakan untuk konsumsi, ATK, rapat, bukti pembelian, atau pengeluaran lain tanpa penerima pegawai.'}
       </p>
     </button>
@@ -266,9 +268,11 @@ function EmployeeSearch({
         )}
 
         {!disabled && matches.length > 0 && (
-          <div className="absolute left-0 right-0 top-9 z-[80] max-h-48 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-xl">
+          <div role="listbox" className="absolute left-0 right-0 top-9 z-[80] max-h-48 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-xl">
             {matches.map((employee, index) => (
-              <button
+              <button data-proposal-mutation
+                role="option"
+                aria-selected={index === highlightedIndex}
                 key={employee.id}
                 type="button"
                 onMouseDown={(event) => event.preventDefault()}
@@ -307,6 +311,8 @@ export default function ExpenseReportStage({
   printingReport = false,
   fmtRp,
   parseQty = parseProposalQty,
+  payrollLinks = {},
+  onDirtyChange,
 }: ExpenseReportStageProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [draftReport, setDraftReport] = useState<ExpenseReport | null>(null);
@@ -315,6 +321,8 @@ export default function ExpenseReportStage({
   const [receiptError, setReceiptError] = useState<string | null>(null);
   const [pendingSave, setPendingSave] = useState<PendingReportSave | null>(null);
   const reportTableRef = useRef<HTMLTableElement | null>(null);
+  const reportDialogRef = useRef<HTMLDivElement | null>(null);
+  const dirty = useRef(false);
 
   const groupRows = useMemo(() => expenseRows
     .map((row, index) => ({ row, index }))
@@ -336,6 +344,7 @@ export default function ExpenseReportStage({
       'employee',
       seedExpenseReportRows(expenseRows, groupIndex),
     );
+    dirty.current = false;
     setDraftReport({
       ...report,
       expenseRowId: group.rowId || report.expenseRowId,
@@ -360,6 +369,8 @@ export default function ExpenseReportStage({
   const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
 
   const updateDraft = (updater: (report: ExpenseReport) => ExpenseReport) => {
+    dirty.current = true;
+    onDirtyChange?.(true);
     setDraftReport((current) => current ? updater(current) : current);
     setFormErrors([]);
   };
@@ -482,17 +493,18 @@ export default function ExpenseReportStage({
 
   // Live Autosave on every input / change
   useEffect(() => {
-    if (!draftReport || readOnly || !dialogOpen) return;
+    if (!draftReport || readOnly || !dialogOpen || !dirty.current) return;
     setAutosaveStatus('saving');
     const timer = setTimeout(() => {
       onUpsertReport(sanitizeForFirestore({ ...draftReport, source: draftReport.source || 'custom' }));
+      onDirtyChange?.(false);
       setAutosaveStatus('saved');
     }, 350);
     return () => clearTimeout(timer);
-  }, [draftReport, readOnly, dialogOpen, onUpsertReport]);
+  }, [draftReport, readOnly, dialogOpen, onUpsertReport, onDirtyChange]);
 
   const closeDialog = () => {
-    if (draftReport && !readOnly) {
+    if (draftReport && !readOnly && dirty.current) {
       onUpsertReport(sanitizeForFirestore({ ...draftReport, source: draftReport.source || 'custom' }));
     }
     setDialogOpen(false);
@@ -501,9 +513,11 @@ export default function ExpenseReportStage({
     setReceiptError(null);
     setAutosaveStatus('idle');
     setPendingSave(null);
+    onDirtyChange?.(false);
   };
 
   const applySavedReport = (savedReport: ExpenseReport) => {
+    dirty.current = false;
     onUpsertReport(savedReport);
     onReportSaved?.(savedReport);
     closeDialog();
@@ -601,11 +615,11 @@ export default function ExpenseReportStage({
                   </div>
                 )}
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <Button type="button" disabled={readOnly && !linked} onClick={() => openReport(row, index)} className="h-8 rounded-sm bg-indigo-600 px-3 text-[10px] font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
+                  <Button data-proposal-mutation type="button" disabled={readOnly && !linked} data-proposal-view onClick={() => openReport(row, index)} className="h-8 rounded-sm bg-indigo-600 px-3 text-[10px] font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
                     {linked ? <><FileDown className="mr-1.5 h-3.5 w-3.5" /> Buka / Edit Laporan</> : <><Link2 className="mr-1.5 h-3.5 w-3.5" /> Hubungkan Header Grup ke Laporan</>}
                   </Button>
                   {linked && !readOnly && (
-                    <Button type="button" variant="ghost" onClick={() => onUnlinkReport(linked.id)} className="h-8 rounded-sm px-3 text-[10px] font-bold text-rose-600 hover:bg-rose-50">
+                    <Button data-proposal-mutation type="button" variant="ghost" onClick={() => onUnlinkReport(linked.id)} className="h-8 rounded-sm px-3 text-[10px] font-bold text-rose-600 hover:bg-rose-50">
                       <X className="mr-1 h-3.5 w-3.5" /> Lepas
                     </Button>
                   )}
@@ -617,7 +631,7 @@ export default function ExpenseReportStage({
       )}
 
       <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) closeDialog(); }}>
-        <DialogContent className="flex h-[92vh] max-h-[95vh] w-[96vw] max-w-[96vw] sm:max-w-[96vw] flex-col overflow-hidden rounded-md border-none bg-white p-0 shadow-2xl">
+        <DialogContent ref={reportDialogRef} initialFocus={reportDialogRef} className="flex h-[92vh] max-h-[95vh] w-[96vw] max-w-[96vw] sm:max-w-[96vw] flex-col overflow-hidden rounded-md border-none bg-white p-0 shadow-2xl">
           <DialogHeader className="shrink-0 border-b border-slate-100 bg-gradient-to-r from-indigo-50 to-slate-50 p-5 md:p-6">
             <DialogTitle className="flex items-center gap-2.5 text-lg font-bold text-slate-800">
               <Link2 className="h-5 w-5 text-indigo-600" /> Hubungkan Header Grup ke Laporan
@@ -648,6 +662,7 @@ export default function ExpenseReportStage({
                       <ReportModeCard mode="employee" selected={draftReport.mode === 'employee'} disabled={readOnly} onClick={() => updateDraft((report) => ({ ...report, mode: 'employee' }))} />
                       <ReportModeCard mode="expense" selected={draftReport.mode === 'expense'} disabled={readOnly} onClick={() => updateDraft((report) => ({ ...report, mode: 'expense' }))} />
                     </div>
+                    {draftReport.mode === 'employee' && payrollLinks[draftReport.id] && <a data-proposal-view href={payrollLinks[draftReport.id]} className="inline-flex text-xs font-semibold text-indigo-600 underline">Buka di Vakasi Karyawan</a>}
                     {draftReport.mode === 'expense' && (
                       <p className="text-[11px] leading-relaxed text-slate-500">
                         {UPLOAD_TYPES_TEXT}. Berkas besar diperkecil otomatis hingga maksimal 1 MB.
@@ -673,7 +688,7 @@ export default function ExpenseReportStage({
                     <div className="flex items-center gap-3">
                       {receiptError && <span className="text-[11px] font-bold text-rose-600">{receiptError}</span>}
                       {!readOnly && (
-                        <Button
+                        <Button data-proposal-mutation
                           type="button"
                           variant="outline"
                           onClick={() => {
@@ -731,7 +746,7 @@ export default function ExpenseReportStage({
                                   <td className="px-3 py-3"><Input value={row.rincianQty} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, rincianQty: event.target.value }))} onKeyDown={(event) => handleReportRowCellKeyDown(event, !readOnly ? () => addStandaloneReportRow(row.id) : undefined)} placeholder="10 / 20%" className="h-8 rounded-sm border-slate-200 text-center text-xs font-bold" /></td>
                                   <td className="px-3 py-3"><Input type="text" inputMode="numeric" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, rincianRate: parseMoney(event.target.value) }))} onKeyDown={(event) => handleReportRowCellKeyDown(event, !readOnly ? () => addStandaloneReportRow(row.id) : undefined)} placeholder="Rp 0" className="h-8 rounded-sm border-slate-200 text-right text-xs font-bold" /></td>
                                   <td className="px-3 py-3"><Input type="text" inputMode="numeric" value={row.realisasi > 0 ? fmtRp(row.realisasi) : ''} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, realisasi: parseMoney(event.target.value) }))} onKeyDown={(event) => handleReportRowCellKeyDown(event, !readOnly ? () => addStandaloneReportRow(row.id) : undefined)} placeholder="Rp 0" className="h-8 rounded-sm border-slate-200 text-right text-xs font-bold" /></td>
-                                  <td className="px-3 py-3 text-right"><Button type="button" variant="ghost" size="icon-xs" disabled={readOnly || draftReport.rows.length <= 1} onClick={() => updateDraft((report) => ({ ...report, rows: report.rows.filter((item) => item.id !== row.id) }))} className="rounded-sm text-rose-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30"><Trash2 /></Button></td>
+                                  <td className="px-3 py-3 text-right"><Button data-proposal-mutation type="button" variant="ghost" size="icon-xs" disabled={readOnly || draftReport.rows.length <= 1} onClick={() => updateDraft((report) => ({ ...report, rows: report.rows.filter((item) => item.id !== row.id) }))} className="rounded-sm text-rose-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30"><Trash2 /></Button></td>
                                 </tr>
                               );
                             });
@@ -840,7 +855,7 @@ export default function ExpenseReportStage({
                                       )}
 
                                       {childRows.length === 0 && !readOnly && (
-                                        <Button
+                                        <Button data-proposal-mutation
                                           type="button"
                                           variant="ghost"
                                           size="sm"
@@ -864,9 +879,9 @@ export default function ExpenseReportStage({
                                           <span className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-slate-200 bg-white px-1.5 py-1">
                                             <FileText className="h-3 w-3 shrink-0 text-indigo-500" />
                                             <span className="max-w-[70px] truncate text-[9px] font-semibold text-slate-600" title={receipt.fileName}>{receipt.fileName}</span>
-                                            <button type="button" title="Lihat bukti" onClick={() => window.open(receipt.url, '_blank', 'noopener,noreferrer')} className="text-slate-400 hover:text-indigo-600"><Eye className="h-3 w-3" /></button>
+                                            <button data-proposal-mutation type="button" data-proposal-view title="Lihat bukti" onClick={() => window.open(receipt.url, '_blank', 'noopener,noreferrer')} className="text-slate-400 hover:text-indigo-600"><Eye className="h-3 w-3" /></button>
                                             {!readOnly && (
-                                              <button type="button" title="Hapus bukti" onClick={() => handleReceiptRemove(headerItem.rowId || '')} className="text-slate-400 hover:text-rose-600"><X className="h-3 w-3" /></button>
+                                              <button data-proposal-mutation type="button" title="Hapus bukti" onClick={() => handleReceiptRemove(headerItem.rowId || '')} className="text-slate-400 hover:text-rose-600"><X className="h-3 w-3" /></button>
                                             )}
                                           </span>
                                         ) : !readOnly ? (
@@ -988,7 +1003,7 @@ export default function ExpenseReportStage({
                                       <td className="px-3 py-2.5 text-right">
                                         <div className="flex items-center justify-end gap-2">
                                           {isLastChild && !readOnly && (
-                                            <Button
+                                            <Button data-proposal-mutation
                                               type="button"
                                               variant="ghost"
                                               size="sm"
@@ -1002,7 +1017,7 @@ export default function ExpenseReportStage({
                                               <Plus className="w-3 h-3 mr-0.5" /> {addRowLabel}
                                             </Button>
                                           )}
-                                          <Button
+                                          <Button data-proposal-mutation
                                             type="button"
                                             variant="ghost"
                                             size="icon-xs"
@@ -1039,10 +1054,10 @@ export default function ExpenseReportStage({
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-100 bg-slate-50 p-4">
             <div className="flex items-center gap-2">
               {draftReport && !readOnly && expenseReports.some((report) => report.id === draftReport.id) && (
-                <Button type="button" variant="ghost" onClick={() => { onUnlinkReport(draftReport.id); closeDialog(); }} className="rounded-sm text-xs font-bold text-rose-600 hover:bg-rose-50">Lepas Hubungan</Button>
+                <Button data-proposal-mutation type="button" variant="ghost" onClick={() => { onUnlinkReport(draftReport.id); closeDialog(); }} className="rounded-sm text-xs font-bold text-rose-600 hover:bg-rose-50">Lepas Hubungan</Button>
               )}
               {draftReport && (
-                <Button type="button" variant="ghost" disabled={printingReport} onClick={() => onPrintReport(draftReport)} className="rounded-sm text-xs font-bold text-indigo-700 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60">
+                <Button data-proposal-mutation type="button" variant="ghost" disabled={printingReport} data-proposal-view onClick={() => onPrintReport(draftReport)} className="rounded-sm text-xs font-bold text-indigo-700 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60">
                   {printingReport ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <FileDown className="mr-1.5 h-3.5 w-3.5" />} {printingReport ? 'Membuat PDF...' : 'Cetak PDF'}
                 </Button>
               )}
@@ -1059,8 +1074,8 @@ export default function ExpenseReportStage({
                   </span>
                 ) : null
               )}
-              <Button type="button" variant="ghost" onClick={closeDialog} className="rounded-sm text-xs font-bold text-slate-500">Tutup</Button>
-              {!readOnly && <Button type="button" onClick={saveDraft} className="rounded-sm bg-indigo-600 px-5 text-xs font-bold text-white hover:bg-indigo-700"><Check className="mr-1.5 h-3.5 w-3.5" /> Simpan & Selesai</Button>}
+              <Button data-proposal-mutation type="button" variant="ghost" data-proposal-view onClick={closeDialog} className="rounded-sm text-xs font-bold text-slate-500">Tutup</Button>
+              {!readOnly && <Button data-proposal-mutation type="button" onClick={saveDraft} className="rounded-sm bg-indigo-600 px-5 text-xs font-bold text-white hover:bg-indigo-700"><Check className="mr-1.5 h-3.5 w-3.5" /> Simpan & Selesai</Button>}
             </div>
           </div>
         </DialogContent>
@@ -1108,8 +1123,8 @@ export default function ExpenseReportStage({
           </div>
 
           <div className="flex justify-end gap-2.5 border-t border-slate-100 bg-slate-50 p-4">
-            <Button type="button" variant="ghost" onClick={() => setPendingSave(null)} className="rounded-sm text-xs font-bold text-slate-500 hover:bg-white">Batal</Button>
-            <Button type="button" onClick={confirmPendingSave} className="rounded-sm bg-indigo-600 text-xs font-bold text-white hover:bg-indigo-700">Konfirmasi & Simpan</Button>
+            <Button data-proposal-mutation type="button" variant="ghost" data-proposal-view onClick={() => setPendingSave(null)} className="rounded-sm text-xs font-bold text-slate-500 hover:bg-white">Batal</Button>
+            <Button data-proposal-mutation type="button" onClick={confirmPendingSave} className="rounded-sm bg-indigo-600 text-xs font-bold text-white hover:bg-indigo-700">Konfirmasi & Simpan</Button>
           </div>
         </DialogContent>
       </Dialog>

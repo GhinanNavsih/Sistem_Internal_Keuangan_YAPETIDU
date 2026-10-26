@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import {
-  collection, doc, deleteDoc, query, where, onSnapshot
+  collection, query, where, onSnapshot
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import {
@@ -44,6 +44,7 @@ import { generateLpjPdf } from '@/utils/generateLpjPdf';
 import { generateLpjExpenseReportPdf } from '@/utils/generateLpjExpenseReportPdf';
 import ExpenseReportStage from './ExpenseReportStage';
 import SignatureSettings from './SignatureSettings';
+import ProposalEditGuard from './ProposalEditGuard';
 import {
   createProposalSignatures,
   loadProposalSignatureState,
@@ -66,8 +67,10 @@ import {
   ProposalExpenseRow,
   sanitizeForFirestore,
 } from '@/lib/payroll/proposalExpenseReports';
-import { authenticatedJson } from '@/lib/payroll/client';
+import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
+import type { ProposalWriteResult } from '@/lib/payroll/proposalLifecycle';
 import { useProposalDrafts } from '@/hooks/useProposalDrafts';
+import { compareProposalCreation } from '@/lib/payroll/proposalEvents';
 import { focusFirstCellInAdjacentRow, handleRowCellKeyDown } from '@/lib/tableKeyboardNav';
 
 const clearExpenseReportLink = (row: ProposalExpenseRow): ProposalExpenseRow => {
@@ -111,7 +114,7 @@ function InsertRowButton({
   };
 
   return (
-    <Button
+    <Button data-proposal-mutation
       type="button"
       variant="ghost"
       size="icon"
@@ -148,25 +151,43 @@ export default function KegiatanSatkerPage() {
 
   // ── Main Page State ──
   const [remoteProposalList, setRemoteProposalList] = useState<any[]>([]);
+  const remoteProposalsRef = useRef<typeof remoteProposalList>([]);
+  const approvalCommandRef = useRef<{ proposalId: string; expectedRevision: number; requestId: string; note: string | null } | null>(null);
+  const deleteRequestRef = useRef<{ id: string; requestId: string } | null>(null);
+  const [pendingPayrollSync, setPendingPayrollSync] = useState<string | null>(null);
+  const [retryingPayroll, setRetryingPayroll] = useState(false);
   const persistence = useProposalDrafts(profile, periodToken);
   const { controller: draftController } = persistence;
   const proposalList = useMemo(() => {
     const merged = new Map(remoteProposalList.map((item) => [item.id, item]));
     for (const draft of persistence.drafts) {
+      if (draft.actorUid !== profile?.uid) continue;
       const remote = merged.get(draft.id);
       merged.set(draft.id, { ...remote, ...draft.data, id: draft.id,
         submittedBy: remote?.submittedBy || draft.ownerUid,
         submittedByName: remote?.submittedByName || draft.ownerName,
+        creatorRole: remote?.creatorRole || (!remote && draft.ownerUid === profile?.uid ? profile?.role : undefined),
         revision: draft.revision, status: remote?.status || draft.status,
+        createdAt: remote?.createdAt || draft.createdAt || draft.updatedAt,
         updatedAt: { seconds: draft.updatedAt / 1000 }, localDraft: true });
     }
-    return [...merged.values()].sort((a, b) => (b.updatedAt?.seconds || 0) - (a.updatedAt?.seconds || 0));
-  }, [remoteProposalList, persistence.drafts]);
+    return [...merged.values()].sort(compareProposalCreation);
+  }, [remoteProposalList, persistence.drafts, profile?.uid, profile?.role]);
   const [loadingProposal, setLoadingProposal] = useState(false);
   const [activeStage, setActiveStage] = useState<'proposal' | 'lpj'>('proposal');
   const [selectedProposalState, setSelectedProposalId] = useState<string | null>(null);
   const selectedProposalId = selectedProposalState || draftController.currentId();
   const selectedProposalIdRef = useRef(selectedProposalId);
+  const displayedRevisionRef = useRef(0);
+  const hydrateSelectedRef = useRef<(item: (typeof remoteProposalList)[number]) => void>(() => {});
+  const nestedEditors = useRef(new Set<string>());
+  const [nestedEditorRevision, setNestedEditorRevision] = useState(0);
+  const setNestedDirty = useCallback((name: string, dirty: boolean) => {
+    const changed = nestedEditors.current.has(name) !== dirty;
+    if (dirty) nestedEditors.current.add(name); else nestedEditors.current.delete(name);
+    if (changed) setNestedEditorRevision(value => value + 1);
+  }, []);
+  const setReportDirty = useCallback((dirty: boolean) => setNestedDirty('report', dirty), [setNestedDirty]);
   const [reportEditorGroupId, setReportEditorGroupId] = useState<string | null>(null);
 
   // Common Header States
@@ -297,6 +318,7 @@ export default function KegiatanSatkerPage() {
   const canManageProposal = Boolean(
     profile && ['super_admin', 'finance_verifier', 'satker_head_loyalis'].includes(profile.role),
   );
+  const isFinanceReviewer = profile?.role === 'super_admin' || profile?.role === 'finance_verifier';
 
   // Period open/closed gate. A missing or unreadable period counts as open,
   // matching the previous behaviour; the server-side rule remains authoritative
@@ -343,24 +365,20 @@ export default function KegiatanSatkerPage() {
         list = list.filter(evt => evt.submittedBy === profile.uid);
       }
 
-      list.sort((a, b) => {
-        const getMs = (val: any) => {
-          if (!val) return Date.now();
-          if (typeof val.toMillis === 'function') return val.toMillis();
-          if (val.seconds) return val.seconds * 1000;
-          return 0;
-        };
-        return getMs(b.updatedAt) - getMs(a.updatedAt);
-      });
+      list.sort(compareProposalCreation);
 
       draftController.observe(list);
       const current = list.find((item) => item.id === selectedProposalIdRef.current);
       if (current) {
+        if (Number(current.revision || 0) !== displayedRevisionRef.current && !draftController.hasLocalChanges(current.id) && nestedEditors.current.size === 0) {
+          hydrateSelectedRef.current(current);
+        }
         setCurrentProposalStatus(current.status || 'proposal_draft');
         setCurrentReviewNote(current.reviewNote || null);
         setCurrentProposalQueueNo(current.proposalQueueNumber || null);
       }
       setRemoteProposalList(list);
+      remoteProposalsRef.current = list;
       setLoadingProposal(false);
     }, (err) => {
       console.error('Error listening to ProposalKegiatan:', err);
@@ -374,6 +392,7 @@ export default function KegiatanSatkerPage() {
     if (saving) return;
     skipAutoSaveRef.current = true;
     draftController.newDraft();
+    nestedEditors.current.clear();
     setSelectedProposalId(null);
     setReportEditorGroupId(null);
     setReportName('');
@@ -441,6 +460,8 @@ export default function KegiatanSatkerPage() {
   const handleSelectProposal = (item: any) => {
     if (saving) return;
     draftController.select(item);
+    nestedEditors.current.clear();
+    displayedRevisionRef.current = Number(item.revision || 0);
     skipAutoSaveRef.current = true;
     setSelectedProposalId(item.id);
     setReportName(item.reportName || item.title || '');
@@ -524,6 +545,15 @@ export default function KegiatanSatkerPage() {
     setKepanitiaaanRows(item.kepanitiaaanRows ?? [{ name: '', phaseAmounts: {}, searchText: '', showDropdown: false }]);
     setReceiptRows(item.receiptRows ?? [{ itemName: '', qty: 1, unitPrice: 0 }]);
   };
+  useEffect(() => { hydrateSelectedRef.current = handleSelectProposal; });
+  const selectedFromLink = useRef('');
+  useEffect(() => {
+    const id = searchParams.get('proposalId');
+    const key = `${profile?.uid}:${periodToken}:${id}`;
+    if (!id || !canManageProposal || selectedFromLink.current === key) return;
+    const record = remoteProposalList.find(item => item.id === id);
+    if (record) { selectedFromLink.current = key; hydrateSelectedRef.current(record); }
+  }, [searchParams, profile?.uid, periodToken, canManageProposal, remoteProposalList]);
 
   // ── Stage 1 Proposal Computations ──
   const totalPemasukanAnggaran = useMemo(() => {
@@ -566,7 +596,7 @@ export default function KegiatanSatkerPage() {
     return danaOperasionalAnggaran - totalPengeluaranAnggaran;
   }, [danaOperasionalAnggaran, totalPengeluaranAnggaran]);
 
-  const isProposalReadOnly = periodClosed || (profile?.role !== 'super_admin' && (currentProposalStatus === 'proposal_approved' || currentProposalStatus === 'proposal_submitted' || currentProposalStatus?.startsWith('lpj_')));
+  const isProposalReadOnly = periodClosed || currentProposalStatus === 'lpj_approved' || (profile?.role !== 'super_admin' && (currentProposalStatus === 'proposal_approved' || currentProposalStatus === 'proposal_submitted' || currentProposalStatus?.startsWith('lpj_')));
   const isLpjReadOnly = periodClosed || (currentProposalStatus === 'lpj_submitted' || currentProposalStatus === 'lpj_approved');
 
   const draftData = useMemo(() => ({
@@ -606,6 +636,17 @@ export default function KegiatanSatkerPage() {
     draftController.capture(selectedProposalId, sanitizeForFirestore(draftData), activeStage);
   }, [draftData, profile, canManageProposal, periodClosed, reportName, activeStage,
     isProposalReadOnly, isLpjReadOnly, draftController, selectedProposalId]);
+
+  // A cancelled signature edit or completed autosave can make a previously
+  // dirty editor clean after the external snapshot was already received.
+  useEffect(() => {
+    const latest = remoteProposalList.find(item => item.id === selectedProposalId);
+    if (!latest || Number(latest.revision || 0) === displayedRevisionRef.current || nestedEditors.current.size ||
+      draftController.hasLocalChanges(latest.id) || JSON.stringify(draftData) !== lastCapturedDraft.current) return;
+    let cancelled = false;
+    queueMicrotask(() => { if (!cancelled && !draftController.hasLocalChanges(latest.id) && nestedEditors.current.size === 0) hydrateSelectedRef.current(latest); });
+    return () => { cancelled = true; };
+  }, [nestedEditorRevision, autoSaveStatus, remoteProposalList, selectedProposalId, draftController, draftData]);
 
   // ── Historical Baselines for the Clone dialog ──
   // Closed periods that no longer change, so this is fetched at most once per
@@ -724,7 +765,16 @@ export default function KegiatanSatkerPage() {
     setDeleteState('deleting');
     setDeleteError(null);
     try {
-      await draftController.delete(id, () => deleteDoc(doc(db, 'ProposalKegiatan', id)));
+      if (deleteRequestRef.current?.id !== id) deleteRequestRef.current = { id, requestId: createFinancialRequestId('proposal-delete') };
+      await draftController.delete(id, async () => {
+        const result = await authenticatedJson<ProposalWriteResult>('/api/payroll/proposal-kegiatan', { method: 'POST', body: JSON.stringify({
+          action: 'delete', proposalId: id, period: periodToken, actorUid: profile?.uid,
+          expectedRevision: Number(remoteProposalsRef.current.find(item => item.id === id)?.revision || draftController.currentVersion(id).revision || 0),
+          requestId: deleteRequestRef.current!.requestId,
+        }) });
+        if (result.payrollSyncStatus === 'pending') setPendingPayrollSync(result.payrollSyncOperationId || null);
+      });
+      deleteRequestRef.current = null;
       resetForm();
       setDeleteState('success');
     } catch (err) {
@@ -957,18 +1007,24 @@ export default function KegiatanSatkerPage() {
     try {
       if (target === 'lpj' && action === 'lpj_approved') {
         const version = await draftController.flush(selectedProposalId);
-        await authenticatedJson('/api/payroll/proposal-kegiatan/approve', {
+        if (approvalCommandRef.current?.proposalId !== selectedProposalId) approvalCommandRef.current = {
+          proposalId: selectedProposalId, expectedRevision: version.revision, requestId: createFinancialRequestId('lpj-approve'), note: note || null,
+        };
+        const result = await authenticatedJson<ProposalWriteResult>('/api/payroll/proposal-kegiatan/approve', {
           method: 'POST',
-          body: JSON.stringify({ proposalId: selectedProposalId, expectedRevision: version.revision, note: note || null }),
+          body: JSON.stringify(approvalCommandRef.current),
         });
+        approvalCommandRef.current = null;
+        if (result.payrollSyncStatus === 'pending') setPendingPayrollSync(result.payrollSyncOperationId || null);
       } else {
-        await draftController.save('review', selectedProposalId, sanitizeForFirestore(draftData), target, { decision: action, note });
+        const result = await draftController.save('review', selectedProposalId, sanitizeForFirestore(draftData), target, { decision: action, note });
+        if (result.payrollSyncStatus === 'pending') setPendingPayrollSync(result.payrollSyncOperationId || null);
       }
 
       let actionLabel = '';
       if (action === 'proposal_approved') actionLabel = 'Proposal Disetujui (Event Siap & LPJ Terbuka)';
       else if (action === 'proposal_revision') actionLabel = 'Proposal Diminta Revisi';
-      else if (action === 'lpj_approved') actionLabel = 'LPJ Disetujui (Sandbox, tanpa dampak payroll)';
+      else if (action === 'lpj_approved') actionLabel = 'LPJ Disetujui';
       else if (action === 'lpj_revision') actionLabel = 'LPJ Diminta Revisi';
       else actionLabel = 'Ditolak';
 
@@ -1040,7 +1096,7 @@ export default function KegiatanSatkerPage() {
       case 'lpj_approved':
         return (
           <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm border bg-emerald-50 text-emerald-700 border-emerald-200 flex items-center gap-1">
-            <Sparkles className="w-3 h-3 text-emerald-600" /> LPJ Disetujui (Sandbox)
+            <Sparkles className="w-3 h-3 text-emerald-600" /> LPJ Disetujui
           </span>
         );
       case 'declined':
@@ -1051,10 +1107,23 @@ export default function KegiatanSatkerPage() {
   };
 
   const fmtRp = (n: number) => 'Rp\u00a0' + Math.round(n).toLocaleString('id-ID');
+  const payrollSyncOperation = pendingPayrollSync || (selectedProposal?.payrollSyncStatus === 'pending' ? selectedProposal.payrollSyncOperationId : null);
 
   return (
     <div className="space-y-6">
       <FloatingSnackbar message={message} />
+      {payrollSyncOperation && <div role="alert" className="flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">
+        <span>Perubahan kegiatan tersimpan. Sinkronisasi ke slip gaji belum selesai.</span>
+        <Button type="button" disabled={retryingPayroll} variant="outline" onClick={async () => {
+          setRetryingPayroll(true);
+          try {
+            const result = await authenticatedJson<ProposalWriteResult>('/api/payroll/proposal-kegiatan/sync', { method: 'POST', body: JSON.stringify({ operationId: payrollSyncOperation }) });
+            if (result.payrollSyncStatus === 'complete') setPendingPayrollSync(null);
+            setMessage({ type: result.payrollSyncStatus === 'complete' ? 'success' : 'error', text: result.payrollSyncStatus === 'complete' ? 'Sinkronisasi payroll selesai.' : result.payrollSyncError || 'Sinkronisasi payroll belum selesai.' });
+          } catch (error) { setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Sinkronisasi gagal.' }); }
+          finally { setRetryingPayroll(false); }
+        }}>Coba sinkronisasi lagi</Button>
+      </div>}
       {persistence.error && (
         <div role="alert" className="flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">
           <span>{persistence.error}</span>
@@ -1071,14 +1140,6 @@ export default function KegiatanSatkerPage() {
           </div>
         </div>
       )}
-
-      <div role="status" className="flex gap-3 rounded-md border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900 shadow-sm">
-        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-        <div>
-          <p className="font-black">Mode Sandbox — tidak terhubung ke payroll</p>
-          <p className="mt-0.5 font-medium leading-relaxed">Data proposal dan LPJ hanya untuk simulasi. Pegawai yang dipilih dan nominal yang diisi tidak dibuat sebagai penghasilan atau dikirim ke slip gaji.</p>
-        </div>
-      </div>
 
       {/* ── TOP SECTION: Dedicated Event List Carousel / Cards Grid ── */}
       <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-4 md:p-6 space-y-4">
@@ -1172,6 +1233,9 @@ export default function KegiatanSatkerPage() {
       </Card>
 
       {/* ── MAIN SECTION: Full-Width Sequential Creation Card ── */}
+      <ProposalEditGuard key={`${editorScope}:${selectedProposalId}:${activeStage}`}
+        enabled={profile?.role === 'super_admin' && Boolean(selectedProposal) && selectedProposal.creatorRole !== 'super_admin'}
+        ownerName={currentSubmittedByName}>
       <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-4 md:p-6 space-y-6">
         {/* Header & Stage Selector Tabs */}
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
@@ -1213,8 +1277,8 @@ export default function KegiatanSatkerPage() {
 
           {/* Sequential Stage Switcher Tabs */}
           <div className="flex items-center bg-slate-100 p-1 rounded-md gap-1">
-            <button
-              onClick={() => setActiveStage('proposal')}
+            <button data-proposal-mutation
+              data-proposal-view onClick={() => setActiveStage('proposal')}
               className={`px-4 py-2 rounded-sm text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeStage === 'proposal'
                 ? 'bg-white text-indigo-600 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
@@ -1223,22 +1287,8 @@ export default function KegiatanSatkerPage() {
               <span>1. Pengajuan Anggaran (Proposal)</span>
             </button>
 
-            <button
-              onClick={() => {
-                setActiveStage('lpj');
-                if (pemasukanRows && pemasukanRows.length > 0 && pemasukanRows.some(r => r.uraian.trim())) {
-                  const isLpjPemasukanEmpty = lpjPemasukanRows.length === 1 && !lpjPemasukanRows[0].uraian;
-                  if (isLpjPemasukanEmpty) {
-                    setLpjPemasukanRows(pemasukanRows.map(r => ({ ...r, realisasi: parseQty(r.rincianQty) * (r.rincianRate || 0) })));
-                  }
-                }
-                if (pengeluaranRows && pengeluaranRows.length > 0 && pengeluaranRows.some(r => r.uraian.trim())) {
-                  const isLpjPengeluaranEmpty = lpjPengeluaranRows.length === 1 && !lpjPengeluaranRows[0].uraian;
-                  if (isLpjPengeluaranEmpty) {
-                    setLpjPengeluaranRows(pengeluaranRows.map(r => ({ ...r, realisasi: r.type === 'group_header' ? 0 : parseQty(r.rincianQty) * (r.rincianRate || 0) })));
-                  }
-                }
-              }}
+            <button data-proposal-mutation
+              data-proposal-view onClick={() => setActiveStage('lpj')}
               className={`px-4 py-2 rounded-sm text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeStage === 'lpj'
                 ? 'bg-white text-indigo-600 shadow-sm'
                 : 'text-slate-500 hover:text-slate-800'
@@ -1261,7 +1311,7 @@ export default function KegiatanSatkerPage() {
           <Image src="/Logo UNIPDU.png" alt="UNIPDU" width={300} height={304} className="w-12 h-12 shrink-0 object-contain" />
           <div className="space-y-0.5">
             <h4 className="text-xs font-black text-slate-800 tracking-wide uppercase">UNIVERSITAS PESANTREN TINGGI DARUL 'ULUM</h4>
-            <p className="text-[10px] text-slate-500 font-medium">Sandbox Proposal & LPJ — tanpa dampak ke payroll pegawai</p>
+            <p className="text-[10px] text-slate-500 font-medium">Proposal & LPJ Kegiatan SatKer</p>
           </div>
         </div>
 
@@ -1325,8 +1375,8 @@ export default function KegiatanSatkerPage() {
                     <p className="leading-relaxed font-medium">Ketua BAK dan Wakil Rektor Keuangan telah menyetujui anggaran ini. Pengisian LPJ kini dibuka.</p>
                   </div>
                 </div>
-                <Button
-                  onClick={() => setActiveStage('lpj')}
+                <Button data-proposal-mutation
+                  data-proposal-view onClick={() => setActiveStage('lpj')}
                   className="rounded-sm bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs h-9 px-4 shrink-0 shadow"
                 >
                   Buka Form LPJ <Unlock className="w-3.5 h-3.5 ml-1.5" />
@@ -1433,7 +1483,7 @@ export default function KegiatanSatkerPage() {
                             <td className="px-3 py-2 text-center">
                               {!isProposalReadOnly && (
                                 <div className="flex items-center justify-center gap-1">
-                                  <Button
+                                  <Button data-proposal-mutation
                                     type="button"
                                     variant="ghost"
                                     size="icon"
@@ -1443,7 +1493,7 @@ export default function KegiatanSatkerPage() {
                                   >
                                     <Plus className="w-3.5 h-3.5" />
                                   </Button>
-                                  <Button
+                                  <Button data-proposal-mutation
                                     type="button"
                                     variant="ghost"
                                     size="icon"
@@ -1463,7 +1513,7 @@ export default function KegiatanSatkerPage() {
                         <tr className="border-b border-slate-100 hover:bg-slate-50/10 transition-colors">
                           <td></td>
                           <td colSpan={5} className="px-3 py-2">
-                            <Button
+                            <Button data-proposal-mutation
                               type="button"
                               size="sm"
                               onClick={(event) => {
@@ -1618,7 +1668,7 @@ export default function KegiatanSatkerPage() {
                                       onLongPress={(button) => insertPengeluaranHeaderBelow(button)}
                                       className="h-7 w-7 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-sm cursor-pointer"
                                     />
-                                    <Button
+                                    <Button data-proposal-mutation
                                       type="button"
                                       variant="ghost"
                                       size="icon"
@@ -1711,7 +1761,7 @@ export default function KegiatanSatkerPage() {
                                     />
                                     {activeInsertMenuIdx === idx && (
                                       <div className="absolute right-0 top-8 z-30 bg-white rounded-md shadow-xl border border-slate-150 p-1 min-w-[170px] animate-in fade-in zoom-in-95 duration-150">
-                                        <button
+                                        <button data-proposal-mutation
                                           type="button"
                                           onClick={(event) => {
                                             const trigger = event.currentTarget.closest('tr') || event.currentTarget;
@@ -1722,7 +1772,7 @@ export default function KegiatanSatkerPage() {
                                         >
                                           <Plus className="w-3.5 h-3.5 text-indigo-500" /> Baris Pengeluaran
                                         </button>
-                                        <button
+                                        <button data-proposal-mutation
                                           type="button"
                                           onClick={(event) => {
                                             const trigger = event.currentTarget.closest('tr') || event.currentTarget;
@@ -1736,7 +1786,7 @@ export default function KegiatanSatkerPage() {
                                       </div>
                                     )}
                                   </div>
-                                  <Button
+                                  <Button data-proposal-mutation
                                     type="button"
                                     variant="ghost"
                                     size="icon"
@@ -1759,7 +1809,7 @@ export default function KegiatanSatkerPage() {
                           <td></td>
                           <td colSpan={5} className="px-3 py-3">
                             <div className="flex items-center gap-2">
-                              <Button
+                              <Button data-proposal-mutation
                                 type="button"
                                 size="sm"
                                 onClick={(event) => {
@@ -1771,7 +1821,7 @@ export default function KegiatanSatkerPage() {
                               >
                                 <Plus className="w-3.5 h-3.5" /> Tambah Baris
                               </Button>
-                              <Button
+                              <Button data-proposal-mutation
                                 type="button"
                                 size="sm"
                                 onClick={(event) => {
@@ -1827,7 +1877,7 @@ export default function KegiatanSatkerPage() {
             </div>
 
             <SignatureSettings
-              key={selectedProposalId || 'new-proposal'}
+              key={`${selectedProposalId || 'new-proposal'}:${JSON.stringify(proposalSignatures)}`}
               stage="Proposal"
               signatures={proposalSignatures}
               employees={loyalisEmployees}
@@ -1835,16 +1885,17 @@ export default function KegiatanSatkerPage() {
               loadError={loyalisQuery.isError}
               readOnly={Boolean(isProposalReadOnly) || !canManageProposal}
               onSave={setProposalSignatures}
+              onDirtyChange={dirty => setNestedDirty('proposal-signature', dirty)}
             />
 
             {/* Stage 1 Actions */}
             <div className="flex flex-wrap justify-between items-center gap-3 pt-6 border-t border-slate-100 mt-6">
               <div>
                 {canDeleteProposal && selectedProposalId && (
-                  <Button
+                  <Button data-proposal-mutation
                     type="button"
                     variant="outline"
-                    onClick={() => setDeleteConfirmOpen(true)}
+                    data-proposal-view onClick={() => setDeleteConfirmOpen(true)}
                     className="rounded-sm border-rose-200 text-rose-600 bg-rose-50/50 hover:bg-rose-50 text-xs font-bold flex items-center gap-1.5 h-10 cursor-pointer"
                   >
                     <Trash2 className="w-4 h-4" /> Hapus Laporan
@@ -1873,7 +1924,7 @@ export default function KegiatanSatkerPage() {
                 )}
 
                 {!isProposalReadOnly && canManageProposal && (
-                  <Button
+                  <Button data-proposal-mutation
                     type="button"
                     onClick={handleSaveProposalDraft}
                     disabled={saving}
@@ -1884,9 +1935,9 @@ export default function KegiatanSatkerPage() {
                   </Button>
                 )}
 
-                <Button
+                <Button data-proposal-mutation
                   type="button"
-                  onClick={handlePrintPdf}
+                  data-proposal-view onClick={handlePrintPdf}
                   disabled={printingPdf}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-sm px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
                 >
@@ -1894,7 +1945,7 @@ export default function KegiatanSatkerPage() {
                 </Button>
 
                 {profile?.role === 'satker_head_loyalis' && (!currentProposalStatus || currentProposalStatus === 'proposal_draft' || currentProposalStatus === 'proposal_revision') && (
-                  <Button
+                  <Button data-proposal-mutation
                     onClick={handleSubmitProposalToQueue}
                     disabled={saving}
                     className="rounded-sm px-6 bg-slate-900 hover:bg-black text-white font-bold text-xs h-10 flex items-center gap-2 shadow-md cursor-pointer"
@@ -1905,10 +1956,10 @@ export default function KegiatanSatkerPage() {
                 )}
 
                 {/* Super Admin Review Actions for Proposal */}
-                {profile?.role === 'super_admin' && selectedProposalId && (
+                {isFinanceReviewer && selectedProposalId && (
                   <div className="flex gap-2">
                     {currentProposalStatus !== 'proposal_approved' && !currentProposalStatus?.startsWith('lpj_') && (
-                      <Button
+                      <Button data-proposal-mutation
                         onClick={() => { setReviewTarget('proposal'); setReviewAction('proposal_approved'); handleReviewDecision('proposal', 'proposal_approved', ''); }}
                         disabled={saving}
                         className="rounded-sm px-5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs h-10 flex items-center gap-1.5 shadow-md cursor-pointer"
@@ -1916,7 +1967,7 @@ export default function KegiatanSatkerPage() {
                         <CheckCircle className="w-4 h-4" /> Setujui Proposal
                       </Button>
                     )}
-                    <Button
+                    <Button data-proposal-mutation
                       onClick={() => { setReviewTarget('proposal'); setReviewAction('proposal_revision'); setReviewNoteInput(''); setShowReviewDialog(true); }}
                       disabled={saving}
                       className="rounded-sm px-5 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs h-10 flex items-center gap-1.5 shadow-md cursor-pointer"
@@ -1946,8 +1997,8 @@ export default function KegiatanSatkerPage() {
                   </p>
                 </div>
                 <div className="pt-2">
-                  <Button
-                    onClick={() => setActiveStage('proposal')}
+                  <Button data-proposal-mutation
+                    data-proposal-view onClick={() => setActiveStage('proposal')}
                     variant="outline"
                     className="rounded-sm border-amber-300 text-amber-800 hover:bg-amber-100 font-bold text-xs h-9 px-4"
                   >
@@ -1973,8 +2024,8 @@ export default function KegiatanSatkerPage() {
                   <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-md flex gap-3 text-emerald-900 text-xs shadow-sm">
                     <Sparkles className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                     <div>
-                      <p className="font-bold text-emerald-800 text-sm mb-0.5">LPJ Sandbox Disetujui</p>
-                      <p className="leading-relaxed font-medium">Persetujuan ini hanya memperbarui status laporan. Pegawai dan nominal di dalamnya tidak memengaruhi payroll atau slip gaji.</p>
+                      <p className="font-bold text-emerald-800 text-sm mb-0.5">LPJ Disetujui</p>
+                      <p className="leading-relaxed font-medium">Pembayaran pegawai diterbitkan ke Vakasi Karyawan. Koreksi dilakukan dengan meminta revisi LPJ.</p>
                     </div>
                   </div>
                 )}
@@ -1984,7 +2035,7 @@ export default function KegiatanSatkerPage() {
                   {[
                     { key: 'realisasi', label: 'Realisasi Keuangan', enabled: realisasiEnabled, toggle: setRealisasiEnabled, icon: <Receipt className="w-3.5 h-3.5" /> },
                   ].map(s => (
-                    <button
+                    <button data-proposal-mutation
                       key={s.key}
                       type="button"
                       onClick={() => s.toggle(!s.enabled)}
@@ -2030,9 +2081,9 @@ export default function KegiatanSatkerPage() {
 
                   return (
                     <div className="border border-slate-150 rounded-md overflow-hidden">
-                      <button
+                      <button data-proposal-mutation
                         type="button"
-                        onClick={() => toggleSection('realisasi')}
+                        data-proposal-view onClick={() => toggleSection('realisasi')}
                         className="w-full flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-emerald-50 to-emerald-50/40 hover:from-emerald-100/60 transition-all cursor-pointer"
                       >
                         <div className="flex items-center gap-2.5">
@@ -2089,10 +2140,10 @@ export default function KegiatanSatkerPage() {
                                         <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.realisasi > 0 ? fmtRp(row.realisasi) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPemasukanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], realisasi: val }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPemasukanBelow)} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
                                         <td className="px-3 py-2 text-center">
                                           <div className="flex items-center justify-center gap-1">
-                                            <Button type="button" variant="ghost" size="icon" title="Sisipkan baris di bawah" onClick={() => { setLpjPemasukanRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }); return c; }); }} className="h-7 w-7 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-sm cursor-pointer">
+                                            <Button data-proposal-mutation type="button" variant="ghost" size="icon" title="Sisipkan baris di bawah" onClick={() => { setLpjPemasukanRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }); return c; }); }} className="h-7 w-7 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-sm cursor-pointer">
                                               <Plus className="w-3.5 h-3.5" />
                                             </Button>
-                                            <Button type="button" variant="ghost" size="icon" title="Hapus baris" onClick={() => setLpjPemasukanRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer">
+                                            <Button data-proposal-mutation type="button" variant="ghost" size="icon" title="Hapus baris" onClick={() => setLpjPemasukanRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer">
                                               <Trash2 className="w-3.5 h-3.5" />
                                             </Button>
                                           </div>
@@ -2103,7 +2154,7 @@ export default function KegiatanSatkerPage() {
                                   <tr className="border-b border-slate-100 hover:bg-slate-50/10 transition-colors">
                                     <td></td>
                                     <td colSpan={6} className="px-3 py-2">
-                                      <Button type="button" size="sm" onClick={() => setLpjPemasukanRows(prev => [...prev, { uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }])} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer">
+                                      <Button data-proposal-mutation type="button" size="sm" onClick={() => setLpjPemasukanRows(prev => [...prev, { uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }])} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer">
                                         <Plus className="w-3.5 h-3.5" /> Tambah Pemasukan
                                       </Button>
                                     </td>
@@ -2228,12 +2279,12 @@ export default function KegiatanSatkerPage() {
                                           <td className="px-3 py-2.5 text-xs font-black text-indigo-700 text-right font-mono">{fmtRp(groupRealisasi)}</td>
                                           <td className="px-3 py-2.5 text-center">
                                             <div className="flex items-center justify-center gap-1">
-                                              <Button
+                                              <Button data-proposal-mutation
                                                 type="button"
                                                 variant="ghost"
                                                 size="sm"
                                                 disabled={(!linkedGroupReport && isLpjReadOnly) || !row.rowId}
-                                                onClick={() => setReportEditorGroupId(row.rowId || null)}
+                                                data-proposal-view onClick={() => setReportEditorGroupId(row.rowId || null)}
                                                 className={`h-7 rounded-sm px-2 text-[10px] font-bold ${linkedGroupReport
                                                   ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                                                   : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
@@ -2246,7 +2297,7 @@ export default function KegiatanSatkerPage() {
                                                 onLongPress={insertLpjPengeluaranHeaderBelow}
                                                 className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-sm cursor-pointer"
                                               />
-                                              <Button type="button" variant="ghost" size="icon" title="Hapus grup" onClick={() => { if (row.reportId) setExpenseReports(prev => prev.filter((report) => report.id !== row.reportId)); setLpjPengeluaranRows(prev => prev.filter((_, i) => i !== idx)); }} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer">
+                                              <Button data-proposal-mutation type="button" variant="ghost" size="icon" title="Hapus grup" onClick={() => { if (row.reportId) setExpenseReports(prev => prev.filter((report) => report.id !== row.reportId)); setLpjPengeluaranRows(prev => prev.filter((_, i) => i !== idx)); }} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer">
                                                 <Trash2 className="w-3.5 h-3.5" />
                                               </Button>
                                             </div>
@@ -2280,13 +2331,13 @@ export default function KegiatanSatkerPage() {
                                                   <>
                                                     <div className="fixed inset-0 z-40" onClick={() => setActiveInsertMenuIdx(null)} />
                                                     <div className="absolute right-0 bottom-8 z-50 w-44 bg-white border border-slate-150 rounded-md shadow-xl py-1.5 text-left">
-                                                      <button type="button" onClick={() => { setLpjPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { ...createProposalExpenseRow('item'), realisasi: 0 }); return c; }); setActiveInsertMenuIdx(null); }} className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 transition-colors cursor-pointer"><FileText className="w-3.5 h-3.5 text-indigo-500" /><span>Baris Biasa</span></button>
-                                                      <button type="button" onClick={() => { setLpjPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { ...createProposalExpenseRow('group_header'), realisasi: 0 }); return c; }); setActiveInsertMenuIdx(null); }} className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 transition-colors cursor-pointer"><Layers className="w-3.5 h-3.5 text-indigo-500" /><span>Header Grup</span></button>
+                                                      <button data-proposal-mutation type="button" onClick={() => { setLpjPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { ...createProposalExpenseRow('item'), realisasi: 0 }); return c; }); setActiveInsertMenuIdx(null); }} className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 transition-colors cursor-pointer"><FileText className="w-3.5 h-3.5 text-indigo-500" /><span>Baris Biasa</span></button>
+                                                      <button data-proposal-mutation type="button" onClick={() => { setLpjPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { ...createProposalExpenseRow('group_header'), realisasi: 0 }); return c; }); setActiveInsertMenuIdx(null); }} className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 transition-colors cursor-pointer"><Layers className="w-3.5 h-3.5 text-indigo-500" /><span>Header Grup</span></button>
                                                     </div>
                                                   </>
                                                 )}
                                               </div>
-                                              <Button type="button" variant="ghost" size="icon" title="Hapus baris" onClick={() => setLpjPengeluaranRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer">
+                                              <Button data-proposal-mutation type="button" variant="ghost" size="icon" title="Hapus baris" onClick={() => setLpjPengeluaranRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer">
                                                 <Trash2 className="w-3.5 h-3.5" />
                                               </Button>
                                             </div>
@@ -2320,10 +2371,10 @@ export default function KegiatanSatkerPage() {
                                     <td></td>
                                     <td colSpan={6} className="px-3 py-3">
                                       <div className="flex items-center gap-2">
-                                        <Button type="button" size="sm" onClick={() => setLpjPengeluaranRows(prev => [...prev, { ...createProposalExpenseRow('item'), realisasi: 0 }])} className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer">
+                                        <Button data-proposal-mutation type="button" size="sm" onClick={() => setLpjPengeluaranRows(prev => [...prev, { ...createProposalExpenseRow('item'), realisasi: 0 }])} className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer">
                                           <Plus className="w-3.5 h-3.5" /> Tambah Baris
                                         </Button>
-                                        <Button type="button" size="sm" onClick={() => setLpjPengeluaranRows(prev => [...prev, { ...createProposalExpenseRow('group_header'), realisasi: 0 }])} variant="outline" className="border-indigo-200 text-indigo-600 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer">
+                                        <Button data-proposal-mutation type="button" size="sm" onClick={() => setLpjPengeluaranRows(prev => [...prev, { ...createProposalExpenseRow('group_header'), realisasi: 0 }])} variant="outline" className="border-indigo-200 text-indigo-600 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer">
                                           <Layers className="w-3.5 h-3.5" /> Tambah Header Grup
                                         </Button>
                                       </div>
@@ -2381,6 +2432,11 @@ export default function KegiatanSatkerPage() {
                   printingReport={printingReport}
                   fmtRp={fmtRp}
                   parseQty={parseQty}
+                  onDirtyChange={setReportDirty}
+                  payrollLinks={Object.fromEntries(expenseReports.filter(report => report.mode === 'employee').flatMap(report => {
+                    const entry = selectedProposal?.payrollReportIdsByReport?.[report.id];
+                    return entry ? [[report.id, `/dashboard/payroll/uraian/vakasi-karyawan?month=${month}&year=${year}&eventId=${encodeURIComponent(entry)}`]] : [];
+                  }))}
                 />
 
                 {/* Legacy LPJ fields remain in storage/PDF payloads but are no
@@ -2388,7 +2444,7 @@ export default function KegiatanSatkerPage() {
                 {/* SEKSI 3: VAKASI KEPANITIAAN */}
                 {false && kepanitiaaanEnabled && (
                   <div className="border border-slate-150 rounded-md overflow-hidden">
-                    <button type="button" onClick={() => toggleSection('kepanitiaan')} className="w-full flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-violet-50 to-violet-50/40 hover:from-violet-100/60 transition-all cursor-pointer">
+                    <button data-proposal-mutation type="button" data-proposal-view onClick={() => toggleSection('kepanitiaan')} className="w-full flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-violet-50 to-violet-50/40 hover:from-violet-100/60 transition-all cursor-pointer">
                       <div className="flex items-center gap-2.5">
                         <Layers className="w-4 h-4 text-violet-600" />
                         <span className="font-bold text-violet-800 text-xs uppercase tracking-wider">Seksi 3: Vakasi Kepanitiaan</span>
@@ -2405,13 +2461,13 @@ export default function KegiatanSatkerPage() {
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tahap / Fase</span>
-                            <Button type="button" size="sm" onClick={() => setKepanitiaaanPhases(prev => [...prev, { name: '' }])} className="bg-violet-50 hover:bg-violet-100 text-violet-600 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer"><Plus className="w-3.5 h-3.5" /> Tambah Fase</Button>
+                            <Button data-proposal-mutation type="button" size="sm" onClick={() => setKepanitiaaanPhases(prev => [...prev, { name: '' }])} className="bg-violet-50 hover:bg-violet-100 text-violet-600 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer"><Plus className="w-3.5 h-3.5" /> Tambah Fase</Button>
                           </div>
                           <div className="flex flex-wrap gap-3">
                             {kepanitiaaanPhases.map((phase, pIdx) => (
                               <div key={pIdx} className="flex items-center gap-2 p-2.5 rounded-md border border-violet-100 bg-violet-50/20">
                                 <Input type="text" placeholder="Nama Fase" value={phase.name} onChange={(e) => { const val = e.target.value; setKepanitiaaanPhases(prev => { const c = [...prev]; c[pIdx] = { ...c[pIdx], name: val }; return c; }); }} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-32" />
-                                {kepanitiaaanPhases.length > 1 && <Button type="button" variant="ghost" size="icon" onClick={() => setKepanitiaaanPhases(prev => prev.filter((_, i) => i !== pIdx))} className="h-7 w-7 text-rose-450 hover:text-rose-650 hover:bg-rose-50 rounded-sm cursor-pointer"><X className="w-3.5 h-3.5" /></Button>}
+                                {kepanitiaaanPhases.length > 1 && <Button data-proposal-mutation type="button" variant="ghost" size="icon" onClick={() => setKepanitiaaanPhases(prev => prev.filter((_, i) => i !== pIdx))} className="h-7 w-7 text-rose-450 hover:text-rose-650 hover:bg-rose-50 rounded-sm cursor-pointer"><X className="w-3.5 h-3.5" /></Button>}
                               </div>
                             ))}
                           </div>
@@ -2479,14 +2535,14 @@ export default function KegiatanSatkerPage() {
                                       </td>
                                     ))}
                                     <td className="px-3 py-2 text-xs font-black text-slate-900 text-right font-mono">{fmtRp(rowTotal)}</td>
-                                    <td className="px-3 py-2 text-center"><Button type="button" variant="ghost" size="icon" onClick={() => setKepanitiaaanRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></Button></td>
+                                    <td className="px-3 py-2 text-center"><Button data-proposal-mutation type="button" variant="ghost" size="icon" onClick={() => setKepanitiaaanRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></Button></td>
                                   </tr>
                                 );
                               })}
                               <tr className="border-b border-slate-100 hover:bg-slate-50/10 transition-colors">
                                 <td></td>
                                 <td colSpan={1 + kepanitiaaanPhases.length} className="px-3 py-2.5">
-                                  <Button type="button" size="sm" onClick={() => setKepanitiaaanRows(prev => [...prev, { name: '', phaseAmounts: {}, searchText: '', showDropdown: false }])} className="bg-violet-50 hover:bg-violet-100 text-violet-600 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer">
+                                  <Button data-proposal-mutation type="button" size="sm" onClick={() => setKepanitiaaanRows(prev => [...prev, { name: '', phaseAmounts: {}, searchText: '', showDropdown: false }])} className="bg-violet-50 hover:bg-violet-100 text-violet-600 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer">
                                     <Plus className="w-3.5 h-3.5" /> Tambah Anggota
                                   </Button>
                                 </td>
@@ -2508,7 +2564,7 @@ export default function KegiatanSatkerPage() {
                 {/* SEKSI 4: KWITANSI / PEMBELIAN */}
                 {false && receiptEnabled && (
                   <div className="border border-slate-150 rounded-md overflow-hidden">
-                    <button type="button" onClick={() => toggleSection('kwitansi')} className="w-full flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-amber-50 to-amber-50/40 hover:from-amber-100/60 transition-all cursor-pointer">
+                    <button data-proposal-mutation type="button" data-proposal-view onClick={() => toggleSection('kwitansi')} className="w-full flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-amber-50 to-amber-50/40 hover:from-amber-100/60 transition-all cursor-pointer">
                       <div className="flex items-center gap-2.5">
                         <Receipt className="w-4 h-4 text-amber-600" />
                         <span className="font-bold text-amber-800 text-xs uppercase tracking-wider">Seksi 4: Kwitansi / Pembelian</span>
@@ -2545,13 +2601,13 @@ export default function KegiatanSatkerPage() {
                                   <td className="px-3 py-2"><Input type="number" min={1} value={row.qty} onChange={(e) => { const val = parseInt(e.target.value) || 1; setReceiptRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], qty: val }; return c; }); }} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-center" /></td>
                                   <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.unitPrice > 0 ? fmtRp(row.unitPrice) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setReceiptRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], unitPrice: val }; return c; }); }} className="rounded-sm border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
                                   <td className="px-3 py-2 text-xs font-black text-slate-900 text-right font-mono">{fmtRp(row.qty * row.unitPrice)}</td>
-                                  <td className="px-3 py-2 text-center"><Button type="button" variant="ghost" size="icon" onClick={() => setReceiptRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-450 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></Button></td>
+                                  <td className="px-3 py-2 text-center"><Button data-proposal-mutation type="button" variant="ghost" size="icon" onClick={() => setReceiptRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-450 hover:text-rose-600 hover:bg-rose-50 rounded-sm cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></Button></td>
                                 </tr>
                               ))}
                               <tr className="border-b border-slate-100 hover:bg-slate-50/10 transition-colors">
                                 <td></td>
                                 <td colSpan={4} className="px-3 py-2.5">
-                                  <Button type="button" size="sm" onClick={() => setReceiptRows(prev => [...prev, { itemName: '', qty: 1, unitPrice: 0 }])} className="bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer">
+                                  <Button data-proposal-mutation type="button" size="sm" onClick={() => setReceiptRows(prev => [...prev, { itemName: '', qty: 1, unitPrice: 0 }])} className="bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded-sm text-xs flex items-center gap-1 cursor-pointer">
                                     <Plus className="w-3.5 h-3.5" /> Tambah Item
                                   </Button>
                                 </td>
@@ -2571,7 +2627,7 @@ export default function KegiatanSatkerPage() {
                 )}
 
                 <SignatureSettings
-                  key={selectedProposalId || 'new-proposal'}
+                  key={`${selectedProposalId || 'new-proposal'}:${JSON.stringify(lpjSignatures)}:${lpjSignaturesFollowProposal}`}
                   stage="LPJ"
                   signatures={lpjSignatures}
                   proposalSignatures={proposalSignatures}
@@ -2580,6 +2636,7 @@ export default function KegiatanSatkerPage() {
                   loadError={loyalisQuery.isError}
                   readOnly={isLpjReadOnly || !canManageProposal}
                   followsProposal={lpjSignaturesFollowProposal}
+                  onDirtyChange={dirty => setNestedDirty('lpj-signature', dirty)}
                   onSave={(signatures, followsProposal) => {
                     setLpjSignatureOverrides(signatures);
                     setLpjSignaturesFollowProposal(followsProposal);
@@ -2590,10 +2647,10 @@ export default function KegiatanSatkerPage() {
                 <div className="flex flex-wrap justify-between items-center gap-3 pt-6 border-t border-slate-100 mt-6">
                   <div>
                     {canDeleteProposal && selectedProposalId && (
-                      <Button
+                      <Button data-proposal-mutation
                         type="button"
                         variant="outline"
-                        onClick={() => setDeleteConfirmOpen(true)}
+                        data-proposal-view onClick={() => setDeleteConfirmOpen(true)}
                         className="rounded-sm border-rose-200 text-rose-600 bg-rose-50/50 hover:bg-rose-50 text-xs font-bold flex items-center gap-1.5 h-10 cursor-pointer"
                       >
                         <Trash2 className="w-4 h-4" /> Hapus Laporan
@@ -2621,7 +2678,7 @@ export default function KegiatanSatkerPage() {
                       </span>
                     )}
 
-                    <Button
+                    <Button data-proposal-mutation
                       type="button"
                       onClick={handleSaveLpjDraft}
                       disabled={saving || !canManageProposal || periodClosed}
@@ -2631,9 +2688,9 @@ export default function KegiatanSatkerPage() {
                       Simpan Laporan
                     </Button>
 
-                    <Button
+                    <Button data-proposal-mutation
                       type="button"
-                      onClick={handlePrintPdf}
+                      data-proposal-view onClick={handlePrintPdf}
                       disabled={printingPdf}
                       className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-sm px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
                     >
@@ -2641,7 +2698,7 @@ export default function KegiatanSatkerPage() {
                     </Button>
 
                     {profile?.role === 'satker_head_loyalis' && (currentProposalStatus === 'proposal_approved' || currentProposalStatus === 'lpj_draft' || currentProposalStatus === 'lpj_revision') && (
-                      <Button
+                      <Button data-proposal-mutation
                         onClick={handleSubmitLpjToQueue}
                         disabled={saving || !canManageProposal || periodClosed}
                         className="rounded-sm px-6 bg-slate-900 hover:bg-black text-white font-bold text-xs h-10 flex items-center gap-2 shadow-md cursor-pointer"
@@ -2652,16 +2709,16 @@ export default function KegiatanSatkerPage() {
                     )}
 
                     {/* Super Admin Review Actions for LPJ */}
-                    {profile?.role === 'super_admin' && currentProposalStatus === 'lpj_submitted' && (
+                    {isFinanceReviewer && ['lpj_submitted', 'lpj_approved'].includes(currentProposalStatus || '') && (
                       <div className="flex gap-2">
-                        <Button
+                        {currentProposalStatus === 'lpj_submitted' && <Button data-proposal-mutation
                           onClick={() => { setReviewTarget('lpj'); setReviewAction('lpj_approved'); handleReviewDecision('lpj', 'lpj_approved', ''); }}
                           disabled={saving}
                           className="rounded-sm px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-10 flex items-center gap-1.5 shadow-md cursor-pointer"
                         >
-                          <Sparkles className="w-4 h-4" /> Setujui LPJ Sandbox
-                        </Button>
-                        <Button
+                          <Sparkles className="w-4 h-4" /> Setujui LPJ
+                        </Button>}
+                        <Button data-proposal-mutation
                           onClick={() => { setReviewTarget('lpj'); setReviewAction('lpj_revision'); setReviewNoteInput(''); setShowReviewDialog(true); }}
                           disabled={saving}
                           className="rounded-sm px-5 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs h-10 flex items-center gap-1.5 shadow-md cursor-pointer"
@@ -2678,6 +2735,8 @@ export default function KegiatanSatkerPage() {
         )}
 
       </Card>
+
+      </ProposalEditGuard>
 
       {/* Historical Baseline Clone Dialog */}
       <Dialog open={showCloneModal} onOpenChange={setShowCloneModal}>

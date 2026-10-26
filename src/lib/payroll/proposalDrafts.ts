@@ -11,6 +11,7 @@ export interface LocalProposalDraft {
   stage: ProposalStage;
   data: Record<string, unknown>;
   requestId: string;
+  createdAt?: number;
   updatedAt: number;
   localRevision: number;
   predecessorRequestIds: string[];

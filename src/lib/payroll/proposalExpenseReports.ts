@@ -78,7 +78,7 @@ export interface ExpenseReportValidation {
   valid: boolean;
   errors: string[];
   populatedRows: ExpenseReportRow[];
-  /** Informational only; repeated employee rows are valid in the report sandbox. */
+  /** Repeated recipient rows are valid and are summed when payroll is approved. */
   duplicateEmployeeIds: string[];
 }
 
@@ -219,7 +219,7 @@ function normalizeRow(raw: Partial<ExpenseReportRow> | Record<string, unknown>, 
     employeeSearchText,
     rincianQty,
     rincianRate,
-    realisasi: storedRealisasi > 0 ? storedRealisasi : calculatedRealisasi,
+    realisasi: raw.realisasi !== undefined && raw.realisasi !== null ? storedRealisasi : calculatedRealisasi,
     note: normalizeText(raw.note),
   };
   if (raw.parentRowId) row.parentRowId = normalizeText(raw.parentRowId);
@@ -236,7 +236,6 @@ export function createExpenseReportRow(seed: Partial<ExpenseReportRow> = {}): Ex
     employeeSearchText: '',
     rincianQty: '',
     rincianRate: 0,
-    realisasi: 0,
     note: '',
     ...seed,
   }, 0);

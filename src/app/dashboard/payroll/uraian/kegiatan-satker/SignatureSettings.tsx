@@ -22,10 +22,11 @@ interface Props {
   readOnly: boolean;
   followsProposal?: boolean;
   onSave: (signatures: ProposalSignature[], followsProposal: boolean) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 export default function SignatureSettings({
-  stage, signatures, proposalSignatures, employees, loading, loadError, readOnly, followsProposal = false, onSave,
+  stage, signatures, proposalSignatures, employees, loading, loadError, readOnly, followsProposal = false, onSave, onDirtyChange,
 }: Props) {
   const id = useId();
   const [slots, setSlots] = useState(() => normalizeProposalSignatures(signatures));
@@ -38,6 +39,7 @@ export default function SignatureSettings({
   const displayedSlots = isLpj && follow ? proposalSignatures || signatures : slots;
 
   const updateSlot = (index: number, patch: Partial<ProposalSignature>) => {
+    onDirtyChange?.(true);
     setSlots((prev) => prev.map((slot, i) => i === index ? { ...slot, ...patch } : slot));
   };
 
@@ -48,6 +50,7 @@ export default function SignatureSettings({
   };
 
   const resetChanges = () => {
+    onDirtyChange?.(false);
     const normalized = normalizeProposalSignatures(signatures);
     setSlots(normalized);
     setSearches(normalized.map((slot) => slot.name));
@@ -71,6 +74,7 @@ export default function SignatureSettings({
               checked={follow}
               disabled={readOnly}
               onChange={(event) => {
+                onDirtyChange?.(true);
                 setFollow(event.target.checked);
                 setActiveSlot(null);
               }}
@@ -99,7 +103,7 @@ export default function SignatureSettings({
             <div key={index} className="space-y-3 rounded-md border border-slate-200 bg-slate-50/30 p-4">
               <div className="flex items-center justify-between gap-1">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Penandatangan {index + 1}</p>
-                <button
+                <button data-proposal-mutation
                   type="button"
                   disabled={disabled}
                   onClick={() => {
@@ -127,6 +131,7 @@ export default function SignatureSettings({
                   value={isLpj && follow ? slot.name : searches[index] || ''}
                   disabled={disabled}
                   onChange={(event) => {
+                    onDirtyChange?.(true);
                     const value = event.target.value;
                     setSearches((prev) => prev.map((text, i) => i === index ? value : text));
                     setActiveSlot(index);
@@ -159,7 +164,7 @@ export default function SignatureSettings({
                     ) : filtered.length === 0 ? (
                       <p className="p-3 text-xs text-slate-500">Tidak ditemukan pegawai dengan nama tersebut.</p>
                     ) : filtered.map((employee, optionIndex) => (
-                      <button
+                      <button data-proposal-mutation
                         id={`${listId}-${optionIndex}`}
                         key={employee.id}
                         type="button"
@@ -193,8 +198,8 @@ export default function SignatureSettings({
 
       {!readOnly && (
         <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
-          <Button type="button" variant="ghost" onClick={resetChanges}>Batal</Button>
-          <Button type="button" onClick={() => onSave(normalizeProposalSignatures(slots), follow)}>Simpan</Button>
+          <Button data-proposal-mutation type="button" variant="ghost" data-proposal-view onClick={resetChanges}>Batal</Button>
+          <Button data-proposal-mutation type="button" onClick={() => { onSave(normalizeProposalSignatures(slots), follow); onDirtyChange?.(false); }}>Simpan</Button>
         </div>
       )}
     </section>

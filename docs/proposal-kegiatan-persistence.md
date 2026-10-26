@@ -39,9 +39,10 @@ direct Firestore writes were still accepted by the rules.
   separate copy before loading the latest stored event.
 - Approval uses the stored proposal budget and preserves existing LPJ input.
   LPJ approval also checks the revision and advances it.
-- Browser create/update writes to `ProposalKegiatan` are denied. This blocks
-  older tabs from taking ownership or reverting approval. Existing authorized
-  reads and explicit deletions retain their role and open-period checks.
+- All browser mutations of `ProposalKegiatan` are denied. This blocks
+  older tabs from taking ownership, reverting approval, or leaving orphan
+  payments after deletion. Deletion uses the audited API with the existing
+  Super Admin / owning Kepala SatKer permissions and open-period checks.
 - Confirmed deletion pauses the draft queue and waits for requests already in
   progress without saving pending input. Previously, flushing a stale draft
   first could fail its revision check and prevent deletion from even reaching
@@ -90,3 +91,65 @@ success do not establish that production runs these protections.
 The prevention changes do not reassign historical records. Repair an owner only
 from an authoritative identity mapping and record the change in the audit log;
 an event title alone does not establish its original creator.
+
+## Employee payments
+
+LPJ approval requires `expectedRevision` and `requestId`. The authenticated API
+validates active Loyalis recipients and integer rupiah amounts in the same
+transaction as approval, then publishes one approved `VakasiTambahan` event per
+employee report. Repeated recipient rows are summed from REALISASI; explicit
+zero amounts stay zero. Expense-only reports do not create payroll entries.
+
+The new source kind is `proposal_lpj_payroll`, with deterministic
+`LPJ_PAYROLL_` IDs derived from the proposal/report pair. Historical
+`proposal_lpj_report` sandbox entries remain non-payable. Neither the browser
+nor the generic Vakasi API may mutate generated entries. Vakasi Karyawan shows
+them as managed records with a link back to Kegiatan SatKer.
+
+Revision and deletion void generated events and remove their earnings from
+editable slips. Approval, withdrawal and deletion check affected slip locks
+before committing. Approved source content stays locked until revision.
+Financial audit records retain deleted event content and payment provenance.
+
+After the transaction, the existing Vakasi propagation recomputes draft slips.
+The durable operation in `FinancialIdempotencyKeys` retains affected employee
+IDs and a pending/complete sync state, including after deletion. Failed sync
+does not misreport the committed decision as a failed approval. Retry through
+`POST /api/payroll/proposal-kegiatan/sync` with its `operationId`; the page
+exposes the retry for pending operations. Each retry reevaluates current slip
+statuses; merges never add an earning twice. A missing slip is normal: its
+future generation reads the approved source event.
+
+## Editing and order
+
+Super Admin confirms each focus visit to an editable field on an event whose
+immutable `creatorRole` is not `super_admin`. Unknown creator roles are protected.
+Related mutation controls use the same guard, including portal-based report
+editors. Cancelling and opening/closing an unchanged report never save data.
+
+The displayed form owns its expected revision. A clean form refreshes when
+another editor saves; a dirty form keeps its local values and conflicts instead
+of adopting the other editor's revision. Unsaved report and signature edits also
+block that revision advancement.
+
+Events sort newest-created first, using the same comparator for server records
+and local drafts. Local first-created times survive retries and remounts.
+
+Preview metadata recovery with:
+
+```sh
+npm run backfill:proposal-metadata
+```
+
+`--apply` performs the repair (optionally `--ids=id1,id2`). Missing `createdAt`
+comes from Firestore's document creation time. Creator roles come only from
+matching creation audit evidence; unresolved roles remain protected. Repairs
+preserve ownership, content, status, revision and `updatedAt`, with a separate
+audit record. The 26 October 2026 dry run found 11 timestamps and three creator
+roles to restore across 14 records; it made no production changes.
+
+Deploy the compatible application/API before the new mutation-denying rules.
+Then apply the reviewed metadata repair, reload older tabs, and verify an
+approved LPJ's source entries and editable-slip totals. Do not replay historical
+approvals automatically. Pushing, deployment and applying this repair are
+separate release actions.

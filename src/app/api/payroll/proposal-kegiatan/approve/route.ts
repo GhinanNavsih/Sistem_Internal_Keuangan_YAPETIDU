@@ -1,214 +1,62 @@
+import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
-import {
-  ensureExpenseRowIds,
-  ExpenseReport,
-  normalizeExpenseReportLinksToGroups,
-  normalizeExpenseReports,
-  ProposalExpenseRow,
-} from '@/lib/payroll/proposalExpenseReports';
-import { validateLpjApproval } from '@/lib/payroll/proposalExpenseApproval';
-import { PROPOSAL_LPJ_SANDBOX_SOURCE_KIND } from '@/lib/payroll/vakasiTambahan';
-import {
-  errorResponse,
-  HttpError,
-  requireAuthenticatedProfile,
-  requireRole,
-} from '@/lib/server/auth';
 import { FINANCE_ROLES } from '@/lib/payroll/roles';
+import { errorResponse, HttpError, requireAuthenticatedProfile, requireRole } from '@/lib/server/auth';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
+import { finishProposalPayrollSync, prepareProposalPayroll, proposalOperationRef } from '@/lib/server/proposalPayroll';
 
 export const dynamic = 'force-dynamic';
-
-interface ProposalData {
-  period?: unknown;
-  reportName?: unknown;
-  departmentUnit?: unknown;
-  status?: unknown;
-  lpjPengeluaranRows?: unknown;
-  pengeluaranRows?: unknown;
-  expenseReports?: unknown;
-}
-
-interface NormalizedLpjData {
-  rows: ProposalExpenseRow[];
-  reports: ExpenseReport[];
-}
-
-function parseCommand(raw: unknown): { proposalId: string; note: string; expectedRevision?: number } {
-  if (!raw || typeof raw !== 'object') throw new HttpError(400, 'Perintah persetujuan LPJ tidak valid.');
-  const value = raw as Record<string, unknown>;
-  const proposalId = typeof value.proposalId === 'string' ? value.proposalId.trim() : '';
-  if (!proposalId || proposalId.length > 150) throw new HttpError(400, 'ID proposal tidak valid.');
-  const note = typeof value.note === 'string' ? value.note.trim().slice(0, 2000) : '';
-  if (value.expectedRevision !== undefined && (!Number.isSafeInteger(value.expectedRevision) || Number(value.expectedRevision) < 0)) {
-    throw new HttpError(400, 'Versi LPJ tidak valid.');
-  }
-  return { proposalId, note, ...(typeof value.expectedRevision === 'number' ? { expectedRevision: value.expectedRevision } : {}) };
-}
-
-function asRows(value: unknown): ProposalExpenseRow[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((row): row is ProposalExpenseRow => Boolean(row && typeof row === 'object')).map((row) => ({
-    ...(row as ProposalExpenseRow),
-    type: (row as ProposalExpenseRow).type === 'group_header' ? 'group_header' : 'item',
-    uraian: typeof (row as ProposalExpenseRow).uraian === 'string' ? (row as ProposalExpenseRow).uraian : '',
-    rincianQty: typeof (row as ProposalExpenseRow).rincianQty === 'string' ? (row as ProposalExpenseRow).rincianQty : '',
-    rincianRate: Number.isFinite(Number((row as ProposalExpenseRow).rincianRate)) ? Number((row as ProposalExpenseRow).rincianRate) : 0,
-    realisasi: Number.isFinite(Number((row as ProposalExpenseRow).realisasi)) ? Number((row as ProposalExpenseRow).realisasi) : 0,
-  }));
-}
-
-function normalizeLpjData(data: ProposalData): NormalizedLpjData {
-  const proposalRows = ensureExpenseRowIds(asRows(data.pengeluaranRows));
-  const lpjRows = ensureExpenseRowIds(asRows(data.lpjPengeluaranRows).length > 0 ? asRows(data.lpjPengeluaranRows) : proposalRows.map((row) => ({
-    ...row,
-    realisasi: row.type === 'group_header' ? 0 : (row.realisasi ?? 0),
-  })));
-
-  const rowsWithLegacyLinks = lpjRows.map((row, index) => {
-    const proposalRow = proposalRows.find((candidate) => candidate.rowId === row.rowId) || proposalRows[index];
-    return row.type === 'group_header' && !row.reportId && proposalRow?.reportId
-      ? { ...row, reportId: proposalRow.reportId, reportType: proposalRow.reportType }
-      : row;
-  });
-  const reports = normalizeExpenseReports(data.expenseReports, rowsWithLegacyLinks);
-  const normalizedLinks = normalizeExpenseReportLinksToGroups(rowsWithLegacyLinks, reports);
-  const rowsWithReportIds = normalizedLinks.rows.map((row) => {
-    if (row.type !== 'group_header' || row.reportId) return row;
-    const linked = normalizedLinks.reports.find((report) => report.expenseRowId === row.rowId);
-    return linked ? { ...row, reportId: linked.id } : row;
-  });
-  return { rows: rowsWithReportIds, reports: normalizedLinks.reports };
-}
-
-function getEmployeeIds(reports: ExpenseReport[]): string[] {
-  return Array.from(new Set(reports
-    .filter((report) => report.mode === 'employee')
-    .flatMap((report) => report.rows.map((row) => row.employeeId.trim()).filter(Boolean))));
-}
-
-async function readActiveEmployees(employeeIds: string[]): Promise<Map<string, string>> {
-  const snapshots = await Promise.all(employeeIds.map((employeeId) => adminDb.collection('Employees_Loyalis').doc(employeeId).get()));
-  const names = new Map<string, string>();
-  snapshots.forEach((snapshot, index) => {
-    const data = snapshot.data();
-    if (snapshot.exists && data?.personal_info?.status === 'AKTIF') {
-      names.set(employeeIds[index], String(data.personal_info?.name || ''));
-    }
-  });
-  return names;
-}
-
-function approvalError(errors: string[]): HttpError {
-  const visibleErrors = errors.slice(0, 12);
-  const suffix = errors.length > visibleErrors.length ? `\n... dan ${errors.length - visibleErrors.length} masalah lain.` : '';
-  return new HttpError(400, `LPJ belum dapat disetujui:\n${visibleErrors.map((error) => `- ${error}`).join('\n')}${suffix}`);
-}
 
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
     requireRole(actor, FINANCE_ROLES);
-    const command = parseCommand(await request.json());
-    const proposalRef = adminDb.collection('ProposalKegiatan').doc(command.proposalId);
-    const initialSnapshot = await proposalRef.get();
-    if (!initialSnapshot.exists) throw new HttpError(404, 'Proposal kegiatan tidak ditemukan.');
-
-    const initialData = initialSnapshot.data() as ProposalData;
-    const initialStatus = typeof initialData.status === 'string' ? initialData.status : '';
-    if (initialStatus !== 'lpj_submitted' && initialStatus !== 'lpj_approved') {
-      throw new HttpError(409, 'LPJ harus berada pada antrean pemeriksaan sebelum disetujui.');
-    }
-    const period = typeof initialData.period === 'string' ? initialData.period : '';
-    if (!/^\d{4}-\d{2}$/.test(period)) throw new HttpError(400, 'Periode proposal tidak valid.');
-
-    const initialNormalized = normalizeLpjData(initialData);
-    const employeeIds = getEmployeeIds(initialNormalized.reports);
-    const employeeNames = await readActiveEmployees(employeeIds);
-    const validation = validateLpjApproval(initialNormalized.rows, initialNormalized.reports, new Set(employeeNames.keys()));
-    if (!validation.valid) throw approvalError(validation.errors);
-
-    const previousSourceSnapshot = await adminDb
-      .collection('VakasiTambahan')
-      .where('sourceProposalId', '==', command.proposalId)
-      .get();
-    const previousSourceDocs = previousSourceSnapshot.docs.filter(
-      (snapshot) => snapshot.data().sourceKind === PROPOSAL_LPJ_SANDBOX_SOURCE_KIND,
-    );
-
-    const result = await adminDb.runTransaction(async (transaction) => {
-      const proposalSnapshot = await transaction.get(proposalRef);
-      const periodSnapshot = await transaction.get(adminDb.collection('PayrollPeriods').doc(period));
-      if (!proposalSnapshot.exists) throw new HttpError(404, 'Proposal kegiatan tidak ditemukan.');
-      if (periodSnapshot.data()?.attendanceStatus === 'closed') {
-        throw new HttpError(409, 'Periode payroll sudah ditutup sehingga LPJ tidak dapat disetujui.');
+    const raw = await request.json();
+    if (!raw || typeof raw !== 'object') throw new HttpError(400, 'Perintah persetujuan LPJ tidak valid.');
+    const { proposalId, expectedRevision, requestId } = raw;
+    const note = typeof raw.note === 'string' ? raw.note.trim().slice(0, 2000) : '';
+    if (typeof proposalId !== 'string' || !/^[A-Za-z0-9_-]{1,150}$/.test(proposalId) ||
+      !Number.isSafeInteger(expectedRevision) || expectedRevision < 0 ||
+      typeof requestId !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(requestId))
+      throw new HttpError(400, 'ID, revisi, dan requestId persetujuan LPJ wajib valid.');
+    const requestHash = createHash('sha256').update(JSON.stringify({ proposalId, expectedRevision, note, action: 'approve_lpj' })).digest('hex');
+    const operationRef = proposalOperationRef(actor.uid, requestId);
+    const proposalRef = adminDb.collection('ProposalKegiatan').doc(proposalId);
+    await adminDb.runTransaction(async transaction => {
+      const [snapshot, prior] = await transaction.getAll(proposalRef, operationRef);
+      if (prior.exists) {
+        if (prior.data()!.requestHash !== requestHash) throw new HttpError(409, 'requestId sudah digunakan untuk perintah lain.');
+        return;
       }
-      const currentData = proposalSnapshot.data() as ProposalData;
-      const revision = Number(proposalSnapshot.data()?.revision || 0);
-      if (command.expectedRevision !== undefined && revision !== command.expectedRevision) {
-        throw new HttpError(409, 'LPJ berubah di sesi lain. Muat ulang sebelum menyetujui.');
-      }
-      const currentStatus = typeof currentData.status === 'string' ? currentData.status : '';
-      if (currentStatus !== 'lpj_submitted' && currentStatus !== 'lpj_approved') {
-        throw new HttpError(409, 'Status LPJ berubah. Muat ulang proposal sebelum mencoba lagi.');
-      }
-
-      // The proposal document is the transaction boundary. The initial
-      // validation protects the user-facing request, while this reread stops
-      // a concurrent edit from being silently approved.
-      const currentNormalized = normalizeLpjData(currentData);
-      const currentEmployeeIds = getEmployeeIds(currentNormalized.reports);
-      const currentEmployeeNames = currentEmployeeIds.length === employeeIds.length && currentEmployeeIds.every((id) => employeeIds.includes(id))
-        ? employeeNames
-        : await readActiveEmployees(currentEmployeeIds);
-      const currentValidation = validateLpjApproval(currentNormalized.rows, currentNormalized.reports, new Set(currentEmployeeNames.keys()));
-      if (!currentValidation.valid) throw approvalError(currentValidation.errors);
-
-      // Proposal kegiatan is currently a reporting sandbox. Retire records
-      // created by earlier versions, but never create or update payroll pay.
-      let retiredPayrollRecords = 0;
-      previousSourceDocs.forEach((snapshot) => {
-        transaction.set(adminDb.collection('VakasiTambahan').doc(snapshot.id), {
-          status: 'void',
-          active: false,
-          voidedAt: admin.firestore.FieldValue.serverTimestamp(),
-          voidedBy: actor.uid,
-          voidedReason: 'Proposal kegiatan merupakan sandbox dan tidak memengaruhi payroll.',
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-        retiredPayrollRecords += 1;
+      if (!snapshot.exists) throw new HttpError(404, 'Proposal kegiatan tidak ditemukan.');
+      const before = snapshot.data()!;
+      const period = before.period;
+      if (typeof period !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) throw new HttpError(400, 'Periode proposal tidak valid.');
+      const payrollPeriod = await transaction.get(adminDb.collection('PayrollPeriods').doc(period));
+      if (payrollPeriod.data()?.attendanceStatus === 'closed') throw new HttpError(409, 'Periode payroll sudah ditutup.');
+      const revision = Number(before.revision || 0);
+      if (revision !== expectedRevision) throw new HttpError(409, 'LPJ berubah di sesi lain. Muat ulang sebelum menyetujui.');
+      if (before.status !== 'lpj_submitted') throw new HttpError(409, 'LPJ harus berada pada antrean pemeriksaan sebelum disetujui.');
+      const payroll = await prepareProposalPayroll(transaction, { proposalId, proposal: before, approved: true, revision: revision + 1, actor, requestId });
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      const result = { proposalId, status: 'lpj_approved', revision: revision + 1, payrollReportIds: payroll.payrollReportIds,
+        syncedReports: payroll.syncedReports, staleReports: payroll.staleReports, totalPayout: payroll.totalPayout };
+      payroll.write();
+      transaction.update(proposalRef, {
+        status: 'lpj_approved', revision: revision + 1, reviewedBy: actor.uid, reviewedByName: actor.displayName,
+        reviewedAt: now, reviewNote: note || null, updatedAt: now,
+        payrollReportIds: payroll.payrollReportIds, payrollReportIdsByReport: payroll.payrollReportIdsByReport, payrollSyncedAt: now, payrollSyncedBy: actor.uid,
+        payrollSyncStatus: 'pending', payrollSyncOperationId: operationRef.id,
       });
-
-      transaction.set(proposalRef, {
-        status: 'lpj_approved',
-        revision: revision + 1,
-        reviewedBy: actor.uid,
-        reviewedByName: actor.displayName,
-        reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
-        reviewNote: command.note || null,
-        payrollSyncedAt: admin.firestore.FieldValue.delete(),
-        payrollSyncedBy: admin.firestore.FieldValue.delete(),
-        payrollReportIds: [],
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true });
+      transaction.create(operationRef, { requestHash, actorUid: actor.uid, entityType: 'ProposalKegiatan', entityId: proposalId,
+        period, employeeIds: payroll.employeeIds, result, payrollSyncStatus: 'pending', createdAt: now });
       transaction.create(newFinancialAuditRef(), buildFinancialAuditRecord(actor, {
-        action: 'PROPOSAL_KEGIATAN_APPROVE_LPJ', entityType: 'ProposalKegiatan', entityId: command.proposalId,
-        reason: command.note || 'LPJ disetujui',
-        before: { status: currentStatus, revision },
-        after: { status: 'lpj_approved', revision: revision + 1 },
+        action: 'PROPOSAL_KEGIATAN_APPROVE_LPJ', entityType: 'ProposalKegiatan', entityId: proposalId, requestId,
+        reason: note || 'LPJ disetujui dan pembayaran pegawai diterbitkan',
+        before: { status: before.status, revision }, after: result,
       }));
-
-      return {
-        syncedReports: 0,
-        staleReports: retiredPayrollRecords,
-        totalPayout: 0,
-        payrollEffect: 'none',
-      };
     });
-
-    return Response.json({ status: 'lpj_approved', ...result }, { status: 200, headers: { 'Cache-Control': 'no-store' } });
-  } catch (error) {
-    return errorResponse(error);
-  }
+    return Response.json(await finishProposalPayrollSync(actor, operationRef.id), { headers: { 'Cache-Control': 'no-store' } });
+  } catch (error) { return errorResponse(error); }
 }

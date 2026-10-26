@@ -2,7 +2,7 @@
 import ReferralFinancePanel from '@/components/payroll/ReferralFinancePanel';
 import ReferralEventPanel from '@/components/payroll/ReferralEventPanel';
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useEffectEvent, useCallback, useRef, useMemo } from 'react';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -43,7 +43,7 @@ import { MONTHS_ID } from '@/utils/rekapConfig';
 import CetakKegiatanLoyalisDialog from '@/components/CetakKegiatanLoyalisDialog';
 import { generateKegiatanLoyalisRecapPdf } from '@/utils/generateKegiatanLoyalisRecapPdf';
 import { generateKegiatanLoyalisRecapXlsx } from '@/utils/generateKegiatanLoyalisRecapXlsx';
-import { isProposalLpjSandboxSource } from '@/lib/payroll/vakasiTambahan';
+import { isProposalLpjSandboxSource, isProposalLpjPayrollSource } from '@/lib/payroll/vakasiTambahan';
 import { BANSOS_EVENT_SOURCE_KIND, isBansosKind } from '@/lib/payroll/santunan';
 import SantunanEventPanel from '@/components/vakasi/SantunanEventPanel';
 import BonusTriwulanEventPanel from '@/components/vakasi/BonusTriwulanEventPanel';
@@ -270,6 +270,53 @@ export default function VakasiKaryawanPage() {
 
     return () => unsubscribe();
   }, [periodToken, profile]);
+
+  const selectEventFromList = (evt: (typeof existingEvents)[number]) => {
+    setSelectedBansosEventId(null);
+    setSelectedEventId(evt.id);
+    setEventName(evt.eventName);
+    setIsEndOfMonth(!!evt.isEndOfMonth);
+    setSelectedDept(evt.departmentUnit || '');
+    // Legacy records had no status but were historically
+    // payable, so they must behave as approved/read-only.
+    setCurrentEventStatus(evt.status || 'approved');
+    setCurrentEventReviewNote(evt.reviewNote || null);
+    setCurrentEventSubmittedBy(evt.submittedBy || null);
+    setCurrentEventSubmittedByName(evt.submittedByName || null);
+    setCurrentEventSubmittedByEmail(evt.submittedByEmail || null);
+    setCurrentEventRevision(Number(evt.revision || 0));
+    setReportFileUrl(evt.reportFileUrl || null);
+    setReportFileName(evt.reportFileName || null);
+    setAutosaveMessage('');
+
+    const rows = Object.entries(evt.eventWorkers || {}).map(([id, w]: [string, any]) => {
+      const directoryEmployee = employees.find(employee => employee.id === id);
+      return {
+        employeeId: id,
+        employeeName: w.employeeName || directoryEmployee?.name || '',
+        payGiven: w.payGiven || 0,
+        employeeCollection: w.employeeCollection || directoryEmployee?.employeeCollection || 'Employees_Loyalis',
+        jobCategory: w.jobCategory || directoryEmployee?.jobCategory,
+        department: w.department || directoryEmployee?.department,
+        role: w.role || directoryEmployee?.role,
+        searchText: w.employeeName || directoryEmployee?.name || '',
+        showDropdown: false,
+      };
+    });
+    setWorkerRows(rows.length > 0 ? rows : [createEmptyWorkerRow()]);
+  };
+  const selectLinkedEvent = useEffectEvent((event: (typeof existingEvents)[number]) => selectEventFromList(event));
+  const linkedEventSelection = useRef('');
+  useEffect(() => {
+    const id = searchParams.get('eventId');
+    const key = `${profile?.uid}:${periodToken}:${id}`;
+    if (!id || linkedEventSelection.current === key) return;
+    const event = existingEvents.find(item => item.id === id);
+    let cancelled = false;
+    if (event) queueMicrotask(() => { if (!cancelled) { linkedEventSelection.current = key; selectLinkedEvent(event); } });
+    return () => { cancelled = true; };
+  }, [existingEvents, searchParams, profile?.uid, periodToken]);
+  const selectedLpjEvent = existingEvents.find(event => event.id === selectedEventId && isProposalLpjPayrollSource(event));
 
   const filteredEvents = useMemo(() => {
     if (!filterDept) return existingEvents;
@@ -595,7 +642,7 @@ export default function VakasiKaryawanPage() {
   const triggerAutosave = () => {
     // Approved financial records are changed only through the protected API;
     // a background Firestore write must never silently alter or re-approve one.
-    if (currentEventStatus === 'approved' || currentEventStatus === 'pending_review' || currentEventStatus === 'declined') {
+    if (existingEvents.some(event => event.id === selectedEventIdRef.current && isProposalLpjPayrollSource(event)) || currentEventStatus === 'approved' || currentEventStatus === 'pending_review' || currentEventStatus === 'declined') {
       return;
     }
     // Always retain the newest complete form snapshot. If a write is active, the
@@ -618,7 +665,7 @@ export default function VakasiKaryawanPage() {
   const handleAutosave = async (snapshot: AutosaveSnapshot) => {
     const { rows, eventName: currentEventName, eventId: activeId, isEndOfMonth: currentIsEndOfMonth, department: currentDept, reportFileUrl: currentReportFileUrl, reportFileName: currentReportFileName } = snapshot;
     if (!currentEventName.trim()) return;
-    if (currentEventStatus === 'approved' || currentEventStatus === 'pending_review' || currentEventStatus === 'declined') return;
+    if (existingEvents.some(event => event.id === selectedEventIdRef.current && isProposalLpjPayrollSource(event)) || currentEventStatus === 'approved' || currentEventStatus === 'pending_review' || currentEventStatus === 'declined') return;
     const invalidWorker = rows.find(w => w.searchText?.trim() && !w.employeeId);
     if (invalidWorker) {
       setAutosaveMessage(`Belum tersimpan otomatis: pilih "${invalidWorker.searchText}" dari daftar pegawai.`);
@@ -858,6 +905,8 @@ export default function VakasiKaryawanPage() {
         return <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm border bg-orange-50 text-orange-700 border-orange-200">Perlu Revisi</span>;
       case 'declined':
         return <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm border bg-rose-50 text-rose-700 border-rose-200">Ditolak</span>;
+      case 'voided':
+        return <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm border bg-slate-50 text-slate-600 border-slate-200">Ditarik</span>;
       default:
         return null;
     }
@@ -1039,40 +1088,7 @@ export default function VakasiKaryawanPage() {
                   return (
                     <div
                       key={evt.id}
-                      onClick={() => {
-                        setSelectedBansosEventId(null);
-                        setSelectedEventId(evt.id);
-                        setEventName(evt.eventName);
-                        setIsEndOfMonth(!!evt.isEndOfMonth);
-                        setSelectedDept(evt.departmentUnit || '');
-                        // Legacy records had no status but were historically
-                        // payable, so they must behave as approved/read-only.
-                        setCurrentEventStatus(evt.status || 'approved');
-                        setCurrentEventReviewNote(evt.reviewNote || null);
-                        setCurrentEventSubmittedBy(evt.submittedBy || null);
-                        setCurrentEventSubmittedByName(evt.submittedByName || null);
-                        setCurrentEventSubmittedByEmail(evt.submittedByEmail || null);
-                        setCurrentEventRevision(Number(evt.revision || 0));
-                        setReportFileUrl(evt.reportFileUrl || null);
-                        setReportFileName(evt.reportFileName || null);
-                        setAutosaveMessage('');
-
-                        const rows = Object.entries(evt.eventWorkers || {}).map(([id, w]: [string, any]) => {
-                          const directoryEmployee = employees.find(employee => employee.id === id);
-                          return {
-                            employeeId: id,
-                            employeeName: w.employeeName || directoryEmployee?.name || '',
-                            payGiven: w.payGiven || 0,
-                            employeeCollection: w.employeeCollection || directoryEmployee?.employeeCollection || 'Employees_Loyalis',
-                            jobCategory: w.jobCategory || directoryEmployee?.jobCategory,
-                            department: w.department || directoryEmployee?.department,
-                            role: w.role || directoryEmployee?.role,
-                            searchText: w.employeeName || directoryEmployee?.name || '',
-                            showDropdown: false,
-                          };
-                        });
-                        setWorkerRows(rows.length > 0 ? rows : [createEmptyWorkerRow()]);
-                      }}
+                      onClick={() => selectEventFromList(evt)}
                       className={`p-4 rounded-md border transition-all duration-200 cursor-pointer ${getCardBgClass(evt.status, isActive)}`}
                     >
                       <div className="flex justify-between items-start gap-2">
@@ -1094,7 +1110,23 @@ export default function VakasiKaryawanPage() {
         {/* Right side form */}
         <div className="xl:col-span-8">
           <ReferralFinancePanel canManage={profile?.role === 'super_admin' || profile?.role === 'finance_verifier'} />
-          {selectedManagedBonusEvent?.sourceKind === 'loyalis_referral' ? <ReferralEventPanel period={selectedManagedBonusEvent.period} workers={selectedManagedBonusEvent.eventWorkers || {}} states={selectedManagedBonusEvent.referralStates || {}} details={selectedManagedBonusEvent.referralDetails || {}} /> : selectedManagedBonusEvent ? (
+          {selectedLpjEvent ? (
+            <Card className="space-y-5 rounded-md border-slate-200 bg-white p-5 md:p-6">
+              <div className="flex items-start justify-between gap-3">
+                <h3 className="font-bold text-slate-800">{selectedLpjEvent.eventName}</h3>
+                {getStatusBadge(selectedLpjEvent.status)}
+              </div>
+              <p className="text-xs text-slate-500">Pembayaran ini dikelola dari LPJ Kegiatan SatKer. Koreksi dilakukan melalui revisi LPJ.</p>
+              <table className="w-full text-sm"><thead><tr className="border-b text-left text-xs text-slate-500"><th className="py-2">Pegawai</th><th className="py-2 text-right">REALISASI</th></tr></thead>
+                <tbody>{Object.entries(selectedLpjEvent.eventWorkers || {}).map(([id, raw]) => {
+                  const worker = raw as { employeeName: string; payGiven: number };
+                  return <tr key={id} className="border-b border-slate-100"><td className="py-3">{worker.employeeName}</td><td className="py-3 text-right font-semibold">{fmtRp(worker.payGiven)}</td></tr>;
+                })}</tbody>
+              </table>
+              <div className="text-right text-sm font-bold">Total {fmtRp(selectedLpjEvent.totalPayout || 0)}</div>
+              <a href={`/dashboard/payroll/uraian/kegiatan-satker?month=${month}&year=${year}&proposalId=${encodeURIComponent(selectedLpjEvent.sourceProposalId)}`} className="inline-flex text-xs font-semibold text-indigo-600 underline">Buka LPJ Kegiatan SatKer</a>
+            </Card>
+          ) : selectedManagedBonusEvent?.sourceKind === 'loyalis_referral' ? <ReferralEventPanel period={selectedManagedBonusEvent.period} workers={selectedManagedBonusEvent.eventWorkers || {}} states={selectedManagedBonusEvent.referralStates || {}} details={selectedManagedBonusEvent.referralDetails || {}} /> : selectedManagedBonusEvent ? (
             <BonusTriwulanEventPanel
               key={selectedManagedBonusEvent.id}
               period={selectedManagedBonusEvent.period}

@@ -14,6 +14,7 @@ import type {
   ProposalStage,
   ProposalWriteResult,
 } from '@/lib/payroll/proposalLifecycle';
+import { proposalTimestampMs } from '@/lib/payroll/proposalEvents';
 
 interface Actor {
   uid: string;
@@ -26,6 +27,7 @@ interface ProposalRecord {
   submittedBy?: string;
   submittedByName?: string;
   proposalQueueNumber?: number;
+  createdAt?: unknown;
 }
 
 interface ControllerCallbacks {
@@ -179,6 +181,7 @@ function createProposalDraftController(
         ...(previous ? [previous.requestId] : []),
       ].slice(-100),
       requestId: createFinancialRequestId('proposal'),
+      createdAt: proposalTimestampMs(record?.createdAt) || previous?.createdAt || previous?.updatedAt || Date.now(),
       updatedAt: Date.now(),
     };
   };
@@ -219,6 +222,8 @@ function createProposalDraftController(
     },
     ensureId,
     currentId: () => activeId,
+    currentVersion: (id: string) => session(id).currentVersion,
+    hasLocalChanges: (id: string) => Boolean(cached.has(id) || sessions.get(id)?.busy),
     select(record: ProposalRecord) {
       records.set(record.id, record);
       activeId = record.id;
@@ -231,11 +236,8 @@ function createProposalDraftController(
     observe(remote: ProposalRecord[]) {
       for (const record of remote) {
         records.set(record.id, record);
-        sessions.get(record.id)?.observe({
-          proposalId: record.id,
-          revision: Number(record.revision || 0),
-          status: record.status || 'proposal_draft',
-        });
+        // Only select/hydration may advance the displayed revision. A live
+        // snapshot must not grant an old form permission to overwrite new data.
       }
     },
     newDraft() {

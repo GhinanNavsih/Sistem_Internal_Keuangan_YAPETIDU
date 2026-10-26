@@ -25,6 +25,7 @@ interface ConfirmDialogProps {
   destructive?: boolean
   loading?: boolean
   onConfirm: () => void
+  finalFocus?: React.ComponentProps<typeof DialogContent>["finalFocus"]
 }
 
 /** The one confirmation dialog: a title, the consequence, Kembali + a confirm. */
@@ -38,10 +39,11 @@ function ConfirmDialog({
   destructive,
   loading,
   onConfirm,
+  finalFocus,
 }: ConfirmDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent showCloseButton={false} className="rounded-md sm:max-w-md">
+      <DialogContent finalFocus={finalFocus} showCloseButton={false} className="rounded-md sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-base font-semibold text-slate-900">{title}</DialogTitle>
           <DialogDescription render={<div />} className="text-sm leading-relaxed text-slate-600">

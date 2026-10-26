@@ -37,6 +37,7 @@ export type ProposalAction =
   | 'save_lpj'
   | 'submit_proposal'
   | 'submit_lpj'
+  | 'delete'
   | 'review';
 
 export interface ProposalWriteResult {
@@ -44,6 +45,9 @@ export interface ProposalWriteResult {
   revision: number;
   status: string;
   proposalQueueNumber?: number;
+  payrollSyncStatus?: 'pending' | 'complete';
+  payrollSyncOperationId?: string;
+  payrollSyncError?: string;
 }
 
 export function proposalContent(data: Record<string, unknown>, stage: ProposalStage) {
@@ -52,6 +56,7 @@ export function proposalContent(data: Record<string, unknown>, stage: ProposalSt
 }
 
 export function canEditProposalStage(role: string, status: string, stage: ProposalStage): boolean {
+  if (status === 'lpj_approved') return false;
   if (stage === 'proposal')
     return role === 'super_admin' || ['proposal_draft', 'proposal_revision'].includes(status);
   return ['proposal_approved', 'lpj_draft', 'lpj_revision'].includes(status);

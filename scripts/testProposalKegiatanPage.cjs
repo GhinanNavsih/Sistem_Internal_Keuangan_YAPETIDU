@@ -5,6 +5,8 @@ const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const childProcess = require('node:child_process');
 const root = path.resolve(__dirname, '..');
+const testingVakasi = process.argv.includes('--vakasi');
+const testingRealDialog = process.argv.includes('--real-dialog');
 const os = require('node:os');
 const buildDir = fs.mkdtempSync(path.join(os.tmpdir(), 'proposal-page-test-'));
 process.env.NODE_PATH = path.join(root, 'node_modules');
@@ -16,6 +18,11 @@ Object.assign(globalThis, {
   window: dom.window,
   document: dom.window.document,
   HTMLElement: dom.window.HTMLElement,
+  Element: dom.window.Element,
+  Node: dom.window.Node,
+  ShadowRoot: dom.window.ShadowRoot,
+  MutationObserver: dom.window.MutationObserver,
+  getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
   Event: dom.window.Event,
   MouseEvent: dom.window.MouseEvent,
   localStorage: dom.window.localStorage,
@@ -35,6 +42,8 @@ globalThis.setTimeout = (fn, delay = 0) => {
 globalThis.clearTimeout = (id) => timers.delete(id);
 dom.window.setTimeout = globalThis.setTimeout;
 dom.window.clearTimeout = globalThis.clearTimeout;
+globalThis.requestAnimationFrame = dom.window.requestAnimationFrame = (fn) => setTimeout(fn, 0);
+globalThis.cancelAnimationFrame = dom.window.cancelAnimationFrame = globalThis.clearTimeout;
 Date.now = () => now;
 const clone = (value) => structuredClone(value);
 const T = (globalThis.__proposalTest = {
@@ -64,6 +73,8 @@ T.setDoc = async (ref, payload) => {
 T.nextId = 0;
 T.api = async (url, options) => {
   const actor = structuredClone(T.profile);
+  const command = JSON.parse(options.body);
+  if (command.action === 'delete') { T.deleteCalls.push(command.proposalId); if (T.deleteFailure) throw T.deleteFailure; T.records.delete(command.proposalId); T.notify(); return {proposalId:command.proposalId,status:'deleted',revision:0}; }
   T.apiOptions.push(options);
   if (T.failRequests > 0) {
     T.failRequests--;
@@ -72,7 +83,6 @@ T.api = async (url, options) => {
   if (T.holdRequests) {
     await new Promise((resolve, reject) => T.held.push({ resolve, reject }));
   }
-  const command = JSON.parse(options.body);
   if (command.actorUid && command.actorUid !== actor.uid)
     throw new Error('Account changed; original local draft retained');
   const before = T.records.get(command.proposalId);
@@ -99,6 +109,8 @@ T.api = async (url, options) => {
     revision,
     submittedBy: owner,
     submittedByName: before?.submittedByName || actor.displayName,
+    creatorRole: before?.creatorRole || actor.role,
+    createdAt: before?.createdAt || { seconds: Math.floor(Date.now() / 1000) },
     updatedAt: { seconds: Math.floor(Date.now() / 1000) },
   });
   T.notify();
@@ -135,7 +147,8 @@ const mocks = {
   'next/image': `exports.default=()=>null;`,
   '@/lib/AuthContext': `exports.useAuth=()=>({profile:globalThis.__proposalTest.profile});`,
   '@/lib/firebase': `exports.db={};`,
-  '@/lib/queries/hooks': `const T=globalThis.__proposalTest; exports.useDepartments=()=>({data:T.departments}); exports.useEmployeesLoyalis=()=>({data:T.employees,isLoading:false,isError:false}); exports.usePayrollPeriod=()=>({data:T.period}); exports.useKegiatanHistoricalBaselines=()=>({data:[],isLoading:false});`,
+  '@/lib/queries/hooks': `const T=globalThis.__proposalTest; exports.useDepartments=()=>({data:T.departments}); exports.useEmployeesLoyalis=()=>({data:T.employees,isLoading:false,isError:false}); exports.useEmployeesBlueCollar=()=>({data:[],isLoading:false,isError:false}); exports.usePayrollPeriod=()=>({data:T.period}); exports.useKegiatanHistoricalBaselines=()=>({data:[],isLoading:false});`,
+  '@/components/payroll/ReferralFinancePanel': `exports.default=()=>null;`,
   'firebase/firestore': `const T=globalThis.__proposalTest; exports.collection=(_,name)=>({name}); exports.doc=(_,name,id)=>({name,id}); exports.where=(...args)=>args; exports.query=(...args)=>args; exports.serverTimestamp=()=>({seconds:Math.floor(Date.now()/1000)}); exports.onSnapshot=(query,next)=>{const l={next,period:query[1][2]};T.listeners.add(l);T.notify();return()=>T.listeners.delete(l)}; exports.setDoc=T.setDoc; exports.deleteDoc=async(ref)=>{T.deleteCalls.push(ref.id);if(T.deleteFailure)throw T.deleteFailure;T.records.delete(ref.id);T.notify()};`,
   '@/lib/payroll/client': `exports.authenticatedJson=(url,options)=>globalThis.__proposalTest.api(url,options);exports.createFinancialRequestId=(prefix)=>prefix+'_'+Date.now()+'_'+(++globalThis.__proposalTest.nextId);`,
   '@/utils/generateProposalKegiatanPdf': `exports.generateProposalKegiatanPdf=()=>{};`,
@@ -144,11 +157,10 @@ const mocks = {
   '@/lib/uploads': `exports.uploadProofFile=async(endpoint,file,fields)=>{globalThis.__proposalTest.receiptUploads.push({endpoint,file,fields});return 'https://receipt.test/uploaded.jpg'};`,
   '@/lib/payroll/expenseReportReceipt': `exports.prepareExpenseReportReceipt=async(file)=>{globalThis.__proposalTest.receiptInputs.push(file);return new File([new Uint8Array([255,216,255,217])],'processed-receipt.jpg',{type:'image/jpeg'})};`,
   '@/utils/ocrParser': `exports.renderFileToCanvas=async()=>{throw new Error('Unexpected receipt rendering in page test')};`,
-  './SignatureSettings': `exports.default=()=>null;`,
 };
-const ui = `const React=require('react'); const element=(tag)=>(props)=>{const {children,variant,size,asChild,render,showCloseButton,...rest}=props;return React.createElement(tag,rest,children)}; exports.Button=element('button');exports.Input=element('input');exports.Card=element('div');exports.FloatingSnackbar=()=>null;exports.ConfirmDialog=({open,title,confirmLabel,onConfirm})=>open?React.createElement('div',{role:'dialog'},React.createElement('h3',{},title),React.createElement('button',{onClick:onConfirm},confirmLabel)):null;exports.Dialog=({open,children})=>open?React.createElement('div',{role:'dialog'},children):null;exports.DialogContent=element('div');exports.DialogHeader=element('div');exports.DialogTitle=element('h3');exports.Select=({value,onValueChange,disabled})=>React.createElement('select',{'data-testid':'department',value,disabled,onChange:e=>onValueChange(e.target.value)},React.createElement('option',{value:''},'Pilih'),React.createElement('option',{value:'REKTORAT'},'REKTORAT'));exports.SelectTrigger=()=>null;exports.SelectContent=()=>null;exports.SelectItem=()=>null;exports.SelectValue=()=>null;`;
+const ui = `const React=require('react'); const element=(tag)=>(props)=>{const {children,variant,size,asChild,render,showCloseButton,initialFocus,...rest}=props;return React.createElement(tag,rest,children)}; exports.Button=element('button');exports.Input=element('input');exports.Card=element('div');exports.FloatingSnackbar=()=>null;exports.ConfirmDialog=({open,title,confirmLabel,cancelLabel='Kembali',onConfirm,onOpenChange,finalFocus})=>{React.useEffect(()=>{if(!open&&typeof finalFocus==='function'){const target=finalFocus();if(target&&typeof target.focus==='function')target.focus();}},[open]);return open?React.createElement('div',{role:'dialog'},React.createElement('h3',{},title),React.createElement('button',{onClick:()=>onOpenChange(false)},cancelLabel),React.createElement('button',{onClick:onConfirm},confirmLabel)):null};exports.Dialog=({open,children})=>open?React.createElement('div',{role:'dialog'},children):null;exports.DialogContent=element('div');exports.DialogHeader=element('div');exports.DialogTitle=element('h3');exports.Select=({value,onValueChange,disabled})=>React.createElement('select',{'data-testid':'department',value,disabled,onChange:e=>onValueChange(e.target.value)},React.createElement('option',{value:''},'Pilih'),React.createElement('option',{value:'REKTORAT'},'REKTORAT'));exports.SelectTrigger=()=>null;exports.SelectContent=()=>null;exports.SelectItem=()=>null;exports.SelectValue=()=>null;`;
 async function bundle() {
-  const currentPage = 'src/app/dashboard/payroll/uraian/kegiatan-satker/page.tsx';
+  const currentPage = testingVakasi ? 'src/app/dashboard/payroll/uraian/vakasi-karyawan/page.tsx' : 'src/app/dashboard/payroll/uraian/kegiatan-satker/page.tsx';
   const legacyPage = 'src/app/dashboard/payroll/uraian/proposal-kegiatan/page.tsx';
   const pagePath = path.join(root, currentPage);
   let revisionPage = currentPage;
@@ -189,6 +201,7 @@ async function bundle() {
         setup(builder) {
           builder.onResolve({ filter: /.*/ }, (args) => {
             if (Object.hasOwn(mocks, args.path)) return { path: args.path, namespace: 'mock' };
+            if (testingRealDialog && ['@/components/ui/dialog', '@/components/ui/confirm-dialog'].includes(args.path)) return;
             if (args.path.startsWith('@/components/ui/'))
               return { path: args.path, namespace: 'ui' };
           });
@@ -235,9 +248,16 @@ async function advance(ms) {
   now = until;
   await act(async () => {});
 }
+async function confirmEditIfNeeded() {
+  if (T.autoConfirmEdits === false) return;
+  const confirm = [...document.querySelectorAll('button')].find(button => button.textContent === 'Ya, ubah nilai');
+  if (confirm) await act(async () => confirm.click());
+}
 async function fillName(name) {
   const input = document.querySelector('input[placeholder="Contoh: Reuni SainTek 2026"]');
   assert.ok(input, 'name field');
+  await act(async () => input.click());
+  await confirmEditIfNeeded();
   await act(async () => {
     Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(
       input,
@@ -249,6 +269,8 @@ async function fillName(name) {
 }
 async function chooseDepartment() {
   const select = document.querySelector('[data-testid="department"]');
+  await act(async () => select.click());
+  await confirmEditIfNeeded();
   await act(async () => {
     select.value = 'REKTORAT';
     select.dispatchEvent(new Event('change', { bubbles: true }));
@@ -260,6 +282,7 @@ async function clickText(text) {
   );
   assert.ok(target, `missing control: ${text}`);
   await act(async () => target.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+  await confirmEditIfNeeded();
 }
 async function reset() {
   if (app) {
@@ -273,6 +296,7 @@ async function reset() {
   T.writes = [];
   T.params = 'month=10&year=2026';
   T.apiOptions = [];
+  T.autoConfirmEdits = true;
   T.failRequests = 0;
   T.enforceRevision = false;
   T.deleteCalls = [];
@@ -285,6 +309,182 @@ async function reset() {
   localStorage.clear();
 }
 const tests = [
+  ['release: a report edit cannot adopt a newer revision before its autosave', async () => {
+    const rows = [{ rowId: 'group', type: 'group_header', uraian: 'Honor', rincianQty: '', rincianRate: 0, reportId: 'report-pay' }, { rowId: 'item', type: 'item', uraian: 'Honor satu', rincianQty: '1', rincianRate: 1000, realisasi: 1000 }];
+    const report = { id: 'report-pay', expenseRowId: 'group', expenseLabel: 'Honor', title: 'Original report', mode: 'expense', rows: [{ id: 'detail', parentRowId: 'item', uraian: 'Honor satu', rincianQty: '1', rincianRate: 1000, realisasi: 1000, employeeId: '', employeeName: '' }], receipts: {}, source: 'custom' };
+    T.records.set('saved-event', { ...fixture(), status: 'lpj_draft', revision: 1, creatorRole: 'satker_head_loyalis', lpjPengeluaranRows: rows, expenseReports: [report] });
+    T.enforceRevision = true;
+    await mount(admin);
+    await clickText('Saved event fixture');
+    await clickText('Buka Laporan');
+    await advance(0);
+    const input = document.querySelector('input[placeholder="Contoh: Laporan Pembayaran Tim Pelaksana"]');
+    await act(async () => input.click());
+    await confirmEditIfNeeded();
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(input, 'Unsaved modal title');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => { T.records.set('saved-event', { ...T.records.get('saved-event'), revision: 2, reportName: 'Head latest event title' }); T.notify(); });
+    await advance(1500);
+    assert.equal(T.records.get('saved-event').expenseReports[0].title, 'Original report');
+    assert.ok(document.body.textContent.includes('Proposal sudah diperbarui di sesi lain'));
+  }],
+  ['vakasi release: deep links show managed LPJ payments without editable controls', async () => {
+    T.params += '&eventId=LPJ_PAYROLL_fixture';
+    T.records.set('LPJ_PAYROLL_fixture', { period: '2026-10', sourceKind: 'proposal_lpj_payroll', sourceProposalId: 'source-event', eventName: 'LPJ Payroll fixture', submittedBy: head.uid, status: 'approved', totalPayout: 150_000, eventWorkers: { e1: { employeeName: 'Pegawai LPJ', payGiven: 150_000, employeeCollection: 'Employees_Loyalis' } } });
+    T.records.set('sandbox', { period: '2026-10', sourceKind: 'proposal_lpj_report', eventName: 'Legacy sandbox fixture', status: 'approved' });
+    await mount(head);
+    assert.ok(document.body.textContent.includes('Pegawai LPJ'));
+    assert.equal(document.body.textContent.includes('Legacy sandbox fixture'), false);
+    const link = [...document.querySelectorAll('a')].find(anchor => anchor.textContent.includes('Buka LPJ Kegiatan SatKer'));
+    assert.ok(link.href.endsWith('/dashboard/payroll/uraian/kegiatan-satker?month=10&year=2026&proposalId=source-event'));
+    assert.equal([...document.querySelectorAll('button')].some(button => ['Simpan Event', 'Batalkan Persetujuan'].includes(button.textContent.trim())), false);
+    await advance(2000);
+    assert.equal(T.apiOptions.length, 0);
+  }],
+  ['release: approved employee report links to its generated Vakasi entry', async () => {
+    T.records.set('saved-event', { ...fixture(), status: 'lpj_approved', payrollReportIdsByReport: { 'report-pay': 'LPJ_PAYROLL_fixture' },
+      lpjPengeluaranRows: [{ rowId: 'group', type: 'group_header', uraian: 'Honor', rincianQty: '', rincianRate: 0, reportId: 'report-pay' }],
+      expenseReports: [{ id: 'report-pay', expenseRowId: 'group', expenseLabel: 'Honor', title: 'Pembayaran tim', mode: 'employee', rows: [{ id: 'one', uraian: 'Honor', employeeId: 'e1', employeeName: 'Pegawai', rincianQty: '1', rincianRate: 100000, realisasi: 100000 }], receipts: {}, source: 'custom' }] });
+    await mount(head);
+    await clickText('Saved event fixture');
+    await clickText('Buka Laporan');
+    await advance(0);
+    const link = [...document.querySelectorAll('a')].find(anchor => anchor.textContent === 'Buka di Vakasi Karyawan');
+    assert.ok(link.href.endsWith('/dashboard/payroll/uraian/vakasi-karyawan?month=10&year=2026&eventId=LPJ_PAYROLL_fixture'));
+    assert.equal(document.body.textContent.includes('Sandbox'), false);
+  }],
+  ['release: selectors, signatures and mutation buttons share the confirmation guard', async () => {
+    T.autoConfirmEdits = false;
+    T.records.set('saved-event', { ...fixture(), creatorRole: 'satker_head_loyalis' });
+    await mount(admin);
+    await clickText('Saved event fixture');
+    const department = document.querySelector('[data-testid="department"]');
+    await act(async () => department.dispatchEvent(new Event('touchstart', { bubbles: true, cancelable: true })));
+    assert.ok(document.body.textContent.includes('Ubah data kegiatan?'));
+    await clickText('Kembali');
+    const signature = document.querySelector('input[role="combobox"]');
+    await act(async () => signature.focus());
+    assert.ok(document.body.textContent.includes('Ubah data kegiatan?'));
+    await clickText('Kembali');
+    await clickText('Simpan Laporan');
+    assert.ok(document.body.textContent.includes('Ubah data kegiatan?'));
+    await clickText('Kembali');
+    assert.equal(T.apiOptions.length, 0);
+  }],
+  ['release: a recovered local draft retains its first creation time', async () => {
+    T.failRequests = 3;
+    await mount(head);
+    await fillName('First local value');
+    await advance(700);
+    const key = 'proposal_kegiatan_drafts_v1_head-fixture_2026-10';
+    const first = JSON.parse(localStorage.getItem(key))[0].createdAt;
+    assert.ok(first > 0);
+    await fillName('Later local value');
+    await advance(700);
+    assert.equal(JSON.parse(localStorage.getItem(key))[0].createdAt, first);
+    await unmount();
+    T.failRequests = 2;
+    await mount(head);
+    assert.equal(JSON.parse(localStorage.getItem(key))[0].createdAt, first);
+  }],
+  ['release: confirmation cancels safely and expires when focus leaves', async () => {
+    T.autoConfirmEdits = false;
+    T.records.set('saved-event', { ...fixture(), revision: 1, creatorRole: 'satker_head_loyalis' });
+    await mount(admin);
+    await clickText('Saved event fixture');
+    const input = document.querySelector('input[placeholder="Contoh: Reuni SainTek 2026"]');
+    await act(async () => input.focus());
+    assert.ok(document.body.textContent.includes('Ubah data kegiatan?'));
+    await clickText('Kembali');
+    await advance(1500);
+    assert.equal(T.apiOptions.length, 0);
+    assert.equal(input.value, 'Saved event fixture');
+    await act(async () => input.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await clickText('Ya, ubah nilai');
+    await fillName('Confirmed value');
+    assert.equal(document.querySelector('[role="dialog"]'), null);
+    await advance(1000);
+    assert.equal(T.records.get('saved-event').reportName, 'Confirmed value');
+    await act(async () => input.blur());
+    await act(async () => input.focus());
+    assert.ok(document.body.textContent.includes('Ubah data kegiatan?'), 'returning to a field requires confirmation again');
+    await clickText('Kembali');
+  }],
+  ['release: readonly viewing and modal closing never save', async () => {
+    const rows = [{ rowId: 'group', type: 'group_header', uraian: 'Pembayaran', rincianQty: '', rincianRate: 0, reportId: 'report-pay' }];
+    T.records.set('saved-event', { ...fixture(), status: 'lpj_draft', revision: 1, creatorRole: 'satker_head_loyalis', lpjPengeluaranRows: rows,
+      expenseReports: [{ id: 'report-pay', expenseRowId: 'group', expenseLabel: 'Pembayaran', title: 'Pembayaran tim', mode: 'employee', rows: [], receipts: {}, source: 'custom' }] });
+    T.autoConfirmEdits = false;
+    await mount(admin);
+    await clickText('Saved event fixture');
+    await clickText('Buka Laporan');
+    await advance(2000);
+    assert.equal(T.apiOptions.length, 0, 'opening a report must not write');
+    assert.equal(document.body.textContent.includes('Ubah data kegiatan?'), false, 'opening a report must not autofocus an editable field');
+    const title = document.querySelector('input[placeholder="Contoh: Laporan Pembayaran Tim Pelaksana"]');
+    await act(async () => title.focus());
+    assert.ok(document.body.textContent.includes('Ubah data kegiatan?'), 'modal fields share the guard');
+    await clickText('Kembali');
+    await clickText('Tutup');
+    await advance(2000);
+    assert.equal(T.apiOptions.length, 0, 'cancelling and closing a report must not write');
+  }],
+  ['release: dirty form keeps its revision when another editor saves', async () => {
+    T.enforceRevision = true;
+    T.records.set('saved-event', { ...fixture(), revision: 1 });
+    await mount(admin);
+    await clickText('Saved event fixture');
+    await fillName('Unsaved admin value');
+    await act(async () => { T.records.set('saved-event', { ...T.records.get('saved-event'), revision: 2, reportName: 'Head latest value' }); T.notify(); });
+    await advance(1000);
+    assert.equal(T.records.get('saved-event').reportName, 'Head latest value');
+    assert.equal(document.querySelector('input[placeholder="Contoh: Reuni SainTek 2026"]').value, 'Unsaved admin value');
+    assert.ok(document.body.textContent.includes('Proposal sudah diperbarui di sesi lain'));
+  }],
+  ['release: linked event opens once and admin-created events edit freely', async () => {
+    T.params += '&proposalId=admin-event';
+    T.records.set('admin-event', { ...fixture(), submittedBy: admin.uid, creatorRole: 'super_admin', revision: 1 });
+    T.autoConfirmEdits = false;
+    await mount(admin);
+    assert.equal(document.querySelector('input[placeholder="Contoh: Reuni SainTek 2026"]').value, 'Saved event fixture');
+    await fillName('Admin own value');
+    assert.equal(document.querySelector('[role="dialog"]'), null);
+    await advance(1000);
+    assert.equal(T.records.get('admin-event').reportName, 'Admin own value');
+  }],
+  ['release: creation order ignores edits', async () => {
+    T.records.set('older', { ...fixture(), reportName: 'Older creation', createdAt: { seconds: 100 }, updatedAt: { seconds: 300 } });
+    T.records.set('newer', { ...fixture(), reportName: 'Newer creation', createdAt: { seconds: 200 }, updatedAt: { seconds: 200 } });
+    await mount(admin);
+    const titles = () => [...document.querySelectorAll('p')].map(x => x.textContent).filter(x => ['Older creation', 'Newer creation'].includes(x));
+    assert.deepEqual(titles(), ['Newer creation', 'Older creation']);
+    await act(async () => { T.records.get('older').updatedAt.seconds = 999; T.notify(); });
+    assert.deepEqual(titles(), ['Newer creation', 'Older creation']);
+  }],
+  ['release: clean form refreshes without overwriting another editor', async () => {
+    T.enforceRevision = true;
+    T.records.set('saved-event', { ...fixture(), revision: 1 });
+    await mount(admin);
+    await clickText('Saved event fixture');
+    await act(async () => {
+      T.records.set('saved-event', { ...T.records.get('saved-event'), revision: 2, pemasukanRows: [{ uraian: 'Head latest income', rincianQty: '1', rincianRate: 9999 }] });
+      T.notify();
+    });
+    await fillName('Admin title change');
+    await advance(1500);
+    assert.equal(T.records.get('saved-event').pemasukanRows[0].rincianRate, 9999);
+  }],
+  ['release: head-owned fields require confirmation before editing', async () => {
+    T.records.set('saved-event', { ...fixture(), revision: 1, creatorRole: 'satker_head_loyalis' });
+    await mount(admin);
+    await clickText('Saved event fixture');
+    const input = document.querySelector('input[placeholder="Contoh: Reuni SainTek 2026"]');
+    await act(async () => input.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    assert.ok(document.querySelector('[role="dialog"]'), 'a head-owned field needs confirmation');
+    assert.equal(T.apiOptions.length, 0, 'viewing must not save');
+  }],
   [
     'non-pegawai receipt upload accepts the shared formats and processes large untyped files before uploading',
     async () => {
@@ -307,6 +507,8 @@ const tests = [
         assert.ok(input.accept.includes(extension), `${extension} must be selectable`);
       }
       const original = new File([new Uint8Array(26 * 1024 * 1024)], 'iphone.heic', { type: '' });
+      await act(async () => input.click());
+      await confirmEditIfNeeded();
       Object.defineProperty(input, 'files', { value: [original], configurable: true });
       await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
       assert.equal(T.receiptInputs[0], original, 'file size and missing MIME must not block compression');
@@ -450,6 +652,8 @@ const tests = [
       assert.ok([...document.querySelectorAll('input')].some((input) => input.value === sourceQty), 'modal autosave preserves the original quantity');
       if (editedQty) {
         const input = [...document.querySelector('[role=dialog]').querySelectorAll('input')].find((input) => input.value === sourceQty);
+        await act(async () => input.click());
+        await confirmEditIfNeeded();
         await act(async () => {
           Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(input, editedQty);
           input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -769,7 +973,7 @@ const tests = [
 (async () => {
   Page = await bundle();
   let failed = 0;
-  const selectedTests = tests.filter(([name]) => !process.env.PROPOSAL_TEST_FILTER || name.includes(process.env.PROPOSAL_TEST_FILTER));
+  const selectedTests = tests.filter(([name]) => name.startsWith('vakasi release:') === testingVakasi && (!testingRealDialog || name.includes('confirmation cancels safely') || name.includes('readonly viewing and modal closing')) && (!process.env.PROPOSAL_TEST_FILTER || name.includes(process.env.PROPOSAL_TEST_FILTER)));
   assert.ok(selectedTests.length, 'test filter must select at least one scenario');
   for (const [name, run] of selectedTests) {
     await reset();

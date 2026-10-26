@@ -125,13 +125,19 @@ test('treats a descriptive quantity as one when the rate is populated', () => {
       employeeName: 'Muhammad Syafii',
       rincianQty: 'Penanggung Jawab',
       rincianRate: 100_000,
-      realisasi: 0,
     }),
   ]);
 
   assert.equal(parseProposalQty('Penanggung Jawab'), 1);
   assert.equal(report.rows[0].realisasi, 100_000);
   assert.equal(getExpenseReportActualTotal(report), 100_000);
+});
+
+test('preserves an explicit zero realization instead of paying the budget', () => {
+  const row = createExpenseReportRow({ uraian: 'Tidak dibayar', employeeId: 'e1', employeeName: 'Pegawai', rincianQty: '1', rincianRate: 100_000, realisasi: 0 });
+  const report = createExpenseReport('report-zero', 'group-zero', 'Honor', 'employee', [row]);
+  assert.equal(report.rows[0].realisasi, 0);
+  assert.equal(getExpenseReportActualTotal(report), 0);
 });
 
 test('seeds a report only from the selected LPJ header group children', () => {

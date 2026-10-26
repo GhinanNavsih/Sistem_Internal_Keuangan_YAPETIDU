@@ -8,6 +8,7 @@ import { BANSOS_EVENT_SOURCE_KIND, isBansosEventId } from '@/lib/payroll/santuna
 import { BONUS_TRIWULAN_SOURCE_KIND, isBonusTriwulanEventId } from '@/lib/payroll/bonusTriwulan';
 import {
   isProposalLpjSandboxSource,
+  isProposalLpjPayrollSource,
   isPayableVakasiTambahan,
   vakasiWorkerCollection,
   type ResolvedVakasiWorker,
@@ -397,6 +398,7 @@ export async function POST(request: NextRequest) {
     assertActionAllowed(actor, command);
 
     const eventId = command.eventId || `VAKASI_${command.requestId}`;
+    if (eventId.startsWith('LPJ_PAYROLL_')) throw new HttpError(409, 'Pembayaran LPJ dikelola melalui Kegiatan SatKer.');
     if (eventId.startsWith('KJM_')) {
       throw new HttpError(409, 'KJM hanya dapat diubah melalui halaman Kelebihan Jam Mengajar.');
     }
@@ -453,6 +455,7 @@ export async function POST(request: NextRequest) {
       if (before && isProposalLpjSandboxSource(before)) {
         throw new HttpError(409, 'Catatan LPJ sandbox tidak dapat diubah sebagai Vakasi payroll.');
       }
+      if (before && isProposalLpjPayrollSource(before)) throw new HttpError(409, 'Pembayaran LPJ dikelola melalui Kegiatan SatKer.');
       const beforeStatus = before
         ? (typeof before.status === 'string' ? before.status : 'approved')
         : null;

@@ -2,6 +2,11 @@ import type { MoneyField } from './domain';
 import { normalizeLabel, type OwnedLabelPredicate } from './slipPropagation';
 
 export const PROPOSAL_LPJ_SANDBOX_SOURCE_KIND = 'proposal_lpj_report';
+export const PROPOSAL_LPJ_PAYROLL_SOURCE_KIND = 'proposal_lpj_payroll';
+
+export function isProposalLpjPayrollSource(value: unknown): boolean {
+  return asFinancialRecord(value).sourceKind === PROPOSAL_LPJ_PAYROLL_SOURCE_KIND;
+}
 export const VAKASI_PEKARYA_PROJECTION_SOURCE_KIND =
   'vakasi_tambahan_pekarya';
 
@@ -225,16 +230,18 @@ export function vakasiApprovedEarningsForEmployee(
   events: readonly VakasiTambahanEventLike[],
   employeeId: string,
 ): MoneyField[] {
-  const amountsByName = new Map<string, number>();
+  const amountsByName = new Map<string, MoneyField>();
   for (const event of events) {
     if (!isPayableVakasiTambahan(event)) continue;
     const amount = loyalisWorkerPayGiven(event, employeeId);
     if (amount === null) continue;
     const eventName = typeof event.eventName === 'string' ? event.eventName.trim() : '';
     if (!eventName) continue;
-    amountsByName.set(eventName, (amountsByName.get(eventName) || 0) + amount);
+    const key = normalizeLabel(eventName);
+    const previous = amountsByName.get(key);
+    amountsByName.set(key, { label: previous?.label || eventName, amount: (previous?.amount || 0) + amount });
   }
-  return Array.from(amountsByName, ([label, amount]) => ({ label, amount }));
+  return [...amountsByName.values()];
 }
 
 /** Recognizes an event-name row this employee has ever carried, plus the pre-itemization fallback label. */

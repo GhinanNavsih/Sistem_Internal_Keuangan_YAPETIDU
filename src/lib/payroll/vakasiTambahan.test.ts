@@ -50,6 +50,14 @@ test('two approved events sharing a name are summed into one row, not two', () =
   ]);
 });
 
+test('report names differing only by case keep both payments on the slip', () => {
+  const events: VakasiTambahanEventLike[] = [
+    { eventName: 'Kegiatan — Honor tim', sourceKind: 'proposal_lpj_payroll', status: 'approved', eventWorkers: { emp1: { payGiven: 100_000 } } },
+    { eventName: 'Kegiatan — HONOR TIM', sourceKind: 'proposal_lpj_payroll', status: 'approved', eventWorkers: { emp1: { payGiven: 50_000 } } },
+  ];
+  assert.deepEqual(vakasiApprovedEarningsForEmployee(events, 'emp1'), [{ label: 'Kegiatan — Honor tim', amount: 150_000 }]);
+});
+
 test('a pending, declined, or sandbox event contributes no earnings row', () => {
   const events: VakasiTambahanEventLike[] = [
     { eventName: 'Menunggu', status: 'pending_review', eventWorkers: { emp1: { payGiven: 100_000 } } },

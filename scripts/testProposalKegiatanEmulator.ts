@@ -349,6 +349,110 @@ async function main() {
   assert.deepEqual((await retiredRef.get()).data(), retiredFixture);
   assert.equal((await adminDb.collection('PelaporanKegiatan').get()).size, 1);
   console.log('PASS Firestore rules: retired reporting writes are denied for heads, Super Admin and finance verifiers.');
+  // Real LPJ -> Vakasi -> editable slip, through the authenticated API.
+  await adminDb.doc('Employees_Loyalis/LPJ_e1').set({ personal_info: { name: 'Penerima LPJ', status: 'AKTIF' } });
+  await adminDb.doc('Employees_Loyalis/LPJ_zero').set({ personal_info: { name: 'Nol LPJ', status: 'AKTIF' } });
+  const slipRef = adminDb.doc('PayrollSlipStates/2026_10_LPJ_e1');
+  await slipRef.set({ employeeId: 'LPJ_e1', period: '2026_10', status: 'draft', revision: 1, earnings: [{ label: 'Gaji Pokok', amount: 4_000_000 }], deductions: [], taxes: [] });
+  const payrollProposal = adminDb.doc('ProposalKegiatan/payroll-lpj');
+  const reportRows = [
+    { id: 'one', uraian: 'Honor satu', employeeId: 'LPJ_e1', employeeName: 'Penerima LPJ', rincianQty: '1', rincianRate: 100_000, realisasi: 100_000 },
+    { id: 'two', uraian: 'Honor dua', employeeId: 'LPJ_e1', employeeName: 'Penerima LPJ', rincianQty: '1', rincianRate: 70_000, realisasi: 50_000 },
+    { id: 'zero', uraian: 'Tidak dibayar', employeeId: 'LPJ_zero', employeeName: 'Nol LPJ', rincianQty: '1', rincianRate: 500, realisasi: 0 },
+  ];
+  await payrollProposal.set({ period: '2026-10', reportName: 'Kegiatan Payroll', departmentUnit: 'REKTORAT', status: 'lpj_submitted', revision: 1, submittedBy: head.uid, submittedByName: 'Kepala', lpjPengeluaranRows: [{ rowId: 'group-pay', type: 'group_header', uraian: 'Honor', rincianQty: '', rincianRate: 0, reportId: 'report-pay' }], expenseReports: [{ id: 'report-pay', expenseRowId: 'group-pay', title: 'Honor tim', expenseLabel: 'Honor', mode: 'employee', rows: reportRows, receipts: {}, source: 'custom' }] });
+  const payrollFixture = (await payrollProposal.get()).data()!;
+  const approveCommand = { proposalId: payrollProposal.id, expectedRevision: 1, requestId: 'lpj-payment-approval-one' };
+  const approval = await expect(await invoke(finance, approveCommand, approveLpj));
+  assert.equal(approval.syncedReports, 1, 'employee report creates a real Vakasi entry');
+  assert.equal(approval.totalPayout, 150_000, 'REALISASI is summed, including explicit zero');
+  const sources = await adminDb.collection('VakasiTambahan').where('sourceProposalId', '==', payrollProposal.id).get();
+  assert.equal(sources.size, 1);
+  const payment = sources.docs[0].data();
+  assert.equal(payment.sourceKind, 'proposal_lpj_payroll');
+  assert.equal(payment.status, 'approved');
+  assert.equal(payment.submittedBy, head.uid);
+  assert.equal(payment.eventWorkers.LPJ_e1.payGiven, 150_000);
+  assert.equal(payment.eventWorkers.LPJ_zero, undefined);
+  assert.deepEqual((await slipRef.get()).data()!.earnings, [{ label: 'Gaji Pokok', amount: 4_000_000 }, { label: 'Kegiatan Payroll — Honor tim', amount: 150_000 }]);
+  const replayApproval = await expect(await invoke(finance, approveCommand, approveLpj));
+  assert.equal(replayApproval.revision, approval.revision);
+  assert.equal((await adminDb.collection('VakasiTambahan').where('sourceProposalId', '==', payrollProposal.id).get()).size, 1);
+  console.log('PASS LPJ payroll: actual amounts, repeated recipients, zero totals, ownership, draft slip and idempotent approval.');
+  const withdrawal = { proposalId: payrollProposal.id, period: '2026-10', action: 'review', decision: 'lpj_revision', expectedRevision: approval.revision, requestId: 'lpj-withdraw-one' };
+  await slipRef.update({ status: 'locked' });
+  await expect(await invoke(finance, withdrawal), 409);
+  await expect(await invoke(finance, { ...withdrawal, action: 'delete', requestId: 'lpj-locked-delete' }), 409);
+  assert.equal((await payrollProposal.get()).data()!.status, 'lpj_approved');
+  assert.equal((await sources.docs[0].ref.get()).data()!.status, 'approved');
+  await slipRef.update({ status: 'draft' });
+  const withdrawn = await expect(await invoke(finance, withdrawal));
+  assert.equal((await sources.docs[0].ref.get()).data()!.status, 'voided');
+  assert.deepEqual((await slipRef.get()).data()!.earnings, [{ label: 'Gaji Pokok', amount: 4_000_000 }]);
+  assert.equal((await expect(await invoke(finance, withdrawal))).revision, withdrawn.revision);
+  const resubmitted = await expect(await invoke(head, { proposalId: payrollProposal.id, period: '2026-10', expectedRevision: withdrawn.revision, action: 'submit_lpj', stage: 'lpj', data: {} }));
+  await slipRef.update({ status: 'paid' });
+  await expect(await invoke(finance, { proposalId: payrollProposal.id, expectedRevision: resubmitted.revision, requestId: 'lpj-paid-approval' }, approveLpj), 409);
+  await slipRef.update({ status: 'draft', earnings: 'broken slip fixture' });
+  const reapproved = await expect(await invoke(finance, { proposalId: payrollProposal.id, expectedRevision: resubmitted.revision, requestId: 'lpj-reapproval' }, approveLpj));
+  assert.equal(reapproved.payrollSyncStatus, 'pending', 'propagation failure remains retryable after committing approval');
+  await slipRef.update({ earnings: [{ label: 'Gaji Pokok', amount: 4_000_000 }] });
+  const { POST: syncPayroll } = await import('../src/app/api/payroll/proposal-kegiatan/sync/route');
+  await expect(await invoke(other, { operationId: reapproved.payrollSyncOperationId }, syncPayroll), 403);
+  const synchronized = await expect(await invoke(finance, { operationId: reapproved.payrollSyncOperationId }, syncPayroll));
+  assert.equal(synchronized.payrollSyncStatus, 'complete');
+  assert.equal((await slipRef.get()).data()!.earnings.at(-1).amount, 150_000);
+  const { POST: genericVakasi } = await import('../src/app/api/payroll/vakasi-events/route');
+  await expect(await invoke(finance, { requestId: 'lpj-generic-unapprove', action: 'unapprove', eventId: sources.docs[0].id, expectedRevision: 3 }, genericVakasi), 409);
+  await expect(await invoke(finance, { proposalId: payrollProposal.id, expectedRevision: reapproved.revision, requestId: undefined }, approveLpj), 400);
+  await expect(await invoke(finance, { proposalId: payrollProposal.id, expectedRevision: undefined }, approveLpj), 400);
+  await expect(await invoke(head, { proposalId: payrollProposal.id, period: '2026-10', action: 'save_draft', stage: 'proposal', expectedRevision: reapproved.revision, data: { reportName: 'Cannot change approved source' } }), 409);
+  const documentsBase = `http://${process.env.FIRESTORE_EMULATOR_HOST}/v1/projects/${PROJECT}/databases/(default)/documents`;
+  for (const actor of [finance, head, verifier]) {
+    const headers = { Authorization: `Bearer ${actor.token}`, 'Content-Type': 'application/json' };
+    for (const path of [`VakasiTambahan/${sources.docs[0].id}`, 'VakasiTambahan/LPJ_PAYROLL_forged']) {
+      assert.equal((await fetch(`${documentsBase}/${path}?updateMask.fieldPaths=totalPayout`, { method: 'PATCH', headers, body: JSON.stringify({ fields: { totalPayout: { integerValue: '1' }, period: { stringValue: '2026-10' } } }) })).status, 403);
+    }
+    assert.equal((await fetch(`${documentsBase}/ProposalKegiatan/${payrollProposal.id}`, { method: 'DELETE', headers })).status, 403);
+  }
+  await expect(await invoke(verifier, { proposalId: payrollProposal.id, period: '2026-10', action: 'delete', expectedRevision: reapproved.revision }), 403);
+  const deleteCommand = { proposalId: payrollProposal.id, period: '2026-10', action: 'delete', expectedRevision: reapproved.revision, requestId: 'lpj-delete-one' };
+  await expect(await invoke(finance, deleteCommand));
+  await expect(await invoke(finance, deleteCommand));
+  assert.equal((await payrollProposal.get()).exists, false);
+  assert.equal((await sources.docs[0].ref.get()).data()!.status, 'voided');
+  assert.deepEqual((await slipRef.get()).data()!.earnings, [{ label: 'Gaji Pokok', amount: 4_000_000 }]);
+  console.log('PASS LPJ payroll: locked/paid guards, withdrawal, reapproval, durable sync retry, managed-entry rules and audited deletion.');
+  for (const amount of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    const invalid = structuredClone(payrollFixture);
+    invalid.expenseReports[0].rows[0].realisasi = amount;
+    const id = `lpj-invalid-${String(amount).replace(/[^A-Za-z0-9]/g, '_')}`;
+    await adminDb.doc(`ProposalKegiatan/${id}`).set(invalid);
+    await expect(await invoke(finance, { proposalId: id, expectedRevision: 1 }, approveLpj), 400);
+    assert.equal((await adminDb.collection('VakasiTambahan').where('sourceProposalId', '==', id).get()).size, 0);
+    assert.equal((await adminDb.doc(`ProposalKegiatan/${id}`).get()).data()!.status, 'lpj_submitted');
+  }
+  await adminDb.doc('ProposalKegiatan/lpj-inactive').set(payrollFixture);
+  await adminDb.doc('Employees_Loyalis/LPJ_e1').update({ 'personal_info.status': 'NONAKTIF' });
+  await expect(await invoke(finance, { proposalId: 'lpj-inactive', expectedRevision: 1 }, approveLpj), 400);
+  await adminDb.doc('Employees_Loyalis/LPJ_e1').update({ 'personal_info.status': 'AKTIF' });
+  await adminDb.doc('PayrollPeriods/2026-10').update({ attendanceStatus: 'closed' });
+  await expect(await invoke(finance, { proposalId: 'lpj-inactive', expectedRevision: 1 }, approveLpj), 409);
+  await adminDb.doc('PayrollPeriods/2026-10').update({ attendanceStatus: 'open' });
+  const mixedReports = structuredClone(payrollFixture);
+  for (const [reportId, groupId, title, mode] of [['report-two', 'group-two', 'HONOR TIM', 'employee'], ['report-expense', 'group-expense', 'Konsumsi', 'expense']]) {
+    mixedReports.lpjPengeluaranRows.push({ rowId: groupId, type: 'group_header', uraian: title, rincianQty: '', rincianRate: 0, reportId });
+    mixedReports.expenseReports.push({ ...structuredClone(payrollFixture.expenseReports[0]), id: reportId, expenseRowId: groupId, expenseLabel: title, title, mode });
+  }
+  await adminDb.doc('ProposalKegiatan/lpj-multiple').set(mixedReports);
+  const mixedApproval = await expect(await invoke(finance, { proposalId: 'lpj-multiple', expectedRevision: 1 }, approveLpj));
+  assert.equal(mixedApproval.syncedReports, 2, 'only employee reports create payroll entries');
+  assert.equal(mixedApproval.totalPayout, 300_000);
+  assert.equal((await adminDb.collection('VakasiTambahan').where('sourceProposalId', '==', 'lpj-multiple').get()).size, 2);
+  assert.equal((await slipRef.get()).data()!.earnings.find((row: { label: string }) => row.label.toLocaleLowerCase('id-ID') === 'kegiatan payroll — honor tim').amount, 300_000, 'case variants cannot collapse and lose a report payment');
+  const sourceAudit = await adminDb.collection('FinancialAuditLogs').where('entityType', '==', 'VakasiTambahan').where('action', '==', 'PROPOSAL_LPJ_PAYROLL_PUBLISH').get();
+  assert.ok(sourceAudit.docs.some(snapshot => snapshot.data().after.eventWorkers.LPJ_e1.payGiven === 150_000), 'recipient amounts are retained in the audit');
+  console.log('PASS LPJ payroll: invalid money, inactive recipients, closed periods, multiple employee reports, expense exclusion and recipient audit.');
   await admin.app().delete();
 }
 

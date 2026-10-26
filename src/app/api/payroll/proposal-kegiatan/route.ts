@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { createHash } from 'node:crypto';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import { errorResponse, HttpError, requireAuthenticatedProfile } from '@/lib/server/auth';
@@ -10,6 +11,7 @@ import {
   type ProposalStage,
 } from '@/lib/payroll/proposalLifecycle';
 import { parseProposalQty, sanitizeForFirestore } from '@/lib/payroll/proposalExpenseReports';
+import { finishProposalPayrollSync, prepareProposalPayroll, proposalOperationRef } from '@/lib/server/proposalPayroll';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +21,7 @@ const ACTIONS: ProposalAction[] = [
   'submit_proposal',
   'submit_lpj',
   'review',
+  'delete',
 ];
 const REVIEW_STATUSES = ['proposal_approved', 'proposal_revision', 'lpj_revision'];
 
@@ -60,7 +63,17 @@ export async function POST(request: NextRequest) {
       throw new HttpError(403, 'Keputusan review tidak diizinkan.');
     }
     const ref = adminDb.collection('ProposalKegiatan').doc(proposalId);
+    const financialAction = action === 'review' || action === 'delete';
+    const operationRef = proposalOperationRef(actor.uid, requestId);
+    const requestHash = createHash('sha256').update(JSON.stringify({ proposalId, period, action, expectedRevision, decision, note: raw.note || null })).digest('hex');
     const result = await adminDb.runTransaction(async (tx) => {
+      if (financialAction) {
+        const prior = await tx.get(operationRef);
+        if (prior.exists) {
+          if (prior.data()!.requestHash !== requestHash) throw new HttpError(409, 'requestId sudah digunakan untuk perintah lain.');
+          return prior.data()!.result;
+        }
+      }
       const [snapshot, payrollPeriod] = await Promise.all([
         tx.get(ref),
         tx.get(adminDb.collection('PayrollPeriods').doc(period)),
@@ -99,6 +112,20 @@ export async function POST(request: NextRequest) {
       let status = String(before?.status || 'proposal_draft');
       if (!before && !['save_draft', 'submit_proposal'].includes(action))
         throw new HttpError(404, 'Proposal tidak ditemukan.');
+      const payroll = financialAction && before && (action === 'delete' || status === 'lpj_approved')
+        ? await prepareProposalPayroll(tx, { proposalId, proposal: before, approved: false, revision: revision + 1, actor, requestId }) : null;
+      if (action === 'delete') {
+        if (actor.role !== 'super_admin' && !(actor.role === 'satker_head_loyalis' && before?.submittedBy === actor.uid))
+          throw new HttpError(403, 'Akun ini tidak dapat menghapus proposal.');
+        const deleted = { proposalId, revision: revision + 1, status: 'deleted' };
+        payroll?.write();
+        tx.delete(ref);
+        tx.create(operationRef, { actorUid: actor.uid, entityType: 'ProposalKegiatan', entityId: proposalId, requestHash,
+          period, employeeIds: payroll?.employeeIds || [], result: deleted, payrollSyncStatus: 'pending', createdAt: admin.firestore.FieldValue.serverTimestamp() });
+        tx.create(newFinancialAuditRef(), buildFinancialAuditRecord(actor, { action: 'PROPOSAL_KEGIATAN_DELETE', entityType: 'ProposalKegiatan', entityId: proposalId,
+          requestId, reason: 'Kegiatan dihapus dan pembayaran pegawai ditarik', before, after: deleted }));
+        return deleted;
+      }
       const contentStage = action === 'save_lpj' || action === 'submit_lpj' ? 'lpj' : stage;
       if (action !== 'review' && !canEditProposalStage(actor.role, status, contentStage)) {
         throw new HttpError(
@@ -187,6 +214,7 @@ export async function POST(request: NextRequest) {
           submittedBy: actor.uid,
           submittedByName: actor.displayName,
           submittedByEmail: actor.email,
+          creatorRole: actor.role,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
       Object.assign(patch, {
@@ -196,6 +224,8 @@ export async function POST(request: NextRequest) {
         lastWriteActorUid: actor.uid,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
+      if (payroll) Object.assign(patch, { payrollReportIds: [], payrollReportIdsByReport: {}, payrollSyncStatus: 'pending', payrollSyncOperationId: operationRef.id });
+      payroll?.write();
       tx.set(ref, sanitizeForFirestore(patch), { merge: true });
       tx.create(
         newFinancialAuditRef(),
@@ -214,14 +244,17 @@ export async function POST(request: NextRequest) {
           after: { submittedBy: before?.submittedBy || actor.uid, status, revision: revision + 1 },
         }),
       );
-      return {
+      const response = {
         proposalId,
         revision: revision + 1,
         status,
         ...(typeof queueNumber === 'number' ? { proposalQueueNumber: queueNumber } : {}),
       };
+      if (financialAction) tx.create(operationRef, { actorUid: actor.uid, entityType: 'ProposalKegiatan', entityId: proposalId, requestHash,
+        period, employeeIds: payroll?.employeeIds || [], result: response, payrollSyncStatus: 'pending', createdAt: admin.firestore.FieldValue.serverTimestamp() });
+      return response;
     });
-    return Response.json(result, { headers: { 'Cache-Control': 'no-store' } });
+    return Response.json(financialAction ? await finishProposalPayrollSync(actor, operationRef.id) : result, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return errorResponse(error);
   }

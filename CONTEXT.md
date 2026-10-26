@@ -12,8 +12,9 @@ _Avoid_: department, unit kerja
 
 **Kegiatan SatKer**:
 A SatKer's event finance workflow: propose its budget, obtain approval, and
-report actual spending through an LPJ in the same workspace. It currently runs
-as a reporting sandbox without creating payroll earnings.
+report actual spending through an LPJ in the same workspace. Employee payments
+enter payroll when Finance approves the LPJ. Returning an approved LPJ for
+revision withdraws those payments until it is approved again.
 
 **Sopir**:
 A Pekarya employee who drives the university's vehicles and is paid per Perjalanan.

@@ -311,14 +311,14 @@ service cloud.firestore {
       allow create: if (isFinanceVerifier() || isSuperAdmin() ||
         roleIs('satker_head_loyalis')) && createsOpenPeriodRecord() &&
         !docId.matches('KJM_.*') && !docId.matches('BANSOS_.*') &&
-        !docId.matches('BONUS_TRIWULAN_.*') && !docId.matches('BONUS_REKOMENDASI_.*') &&
-        !(request.resource.data.get('sourceKind', '') in ['kjm_import', 'bansos', 'bonus_triwulan', 'loyalis_referral']);
+        !docId.matches('BONUS_TRIWULAN_.*') && !docId.matches('BONUS_REKOMENDASI_.*') && !docId.matches('LPJ_PAYROLL_.*') &&
+        !(request.resource.data.get('sourceKind', '') in ['kjm_import', 'bansos', 'bonus_triwulan', 'loyalis_referral', 'proposal_lpj_payroll']);
       allow update: if (isFinanceVerifier() || isSuperAdmin() ||
         roleIs('satker_head_loyalis')) && updatesOpenPeriodRecord() &&
         !docId.matches('KJM_.*') && !docId.matches('BANSOS_.*') &&
-        !docId.matches('BONUS_TRIWULAN_.*') && !docId.matches('BONUS_REKOMENDASI_.*') &&
-        !(resource.data.get('sourceKind', '') in ['kjm_import', 'bansos', 'bonus_triwulan', 'loyalis_referral']) &&
-        !(request.resource.data.get('sourceKind', '') in ['kjm_import', 'bansos', 'bonus_triwulan', 'loyalis_referral']);
+        !docId.matches('BONUS_TRIWULAN_.*') && !docId.matches('BONUS_REKOMENDASI_.*') && !docId.matches('LPJ_PAYROLL_.*') &&
+        !(resource.data.get('sourceKind', '') in ['kjm_import', 'bansos', 'bonus_triwulan', 'loyalis_referral', 'proposal_lpj_payroll']) &&
+        !(request.resource.data.get('sourceKind', '') in ['kjm_import', 'bansos', 'bonus_triwulan', 'loyalis_referral', 'proposal_lpj_payroll']);
       allow delete: if false;
     }
 
@@ -530,12 +530,8 @@ service cloud.firestore {
       // The API derives the owner and checks the stored revision/status.
       // Older tabs must not take ownership or roll an approval back by autosaving.
       allow create, update: if false;
-      // Super Admin may delete any proposal; Kepala SatKer Loyalis only the
-      // ones they submitted. Both only while the period is open.
-      allow delete: if (isSuperAdmin() ||
-        (roleIs('satker_head_loyalis') &&
-          resource.data.get('submittedBy', null) == request.auth.uid)) &&
-        deletesOpenPeriodRecord();
+      // Deletion also withdraws payroll through the audited proposal API.
+      allow delete: if false;
     }
 
     match /ProposalKegiatanQueueCounters/{period} {
