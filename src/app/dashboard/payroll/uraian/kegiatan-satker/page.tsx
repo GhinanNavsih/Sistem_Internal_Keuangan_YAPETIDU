@@ -2180,9 +2180,9 @@ export default function KegiatanSatkerPage() {
                                 <thead>
                                   <tr className="bg-slate-50 border-b border-slate-100">
                                     <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-12 text-center">NO</th>
-                                    <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[35%]">URAIAN PENGELUARAN</th>
-                                    <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[150px] text-center">QTY</th>
-                                    <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[120px] text-center">RATE</th>
+                                    <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[27%]">URAIAN PENGELUARAN</th>
+                                    <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[190px] text-center">QTY</th>
+                                    <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[160px] text-center">RATE</th>
                                     <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[160px] text-right">ANGGARAN</th>
                                     <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[160px] text-right">REALISASI</th>
                                     <th className="px-3 py-2.5 w-20 text-center"></th>
