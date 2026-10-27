@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { CalendarPlus, Check, Loader2, Search, X } from 'lucide-react';
+import { CalendarPlus, Check, Loader2, Printer, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/callout';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -280,10 +280,28 @@ export default function SenamPagiPage() {
             </button>
           ))}
         </div>
-        {tab === 'absensi' && canEdit && !senam?.month?.noSessions && (
-          <Button variant="accent" size="lg" className="h-11 w-full rounded-sm sm:h-9 sm:w-fit" onClick={() => setRollCall({ date: null })}>
-            <CalendarPlus /> Tambah sesi
-          </Button>
+        {tab === 'absensi' && senam && (
+          <div className="flex w-full flex-col gap-2 sm:w-fit sm:flex-row">
+            {canEdit && !senam.month?.noSessions && (
+              <Button variant="accent" size="lg" className="h-11 w-full rounded-sm sm:h-9 sm:w-fit" onClick={() => setRollCall({ date: null })}>
+                <CalendarPlus /> Tambah sesi
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              className="h-11 w-full rounded-sm whitespace-normal sm:h-9 sm:w-fit sm:whitespace-nowrap"
+              disabled={senam.roster.length === 0}
+              onClick={() => {
+                if (!openSenamPagiPrintView(senam)) {
+                  setNotice({ type: 'error', text: 'Jendela cetak diblokir oleh Safari. Izinkan pop-up untuk halaman ini lalu coba lagi.' });
+                }
+              }}
+            >
+              <Printer /> Cetak Lembar Presensi
+            </Button>
+          </div>
         )}
       </div>
 
@@ -336,6 +354,78 @@ export default function SenamPagiPage() {
       )}
     </div>
   );
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[character] || character);
+}
+
+function openSenamPagiPrintView(view: SenamView): boolean {
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) return false;
+
+  const rows = view.roster.map((entry, index) => `
+    <tr>
+      <td class="number">${index + 1}</td>
+      <td class="name">${escapeHtml(entry.employeeName)}</td>
+      <td class="signature">${index % 2 === 0 ? index + 1 : ''}</td>
+      <td class="signature">${index % 2 === 1 ? index + 1 : ''}</td>
+    </tr>`).join('');
+
+  printWindow.document.open();
+  printWindow.document.write(`<!doctype html>
+    <html lang="id">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Lembar Presensi Senam Pagi - ${escapeHtml(periodLabel(view.period))}</title>
+        <style>
+          @page { size: A4 portrait; margin: 10mm; }
+          * { box-sizing: border-box; }
+          body { margin: 0; color: #111; font: 9pt Arial, Helvetica, sans-serif; }
+          h1 { margin: 0; text-align: center; font-size: 14pt; letter-spacing: .02em; }
+          .period { margin: 1mm 0 3mm; text-align: center; font-size: 10pt; }
+          .date { margin: 0 0 3mm; }
+          table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 9pt; }
+          col.number { width: 8%; }
+          col.name { width: 42%; }
+          col.signature { width: 25%; }
+          th, td { border: .3mm solid #222; }
+          th { height: 8mm; padding: 1mm 1.5mm; text-align: center; }
+          td { height: 7.5mm; padding: .7mm 1.5mm; vertical-align: top; }
+          td.number { text-align: center; }
+          td.signature { padding-left: 1.5mm; }
+          thead { display: table-header-group; }
+          tr { break-inside: avoid; page-break-inside: avoid; }
+          @media screen { body { max-width: 190mm; margin: 12mm auto; } }
+        </style>
+      </head>
+      <body>
+        <h1>LEMBAR PRESENSI SENAM PAGI</h1>
+        <p class="period">${escapeHtml(periodLabel(view.period))}</p>
+        <p class="date">Tanggal: ______________________________</p>
+        <table>
+          <colgroup>
+            <col class="number" />
+            <col class="name" />
+            <col class="signature" />
+            <col class="signature" />
+          </colgroup>
+          <thead><tr><th>No.</th><th>Nama</th><th colspan="2">TANDA TANGAN</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </body>
+    </html>`);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+  return true;
 }
 
 function LoadingLine({ text }: { text: string }) {
