@@ -1,6 +1,8 @@
 import admin, { adminDb } from '@/lib/firebase-admin';
+import type { DocumentReference, Transaction } from 'firebase-admin/firestore';
 import { AuthenticatedProfile, HttpError } from '@/lib/server/auth';
-import { DEFAULT_ACCOUNTS, defaultCashFlowSection, FinancialAccount, groupNormalBalance, OpeningBalances, type YearClosing } from '@/lib/satker-finance/core';
+import { adjacentAcademicYear, DEFAULT_ACCOUNTS, defaultCashFlowSection, FinancialAccount, groupNormalBalance, OpeningBalances, type YearClosing } from '@/lib/satker-finance/core';
+import type { PreviousYearState } from '@/lib/satker-finance/monthControls';
 import type { FixedAsset } from '@/lib/satker-finance/depreciation';
 import biroUmumAkunData from '@/lib/satker-finance/biro-umum-26-27-akun.json';
 
@@ -292,5 +294,25 @@ export function publicYear(data: Record<string, unknown> | undefined) {
     openingSource: data?.openingSource === 'CARRIED_FORWARD' ? 'CARRIED_FORWARD' as const : 'MANUAL' as const,
     openingCarriedFrom: typeof data?.openingCarriedFrom === 'string' ? data.openingCarriedFrom : null,
     closing: (data?.closing && typeof data.closing === 'object' ? data.closing : null) as (YearClosing & { equityAccountCode?: string; equityAccountName?: string }) | null,
+  };
+}
+
+export function audit(tx: Transaction, year: DocumentReference, actor: AuthenticatedProfile, action: string, details: Record<string, unknown>) {
+  tx.create(year.collection('audit').doc(), {
+    action, actorUid: actor.uid, actorRole: actor.role, actorName: actor.displayName || actor.email || actor.uid, details,
+    at: admin.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
+export function reportId(monthIndex: number) { return String(monthIndex).padStart(2, '0'); }
+
+/** The previous year's book as the opening-balance and submission rules see it. */
+export async function previousYearState(unitId: string, academicYear: string, tx?: Transaction): Promise<PreviousYearState> {
+  const previous = adjacentAcademicYear(academicYear, -1);
+  const ref = yearRef(unitId, previous);
+  const data = (tx ? await tx.get(ref) : await ref.get()).data();
+  return {
+    academicYear: previous, status: data?.status === 'CLOSED' ? 'CLOSED' : data ? 'ACTIVE' : null,
+    entryCount: Number(data?.entryCount || 0), closingBalances: data?.closing?.balances ?? null,
   };
 }

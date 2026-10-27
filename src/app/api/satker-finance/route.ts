@@ -2,10 +2,10 @@ import { createHash, randomBytes } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import type { DocumentReference, Transaction } from 'firebase-admin/firestore';
 import admin, { adminDb, adminStorage } from '@/lib/firebase-admin';
-import { errorResponse, HttpError, requireAuthenticatedProfile, requireRole, type AuthenticatedProfile } from '@/lib/server/auth';
+import { errorResponse, HttpError, requireAuthenticatedProfile, requireRole } from '@/lib/server/auth';
 import {
-  ACCOUNT_COLLECTION, CATALOG_META_REF, assertUnitEdit, canReadAll, ensureOwnUnit, ensureUnassignedHeadUnits, fixedAssetCollection, fixedAssetFrom, getUnit,
-  inactiveHeadUids, isInactiveHeadBook, listUnits, loadAccounts, loadFixedAssets, unitAccountCatalogSource, openingFrom, publicYear, UNIT_COLLECTION, unitAccountCatalogMetaRef,
+  ACCOUNT_COLLECTION, CATALOG_META_REF, assertUnitEdit, audit, canReadAll, ensureOwnUnit, ensureUnassignedHeadUnits, fixedAssetCollection, fixedAssetFrom, getUnit,
+  inactiveHeadUids, isInactiveHeadBook, listUnits, loadAccounts, loadFixedAssets, unitAccountCatalogSource, openingFrom, previousYearState, publicYear, reportId, UNIT_COLLECTION, unitAccountCatalogMetaRef,
   unitAccountCollection, YEAR_COLLECTION, yearRef,
 } from '@/lib/server/satkerFinance';
 import {
@@ -14,11 +14,12 @@ import {
   OpeningBalances, sameBalances, type AccountType, type CashFlowAmounts, validateEntryDate, validateOpeningBalances,
 } from '@/lib/satker-finance/core';
 import { entryChangeBlocker, isReportOpen } from '@/lib/satker-finance/entryEditing';
+import { importUnitBook } from '@/lib/server/satkerBookImport';
 import {
   assetChangeBlocker, assetFiguresChanged, buildDepreciationJournal, depreciationEntryId, sameJournalLines, validateFixedAsset,
 } from '@/lib/satker-finance/depreciation';
 import { reconciliationDocId, validateReconciliationInput, type BankReconciliation } from '@/lib/satker-finance/bankReconciliation';
-import { monthChecks, openingComesFromPreviousYear, type PreviousYearState } from '@/lib/satker-finance/monthControls';
+import { monthChecks, openingComesFromPreviousYear } from '@/lib/satker-finance/monthControls';
 import { MAX_UPLOAD_BYTES, UPLOAD_TYPES_TEXT, detectUploadFileType, parseBase64DataUrl } from '@/lib/uploadFileTypes';
 
 export const dynamic = 'force-dynamic';
@@ -33,12 +34,6 @@ function string(value: unknown, name: string, max = 150) {
 function inputError(error: unknown): never {
   if (error instanceof HttpError) throw error;
   throw new HttpError(400, error instanceof Error ? error.message : 'Data tidak valid.');
-}
-function audit(tx: Transaction, year: DocumentReference, actor: AuthenticatedProfile, action: string, details: Record<string, unknown>) {
-  tx.create(year.collection('audit').doc(), {
-    action, actorUid: actor.uid, actorRole: actor.role, actorName: actor.displayName || actor.email || actor.uid, details,
-    at: admin.firestore.FieldValue.serverTimestamp(),
-  });
 }
 function notify(tx: Transaction, recipientUids: string[], data: { unitId: string; academicYear: string; monthIndex: number; title: string; message: string }) {
   for (const uid of [...new Set(recipientUids)]) {
@@ -97,7 +92,6 @@ function entrySnapshot(entry: Partial<JournalEntry>) {
     lines: (entry.lines || []).map((line) => ({ accountCode: line.accountCode, accountNumber: line.accountNumber ?? null, accountName: line.accountName, debit: line.debit, credit: line.credit, description: line.description ?? null })),
   };
 }
-function reportId(monthIndex: number) { return String(monthIndex).padStart(2, '0'); }
 function validateMonth(raw: unknown) {
   const month = Number(raw);
   if (!Number.isInteger(month) || month < 1 || month > 12) throw new HttpError(400, 'Bulan tidak valid.');
@@ -111,16 +105,6 @@ function reconciliationFrom(data: FirebaseFirestore.DocumentData): BankReconcili
     monthIndex: Number(data.monthIndex), accountId: String(data.accountId), statementBalance: Number(data.statementBalance || 0),
     items: Array.isArray(data.items) ? data.items : [], ...(data.note ? { note: String(data.note) } : {}),
     revision: Number(data.revision || 0), hasStatement: typeof data.statementPath === 'string',
-  };
-}
-/** The previous year's book as the opening-balance and submission rules see it. */
-async function previousYearState(unitId: string, academicYear: string, tx?: Transaction): Promise<PreviousYearState> {
-  const previous = adjacentAcademicYear(academicYear, -1);
-  const ref = yearRef(unitId, previous);
-  const data = (tx ? await tx.get(ref) : await ref.get()).data();
-  return {
-    academicYear: previous, status: data?.status === 'CLOSED' ? 'CLOSED' : data ? 'ACTIVE' : null,
-    entryCount: Number(data?.entryCount || 0), closingBalances: data?.closing?.balances ?? null,
   };
 }
 /** Refuses a change to a month that is sealed (its report, or a later one, is with BAK or Rektorat) or to a closed year. */
@@ -490,6 +474,11 @@ export async function POST(request: NextRequest) {
         audit(tx, year, actor, 'OPENING_BALANCE_UPDATED', { before: data?.openingBalances || {}, after: opening });
       });
       return Response.json({ ok: true }, { headers: noStore });
+    }
+    if (action === 'IMPORT_BOOK') {
+      // A whole book from the workbook lands in one transaction, or none of it does.
+      assertUnitEdit(actor, unit);
+      return Response.json(await importUnitBook({ actor, unitId, academicYear, raw }), { headers: noStore });
     }
     if (action === 'POST_ENTRY' || action === 'REVERSE_ENTRY') {
       assertUnitEdit(actor, unit);

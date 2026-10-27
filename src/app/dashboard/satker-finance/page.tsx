@@ -14,6 +14,8 @@ import type { FixedAsset } from '@/lib/satker-finance/depreciation';
 import type { BankReconciliation } from '@/lib/satker-finance/bankReconciliation';
 import { monthChecks, openingComesFromPreviousYear, type PreviousYearState } from '@/lib/satker-finance/monthControls';
 import type { FinancialUnit } from '@/lib/server/satkerFinance';
+import type { BookReadResult } from '@/lib/satker-finance/workbookBook';
+import type { WorkBook } from 'xlsx';
 import { fitUploadToLimit } from '@/lib/photoEvidence';
 import { UPLOAD_ACCEPT, uploadFileProblem, uploadFileTypeFor, type UploadFileType } from '@/lib/uploadFileTypes';
 import { Button } from '@/components/ui/button';
@@ -131,6 +133,9 @@ export default function SatkerFinancePage() {
   const [unitAccountDraft, setUnitAccountDraft] = useState<{ code: string; name: string; type: AccountType; cashEquivalent: boolean; contra: boolean; cashFlowSection: CashFlowSection }>(
     { code: '', name: '', type: 'AKTIVA', cashEquivalent: false, contra: false, cashFlowSection: 'OPERATING' });
   const [creatingUnitAccount, setCreatingUnitAccount] = useState(false);
+  // The workbook chosen for import, and what its Akun and Jurnal sheets read as for this unit.
+  const [bookFile, setBookFile] = useState<{ fileName: string; workbook: WorkBook; akun: string; jurnal: string } | null>(null);
+  const [bookCheck, setBookCheck] = useState<BookReadResult | null>(null);
   const unitAccountEditorRef = useRef<HTMLDivElement>(null);
   const isAdmin = profile?.role === 'super_admin';
   const canReadAll = !!profile && ['super_admin', 'finance_verifier', 'rector_finance'].includes(profile.role);
@@ -234,6 +239,39 @@ export default function SatkerFinancePage() {
       setCreatingUnitAccount(false);
       setUnitAccountDraft({ code: '', name: '', type: 'AKTIVA', cashEquivalent: false, contra: false, cashFlowSection: 'OPERATING' });
     }
+  };
+
+  // The sheet whose name shares the most words with the unit's name, so the usual Akun and Jurnal pair is preselected.
+  const sheetFor = (names: string[], prefix: string, unitName: string) => {
+    const words = unitName.toLowerCase().split(/\s+/).filter((word) => word.length > 2);
+    const score = (name: string) => words.filter((word) => name.toLowerCase().includes(word)).length;
+    const best = names.filter((name) => name.startsWith(prefix)).sort((a, b) => score(b) - score(a))[0];
+    return best && score(best) > 0 ? best : '';
+  };
+
+  const readBookFile = async (file: File) => {
+    try {
+      const XLSX = await import('xlsx');
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellFormula: true });
+      const unitName = data?.unit?.name || '';
+      setBookFile({ fileName: file.name, workbook, akun: sheetFor(workbook.SheetNames, 'Akun ', unitName), jurnal: sheetFor(workbook.SheetNames, 'Jurnal ', unitName) });
+      setBookCheck(null);
+      setError('');
+    } catch { setError('Berkas tidak dapat dibaca. Pastikan berkasnya berformat .xlsx.'); }
+  };
+
+  const checkBookFile = async () => {
+    if (!bookFile?.akun || !bookFile.jurnal) return;
+    const { readBookWorkbook } = await import('@/lib/satker-finance/workbookBook');
+    setBookCheck(readBookWorkbook({ akun: bookFile.workbook.Sheets[bookFile.akun], akunLabel: bookFile.akun,
+      jurnal: bookFile.workbook.Sheets[bookFile.jurnal], jurnalLabel: bookFile.jurnal, academicYear }));
+  };
+
+  const importBook = async () => {
+    const book = bookCheck?.book;
+    if (!book || !window.confirm(`Impor ${book.accounts.length} akun dan ${book.vouchers.length} jurnal ke ${data?.unit?.name || 'SatKer'} tahun ${academicYear}? Buku harus masih kosong.`)) return;
+    const saved = await post('IMPORT_BOOK', { accounts: book.accounts, opening: book.opening, vouchers: book.vouchers });
+    if (saved) { setBookFile(null); setBookCheck(null); }
   };
 
   // Puts the form back as it was before an edit began (or empty), and ends the edit.
@@ -595,6 +633,36 @@ export default function SatkerFinancePage() {
         </Section>}
         {tab === 'audit' && <div className="space-y-5"><Section title="Riwayat versi laporan"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>Periode / versi</th><th className={leftCell}>Pengirim / waktu</th><th className={cell}>Penerimaan</th><th className={cell}>Pengeluaran</th><th className={cell}>Kas akhir</th></tr></thead><tbody>{data.reportRevisions?.map((item) => <tr key={item.id}><td className={leftCell}>{monthNames[item.monthIndex - 1]} · revisi {item.revision}</td><td className={leftCell}>{item.submittedName || '—'}<div className="text-xs text-slate-500">{dateText(item.submittedAt)}</div></td><td className={cell}>{money(item.income)}</td><td className={cell}>{money(item.expense)}</td><td className={cell}>{money(item.endingCash)}</td></tr>)}</tbody></table>{!data.reportRevisions?.length && <p className="p-3 text-sm text-slate-500">Belum ada versi laporan yang dikirim.</p>}</div></Section><Section title="Jejak Audit"><div className="space-y-2">{data.events?.map((event) => <div key={event.id} className="border-b border-slate-100 py-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><strong className="font-semibold">{event.action.replaceAll('_', ' ')}</strong><span className="text-slate-500">{dateText(event.at)}</span></div><div className="mt-1 text-xs text-slate-500">Pelaku: {event.actorName || event.actorUid} ({event.actorRole || '—'}) · {JSON.stringify(event.details)}</div></div>)}{!data.events?.length && <p className="text-sm text-slate-500">Belum ada peristiwa audit.</p>}</div></Section></div>}
         {tab === 'akun' && canEdit && !!unitId && unitId !== 'ALL' && <Section title={`Akun ${data.unit?.name || 'SatKer'}`}>
+          <div className="mb-6 rounded-lg border border-slate-200 p-4">
+            <h3 className="text-sm font-semibold text-slate-900">Impor dari berkas Excel</h3>
+            <p className="mt-1 text-sm text-slate-600">Berkas berisi sheet &quot;Akun …&quot; dan &quot;Jurnal …&quot; SatKer. Impor hanya untuk SatKer yang belum memiliki akun atau jurnal; akun, saldo awal, dan jurnal masuk sekaligus atau tidak sama sekali.</p>
+            <input type="file" accept=".xlsx" aria-label="Berkas Excel buku SatKer" className="mt-3 block text-sm text-slate-700"
+              onChange={(event) => { const file = event.target.files?.[0]; if (file) void readBookFile(file); event.target.value = ''; }} />
+            {bookFile && <div className="mt-3 space-y-3">
+              <p className="text-xs text-slate-500">Berkas: {bookFile.fileName}</p>
+              <div className="grid gap-3 md:grid-cols-2">
+                {(['akun', 'jurnal'] as const).map((part) => <label key={part} className="text-xs font-medium text-slate-500">{part === 'akun' ? 'Sheet akun' : 'Sheet jurnal'}
+                  <select className={`${field} mt-1`} value={bookFile[part]} onChange={(event) => { setBookFile({ ...bookFile, [part]: event.target.value }); setBookCheck(null); }}>
+                    <option value="">Pilih sheet</option>
+                    {bookFile.workbook.SheetNames.map((name) => <option key={name} value={name}>{name}</option>)}
+                  </select></label>)}
+              </div>
+              <button type="button" className={lightButton} disabled={!bookFile.akun || !bookFile.jurnal || busy} onClick={() => void checkBookFile()}>Periksa berkas</button>
+            </div>}
+            {bookCheck && <div className="mt-4 space-y-3 text-sm">
+              <p className="text-slate-700">{bookCheck.summary.accounts} akun ({bookCheck.summary.openingAccounts} dengan saldo awal, debet {money(bookCheck.summary.openingDebit)}) · {bookCheck.summary.vouchers} jurnal · {bookCheck.summary.lines} baris · total debet {money(bookCheck.summary.debit)}</p>
+              {bookCheck.problems.length > 0 && <ul className="list-disc space-y-1 pl-5 text-amber-700">
+                {bookCheck.problems.slice(0, 50).map((problem, index) => <li key={index}>{problem}</li>)}
+                {bookCheck.problems.length > 50 && <li>…dan {bookCheck.problems.length - 50} masalah lain</li>}
+              </ul>}
+              <div className="flex flex-wrap items-center gap-3">
+                <button type="button" className={button} disabled={busy || !bookCheck.book} onClick={() => void importBook()}>
+                  {bookCheck.book ? `Impor ${bookCheck.summary.accounts} akun dan ${bookCheck.summary.vouchers} jurnal` : 'Perbaiki berkas dahulu'}
+                </button>
+                {bookCheck.problems.length > 0 && <span className="text-xs text-slate-500">Perbaiki baris yang disebut di berkas, unggah ulang, lalu periksa lagi.</span>}
+              </div>
+            </div>}
+          </div>
           {data.accountCatalogSource && <p className="mb-2 text-sm text-slate-600">Daftar akun dasar diimpor dari {data.accountCatalogSource} dan hanya berlaku untuk buku ini.</p>}
           <p className="mb-4 text-sm text-slate-600">Nomor dan nama yang Anda ubah atau tambahkan di sini hanya berlaku untuk {data.unit?.name || 'SatKer'} ini. Perubahan tidak mengubah akun SatKer Loyalis lain.</p>
           <div className="mb-3 flex justify-end"><button type="button" className={button} onClick={() => { setUnitAccountId(''); setCreatingUnitAccount(true); setUnitAccountDraft({ code: '', name: '', type: 'AKTIVA', cashEquivalent: false, contra: false, cashFlowSection: 'OPERATING' }); }}>Buat akun baru</button></div>
