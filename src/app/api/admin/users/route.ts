@@ -56,7 +56,7 @@ function effectiveSatkerName(
 
 async function assertSatkerNameAvailable(uid: string, name: string): Promise<void> {
   const heads = await adminDb.collection('users').where('role', '==', 'satker_head_loyalis').get();
-  const peers = heads.docs.filter((head) => head.id !== uid);
+  const peers = heads.docs.filter((head) => head.id !== uid && head.data().disabled !== true);
   const peerNames = await Promise.all(peers.map(async (head) => {
     const unit = await adminDb.collection(UNIT_COLLECTION).doc(ownUnitId(head.id)).get();
     return effectiveSatkerName(head.id, head.data(), unit.data());
@@ -386,7 +386,7 @@ export async function PUT(request: NextRequest) {
         const headsSnapshot = await transaction.get(
           adminDb.collection('users').where('role', '==', 'satker_head_loyalis'),
         );
-        const peers = headsSnapshot.docs.filter((head) => head.id !== uid);
+        const peers = headsSnapshot.docs.filter((head) => head.id !== uid && head.data().disabled !== true);
         const peerUnits = await Promise.all(peers.map((head) =>
           transaction.get(adminDb.collection(UNIT_COLLECTION).doc(ownUnitId(head.id))),
         ));
