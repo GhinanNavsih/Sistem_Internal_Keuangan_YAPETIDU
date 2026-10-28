@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { employeeLifecycleAudit } from '@/lib/employeeLifecycle';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { normalizeNipy } from '@/lib/payroll/attendance';
 import {
@@ -473,12 +474,11 @@ export async function convertEmployeeToLoyalis(
         convertedByUid: actor.uid,
         requestId: command.requestId,
       },
-      audit: {
-        createdAt: now,
-        updatedAt: now,
-        updatedBy: actor.uid,
-        sourceFile: 'Pengalihan dari Pekarya',
-      },
+      audit: employeeLifecycleAudit({
+        collection: 'Employees_Loyalis',
+        patch: { ...loyalisDocument, audit: { updatedBy: actor.uid, sourceFile: 'Pengalihan dari Pekarya' } },
+        timestamp: now, actorUid: actor.uid, eventId: command.requestId,
+      }),
     });
 
     const endDate = lastDayBeforePeriod(effectivePeriod);
@@ -497,8 +497,11 @@ export async function convertEmployeeToLoyalis(
         convertedByUid: actor.uid,
         requestId: command.requestId,
       },
-      'audit.updatedAt': now,
-      'audit.updatedBy': actor.uid,
+      audit: employeeLifecycleAudit({
+        collection: 'Employees_BlueCollar', before: employee,
+        patch: { employment: { status: 'inactive' }, flags: { isActive: false, isPayrollEligible: false }, audit: { updatedBy: actor.uid } },
+        timestamp: now, actorUid: actor.uid, eventId: command.requestId,
+      }),
     });
 
     if (indexRef) {

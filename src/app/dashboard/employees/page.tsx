@@ -96,6 +96,7 @@ import {
 } from '@/lib/queries/hooks';
 import { referenceKeys } from '@/lib/queries/keys';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
+import { employeeLifecycleAudit, employeeIsActive } from '@/lib/employeeLifecycle';
 import { normalizeNipy } from '@/lib/payroll/attendance';
 import { getPayImpactLabels } from '@/lib/payroll/slipPropagation';
 import { matchFunctionalAllowance } from '@/lib/payroll/salaryMatrix';
@@ -1490,6 +1491,10 @@ export default function EmployeesPage() {
           ...formData,
           employeeId,
           collarType: 'blue_collar',
+          employment: {
+            ...(formData.employment || {}),
+            status: formData.flags?.isActive === false ? 'inactive' : 'active',
+          },
           bankAccount: {
             accountHolderName: formData.name || '',
             ...(formData.bankAccount || {}),
@@ -1643,33 +1648,38 @@ export default function EmployeesPage() {
       delete employeeWritePayload.koperasiAuthUid;
       delete employeeWritePayload.koperasiUserId;
 
-      // A new id comes from this tab's possibly stale list; a merge onto an id
-      // someone else just took (another tab, or an Alihkan ke Loyalis) would
-      // silently overwrite that person.
-      if (!editingEmployee) {
-        const existing = await getDocFromServer(doc(db, currentTab.collection, employeeId));
-        if (existing.exists()) {
-          void fetchEmployees();
-          throw new Error(
-            `ID ${employeeId} baru saja dipakai data lain. Daftar sudah dimuat ulang; simpan sekali lagi.`,
-          );
-        }
-      }
+      // Save lifecycle evidence atomically with the profile, using the latest
+      // audit rather than the copy in a potentially stale form.
       const employeeDocRef = doc(db, currentTab.collection, employeeId);
-      if (activeTab === 'blue' && editingEmployee) {
-        await runTransaction(db, async (transaction) => {
-          const latest = await transaction.get(employeeDocRef);
-          if (!latest.exists() ||
-              latest.data().employment?.jobCategory !== editingEmployee.employment?.jobCategory ||
-              JSON.stringify(latest.data().employment?.jobCategoryHistory || []) !==
-                JSON.stringify(editingEmployee.employment?.jobCategoryHistory || [])) {
-            throw new Error('Kategori atau riwayat Pekarya telah berubah. Muat ulang data sebelum menyimpan.');
-          }
-          transaction.set(employeeDocRef, employeeWritePayload, { merge: true });
-        });
-      } else {
-        await setDoc(employeeDocRef, employeeWritePayload, { merge: true });
-      }
+      const lifecycleEventId = createFinancialRequestId('employee-status');
+      if (!user) throw new Error('Sesi pengguna tidak tersedia. Silakan masuk kembali.');
+      await runTransaction(db, async (transaction) => {
+        const latest = await transaction.get(employeeDocRef);
+        if (!editingEmployee && latest.exists()) {
+          throw new Error(`ID ${employeeId} baru saja dipakai data lain. Muat ulang daftar lalu simpan kembali.`);
+        }
+        if (editingEmployee && (!latest.exists() ||
+            employeeIsActive(currentTab.collection, latest.data()) !== employeeIsActive(currentTab.collection, editingEmployee))) {
+          throw new Error('Status pegawai telah berubah. Muat ulang data sebelum menyimpan.');
+        }
+        if (activeTab === 'blue' && editingEmployee && (
+            latest.data()?.employment?.jobCategory !== editingEmployee.employment?.jobCategory ||
+            JSON.stringify(latest.data()?.employment?.jobCategoryHistory || []) !==
+              JSON.stringify(editingEmployee.employment?.jobCategoryHistory || []))) {
+          throw new Error('Kategori atau riwayat Pekarya telah berubah. Muat ulang data sebelum menyimpan.');
+        }
+        transaction.set(employeeDocRef, {
+          ...employeeWritePayload,
+          audit: employeeLifecycleAudit({
+            collection: currentTab.collection,
+            before: latest.data(),
+            patch: employeeWritePayload,
+            timestamp: serverTimestamp(),
+            actorUid: user.uid,
+            eventId: lifecycleEventId,
+          }),
+        }, { merge: true });
+      });
       let koperasiBankNote = '';
       if (editingEmployee?.koperasiAuthUid || editingEmployee?.koperasiUserId) {
         const collectionName = currentTab.collection as KoperasiEmployeeCollection;
@@ -1853,7 +1863,19 @@ export default function EmployeesPage() {
         const revertPayload = reconstructNestedObject(edit.changes);
         delete revertPayload.koperasiAuthUid;
         delete revertPayload.koperasiUserId;
-        await setDoc(docRef, revertPayload, { merge: true });
+        const lifecycleEventId = createFinancialRequestId('employee-status-revert');
+        if (!user) throw new Error('Sesi pengguna tidak tersedia. Silakan masuk kembali.');
+        await runTransaction(db, async transaction => {
+          const latest = await transaction.get(docRef);
+          if (!latest.exists()) throw new Error('Data pegawai tidak ditemukan. Muat ulang daftar.');
+          transaction.set(docRef, {
+            ...revertPayload,
+            audit: employeeLifecycleAudit({
+              collection: collectionName, before: latest.data(), patch: revertPayload,
+              timestamp: serverTimestamp(), actorUid: user.uid, eventId: lifecycleEventId,
+            }),
+          }, { merge: true });
+        });
         if (edit.changes.some(change => /^(banking_info|bankAccount)\./.test(change.field))) {
           try {
             const employee = (await getDocFromServer(docRef)).data();

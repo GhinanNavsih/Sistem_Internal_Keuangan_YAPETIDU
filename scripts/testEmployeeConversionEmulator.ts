@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
+import { employeeLifecycleAudit } from '../src/lib/employeeLifecycle';
 
 const PROJECT = 'demo-conversion';
 
@@ -218,6 +219,8 @@ async function main() {
   assert.equal(loyalis.koperasiAuthUid, 'kop-uid-901');
   assert.equal(loyalis.conversion.fromEmployeeId, 'BC_901');
   assert.equal(loyalis.conversion.effectivePeriod, period);
+  assert.equal(loyalis.audit.employmentStatusHistory[command.requestId].action, 'created');
+  assert.ok(loyalis.audit.createdAt.toMillis() > 0);
 
   const blue = (await adminDb.doc('Employees_BlueCollar/BC_901').get()).data()!;
   assert.equal(blue.employment.status, 'inactive');
@@ -228,6 +231,8 @@ async function main() {
   assert.equal(blue.conversion.toEmployeeId, 'Loyalis_046');
   assert.equal(blue.koperasiAuthUid, 'kop-uid-901', 'kept for the final Pekarya slip lock');
   assert.ok(blue.nipyAssignment, 'the NIPY issuance history stays');
+  assert.equal(blue.audit.employmentStatusHistory[command.requestId].action, 'deactivated');
+  assert.ok(blue.audit.lastDeactivatedAt.toMillis() > 0);
 
   const index = (await adminDb.doc(`AttendanceIdentityIndex/${nipyIndexId}`).get()).data()!;
   assert.equal(index.employeeId, 'Loyalis_046');
@@ -317,8 +322,50 @@ async function main() {
   });
   assert.equal(fullSave.status, 200, `saving the whole loaded record passes: ${await fullSave.text()}`);
 
+  // Exercise real browser-SDK transactions and serverTimestamp transforms,
+  // including deactivation followed by reactivation under the editor's rules.
+  const { initializeApp, deleteApp } = await import('firebase/app');
+  const { getAuth, connectAuthEmulator, signInWithEmailAndPassword } = await import('firebase/auth');
+  const { getFirestore, connectFirestoreEmulator, doc, runTransaction, serverTimestamp, getDoc, terminate } = await import('firebase/firestore');
+  const clientApp = initializeApp({ projectId: PROJECT, apiKey: 'demo-key' }, 'lifecycle-editor');
+  const clientAuth = getAuth(clientApp);
+  connectAuthEmulator(clientAuth, `http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}`, { disableWarnings: true });
+  const clientDb = getFirestore(clientApp);
+  connectFirestoreEmulator(clientDb, '127.0.0.1', 8188);
+  try {
+    await signInWithEmailAndPassword(clientAuth, 'loyalis-admin@example.test', 'password123');
+    const employeeRef = doc(clientDb, 'Employees_Loyalis', 'Loyalis_046');
+    for (const [eventId, status] of [['deactivate', 'KELUAR'], ['reactivate', 'AKTIF']]) {
+      await runTransaction(clientDb, async transaction => {
+        const latest = await transaction.get(employeeRef);
+        const patch = { personal_info: { status } };
+        transaction.set(employeeRef, {
+          ...patch,
+          audit: employeeLifecycleAudit({
+            collection: 'Employees_Loyalis', before: latest.data(), patch,
+            timestamp: serverTimestamp(), actorUid: loyalisAdmin.uid, eventId,
+          }),
+        }, { merge: true });
+      });
+    }
+    const afterLifecycle = (await getDoc(employeeRef)).data()!;
+    assert.equal(afterLifecycle.personal_info.status, 'AKTIF');
+    assert.equal(afterLifecycle.audit.createdAt.toMillis(), loyalis.audit.createdAt.toMillis());
+    assert.equal(Object.keys(afterLifecycle.audit.employmentStatusHistory).length, 3);
+    for (const eventId of ['deactivate', 'reactivate']) {
+      const event = afterLifecycle.audit.employmentStatusHistory[eventId];
+      assert.ok(event.occurredAt.toMillis() > 0, 'the timestamp must resolve on the server');
+      assert.equal(event.actorUid, loyalisAdmin.uid);
+    }
+    assert.equal(afterLifecycle.audit.statusChangedAt.toMillis(), afterLifecycle.audit.lastActivatedAt.toMillis());
+    assert.equal(afterLifecycle.audit.lastActivatedAt.toMillis(), afterLifecycle.audit.employmentStatusHistory.reactivate.occurredAt.toMillis());
+  } finally {
+    await terminate(clientDb);
+    await deleteApp(clientApp);
+  }
+
   console.log(
-    'Employee conversion emulator integration passed: auth, blockers, golongan guard, transaction writes, NIPY index, account switch, audit, idempotency, roster split and rules.',
+    'Employee conversion emulator integration passed: auth, blockers, golongan guard, transaction writes, NIPY index, account switch, audit, idempotency, roster split, lifecycle server timestamps and rules.',
   );
 }
 
