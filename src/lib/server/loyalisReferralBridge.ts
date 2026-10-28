@@ -21,9 +21,20 @@ export async function callReferralPmb<T>(body: Record<string, unknown>): Promise
   if (process.env.FIRESTORE_EMULATOR_HOST && !['localhost', '127.0.0.1'].includes(url.hostname)) throw new HttpError(503, 'Emulator tidak boleh memanggil PMB produksi.');
   const send = async (input: Record<string, unknown>) => {
     const raw = JSON.stringify(input);
-    const response = await fetch(url, { method: 'POST', headers: bridgeHeaders(process.env.LOYALIS_REFERRAL_SECRET || '', 'POST', url.pathname, raw), body: raw, signal: AbortSignal.timeout(20000), redirect: 'error' });
-    const result = await response.json();
-    if (!response.ok) throw new HttpError(response.status, result.error || 'Layanan rekomendasi PMB tidak tersedia.');
+    let response: Response;
+    try {
+      response = await fetch(url, { method: 'POST', headers: bridgeHeaders(process.env.LOYALIS_REFERRAL_SECRET || '', 'POST', url.pathname, raw), body: raw, signal: AbortSignal.timeout(20000), redirect: 'error' });
+    } catch (networkError) {
+      console.error(`Gagal menghubungkan ke PMB (${url.origin}):`, networkError);
+      throw new HttpError(503, `Layanan rekomendasi PMB tidak dapat dihubungi (${url.origin}). ${preview ? 'Pastikan server PMB sedang aktif di port 3001.' : 'Silakan coba beberapa saat lagi.'}`);
+    }
+    let result: Record<string, unknown>;
+    try {
+      result = (await response.json()) as Record<string, unknown>;
+    } catch {
+      throw new HttpError(response.status || 502, `Format respon tidak valid dari layanan PMB (${response.status}).`);
+    }
+    if (!response.ok) throw new HttpError(response.status, (typeof result?.error === 'string' && result.error) || 'Layanan rekomendasi PMB tidak tersedia.');
     return result;
   };
   if (preview && body.action !== 'health') {
