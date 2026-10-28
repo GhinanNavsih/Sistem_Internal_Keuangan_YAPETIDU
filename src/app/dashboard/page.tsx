@@ -62,9 +62,10 @@ import {
   isPayableVakasiTambahan,
   vakasiWorkerCollection,
 } from '@/lib/payroll/vakasiTambahan';
-import { isPekaryaJobCategory } from '@/lib/payroll/pekaryaSpj';
 import { authenticatedJson } from '@/lib/payroll/client';
 import { PekaryaSlipPreview } from '@/lib/payroll/pekaryaSlipPreview';
+import { resolveDashboardPeriodRoster, type DashboardPayrollPeriod } from '@/lib/payroll/dashboardRoster';
+import { isImmutablePayrollStatus } from '@/lib/payroll/domain';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -99,8 +100,8 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import {
-  AreaChart,
-  Area,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -113,6 +114,7 @@ import {
   BarChart,
   Bar,
   Treemap,
+  LabelList,
 } from 'recharts';
 
 // Indonesian Month Labels
@@ -132,6 +134,30 @@ const formatIDR = (amount: number) => {
 };
 
 const PIE_COLORS = ['#6366f1', '#f43f5e', '#10b981', '#f59e0b', '#0ea5e9', '#a855f7'];
+
+const PAYROLL_TREND_METRICS = {
+  gross: 'Total Pendapatan Kotor',
+  deductions: 'Total Potongan Gaji',
+  net: 'Total Gaji Bersih',
+  staff: 'Pegawai Terhitung',
+};
+
+type PayrollTrendMetric = keyof typeof PAYROLL_TREND_METRICS;
+
+const formatCompactIDR = (amount: number) => `Rp ${new Intl.NumberFormat('id-ID', {
+  notation: 'compact',
+  maximumFractionDigits: 1,
+}).format(amount)}`;
+
+const employeeCountDomain = ([minimum, maximum]: readonly [number, number]): [number, number] => [
+  Math.max(0, Math.floor(minimum) - 1),
+  Math.ceil(maximum) + 1,
+];
+
+const payrollAmountDomain = ([minimum, maximum]: readonly [number, number]): [number, number] => {
+  const padding = Math.max((maximum - minimum) * 0.1, Math.max(Math.abs(minimum), Math.abs(maximum)) * 0.01, 1);
+  return [minimum >= 0 ? Math.max(0, minimum - padding) : minimum - padding, maximum + padding];
+};
 
 const CustomizedCompositionTreemapContent = (props: any) => {
   const { x, y, width, height, index, name, value, depth } = props;
@@ -399,7 +425,7 @@ const EarningShareSection: React.FC<EarningShareSectionProps> = ({
 
   if (data.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-[300px] border border-dashed border-slate-200 rounded-2xl p-6 bg-slate-50/20 w-full">
+      <div className="flex flex-col items-center justify-center h-[300px] border border-dashed border-slate-200 rounded-md p-6 bg-slate-50/20 w-full">
         <p className="text-sm text-slate-400 font-medium animate-pulse">Tidak ada data untuk ditampilkan</p>
       </div>
     );
@@ -639,8 +665,12 @@ export default function TreasuryDashboard() {
   const [progress, setProgress] = useState(0);
   const [dataLoading, setDataLoading] = useState(true);
   const [slips, setSlips] = useState<any[]>([]);
+  const [payrollPeriods, setPayrollPeriods] = useState<Record<string, DashboardPayrollPeriod>>({});
+  const [dashboardDataError, setDashboardDataError] = useState<string | null>(null);
+  const [periodInputsLoading, setPeriodInputsLoading] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState<string>('');
   const [filterCollar, setFilterCollar] = useState<'semua' | 'pekarya' | 'loyalis'>('semua');
+  const [selectedTrendMetric, setSelectedTrendMetric] = useState<PayrollTrendMetric>('gross');
   const [deductionsView, setDeductionsView] = useState<'treemap' | 'pie' | 'bar'>('treemap');
   const [earningsView, setEarningsView] = useState<'treemap' | 'pie' | 'bar'>('treemap');
   const [animateBars, setAnimateBars] = useState(false);
@@ -721,11 +751,16 @@ export default function TreasuryDashboard() {
     const fetchSlips = async () => {
       try {
         setDataLoading(true);
-        const slipSnap = await getDocs(collection(db, 'PayrollSlipStates'));
+        const [slipSnap, periodSnap] = await Promise.all([
+          getDocs(collection(db, 'PayrollSlipStates')),
+          getDocs(collection(db, 'PayrollPeriods')),
+        ]);
         const slipData = slipSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setSlips(slipData);
+        setPayrollPeriods(Object.fromEntries(periodSnap.docs.map(doc => [doc.id.replace('-', '_'), doc.data()])));
       } catch (err) {
         console.error('Error fetching dashboard slips data:', err);
+        setDashboardDataError('Data slip atau daftar pegawai periode belum dapat dimuat. Muat ulang halaman untuk mencoba kembali.');
       } finally {
         setDataLoading(false);
       }
@@ -806,6 +841,9 @@ export default function TreasuryDashboard() {
         if (!cancelled) setPeriodDataByPeriod(nextPeriodData);
       } catch (err) {
         console.error('Error fetching dashboard period data:', err);
+        if (!cancelled) setDashboardDataError('Rincian perhitungan periode belum dapat dimuat. Muat ulang halaman untuk mencoba kembali.');
+      } finally {
+        if (!cancelled) setPeriodInputsLoading(false);
       }
     };
 
@@ -829,23 +867,28 @@ export default function TreasuryDashboard() {
     return map;
   }, [slips]);
 
+  const periodRosters = useMemo(() => Object.fromEntries(
+    computePayrollPeriodRange(slips, selectedPeriod).map(period => [period, resolveDashboardPeriodRoster({
+      period,
+      periodData: payrollPeriods[period],
+      loyalisEmployees: employeesLoyalis,
+      blueEmployees: employeesBlueCollar,
+      slips: slipsByPeriod[period] || {},
+    })]),
+  ), [slips, selectedPeriod, payrollPeriods, employeesLoyalis, employeesBlueCollar, slipsByPeriod]);
+
+  const periodRosterFailures = Object.entries(periodRosters).filter(([, roster]) => roster.issues.length > 0);
+
   // Which periods actually need the server-side Pekarya live calculation?
   // Historical periods where all active Pekarya staff already have saved slips
   // in PayrollSlipStates use their saved records directly and do not need
   // expensive multi-collection server preview queries.
   const periodsNeedingPreview = useMemo(() => {
     if (dataLoading || contextLoading) return [];
-    const range = computePayrollPeriodRange(slips, selectedPeriod);
-    const activePekarya = employeesBlueCollar.filter(
-      (e) => e.flags?.isActive !== false && isPekaryaJobCategory(e.employment?.jobCategory),
-    );
-
-    return range.filter((period) => {
-      if (activePekarya.length === 0) return false;
-      const periodSlips = slipsByPeriod[period] || {};
-      return activePekarya.some((e) => !periodSlips[e.id]?.earnings);
-    });
-  }, [dataLoading, contextLoading, slips, selectedPeriod, employeesBlueCollar, slipsByPeriod]);
+    return Object.entries(periodRosters).filter(([, roster]) => !roster.closed && roster.members.some(
+      member => member.collar === 'pekarya' && !Array.isArray(member.slip?.earnings),
+    )).map(([period]) => period);
+  }, [dataLoading, contextLoading, periodRosters]);
 
   // The shared Pekarya earnings preview (matrix-sourced Gaji Pokok, approved
   // activity/event SPJ, published-or-estimated attendance) — loaded only
@@ -885,13 +928,9 @@ export default function TreasuryDashboard() {
   >((errors, period) => {
     const previews = pekaryaPreviewsByPeriod[period];
     if (!previews) return errors;
-    const periodSlips = slipsByPeriod[period] || {};
-    const missingCount = employeesBlueCollar.filter(
-      (employee) =>
-        employee.flags?.isActive !== false &&
-        isPekaryaJobCategory(employee.employment?.jobCategory) &&
-        !periodSlips[employee.id]?.earnings &&
-        !previews[employee.id],
+    const missingCount = periodRosters[period].members.filter(
+      member => member.collar === 'pekarya' &&
+        !Array.isArray(member.slip?.earnings) && !previews[member.employee.id],
     ).length;
     if (missingCount > 0) {
       errors[period] =
@@ -1011,7 +1050,7 @@ export default function TreasuryDashboard() {
   // Missing slips are rebuilt for every period, not only for selectedPeriod.
   const periodAggregates = useMemo(() => {
     const aggregates: Record<string, PeriodAggregate> = {};
-    computePayrollPeriodRange(slips, selectedPeriod).forEach((period) => {
+    Object.keys(periodRosters).forEach((period) => {
       aggregates[period] = createEmptyPeriodAggregate(period);
     });
 
@@ -1025,6 +1064,7 @@ export default function TreasuryDashboard() {
       const periodData = periodDataByPeriod[aggregate.period] || EMPTY_PERIOD_DATA;
       const inputs: DashboardPeriodInputs = {
         targetDate: new Date(year, month - 1, 1),
+        isClosed: periodRosters[aggregate.period]?.closed,
         salaryMatrix: collar === 'loyalis' ? salaryMatrixWhite : salaryMatrixBlue,
         uraianMap: periodData.uraianMap,
         vakasiTambahanMap: periodData.vakasiTambahanMap,
@@ -1050,7 +1090,8 @@ export default function TreasuryDashboard() {
       aggregate.totalNet += net;
       if (tax > 0) aggregate.totalTaxedCount++;
       aggregate.totalSlipsCount++;
-      aggregate.confirmedSlipsCount++;
+      const confirmed = isImmutablePayrollStatus(slip?.status);
+      if (confirmed) aggregate.confirmedSlipsCount++;
 
       if (collar === 'loyalis') {
         aggregate.loyalisGross += gross;
@@ -1058,7 +1099,7 @@ export default function TreasuryDashboard() {
         aggregate.loyalisTax += tax;
         aggregate.loyalisNet += net;
         aggregate.loyalisCount++;
-        aggregate.confirmedLoyalisCount++;
+        if (confirmed) aggregate.confirmedLoyalisCount++;
         if (tax > 0) aggregate.loyalisTaxedCount++;
       } else {
         aggregate.pekaryaGross += gross;
@@ -1066,7 +1107,7 @@ export default function TreasuryDashboard() {
         aggregate.pekaryaTax += tax;
         aggregate.pekaryaNet += net;
         aggregate.pekaryaCount++;
-        aggregate.confirmedPekaryaCount++;
+        if (confirmed) aggregate.confirmedPekaryaCount++;
         if (tax > 0) aggregate.pekaryaTaxedCount++;
       }
 
@@ -1092,31 +1133,13 @@ export default function TreasuryDashboard() {
     };
 
     Object.entries(aggregates).forEach(([period, aggregate]) => {
-      const periodSlips = slipsByPeriod[period] || {};
-      employeesLoyalis
-        .filter(employee => employee.personal_info?.status === 'AKTIF')
-        .forEach(employee => addEmployeeToAggregate(
-          aggregate,
-          employee,
-          'loyalis',
-          periodSlips[employee.id],
-        ));
-      employeesBlueCollar
-        .filter(employee => employee.flags?.isActive !== false)
-        .forEach(employee => addEmployeeToAggregate(
-          aggregate,
-          employee,
-          'pekarya',
-          periodSlips[employee.id],
-        ));
+      periodRosters[period].members.forEach(member => addEmployeeToAggregate(
+        aggregate, member.employee, member.collar, member.slip,
+      ));
     });
 
     return aggregates;
   }, [
-    slips,
-    selectedPeriod,
-    employeesLoyalis,
-    employeesBlueCollar,
     salaryMatrixBlue,
     salaryMatrixWhite,
     functionalAllowanceMap,
@@ -1125,12 +1148,49 @@ export default function TreasuryDashboard() {
     koperasiSavings,
     periodDataByPeriod,
     pekaryaPreviewsByPeriod,
+    periodRosters,
   ]);
 
   // Sorted Periods list
   const sortedPeriods = useMemo(() => {
     return Object.keys(periodAggregates).sort();
   }, [periodAggregates]);
+
+  const payrollTrendData = useMemo(() => sortedPeriods.map((period) => {
+    const aggregate = periodAggregates[period];
+    if (filterCollar === 'loyalis') {
+      return {
+        label: aggregate.label,
+        gross: aggregate.loyalisGross,
+        deductions: aggregate.loyalisDeductions,
+        net: aggregate.loyalisNet,
+        staff: aggregate.loyalisCount,
+      };
+    }
+    if (filterCollar === 'pekarya') {
+      return {
+        label: aggregate.label,
+        gross: aggregate.pekaryaGross,
+        deductions: aggregate.pekaryaDeductions,
+        net: aggregate.pekaryaNet,
+        staff: aggregate.pekaryaCount,
+      };
+    }
+    return {
+      label: aggregate.label,
+      gross: aggregate.totalGross,
+      deductions: aggregate.totalDeductions,
+      net: aggregate.totalNet,
+      staff: aggregate.totalSlipsCount,
+    };
+  }), [sortedPeriods, periodAggregates, filterCollar]);
+
+  const trendCardClassName = (metric: PayrollTrendMetric) =>
+    `group w-full cursor-pointer bg-white/60 backdrop-blur-md p-5 rounded-md border shadow-sm text-left hover:border-indigo-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 ${
+      selectedTrendMetric === metric
+        ? 'border-indigo-500 ring-2 ring-indigo-500'
+        : 'border-slate-200/50'
+    }`;
 
   // Initialize selectedPeriod once data is loaded
   useEffect(() => {
@@ -1151,6 +1211,7 @@ export default function TreasuryDashboard() {
     filteredTax,
     filteredNet,
     filteredTaxedCount,
+    filteredCount,
     filteredConfirmedCount,
     filteredActiveCount,
   } = useMemo(() => {
@@ -1161,6 +1222,7 @@ export default function TreasuryDashboard() {
         filteredTax: 0,
         filteredNet: 0,
         filteredTaxedCount: 0,
+        filteredCount: 0,
         filteredConfirmedCount: 0,
         filteredActiveCount: activeStaffCounts.total,
       };
@@ -1172,6 +1234,7 @@ export default function TreasuryDashboard() {
         filteredTax: currentPeriodData.loyalisTax,
         filteredNet: currentPeriodData.loyalisNet,
         filteredTaxedCount: currentPeriodData.loyalisTaxedCount,
+        filteredCount: currentPeriodData.loyalisCount,
         filteredConfirmedCount: currentPeriodData.confirmedLoyalisCount,
         filteredActiveCount: activeStaffCounts.loyalis,
       };
@@ -1182,6 +1245,7 @@ export default function TreasuryDashboard() {
         filteredTax: currentPeriodData.pekaryaTax,
         filteredNet: currentPeriodData.pekaryaNet,
         filteredTaxedCount: currentPeriodData.pekaryaTaxedCount,
+        filteredCount: currentPeriodData.pekaryaCount,
         filteredConfirmedCount: currentPeriodData.confirmedPekaryaCount,
         filteredActiveCount: activeStaffCounts.pekarya,
       };
@@ -1192,6 +1256,7 @@ export default function TreasuryDashboard() {
         filteredTax: currentPeriodData.totalTax,
         filteredNet: currentPeriodData.totalNet,
         filteredTaxedCount: currentPeriodData.totalTaxedCount,
+        filteredCount: currentPeriodData.totalSlipsCount,
         filteredConfirmedCount: currentPeriodData.confirmedSlipsCount,
         filteredActiveCount: activeStaffCounts.total,
       };
@@ -1243,7 +1308,7 @@ export default function TreasuryDashboard() {
         deductions: calcPct(currAgg.totalDeductions, prevAgg.totalDeductions),
         tax: calcTaxPct(currAgg.totalTax, prevAgg.totalTax),
         net: calcPct(currAgg.totalNet, prevAgg.totalNet),
-        staff: calcPct(currAgg.confirmedSlipsCount, prevAgg.confirmedSlipsCount),
+        staff: calcPct(currAgg.totalSlipsCount, prevAgg.totalSlipsCount),
       };
     }
   }, [selectedPeriod, sortedPeriods, periodAggregates, filterCollar]);
@@ -1284,6 +1349,7 @@ export default function TreasuryDashboard() {
       selectedPeriodSlipsMap[employee.id],
       {
         targetDate,
+        isClosed: periodRosters[selectedPeriod]?.closed,
         salaryMatrix: collar === 'loyalis' ? salaryMatrixWhite : salaryMatrixBlue,
         uraianMap: periodData.uraianMap,
         vakasiTambahanMap: periodData.vakasiTambahanMap,
@@ -1297,18 +1363,18 @@ export default function TreasuryDashboard() {
       },
     );
 
-    employeesLoyalis
-      .filter(employee => employee.personal_info?.status === 'AKTIF')
-      .forEach(employee => {
+    periodRosters[selectedPeriod]?.members
+      .filter(member => member.collar === 'loyalis')
+      .forEach(({ employee }) => {
         const gross = sumSlipFields(getData(employee, 'loyalis').earnings);
         const department = employee.employment_profile?.department_unit || 'LAIN-LAIN';
         loyalisMap[department] = (loyalisMap[department] || 0) + gross;
         totalLoyalisGross += gross;
       });
 
-    employeesBlueCollar
-      .filter(employee => employee.flags?.isActive !== false)
-      .forEach(employee => {
+    periodRosters[selectedPeriod]?.members
+      .filter(member => member.collar === 'pekarya')
+      .forEach(({ employee }) => {
         const gross = sumSlipFields(getData(employee, 'pekarya').earnings);
         const category = employee.employment?.jobCategory || 'LAIN-LAIN';
         pekaryaMap[category] = (pekaryaMap[category] || 0) + gross;
@@ -1360,8 +1426,6 @@ export default function TreasuryDashboard() {
   }, [
     selectedPeriod,
     slips,
-    employeesLoyalis,
-    employeesBlueCollar,
     salaryMatrixBlue,
     salaryMatrixWhite,
     functionalAllowanceMap,
@@ -1370,6 +1434,7 @@ export default function TreasuryDashboard() {
     koperasiSavings,
     periodDataByPeriod,
     pekaryaPreviewsByPeriod,
+    periodRosters,
   ]);
 
   // Selected Group Composition (Drilldown details when a share group is selected)
@@ -1389,15 +1454,11 @@ export default function TreasuryDashboard() {
     const [year, month] = selectedPeriod.split('_').map(Number);
     const targetDate = new Date(year, month - 1, 1);
     const isLoyalis = selectedShareGroup.type === 'loyalis';
-    const employees = isLoyalis
-      ? employeesLoyalis.filter(employee =>
-        employee.personal_info?.status === 'AKTIF' &&
-        (employee.employment_profile?.department_unit || 'LAIN-LAIN') === selectedShareGroup.name,
-      )
-      : employeesBlueCollar.filter(employee =>
-        employee.flags?.isActive !== false &&
-        (employee.employment?.jobCategory || 'LAIN-LAIN') === selectedShareGroup.name,
-      );
+    const employees = (periodRosters[selectedPeriod]?.members || []).filter(member =>
+      member.collar === (isLoyalis ? 'loyalis' : 'pekarya') &&
+      (isLoyalis ? member.employee.employment_profile?.department_unit || 'LAIN-LAIN'
+        : member.employee.employment?.jobCategory || 'LAIN-LAIN') === selectedShareGroup.name,
+    ).map(member => member.employee);
 
     const earningsBreakdown: Record<string, number> = {};
     const deductionsBreakdown: Record<string, number> = {};
@@ -1412,6 +1473,7 @@ export default function TreasuryDashboard() {
         selectedPeriodSlipsMap[employee.id],
         {
           targetDate,
+          isClosed: periodRosters[selectedPeriod]?.closed,
           salaryMatrix: isLoyalis ? salaryMatrixWhite : salaryMatrixBlue,
           uraianMap: periodData.uraianMap,
           vakasiTambahanMap: periodData.vakasiTambahanMap,
@@ -1447,8 +1509,6 @@ export default function TreasuryDashboard() {
     selectedPeriod,
     selectedShareGroup,
     slips,
-    employeesLoyalis,
-    employeesBlueCollar,
     salaryMatrixBlue,
     salaryMatrixWhite,
     functionalAllowanceMap,
@@ -1457,6 +1517,7 @@ export default function TreasuryDashboard() {
     koperasiSavings,
     periodDataByPeriod,
     pekaryaPreviewsByPeriod,
+    periodRosters,
   ]);
 
   // Selected Period Deduction Breakdown (Sorted)
@@ -1565,7 +1626,7 @@ export default function TreasuryDashboard() {
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
-        <div className="bg-white/95 backdrop-blur-sm p-4 border border-slate-200/80 rounded-2xl shadow-xl">
+        <div className="bg-white/95 backdrop-blur-sm p-4 border border-slate-200/80 rounded-md shadow-xl">
           <p className="font-bold text-slate-800 mb-2">{label}</p>
           {payload.map((entry: any, index: number) => (
             <p key={index} className="text-sm font-semibold flex items-center gap-1" style={{ color: entry.stroke || entry.fill }}>
@@ -1588,7 +1649,7 @@ export default function TreasuryDashboard() {
         <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
         <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
         <div className="flex flex-col items-center gap-4 relative z-10">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-400 flex items-center justify-center shadow-lg shadow-indigo-200">
+          <div className="w-12 h-12 rounded-md bg-gradient-to-tr from-indigo-500 to-purple-400 flex items-center justify-center shadow-lg shadow-indigo-200">
             <Loader2 className="w-6 h-6 text-white animate-spin" />
           </div>
           <div className="flex flex-col items-center gap-2">
@@ -1615,11 +1676,11 @@ export default function TreasuryDashboard() {
       {/* Subtle decorative blobs */}
       <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
-      <div className="max-w-[1400px] mx-auto space-y-8 relative z-10">
+      <div className="max-w-[1400px] mx-auto space-y-4 relative z-10">
         <GlobalHeader />
 
         {/* Section 1: Header & Period Selector */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white/40 backdrop-blur-md p-6 rounded-3xl border border-slate-200/50 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white/40 backdrop-blur-md p-6 rounded-md border border-slate-200/50 shadow-sm">
           <div>
             <span className="text-indigo-600 text-xs font-bold uppercase tracking-wider">Treasury & Financial Dashboard</span>
             <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 mt-1">
@@ -1633,7 +1694,7 @@ export default function TreasuryDashboard() {
           {/* Middle: Period Selector & Employee type toggle */}
           <div className="flex flex-col items-start md:items-center gap-2">
             {/* Period Selector */}
-            <div className="flex items-center gap-2 bg-white/80 border border-slate-200 px-4 py-2 rounded-2xl shadow-sm">
+            <div className="flex items-center gap-2 bg-white/80 border border-slate-200 px-4 py-2 rounded-md shadow-sm">
               <Calendar className="w-4 h-4 text-indigo-500 shrink-0" />
               <span className="text-sm font-semibold text-slate-700 whitespace-nowrap">Periode Laporan:</span>
               {sortedPeriods.length > 0 ? (
@@ -1644,7 +1705,7 @@ export default function TreasuryDashboard() {
                         {selectedPeriod ? formatPeriodLabel(selectedPeriod) : undefined}
                       </SelectValue>
                     </SelectTrigger>
-                    <SelectContent className="rounded-xl border-slate-200 shadow-md">
+                    <SelectContent className="rounded-sm border-slate-200 shadow-md">
                       {sortedPeriods.map(p => (
                         <SelectItem key={p} value={p} className="cursor-pointer font-medium hover:bg-slate-50">
                           {formatPeriodLabel(p)}
@@ -1657,7 +1718,7 @@ export default function TreasuryDashboard() {
                     onClick={handleRefreshPreviews}
                     disabled={pekaryaPreviewsBusy}
                     title="Segarkan data kalkulasi periode terpilih"
-                    className="p-1 text-slate-400 hover:text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors disabled:opacity-40 cursor-pointer"
+                    className="p-1 text-slate-400 hover:text-indigo-600 rounded-sm hover:bg-indigo-50 transition-colors disabled:opacity-40 cursor-pointer"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${pekaryaPreviewsBusy ? 'animate-spin text-indigo-600' : ''}`} />
                   </button>
@@ -1668,11 +1729,11 @@ export default function TreasuryDashboard() {
             </div>
 
             {/* Employee Type Toggle */}
-            <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200/60 shadow-sm gap-0.5 shrink-0">
+            <div className="flex bg-slate-100 p-1 rounded-md border border-slate-200/60 shadow-sm gap-0.5 shrink-0">
               <button
                 type="button"
                 onClick={() => setFilterCollar('semua')}
-                className={`px-4 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${filterCollar === 'semua'
+                className={`px-4 py-1.5 text-xs font-bold rounded-sm transition-all cursor-pointer ${filterCollar === 'semua'
                   ? 'bg-white text-indigo-600 shadow-sm'
                   : 'text-slate-500 hover:text-slate-700'
                   }`}
@@ -1682,7 +1743,7 @@ export default function TreasuryDashboard() {
               <button
                 type="button"
                 onClick={() => setFilterCollar('pekarya')}
-                className={`px-4 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${filterCollar === 'pekarya'
+                className={`px-4 py-1.5 text-xs font-bold rounded-sm transition-all cursor-pointer ${filterCollar === 'pekarya'
                   ? 'bg-white text-indigo-600 shadow-sm'
                   : 'text-slate-500 hover:text-slate-700'
                   }`}
@@ -1692,7 +1753,7 @@ export default function TreasuryDashboard() {
               <button
                 type="button"
                 onClick={() => setFilterCollar('loyalis')}
-                className={`px-4 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${filterCollar === 'loyalis'
+                className={`px-4 py-1.5 text-xs font-bold rounded-sm transition-all cursor-pointer ${filterCollar === 'loyalis'
                   ? 'bg-white text-indigo-600 shadow-sm'
                   : 'text-slate-500 hover:text-slate-700'
                   }`}
@@ -1704,14 +1765,14 @@ export default function TreasuryDashboard() {
 
           {/* Right: Active Staff Badge Container */}
           <div className="w-auto md:w-[240px] flex justify-start md:justify-end shrink-0 self-start md:self-center">
-            <div className="flex items-center gap-2 bg-indigo-50/50 border border-indigo-100/50 px-4 py-2 rounded-2xl shrink-0">
+            <div className="flex items-center gap-2 bg-indigo-50/50 border border-indigo-100/50 px-4 py-2 rounded-md shrink-0">
               <Users className="w-4 h-4 text-indigo-600" />
               <span className="text-xs font-medium text-indigo-800">
                 {filterCollar === 'pekarya'
-                  ? 'Staf Pekarya Aktif:'
+                  ? 'Staf Pekarya Aktif Saat Ini:'
                   : filterCollar === 'loyalis'
-                    ? 'Staf Loyalis Aktif:'
-                    : 'Staf Aktif:'}{' '}
+                    ? 'Staf Loyalis Aktif Saat Ini:'
+                    : 'Staf Aktif Saat Ini:'}{' '}
                 <span className="font-bold">{filteredActiveCount} orang</span>
               </span>
             </div>
@@ -1720,29 +1781,29 @@ export default function TreasuryDashboard() {
 
         {/* Section 1.5: Period Processing Progress Info */}
         {currentPeriodData && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-50/50 border border-slate-200/50 p-6 rounded-2xl">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-4 bg-slate-50/50 border border-slate-200/50 p-6 rounded-md">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center">
+              <div className="w-10 h-10 rounded-sm bg-indigo-50 flex items-center justify-center">
                 <FileCheck className="w-5 h-5 text-indigo-600" />
               </div>
               <div>
                 <p className="text-xs text-slate-500 font-medium">Status Konfirmasi Slip</p>
                 <p className="text-sm font-bold text-slate-800">
-                  {filteredConfirmedCount} / {filteredActiveCount} Slip Dikonfirmasi
+                  {filteredConfirmedCount} / {filteredCount} Slip Dikonfirmasi
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center">
+              <div className="w-10 h-10 rounded-sm bg-indigo-50 flex items-center justify-center">
                 <Activity className="w-5 h-5 text-indigo-600" />
               </div>
               <div className="flex-1">
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-slate-500 font-medium">Progress Penyelesaian Gaji</p>
                   <p className="text-xs font-bold text-indigo-600">
-                    {filteredActiveCount > 0
-                      ? Math.min(100, (filteredConfirmedCount / filteredActiveCount) * 100).toFixed(2)
+                    {filteredCount > 0
+                      ? Math.min(100, (filteredConfirmedCount / filteredCount) * 100).toFixed(2)
                       : "0.00"}%
                   </p>
                 </div>
@@ -1750,7 +1811,7 @@ export default function TreasuryDashboard() {
                   <div
                     className="bg-indigo-600 h-1.5 rounded-full transition-all duration-500"
                     style={{
-                      width: `${filteredActiveCount > 0 ? Math.min(100, (filteredConfirmedCount / filteredActiveCount) * 100) : 0}%`
+                      width: `${filteredCount > 0 ? Math.min(100, (filteredConfirmedCount / filteredCount) * 100) : 0}%`
                     }}
                   />
                 </div>
@@ -1758,26 +1819,34 @@ export default function TreasuryDashboard() {
             </div>
 
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
+              <div className="w-10 h-10 rounded-sm bg-amber-50 flex items-center justify-center">
                 <AlertCircle className="w-5 h-5 text-amber-600" />
               </div>
               <div>
                 <p className="text-xs text-slate-500 font-medium">Menunggu Konfirmasi</p>
                 <p className="text-sm font-bold text-slate-800">
-                  {Math.max(0, filteredActiveCount - filteredConfirmedCount)} Slip Gaji
+                  {Math.max(0, filteredCount - filteredConfirmedCount)} Slip Gaji
                 </p>
               </div>
             </div>
           </div>
         )}
 
-        {contextLoading || dataLoading || pekaryaPreviewsBusy ? (
-          <div className="h-[400px] flex flex-col items-center justify-center bg-white/40 border border-slate-200/50 rounded-3xl">
+        {contextLoading || dataLoading || periodInputsLoading || pekaryaPreviewsBusy ? (
+          <div className="h-[400px] flex flex-col items-center justify-center bg-white/40 border border-slate-200/50 rounded-md">
             <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
             <p className="text-slate-500 text-sm mt-3 font-medium">Sedang memproses data keuangan...</p>
           </div>
+        ) : dashboardDataError || periodRosterFailures.length > 0 ? (
+          <div className="rounded-md border border-rose-200 bg-rose-50 p-6 text-sm text-rose-800">
+            <h3 className="font-semibold">Ringkasan Periode Belum Tersedia</h3>
+            {dashboardDataError && <p className="mt-2">{dashboardDataError}</p>}
+            {periodRosterFailures.map(([period, roster]) => (
+              <p key={period} className="mt-2">{formatPeriodLabel(period)}: {roster.issues.join(' ')}</p>
+            ))}
+          </div>
         ) : pekaryaPreviewFailures.length > 0 ? (
-          <div className="flex min-h-[320px] flex-col items-center justify-center rounded-3xl border border-rose-200 bg-rose-50/80 p-10 text-center shadow-sm">
+          <div className="flex min-h-[320px] flex-col items-center justify-center rounded-md border border-rose-200 bg-rose-50/80 p-10 text-center shadow-sm">
             <AlertCircle className="mb-4 h-12 w-12 text-rose-500" />
             <h3 className="text-lg font-bold text-slate-800">
               Pratinjau Payroll Pekarya Tidak Tersedia
@@ -1798,7 +1867,7 @@ export default function TreasuryDashboard() {
             </div>
             <Button
               type="button"
-              className="mt-6 rounded-xl bg-rose-600 text-white hover:bg-rose-700"
+              className="mt-6 rounded-sm bg-rose-600 text-white hover:bg-rose-700"
               onClick={handleRefreshPreviews}
             >
               <RefreshCw className="mr-2 h-4 w-4" />
@@ -1806,14 +1875,14 @@ export default function TreasuryDashboard() {
             </Button>
           </div>
         ) : !currentPeriodData ? (
-          <div className="p-12 text-center bg-white/60 backdrop-blur-md border border-slate-200/50 rounded-3xl shadow-sm">
+          <div className="p-12 text-center bg-white/60 backdrop-blur-md border border-slate-200/50 rounded-md shadow-sm">
             <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
             <h3 className="text-lg font-bold text-slate-800 mb-1">Belum Ada Data Slip Gaji</h3>
             <p className="text-slate-500 text-sm max-w-md mx-auto">
               Tidak ditemukan data slip gaji di sistem. Silakan masuk ke modul Validasi Gaji untuk men-generate slip baru.
             </p>
             <Link href="/dashboard/payroll" className="inline-block mt-4">
-              <Button className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer">
+              <Button className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer">
                 Generasikan Payroll
               </Button>
             </Link>
@@ -1821,16 +1890,23 @@ export default function TreasuryDashboard() {
         ) : (
           <>
             {/* Section 2: Summary Metric Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
 
               {/* Card 1: Gross Revenue / Expenses */}
-              <div className="group bg-white/60 backdrop-blur-md p-5 rounded-2xl border border-slate-200/50 shadow-sm hover:shadow-lg hover:border-emerald-200/60 hover:-translate-y-0.5 transition-all duration-300">
+              <button
+                type="button"
+                className={trendCardClassName('gross')}
+                aria-label={PAYROLL_TREND_METRICS.gross}
+                aria-pressed={selectedTrendMetric === 'gross'}
+                aria-controls="payroll-trend-chart"
+                onClick={() => setSelectedTrendMetric('gross')}
+              >
                 <div className="flex items-center justify-between mb-4">
                   <div className="space-y-0.5">
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Pendapatan Kotor</p>
                     <p className="text-slate-400 text-[11px]">Sebelum potongan dan pajak</p>
                   </div>
-                  <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 group-hover:bg-emerald-100 transition-colors">
+                  <div className="w-10 h-10 rounded-sm bg-emerald-50 flex items-center justify-center text-emerald-600 group-hover:bg-emerald-100 transition-colors">
                     <Banknote className="w-5 h-5" />
                   </div>
                 </div>
@@ -1841,17 +1917,17 @@ export default function TreasuryDashboard() {
                   <div className="flex items-center gap-1.5">
                     {deltas ? (
                       deltas.gross > 0 ? (
-                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 rounded-lg py-0.5 px-2 flex items-center gap-0.5 text-xs font-semibold">
+                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 rounded-sm py-0.5 px-2 flex items-center gap-0.5 text-xs font-semibold">
                           <TrendingUp className="w-3.5 h-3.5" />
                           {deltas.gross.toFixed(1)}% MoM
                         </Badge>
                       ) : deltas.gross < 0 ? (
-                        <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 rounded-lg py-0.5 px-2 flex items-center gap-0.5 text-xs font-semibold">
+                        <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 rounded-sm py-0.5 px-2 flex items-center gap-0.5 text-xs font-semibold">
                           <TrendingDown className="w-3.5 h-3.5" />
                           {Math.abs(deltas.gross).toFixed(1)}% MoM
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 rounded-lg py-0.5 px-2 text-xs font-semibold">
+                        <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 rounded-sm py-0.5 px-2 text-xs font-semibold">
                           0% MoM
                         </Badge>
                       )
@@ -1860,16 +1936,23 @@ export default function TreasuryDashboard() {
                     )}
                   </div>
                 </div>
-              </div>
+              </button>
 
               {/* Card 2: Total Deductions */}
-              <div className="group bg-white/60 backdrop-blur-md p-5 rounded-2xl border border-slate-200/50 shadow-sm hover:shadow-lg hover:border-rose-200/60 hover:-translate-y-0.5 transition-all duration-300">
+              <button
+                type="button"
+                className={trendCardClassName('deductions')}
+                aria-label={PAYROLL_TREND_METRICS.deductions}
+                aria-pressed={selectedTrendMetric === 'deductions'}
+                aria-controls="payroll-trend-chart"
+                onClick={() => setSelectedTrendMetric('deductions')}
+              >
                 <div className="flex items-center justify-between mb-4">
                   <div className="space-y-0.5">
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Potongan Gaji</p>
                     <p className="text-slate-400 text-[11px]">BPJS, Koperasi, Zakat (tanpa pajak)</p>
                   </div>
-                  <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600 group-hover:bg-rose-100 transition-colors">
+                  <div className="w-10 h-10 rounded-sm bg-rose-50 flex items-center justify-center text-rose-600 group-hover:bg-rose-100 transition-colors">
                     <Scissors className="w-5 h-5" />
                   </div>
                 </div>
@@ -1880,17 +1963,17 @@ export default function TreasuryDashboard() {
                   <div className="flex items-center gap-1.5">
                     {deltas ? (
                       deltas.deductions > 0 ? (
-                        <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 rounded-lg py-0.5 px-2 flex items-center gap-0.5 text-xs font-semibold">
+                        <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 rounded-sm py-0.5 px-2 flex items-center gap-0.5 text-xs font-semibold">
                           <TrendingUp className="w-3.5 h-3.5" />
                           {deltas.deductions.toFixed(1)}% MoM
                         </Badge>
                       ) : deltas.deductions < 0 ? (
-                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 rounded-lg py-0.5 px-2 flex items-center gap-0.5 text-xs font-semibold">
+                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 rounded-sm py-0.5 px-2 flex items-center gap-0.5 text-xs font-semibold">
                           <TrendingDown className="w-3.5 h-3.5" />
                           {Math.abs(deltas.deductions).toFixed(1)}% MoM
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 rounded-lg py-0.5 px-2 text-xs font-semibold">
+                        <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 rounded-sm py-0.5 px-2 text-xs font-semibold">
                           0% MoM
                         </Badge>
                       )
@@ -1899,16 +1982,16 @@ export default function TreasuryDashboard() {
                     )}
                   </div>
                 </div>
-              </div>
+              </button>
 
               {/* Card 3: Income Tax */}
-              <div className="group bg-white/60 backdrop-blur-md p-5 rounded-2xl border border-slate-200/50 shadow-sm hover:shadow-lg hover:border-amber-200/60 hover:-translate-y-0.5 transition-all duration-300">
+              <div className="group bg-white/60 backdrop-blur-md p-5 rounded-md border border-slate-200/50 shadow-sm hover:shadow-lg hover:border-amber-200/60 hover:-translate-y-0.5 transition-all duration-300">
                 <div className="flex items-center justify-between mb-4">
                   <div className="space-y-0.5">
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Pajak Penghasilan</p>
                     <p className="text-slate-400 text-[11px]">Tarif 5% • {filteredTaxedCount} pegawai</p>
                   </div>
-                  <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 group-hover:bg-amber-100 transition-colors">
+                  <div className="w-10 h-10 rounded-sm bg-amber-50 flex items-center justify-center text-amber-600 group-hover:bg-amber-100 transition-colors">
                     <Percent className="w-5 h-5" />
                   </div>
                 </div>
@@ -1919,21 +2002,21 @@ export default function TreasuryDashboard() {
                   <div className="flex items-center gap-1.5">
                     {deltas ? (
                       deltas.tax === null ? (
-                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 rounded-lg py-0.5 px-2 text-xs font-semibold">
+                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 rounded-sm py-0.5 px-2 text-xs font-semibold">
                           Baru periode ini
                         </Badge>
                       ) : deltas.tax > 0 ? (
-                        <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 rounded-lg py-0.5 px-2 flex items-center gap-0.5 text-xs font-semibold">
+                        <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 rounded-sm py-0.5 px-2 flex items-center gap-0.5 text-xs font-semibold">
                           <TrendingUp className="w-3.5 h-3.5" />
                           {deltas.tax.toFixed(1)}% MoM
                         </Badge>
                       ) : deltas.tax < 0 ? (
-                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 rounded-lg py-0.5 px-2 flex items-center gap-0.5 text-xs font-semibold">
+                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 rounded-sm py-0.5 px-2 flex items-center gap-0.5 text-xs font-semibold">
                           <TrendingDown className="w-3.5 h-3.5" />
                           {Math.abs(deltas.tax).toFixed(1)}% MoM
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 rounded-lg py-0.5 px-2 text-xs font-semibold">
+                        <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 rounded-sm py-0.5 px-2 text-xs font-semibold">
                           0% MoM
                         </Badge>
                       )
@@ -1945,13 +2028,20 @@ export default function TreasuryDashboard() {
               </div>
 
               {/* Card 4: Net Salary (Payout Expense) */}
-              <div className="group bg-white/60 backdrop-blur-md p-5 rounded-2xl border border-slate-200/50 shadow-sm hover:shadow-lg hover:border-indigo-200/60 hover:-translate-y-0.5 transition-all duration-300">
+              <button
+                type="button"
+                className={trendCardClassName('net')}
+                aria-label={PAYROLL_TREND_METRICS.net}
+                aria-pressed={selectedTrendMetric === 'net'}
+                aria-controls="payroll-trend-chart"
+                onClick={() => setSelectedTrendMetric('net')}
+              >
                 <div className="flex items-center justify-between mb-4">
                   <div className="space-y-0.5">
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Gaji Bersih</p>
                     <p className="text-slate-400 text-[11px]">Kas setelah potongan dan pajak</p>
                   </div>
-                  <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-100 transition-colors">
+                  <div className="w-10 h-10 rounded-sm bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-100 transition-colors">
                     <DollarSign className="w-5 h-5" />
                   </div>
                 </div>
@@ -1962,17 +2052,17 @@ export default function TreasuryDashboard() {
                   <div className="flex items-center gap-1.5">
                     {deltas ? (
                       deltas.net > 0 ? (
-                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 rounded-lg py-0.5 px-2 flex items-center gap-0.5 text-xs font-semibold">
+                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 rounded-sm py-0.5 px-2 flex items-center gap-0.5 text-xs font-semibold">
                           <TrendingUp className="w-3.5 h-3.5" />
                           {deltas.net.toFixed(1)}% MoM
                         </Badge>
                       ) : deltas.net < 0 ? (
-                        <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 rounded-lg py-0.5 px-2 flex items-center gap-0.5 text-xs font-semibold">
+                        <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 rounded-sm py-0.5 px-2 flex items-center gap-0.5 text-xs font-semibold">
                           <TrendingDown className="w-3.5 h-3.5" />
                           {Math.abs(deltas.net).toFixed(1)}% MoM
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 rounded-lg py-0.5 px-2 text-xs font-semibold">
+                        <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 rounded-sm py-0.5 px-2 text-xs font-semibold">
                           0% MoM
                         </Badge>
                       )
@@ -1981,37 +2071,50 @@ export default function TreasuryDashboard() {
                     )}
                   </div>
                 </div>
-              </div>
+              </button>
 
               {/* Card 5: Confirmed Staff Count */}
-              <div className="group bg-white/60 backdrop-blur-md p-5 rounded-2xl border border-slate-200/50 shadow-sm hover:shadow-lg hover:border-slate-300/60 hover:-translate-y-0.5 transition-all duration-300">
+              <button
+                type="button"
+                className={trendCardClassName('staff')}
+                aria-label={PAYROLL_TREND_METRICS.staff}
+                aria-pressed={selectedTrendMetric === 'staff'}
+                aria-controls="payroll-trend-chart"
+                onClick={() => setSelectedTrendMetric('staff')}
+              >
                 <div className="flex items-center justify-between mb-4">
                   <div className="space-y-0.5">
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Pegawai Terhitung</p>
-                    <p className="text-slate-400 text-[11px]">Draft & terkonfirmasi periode ini</p>
+                    <p className="text-slate-400 text-[11px]">
+                      {periodRosters[selectedPeriod]?.source === 'sealed_roster'
+                        ? 'Daftar pegawai saat penutupan'
+                        : periodRosters[selectedPeriod]?.source === 'saved_slips'
+                          ? 'Berdasarkan slip tersimpan'
+                          : 'Termasuk draft & pratinjau periode ini'}
+                    </p>
                   </div>
-                  <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600 group-hover:bg-slate-200 transition-colors">
+                  <div className="w-10 h-10 rounded-sm bg-slate-100 flex items-center justify-center text-slate-600 group-hover:bg-slate-200 transition-colors">
                     <CheckCircle className="w-5 h-5" />
                   </div>
                 </div>
                 <div className="space-y-3">
                   <div className="text-2xl font-black text-slate-900 tracking-tight">
-                    {filteredConfirmedCount} <span className="text-sm font-bold text-slate-400">Pegawai</span>
+                    {filteredCount} <span className="text-sm font-bold text-slate-400">Pegawai</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     {deltas ? (
                       deltas.staff > 0 ? (
-                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 rounded-lg py-0.5 px-2 flex items-center gap-0.5 text-xs font-semibold">
+                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 rounded-sm py-0.5 px-2 flex items-center gap-0.5 text-xs font-semibold">
                           <TrendingUp className="w-3.5 h-3.5" />
                           +{deltas.staff.toFixed(1)}% MoM
                         </Badge>
                       ) : deltas.staff < 0 ? (
-                        <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 rounded-lg py-0.5 px-2 flex items-center gap-0.5 text-xs font-semibold">
+                        <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 rounded-sm py-0.5 px-2 flex items-center gap-0.5 text-xs font-semibold">
                           <TrendingDown className="w-3.5 h-3.5" />
                           {deltas.staff.toFixed(1)}% MoM
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 rounded-lg py-0.5 px-2 text-xs font-semibold">
+                        <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 rounded-sm py-0.5 px-2 text-xs font-semibold">
                           0% MoM
                         </Badge>
                       )
@@ -2020,14 +2123,93 @@ export default function TreasuryDashboard() {
                     )}
                   </div>
                 </div>
-              </div>
+              </button>
 
             </div>
 
-
+            <section
+              id="payroll-trend-chart"
+              aria-labelledby="payroll-trend-title"
+              className="min-w-0 rounded-md border border-slate-200/50 bg-white/60 p-4 sm:p-6"
+            >
+              <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 id="payroll-trend-title" aria-live="polite" className="text-base font-semibold text-slate-800">
+                    Tren {PAYROLL_TREND_METRICS[selectedTrendMetric]}
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-500">Skala menyesuaikan rentang data.</p>
+                </div>
+                <p className="text-xs text-slate-500">
+                  {payrollTrendData[0]?.label} – {payrollTrendData.at(-1)?.label}
+                </p>
+              </div>
+              <div className="h-[260px] min-w-0 sm:h-[320px]">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                  <LineChart
+                    key={`payroll-trend-chart-${selectedTrendMetric}`}
+                    data={payrollTrendData}
+                    accessibilityLayer
+                    margin={{ top: 12, right: 16, left: 0, bottom: 8 }}
+                  >
+                    <CartesianGrid vertical={false} stroke="#e2e8f0" strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="label"
+                      tickFormatter={(label: string) => label.replace(/^(\S+) /, (month) => `${month.trim().slice(0, 3)} `)}
+                      tick={{ fill: '#64748b', fontSize: 12 }}
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={12}
+                      minTickGap={24}
+                    />
+                    <YAxis
+                      tickFormatter={selectedTrendMetric === 'staff'
+                        ? (value: number) => value.toLocaleString('id-ID')
+                        : formatCompactIDR}
+                      allowDecimals={false}
+                      domain={selectedTrendMetric === 'staff' ? employeeCountDomain : payrollAmountDomain}
+                      tick={{ fill: '#64748b', fontSize: 12 }}
+                      tickLine={false}
+                      axisLine={false}
+                      width={76}
+                    />
+                    <Tooltip
+                      formatter={(value) => [
+                        selectedTrendMetric === 'staff'
+                          ? `${Number(value).toLocaleString('id-ID')} pegawai`
+                          : formatIDR(Number(value)),
+                        PAYROLL_TREND_METRICS[selectedTrendMetric],
+                      ]}
+                      contentStyle={{ borderRadius: 12, borderColor: '#e2e8f0', fontSize: 12 }}
+                    />
+                    <Line
+                      type="linear"
+                      dataKey={selectedTrendMetric}
+                      name={PAYROLL_TREND_METRICS[selectedTrendMetric]}
+                      stroke="#4f46e5"
+                      strokeWidth={3}
+                      dot={{ r: 4, fill: '#4f46e5', stroke: '#fff', strokeWidth: 2 }}
+                      activeDot={{ r: 6, strokeWidth: 2 }}
+                      isAnimationActive={false}
+                    >
+                      {selectedTrendMetric === 'staff' && (
+                        <LabelList
+                          dataKey="staff"
+                          position="top"
+                          offset={10}
+                          fill="#4f46e5"
+                          fontSize={12}
+                          fontWeight={600}
+                          formatter={(value) => Number(value).toLocaleString('id-ID')}
+                        />
+                      )}
+                    </Line>
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </section>
 
             {/* Section 3: Share of Earning Breakdown */}
-            <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-slate-200/50 shadow-sm overflow-hidden">
+            <div className="bg-white/60 backdrop-blur-md rounded-md border border-slate-200/50 shadow-sm overflow-hidden">
               <div className="bg-slate-50/30 border-b border-slate-100/80 p-6 flex flex-row items-center justify-between flex-wrap gap-4">
                 <div className="flex flex-col md:flex-row md:items-center gap-4">
                   <div>
@@ -2041,7 +2223,7 @@ export default function TreasuryDashboard() {
                       {selectedShareGroup && (
                         <Badge 
                           variant="outline" 
-                          className="bg-indigo-50 text-indigo-700 border-indigo-200/80 rounded-lg py-0.5 px-2 flex items-center gap-1.5 text-[10px] font-bold cursor-pointer hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 transition-colors"
+                          className="bg-indigo-50 text-indigo-700 border-indigo-200/80 rounded-sm py-0.5 px-2 flex items-center gap-1.5 text-[10px] font-bold cursor-pointer hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 transition-colors"
                           onClick={() => setSelectedShareGroup(null)}
                           title="Klik untuk menghapus filter"
                         >
@@ -2053,11 +2235,11 @@ export default function TreasuryDashboard() {
                   </div>
                 </div>
 
-                <div className="flex bg-slate-100/80 p-0.5 rounded-xl border border-slate-200/60 shadow-sm gap-0.5 shrink-0">
+                <div className="flex bg-slate-100/80 p-0.5 rounded-sm border border-slate-200/60 shadow-sm gap-0.5 shrink-0">
                   <button
                     type="button"
                     onClick={() => setShareOfEarningView('treemap')}
-                    className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${shareOfEarningView === 'treemap'
+                    className={`px-3 py-1 text-[11px] font-bold rounded-sm transition-all cursor-pointer ${shareOfEarningView === 'treemap'
                       ? 'bg-white text-indigo-600 shadow-sm'
                       : 'text-slate-500 hover:text-slate-700'
                       }`}
@@ -2067,7 +2249,7 @@ export default function TreasuryDashboard() {
                   <button
                     type="button"
                     onClick={() => setShareOfEarningView('bar')}
-                    className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${shareOfEarningView === 'bar'
+                    className={`px-3 py-1 text-[11px] font-bold rounded-sm transition-all cursor-pointer ${shareOfEarningView === 'bar'
                       ? 'bg-white text-indigo-600 shadow-sm'
                       : 'text-slate-500 hover:text-slate-700'
                       }`}
@@ -2077,7 +2259,7 @@ export default function TreasuryDashboard() {
                   <button
                     type="button"
                     onClick={() => setShareOfEarningView('pie')}
-                    className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${shareOfEarningView === 'pie'
+                    className={`px-3 py-1 text-[11px] font-bold rounded-sm transition-all cursor-pointer ${shareOfEarningView === 'pie'
                       ? 'bg-white text-indigo-600 shadow-sm'
                       : 'text-slate-500 hover:text-slate-700'
                       }`}
@@ -2135,10 +2317,10 @@ export default function TreasuryDashboard() {
             </div>
 
             {/* Section 4 & 5: Category Breakdown & Deduction Composition */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-4 gap-y-4">
 
               {/* Section 4: Earnings Composition */}
-              <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-slate-200/50 shadow-sm flex flex-col justify-between overflow-hidden">
+              <div className="bg-white/60 backdrop-blur-md rounded-md border border-slate-200/50 shadow-sm flex flex-col justify-between overflow-hidden">
                 <div>
                   <div className="bg-slate-50/30 border-b border-slate-100/80 p-6 flex flex-row justify-between items-center flex-wrap gap-4">
                     <div>
@@ -2153,11 +2335,11 @@ export default function TreasuryDashboard() {
                       </p>
                     </div>
 
-                    <div className="flex bg-slate-100/80 p-0.5 rounded-xl border border-slate-200/60 shadow-sm gap-0.5 shrink-0">
+                    <div className="flex bg-slate-100/80 p-0.5 rounded-sm border border-slate-200/60 shadow-sm gap-0.5 shrink-0">
                       <button
                         type="button"
                         onClick={() => setEarningsView('treemap')}
-                        className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${earningsView === 'treemap'
+                        className={`px-3 py-1 text-[11px] font-bold rounded-sm transition-all cursor-pointer ${earningsView === 'treemap'
                           ? 'bg-white text-indigo-600 shadow-sm'
                           : 'text-slate-500 hover:text-slate-700'
                           }`}
@@ -2167,7 +2349,7 @@ export default function TreasuryDashboard() {
                       <button
                         type="button"
                         onClick={() => setEarningsView('bar')}
-                        className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${earningsView === 'bar'
+                        className={`px-3 py-1 text-[11px] font-bold rounded-sm transition-all cursor-pointer ${earningsView === 'bar'
                           ? 'bg-white text-indigo-600 shadow-sm'
                           : 'text-slate-500 hover:text-slate-700'
                           }`}
@@ -2177,7 +2359,7 @@ export default function TreasuryDashboard() {
                       <button
                         type="button"
                         onClick={() => setEarningsView('pie')}
-                        className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${earningsView === 'pie'
+                        className={`px-3 py-1 text-[11px] font-bold rounded-sm transition-all cursor-pointer ${earningsView === 'pie'
                           ? 'bg-white text-indigo-600 shadow-sm'
                           : 'text-slate-500 hover:text-slate-700'
                           }`}
@@ -2274,7 +2456,7 @@ export default function TreasuryDashboard() {
               </div>
 
               {/* Section 5: Deduction Composition */}
-              <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-slate-200/50 shadow-sm flex flex-col justify-between overflow-hidden">
+              <div className="bg-white/60 backdrop-blur-md rounded-md border border-slate-200/50 shadow-sm flex flex-col justify-between overflow-hidden">
                 <div>
                   <div className="bg-slate-50/30 border-b border-slate-100/80 p-6 flex flex-row justify-between items-center flex-wrap gap-4">
                     <div>
@@ -2289,11 +2471,11 @@ export default function TreasuryDashboard() {
                       </p>
                     </div>
 
-                    <div className="flex bg-slate-100/80 p-0.5 rounded-xl border border-slate-200/60 shadow-sm gap-0.5 shrink-0">
+                    <div className="flex bg-slate-100/80 p-0.5 rounded-sm border border-slate-200/60 shadow-sm gap-0.5 shrink-0">
                       <button
                         type="button"
                         onClick={() => setDeductionsView('treemap')}
-                        className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${deductionsView === 'treemap'
+                        className={`px-3 py-1 text-[11px] font-bold rounded-sm transition-all cursor-pointer ${deductionsView === 'treemap'
                           ? 'bg-white text-indigo-600 shadow-sm'
                           : 'text-slate-500 hover:text-slate-700'
                           }`}
@@ -2303,7 +2485,7 @@ export default function TreasuryDashboard() {
                       <button
                         type="button"
                         onClick={() => setDeductionsView('bar')}
-                        className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${deductionsView === 'bar'
+                        className={`px-3 py-1 text-[11px] font-bold rounded-sm transition-all cursor-pointer ${deductionsView === 'bar'
                           ? 'bg-white text-indigo-600 shadow-sm'
                           : 'text-slate-500 hover:text-slate-700'
                           }`}
@@ -2313,7 +2495,7 @@ export default function TreasuryDashboard() {
                       <button
                         type="button"
                         onClick={() => setDeductionsView('pie')}
-                        className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${deductionsView === 'pie'
+                        className={`px-3 py-1 text-[11px] font-bold rounded-sm transition-all cursor-pointer ${deductionsView === 'pie'
                           ? 'bg-white text-indigo-600 shadow-sm'
                           : 'text-slate-500 hover:text-slate-700'
                           }`}

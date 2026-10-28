@@ -21,6 +21,8 @@ export interface DashboardVakasiItem {
 
 export interface DashboardPeriodInputs {
   targetDate: Date;
+  /** A closed month's saved draft is historical too; do not refresh its profile-owned rows. */
+  isClosed?: boolean;
   salaryMatrix: SalaryMatrix;
   uraianMap: Record<string, any>;
   vakasiTambahanMap: Record<string, number>;
@@ -100,7 +102,7 @@ export function buildDashboardSlipData(
       collar === 'pekarya' && employee.employment?.jobCategory === 'SATPAM'
         ? mergeSatpamLegacyBonusIntoTunjangan(savedSlip.earnings)
         : savedSlip.earnings;
-    const earnings = collar === 'loyalis' && savedSlip.status === 'draft'
+    const earnings = collar === 'loyalis' && savedSlip.status === 'draft' && !inputs.isClosed
       ? synchronizeFamilyAllowanceEarnings(
           storedEarnings,
           employee.family_allowance_metrics,
