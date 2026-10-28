@@ -10,6 +10,8 @@ import {
   fiscalMonths, FinancialAccount, groupNormalBalance, hasAbnormalBalance, JournalEntry, MAX_ENTRY_RECEIPT_BYTES, MAX_ENTRY_RECEIPTS, OpeningBalances, validateOpeningBalances, type AccountType, type CashFlowSection, type YearClosing,
 } from '@/lib/satker-finance/core';
 import { canCorrectByReversal, entryChangeBlocker, fiscalPeriod, lockedThroughPeriod, reversedEntryIds } from '@/lib/satker-finance/entryEditing';
+import { cashFlowStatementSections } from '@/lib/satker-finance/cashFlowStatement';
+import type { RowInput, Styles } from 'jspdf-autotable';
 import type { FixedAsset } from '@/lib/satker-finance/depreciation';
 import type { BankReconciliation } from '@/lib/satker-finance/bankReconciliation';
 import { monthChecks, openingComesFromPreviousYear, type PreviousYearState } from '@/lib/satker-finance/monthControls';
@@ -26,6 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import BankReconciliationPanel from '@/components/satker-finance/BankReconciliationPanel';
 import FixedAssetsPanel from '@/components/satker-finance/FixedAssetsPanel';
 import YearClosingPanel from '@/components/satker-finance/YearClosingPanel';
+import EntryReceipts from '@/components/satker-finance/EntryReceipts';
 import {
   button, cashFlowItems, cell, CheckLine, dangerGhostButton, field, fmt, leftCell, lightButton, money, monthNames, Section, selectContent, selectItem, selectTrigger,
 } from '@/components/satker-finance/ui';
@@ -113,6 +116,9 @@ export default function SatkerFinancePage() {
   const [preparingReceipts, setPreparingReceipts] = useState(false);
   // The journal being edited in the form above the table, and the draft that was in the form before the edit began.
   const [editingEntry, setEditingEntry] = useState<EntryRecord | null>(null);
+  // Journals whose receipts are shown in an expanded row under the journal in the Riwayat jurnal table.
+  const [expandedReceipts, setExpandedReceipts] = useState<Set<string>>(new Set());
+  const toggleReceipts = (entryId: string) => setExpandedReceipts((current) => { const next = new Set(current); if (next.has(entryId)) next.delete(entryId); else next.add(entryId); return next; });
   const [removedReceiptIndexes, setRemovedReceiptIndexes] = useState<number[]>([]);
   // Saved receipts keep their original preview indexes until the edit is saved.
   const originalReceiptCount = editingEntry?.receiptCount ?? 0;
@@ -381,11 +387,6 @@ export default function SatkerFinancePage() {
       ['Jumlah penerimaan', fmt(snapshot.incomeStatement.income)], ['Jumlah pengeluaran', fmt(snapshot.incomeStatement.expense)],
       ['Surplus / (defisit)', fmt(snapshot.incomeStatement.surplus)],
     ], styles: { fontSize: 9 }, headStyles: { fillColor: [45, 58, 99] } });
-    autoTable(pdf, { startY: 94, head: [['Arus Kas', 'Rupiah']], body: [
-      ['Saldo awal kas dan bank', fmt(snapshot.cashFlow.openingCash)], ['Aktivitas operasional', fmt(snapshot.cashFlow.OPERATING)],
-      ['Aktivitas investasi', fmt(snapshot.cashFlow.INVESTING)], ['Aktivitas pendanaan', fmt(snapshot.cashFlow.FINANCING)],
-      ['Saldo akhir kas dan bank', fmt(snapshot.cashFlow.endingCash)], ['Selisih rekonsiliasi', fmt(snapshot.cashFlow.reconciliationDelta)],
-    ], styles: { fontSize: 9 }, headStyles: { fillColor: [45, 58, 99] } });
     pdf.setFontSize(9);
     pdf.text(`Disusun SatKer: ${selectedReport.submittedName || '—'} · ${dateText(selectedReport.submittedAt)}`, 14, 160, { maxWidth: 145 });
     pdf.text(`Disetujui Kepala BAK: ${selectedReport.bakApprovedName || '—'} · ${dateText(selectedReport.bakApprovedAt)}`, 14, 170, { maxWidth: 145 });
@@ -394,6 +395,41 @@ export default function SatkerFinancePage() {
     const url = new URL('/satker-finance/verify', window.location.origin);
     url.search = new URLSearchParams({ unitId, academicYear, month: String(selectedReport.monthIndex).padStart(2, '0'), code: selectedReport.verificationCode }).toString();
     pdf.addImage(await QRCode.toDataURL(url.toString(), { margin: 0, width: 220 }), 'PNG', 165, 160, 30, 30);
+    // The cash flow statement gets its own page, laid out like the SatKer's printed Laporan Arus Kas.
+    const cashSections = cashFlowStatementSections({ entries: data.entries || [], accounts: data.accounts, academicYear, monthIndex: selectedReport.monthIndex });
+    const cashMonth = months.find((item) => item.monthIndex === selectedReport.monthIndex);
+    const bar: Partial<Styles> = { fillColor: [139, 0, 0], textColor: [255, 255, 255], fontStyle: 'bold' };
+    const bold: Partial<Styles> = { fontStyle: 'bold' };
+    const amount = (value: number) => (value ? fmt(value) : '-');
+    const rows: RowInput[] = [];
+    for (const [numeral, key, activity] of [['I', 'OPERATING', 'OPERASIONAL'], ['II', 'INVESTING', 'INVESTASI'], ['III', 'FINANCING', 'PENDANAAN']] as const) {
+      const section = cashSections[key];
+      rows.push([{ content: numeral, styles: bar }, { content: `ARUS KAS DARI AKTIVITAS ${activity}`, colSpan: 3, styles: bar }]);
+      rows.push(['', { content: 'PENERIMAAN', styles: bold }, '', amount(section.receiptTotal)]);
+      rows.push(...section.receipts.map((row) => [row.code, row.name, amount(row.amount), '']));
+      rows.push(['', { content: 'PENGELUARAN', styles: bold }, '', amount(section.paymentTotal)]);
+      rows.push(...section.payments.map((row) => [row.code, row.name, amount(row.amount), '']));
+      rows.push(['', { content: `${section.net < 0 ? 'DEFISIT' : 'SURPLUS'} KAS DARI AKTIVITAS ${activity}`, styles: bold }, '', amount(Math.abs(section.net))]);
+    }
+    const netChange = cashSections.OPERATING.net + cashSections.INVESTING.net + cashSections.FINANCING.net;
+    const openingCash = snapshot.cashFlow.openingCash;
+    const cashAccounts = snapshot.rows.filter((row) => row.account.cashEquivalent).map((row) => ({ code: row.account.code, name: row.account.name, balance: row.endingDebit - row.endingCredit }));
+    rows.push([{ content: netChange < 0 ? 'PENGURANGAN KAS DAN SETARA KAS' : 'PENAMBAHAN KAS DAN SETARA KAS', colSpan: 3, styles: bar }, { content: amount(Math.abs(netChange)), styles: bar }]);
+    rows.push([{ content: 'SALDO KAS DAN SETARA KAS AWAL PERIODE', colSpan: 3, styles: bar }, { content: amount(openingCash), styles: bar }]);
+    rows.push([{ content: 'SALDO KAS DAN SETARA KAS AKHIR PERIODE', colSpan: 3, styles: bar }, { content: amount(openingCash + netChange), styles: bar }]);
+    rows.push(['', { content: 'RINCIAN SALDO KAS DAN SETARA KAS AKHIR PERIODE', colSpan: 2, styles: bold }, '']);
+    rows.push(...cashAccounts.map((row) => [row.code, row.name, amount(row.balance), '']));
+    rows.push([{ content: 'JUMLAH KESELURUHAN', colSpan: 3, styles: bar }, { content: amount(cashAccounts.reduce((sum, row) => sum + row.balance, 0)), styles: bar }]);
+    pdf.addPage();
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(12); pdf.text((selectedReport.unitName || data.unit.name).toUpperCase(), pageWidth / 2, 18, { align: 'center' });
+    pdf.setFontSize(14); pdf.text('LAPORAN ARUS KAS', pageWidth / 2, 27, { align: 'center' });
+    pdf.setFillColor(221, 224, 228); pdf.rect(14, 32, pageWidth - 28, 8, 'F');
+    pdf.setFontSize(10); pdf.text(`01/${String(selectedReport.monthIndex).padStart(2, '0')}/${cashMonth?.year}`, pageWidth / 2, 37.5, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    autoTable(pdf, { startY: 44, body: rows, theme: 'grid', margin: { left: 14, right: 14 }, styles: { fontSize: 9, textColor: [40, 40, 40], lineColor: [190, 190, 190], lineWidth: 0.1 },
+      columnStyles: { 0: { cellWidth: 22 }, 1: { cellWidth: 'auto' }, 2: { cellWidth: 35, halign: 'right' }, 3: { cellWidth: 35, halign: 'right' } } });
     pdf.addPage(); pdf.setFontSize(14); pdf.text('Rincian Laba Rugi', 14, 18);
     autoTable(pdf, { startY: 25, head: [['Kode', 'Akun', 'Penerimaan', 'Pengeluaran']], body: snapshot.incomeStatement.rows.map((row) => [row.account.code, row.account.name,
       row.account.type === 'TERIMA' ? fmt(row.creditMovement - row.debitMovement) : '', row.account.type === 'KELUAR' ? fmt(row.debitMovement - row.creditMovement) : '']),
@@ -407,6 +443,8 @@ export default function SatkerFinancePage() {
   const statement = data?.statements;
   const status = selectedReport?.status || 'DRAFT';
   const fiscalMonth = month === 'ANNUAL' ? null : months.find((item) => item.monthIndex === month);
+  // A specific month shows only its own column in the monthly trial; ANNUAL keeps all twelve.
+  const shownTrial = data?.monthlyTrial?.filter((item) => month === 'ANNUAL' || item.monthIndex === month) || [];
   const previousApproved = !fiscalMonth || fiscalMonth.period === 1 || data?.reports?.some((item) => item.monthIndex === months[fiscalMonth.period - 2].monthIndex && item.status === 'APPROVED');
   const selectedLedger = postable.find((account) => financialAccountId(account) === ledgerCode);
   const ledger = useMemo(() => {
@@ -549,7 +587,7 @@ export default function SatkerFinancePage() {
             <ul className="space-y-1 text-sm">{statement.abnormalBalances.map((item) => <li key={item.account.code} className="flex flex-wrap justify-between gap-3 border-b border-slate-100 py-1.5"><span>{item.account.code} · {item.account.name} <span className="text-slate-500">(pos saldo {item.account.normalBalance === 'DEBIT' ? 'Debet' : 'Kredit'})</span></span><span className="tabular-nums text-amber-700">{item.side === 'DEBIT' ? 'Debet' : 'Kredit'} {money(item.amount)}</span></li>)}</ul>
           </Section>}
           {unitId === 'ALL' && <Section title="Pemantauan seluruh SatKer"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>SatKer</th><th className={cell}>Penerimaan</th><th className={cell}>Pengeluaran</th><th className={cell}>Kas akhir</th><th className={leftCell}>Status</th></tr></thead><tbody>{data.unitSummaries?.map((item) => <tr key={item.unit.id}><td className={leftCell}><button className="font-semibold text-accent-700 hover:underline" onClick={() => selectUnit(item.unit.id)}>{item.unit.name}</button></td><td className={cell}>{money(item.statements.incomeStatement.income)}</td><td className={cell}>{money(item.statements.incomeStatement.expense)}</td><td className={cell}>{money(item.statements.cashFlow.physicalCash)}</td><td className={leftCell}>{month === 'ANNUAL' ? item.year.status : <Status status={item.report?.status} />}</td></tr>)}</tbody></table></div></Section>}
-          <Section title="Perkembangan 12 bulan"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>Bulan</th><th className={cell}>Penerimaan</th><th className={cell}>Pengeluaran</th><th className={cell}>Surplus / Defisit</th><th className={cell}>Kas akhir</th><th className={leftCell}>Status</th></tr></thead><tbody>{(data.annualStatements || statement).monthlyIncome.map((item) => <tr key={item.period}><td className={leftCell}>{monthNames[item.monthIndex - 1]} {item.year}</td><td className={cell}>{money(item.income)}</td><td className={cell}>{money(item.expense)}</td><td className={cell}>{money(item.surplus)}</td><td className={cell}>{money(item.endingCash)}</td><td className={leftCell}>{unitId === 'ALL' ? '—' : <Status status={data.reports?.find((report) => report.monthIndex === item.monthIndex)?.status} />}</td></tr>)}</tbody></table></div></Section>
+          <Section title={month === 'ANNUAL' ? 'Perkembangan 12 bulan' : 'Bulan terpilih'}><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>Bulan</th><th className={cell}>Penerimaan</th><th className={cell}>Pengeluaran</th><th className={cell}>Surplus / Defisit</th><th className={cell}>Kas akhir</th><th className={leftCell}>Status</th></tr></thead><tbody>{(data.annualStatements || statement).monthlyIncome.filter((item) => month === 'ANNUAL' || item.monthIndex === month).map((item) => <tr key={item.period}><td className={leftCell}>{monthNames[item.monthIndex - 1]} {item.year}</td><td className={cell}>{money(item.income)}</td><td className={cell}>{money(item.expense)}</td><td className={cell}>{money(item.surplus)}</td><td className={cell}>{money(item.endingCash)}</td><td className={leftCell}>{unitId === 'ALL' ? '—' : <Status status={data.reports?.find((report) => report.monthIndex === item.monthIndex)?.status} />}</td></tr>)}</tbody></table></div></Section>
           {unitId !== 'ALL' && month !== 'ANNUAL' && <Section title="Pengajuan & persetujuan"><div className="flex flex-wrap items-center gap-3"><Status status={status} /></div>
             {['DRAFT', 'REVISION_REQUESTED'].includes(status) && <div className="mt-3"><p className="text-xs font-medium text-slate-500">Syarat sebelum laporan dikirim</p>
               {checks.map((check) => <CheckLine key={check.id} ok={check.ok} label={check.label} detail={check.detail} />)}
@@ -573,7 +611,8 @@ export default function SatkerFinancePage() {
         </div>}
         {tab === 'jurnal' && <div className="space-y-5"><Section title="Riwayat jurnal"><div className="overflow-x-auto"><table className="w-full min-w-[960px] text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={`${leftCell} w-40`}>Tanggal</th><th className={`${leftCell} w-96 min-w-52`}>Akun</th><th className={`${leftCell} min-w-56`}>Uraian</th><th className={`${cell} w-44`}>Debet</th><th className={`${cell} w-44`}>Kredit</th><th className={`${leftCell} w-60 min-w-60`}>Aksi</th></tr></thead>
             {!editingEntry && journalComposer}
-            {data.entries?.map((entry) => {
+            {/* A specific month lists its own journals. A sealed journal that can still be reversed stays listed, since its reversal is posted from the open month. */}
+            {data.entries?.filter((entry) => month === 'ANNUAL' || entry.monthIndex === month || (canPost && (fiscalPeriod(academicYear, entry.monthIndex) ?? 0) <= lockedThrough && canCorrectByReversal({ entry, reversed: reversedIds.has(entry.id), yearStatus: data.year?.status }))).map((entry) => {
             // Edit and delete while the journal's month (and every later one) is still open; in a sealed month only a reversing journal can correct it.
             const reversed = reversedIds.has(entry.id);
             const changeBlocker = entryChangeBlocker({ change: 'delete', entry, reversed, academicYear, reports: data.reports || [], yearStatus: data.year?.status });
@@ -593,8 +632,7 @@ export default function SatkerFinancePage() {
               <td className={`px-3 py-2 text-right tabular-nums ${rule}`}>{line.debit ? money(line.debit) : ''}</td>
               <td className={`px-3 py-2 text-right tabular-nums ${rule}`}>{line.credit ? money(line.credit) : ''}</td>
               {index === 0 && <td rowSpan={span} className={leftCell}><div className="flex flex-col items-start gap-1.5">
-                {(entry.receiptCount ?? 0) === 1 && <button className="text-accent-700 hover:underline" onClick={() => void viewReceipt({ entryId: entry.id, index: '0' })}>Lihat bukti</button>}
-                {(entry.receiptCount ?? 0) > 1 && <div className="flex flex-wrap items-center gap-x-2"><span className="text-slate-500">Bukti</span>{Array.from({ length: entry.receiptCount ?? 0 }, (_, index) => <button key={index} className="text-accent-700 hover:underline" aria-label={`Lihat bukti ${index + 1}`} onClick={() => void viewReceipt({ entryId: entry.id, index: String(index) })}>{index + 1}</button>)}</div>}
+                {(entry.receiptCount ?? 0) > 0 && <button type="button" className={lightButton} aria-expanded={expandedReceipts.has(entry.id)} onClick={() => toggleReceipts(entry.id)}>{expandedReceipts.has(entry.id) ? 'Tutup bukti' : entry.receiptCount === 1 ? 'Lihat bukti' : `Lihat ${entry.receiptCount} bukti`}</button>}
                 {entry.kind === 'DEPRECIATION' && <span className="text-xs text-slate-500">Dibuat dari daftar aset tetap</span>}
                 {canPost && !changeBlocker && <div className="flex items-center gap-1">
                   {entry.kind !== 'REVERSAL' && entry.kind !== 'DEPRECIATION' && <button type="button" className={`${lightButton} !px-2`} aria-label="Edit jurnal" title="Edit jurnal" disabled={busy || beingEdited} onClick={() => startEdit(entry)}><Pencil className="h-4 w-4" /></button>}
@@ -604,10 +642,10 @@ export default function SatkerFinancePage() {
                 {canPost && changeBlocker && reversed && <span className="text-xs text-slate-500" title={changeBlocker}>Sudah dibalik</span>}
               </div></td>}
             </tr>;
-          })}</tbody>; })}</table>{!data.entries?.length && !canPost && <p className="p-4 text-sm text-slate-500">Belum ada transaksi.</p>}</div></Section>
+          })}{user && expandedReceipts.has(entry.id) && (entry.receiptCount ?? 0) > 0 && <tr className="bg-slate-50"><td colSpan={6} className="border-b border-slate-100 px-3 pb-4"><EntryReceipts user={user} unitId={unitId} academicYear={academicYear} entryId={entry.id} count={entry.receiptCount ?? 0} /></td></tr>}</tbody>; })}</table>{!data.entries?.length && !canPost && <p className="p-4 text-sm text-slate-500">Belum ada transaksi.</p>}</div></Section>
         </div>}
         {tab === 'buku_besar' && unitId !== 'ALL' && <Section title="Buku Besar"><div className="mb-4 max-w-lg text-xs font-medium text-slate-500"><span id="ledger-account-label">Akun</span><Select items={accountItems} value={ledgerCode} onValueChange={(value) => value && setLedgerCode(value)}><SelectTrigger aria-labelledby="ledger-account-label" className={selectTrigger}><SelectValue /></SelectTrigger><SelectContent className={selectContent}>{postable.map((account) => <SelectItem className={selectItem} key={financialAccountId(account)} value={financialAccountId(account)}>{account.code} · {account.name}</SelectItem>)}</SelectContent></Select></div><p className="mb-3 text-sm text-slate-600">Saldo awal periode {selectedLedger?.name}: {money(ledgerShown(ledger.beginning))} · Pos saldo {selectedLedger?.normalBalance === 'CREDIT' ? 'Kredit' : 'Debet'}: saldo positif berarti saldo normal, minus berarti saldo di sisi sebaliknya.</p><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>Tanggal</th><th className={leftCell}>Uraian</th><th className={cell}>Debet</th><th className={cell}>Kredit</th><th className={cell}>Saldo ({selectedLedger?.normalBalance === 'CREDIT' ? 'K' : 'D'})</th></tr></thead><tbody>{ledger.rows.map((row, index) => <tr key={`${row.id}-${index}`}><td className={leftCell}>{row.date}</td><td className={leftCell}>{row.description}</td><td className={cell}>{money(row.debit)}</td><td className={cell}>{money(row.credit)}</td><td className={`${cell} ${ledgerShown(row.balance) < 0 ? 'text-amber-700' : ''}`}>{money(ledgerShown(row.balance))}</td></tr>)}</tbody></table></div><p className="mt-3 text-sm font-semibold">Saldo akhir: {money(ledgerShown(ledger.ending))} · {ledger.ending === ((statement?.rows.find((row) => financialAccountId(row.account) === ledgerCode)?.endingDebit || 0) - (statement?.rows.find((row) => financialAccountId(row.account) === ledgerCode)?.endingCredit || 0)) ? 'Alhamdulillah · sesuai neraca saldo' : 'Selisih dengan neraca saldo'}</p></Section>}
-        {tab === 'neraca_saldo' && statement && <div className="space-y-5"><Section title="Neraca Saldo"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>Kode</th><th className={leftCell}>Akun</th><th className={cell}>Saldo Debet</th><th className={cell}>Saldo Kredit</th></tr></thead><tbody>{statement.rows.map((row) => { const abnormal = hasAbnormalBalance(row.account, row.endingDebit, row.endingCredit); return <tr key={row.account.code} className={abnormal ? 'bg-amber-50' : ''}><td className={leftCell}>{row.account.code}</td><td className={leftCell}>{row.account.name}{abnormal && <span className="ml-2 text-xs text-amber-700">saldo tidak normal (pos {row.account.normalBalance === 'DEBIT' ? 'Debet' : 'Kredit'})</span>}</td><td className={cell}>{money(row.endingDebit)}</td><td className={cell}>{money(row.endingCredit)}</td></tr>; })}</tbody><tfoot><tr className="bg-slate-50 font-semibold"><td colSpan={2} className={leftCell}>Total · Selisih {money(statement.trialBalance.difference)}</td><td className={cell}>{money(statement.trialBalance.debit)}</td><td className={cell}>{money(statement.trialBalance.credit)}</td></tr></tfoot></table></div></Section><Section title="Neraca Lajur Bulanan · Saldo Kumulatif"><div className="overflow-x-auto"><table className="w-full min-w-[1600px] text-xs"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell} rowSpan={2}>Akun</th>{data.monthlyTrial?.map((item) => <th className="border-b px-2 py-2 text-center" key={item.period} colSpan={2}>{monthNames[item.monthIndex - 1].slice(0, 3)} {item.year}</th>)}</tr><tr>{data.monthlyTrial?.map((item) => <FragmentPair key={item.period} />)}</tr></thead><tbody>{postable.map((account) => <tr key={account.code}><td className={leftCell}>{account.code} · {account.name}</td>{data.monthlyTrial?.map((item) => { const row = item.rows.find((value) => value.id === financialAccountId(account)); return <FragmentAmounts key={item.period} debit={row?.debit || 0} credit={row?.credit || 0} />; })}</tr>)}</tbody></table></div></Section></div>}
+        {tab === 'neraca_saldo' && statement && <div className="space-y-5"><Section title="Neraca Saldo"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>Kode</th><th className={leftCell}>Akun</th><th className={cell}>Saldo Debet</th><th className={cell}>Saldo Kredit</th></tr></thead><tbody>{statement.rows.map((row) => { const abnormal = hasAbnormalBalance(row.account, row.endingDebit, row.endingCredit); return <tr key={row.account.code} className={abnormal ? 'bg-amber-50' : ''}><td className={leftCell}>{row.account.code}</td><td className={leftCell}>{row.account.name}{abnormal && <span className="ml-2 text-xs text-amber-700">saldo tidak normal (pos {row.account.normalBalance === 'DEBIT' ? 'Debet' : 'Kredit'})</span>}</td><td className={cell}>{money(row.endingDebit)}</td><td className={cell}>{money(row.endingCredit)}</td></tr>; })}</tbody><tfoot><tr className="bg-slate-50 font-semibold"><td colSpan={2} className={leftCell}>Total · Selisih {money(statement.trialBalance.difference)}</td><td className={cell}>{money(statement.trialBalance.debit)}</td><td className={cell}>{money(statement.trialBalance.credit)}</td></tr></tfoot></table></div></Section><Section title="Neraca Lajur Bulanan · Saldo Kumulatif"><div className="overflow-x-auto"><table className={`w-full text-xs ${month === 'ANNUAL' ? 'min-w-[1600px]' : ''}`}><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell} rowSpan={2}>Akun</th>{shownTrial.map((item) => <th className="border-b px-2 py-2 text-center" key={item.period} colSpan={2}>{monthNames[item.monthIndex - 1].slice(0, 3)} {item.year}</th>)}</tr><tr>{shownTrial.map((item) => <FragmentPair key={item.period} />)}</tr></thead><tbody>{postable.map((account) => <tr key={account.code}><td className={leftCell}>{account.code} · {account.name}</td>{shownTrial.map((item) => { const row = item.rows.find((value) => value.id === financialAccountId(account)); return <FragmentAmounts key={item.period} debit={row?.debit || 0} credit={row?.credit || 0} />; })}</tr>)}</tbody></table></div></Section></div>}
         {tab === 'laba_rugi' && statement && <Section title={`Laba Rugi ${month === 'ANNUAL' ? 'Tahunan' : monthNames[month - 1]}`}><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>Akun</th><th className={cell}>Penerimaan</th><th className={cell}>Pengeluaran</th></tr></thead><tbody>{statement.incomeStatement.rows.map((row) => <tr key={row.account.code}><td className={leftCell}>{row.account.code} · {row.account.name}</td><td className={cell}>{row.account.type === 'TERIMA' ? money(row.creditMovement - row.debitMovement) : '—'}</td><td className={cell}>{row.account.type === 'KELUAR' ? money(row.debitMovement - row.creditMovement) : '—'}</td></tr>)}</tbody><tfoot><tr className="bg-slate-50 font-semibold"><td className={leftCell}>Jumlah</td><td className={cell}>{money(statement.incomeStatement.income)}</td><td className={cell}>{money(statement.incomeStatement.expense)}</td></tr><tr className="font-semibold"><td className={leftCell}>Surplus / Defisit</td><td colSpan={2} className={cell}>{money(statement.incomeStatement.surplus)}</td></tr></tfoot></table></div></Section>}
         {tab === 'arus_kas' && statement && <Section title="Laporan Arus Kas"><div className="max-w-3xl space-y-2 text-sm">{[
           ['Saldo awal kas dan setara kas', statement.cashFlow.openingCash], ['I. Aktivitas operasional', statement.cashFlow.OPERATING],
