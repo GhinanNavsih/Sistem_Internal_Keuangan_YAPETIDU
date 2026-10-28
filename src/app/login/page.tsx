@@ -4,8 +4,6 @@ import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { auth } from '@/lib/firebase';
-import { sendPasswordResetEmail } from 'firebase/auth';
 import { getRoleHomePath } from '@/lib/roleHome';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -193,19 +191,20 @@ export default function LoginPage() {
     setForgotPasswordLoading(true);
 
     try {
-      await sendPasswordResetEmail(auth, email);
-      setSuccessMessage(`Email pemulihan kata sandi telah dikirim ke ${email}. Silakan periksa kotak masuk (atau folder spam) Anda.`);
-    } catch (err: any) {
-      console.error('Error sending password reset email:', err);
-      if (err?.code === 'auth/user-not-found') {
-        setError('Email tidak terdaftar dalam sistem.');
-      } else if (err?.code === 'auth/invalid-email') {
-        setError('Format email tidak valid.');
-      } else if (err?.code === 'auth/too-many-requests') {
-        setError('Terlalu banyak permintaan reset password. Silakan coba beberapa saat lagi.');
-      } else {
-        setError('Gagal mengirim email pemulihan. Pastikan email Anda benar atau coba lagi nanti.');
+      const res = await fetch('/api/auth/request-password-reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || 'Gagal mengirim email pemulihan. Silakan coba lagi nanti.');
+        return;
       }
+      setSuccessMessage(data.message);
+    } catch (err) {
+      console.error('Error sending password reset email:', err);
+      setError('Gagal mengirim email pemulihan. Silakan coba lagi nanti.');
     } finally {
       setForgotPasswordLoading(false);
     }

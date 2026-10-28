@@ -4,8 +4,6 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth, type UserProfile } from '@/lib/AuthContext';
-import { auth } from '@/lib/firebase';
-import { sendPasswordResetEmail } from 'firebase/auth';
 import {
   getEmployeeActivitiesPath,
   getEmployeeActivityWorkflow,
@@ -62,7 +60,15 @@ export default function EmployeeNavigationMenu() {
     setPasswordResetLoading(true);
     setPasswordResetMessage(null);
     try {
-      await sendPasswordResetEmail(auth, currentProfile.email);
+      const res = await fetch('/api/auth/request-password-reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: currentProfile.email }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal mengirim email reset password. Silakan hubungi administrator.');
+      }
       setPasswordResetMessage({
         type: 'success',
         text: `Tautan reset password telah dikirim ke email ${currentProfile.email}. Silakan periksa inbox atau folder spam Anda.`,
