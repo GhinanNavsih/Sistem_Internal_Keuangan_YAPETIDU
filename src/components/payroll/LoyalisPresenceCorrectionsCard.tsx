@@ -23,6 +23,7 @@ import {
   usePayrollCacheInvalidation,
 } from '@/lib/queries/hooks';
 import { loyalisPresenceCorrectionsKeys } from '@/lib/queries/keys';
+import { nextTableSort, sortTableRows, type TableSort } from '@/lib/tableSort';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -66,6 +67,9 @@ import {
   RefreshCw,
   ChevronDown,
   ChevronUp,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   ZoomIn,
   ZoomOut,
   RotateCw,
@@ -169,6 +173,35 @@ function loyalisItemLabel(item: LoyalisReviewItem): string {
     day: 'numeric',
   })}`;
 }
+
+type ReviewSortKey = 'employee' | 'date' | 'kind' | 'status';
+
+// Queue order for the Status column: waiting first, then decided, then the rest.
+const STATUS_SORT_RANK: Record<string, number> = {
+  pending: 0,
+  approved: 1,
+  rejected: 2,
+  declined: 2,
+};
+
+const REVIEW_SORT_ACCESSORS: Record<ReviewSortKey, (item: LoyalisReviewItem) => string | number> = {
+  employee: loyalisItemEmployeeName,
+  date: loyalisItemDate,
+  kind: (item) =>
+    item.kind === 'correction'
+      ? correctionTypeLabel(item.request.type)
+      : item.kind === 'paid_leave'
+        ? 'Cuti Tahunan'
+        : 'Ganti Libur',
+  status: (item) => STATUS_SORT_RANK[loyalisItemStatus(item)] ?? 3,
+};
+
+const REVIEW_SORT_COLUMNS: ReadonlyArray<{ key: ReviewSortKey; label: string }> = [
+  { key: 'employee', label: 'Nama Pegawai' },
+  { key: 'date', label: 'Tanggal' },
+  { key: 'kind', label: 'Koreksi' },
+  { key: 'status', label: 'Status' },
+];
 
 function isImageProofUrl(value: string): boolean {
   const normalized = value.toLowerCase();
@@ -323,6 +356,8 @@ export function LoyalisPresenceCorrectionsCard({
     'pending' | 'approved' | 'rejected' | 'all'
   >('pending');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  // null keeps the list's own order (newest date first).
+  const [sort, setSort] = useState<TableSort<ReviewSortKey> | null>(null);
 
   // Rejection dialog states
   const [rejectingReqId, setRejectingReqId] = useState<string | null>(null);
@@ -508,6 +543,11 @@ export function LoyalisPresenceCorrectionsCard({
     () =>
       periodLoyalisItems.filter((item) => statusMatches(loyalisItemStatus(item), selectedStatus)),
     [periodLoyalisItems, selectedStatus],
+  );
+
+  const sortedRequests = useMemo(
+    () => sortTableRows(visibleRequests, sort, REVIEW_SORT_ACCESSORS),
+    [visibleRequests, sort],
   );
 
   const stats = useMemo(
@@ -1196,17 +1236,36 @@ export function LoyalisPresenceCorrectionsCard({
                     />
                     <span className="sr-only">Pilih pengajuan Loyalis</span>
                   </TableHead>
-                  <TableHead className="font-bold text-slate-500 text-xs">Nama Pegawai</TableHead>
-                  <TableHead className="font-bold text-slate-500 text-xs">Tanggal</TableHead>
-                  <TableHead className="font-bold text-slate-500 text-xs">Koreksi</TableHead>
-                  <TableHead className="font-bold text-slate-500 text-xs">Status</TableHead>
+                  {REVIEW_SORT_COLUMNS.map((column) => {
+                    const active = sort?.key === column.key ? sort.direction : null;
+                    const SortIcon = active === 'asc' ? ArrowUp : active === 'desc' ? ArrowDown : ArrowUpDown;
+                    return (
+                      <TableHead
+                        key={column.key}
+                        aria-sort={active === 'asc' ? 'ascending' : active === 'desc' ? 'descending' : 'none'}
+                        className="font-bold text-slate-500 text-xs"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setSort((current) => nextTableSort(current, column.key))}
+                          className="-ml-1 inline-flex items-center gap-1 rounded-sm px-1 py-0.5 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
+                        >
+                          {column.label}
+                          <SortIcon
+                            className={`h-3 w-3 ${active ? 'text-indigo-600' : 'text-slate-300'}`}
+                            aria-hidden="true"
+                          />
+                        </button>
+                      </TableHead>
+                    );
+                  })}
                   <TableHead className="font-bold text-slate-500 text-right pr-6 text-xs">
                     Detail
                   </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibleRequests.map((item) => {
+                {sortedRequests.map((item) => {
                   const key = loyalisItemKey(item);
                   const isExpanded = expandedReqId === key;
                   const employeeName = loyalisItemEmployeeName(item);
