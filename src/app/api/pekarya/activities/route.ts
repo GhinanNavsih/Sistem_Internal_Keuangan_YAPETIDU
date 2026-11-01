@@ -52,6 +52,7 @@ import {
   SATPAM_FOUND_ITEM_RECOMMENDED_FEE,
   SATPAM_REPRIMAND_RECOMMENDED_FEE,
 } from '@/lib/payroll/pekaryaSpj';
+import { driverOverlapSearchPeriods } from '@/lib/payroll/driverJourneyOverlap';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import {
   errorResponse,
@@ -59,6 +60,10 @@ import {
   requireAuthenticatedProfile,
   requireRole,
 } from '@/lib/server/auth';
+import {
+  assertNoOverlappingDriverJourney,
+  loadDriverPeerReports,
+} from '@/lib/server/driverJourneyOverlap';
 import { assertPeriodAcceptsInput } from '@/lib/server/payrollPeriod';
 import { parsePhotoAuditMetadata, parseProofPhoto } from '@/lib/server/photoEvidence';
 
@@ -852,6 +857,27 @@ export async function POST(request: NextRequest) {
             error instanceof Error ? error.message : 'Durasi perjalanan tidak valid.',
           );
         }
+      }
+      if (jobCategory === 'SOPIR') {
+        // One sopir cannot drive two journeys at once. Read here, before this
+        // transaction's first write.
+        const dateStart = String(driverData.dateStart || command.activityDate);
+        const dateEnd = String(driverData.dateEnd || dateStart);
+        assertNoOverlappingDriverJourney(
+          {
+            dateStart,
+            dateEnd,
+            timeStart: command.timeStart,
+            timeEnd: command.timeEnd,
+            isMultiDay: driverData.isMultiDay,
+          },
+          await loadDriverPeerReports(
+            transaction,
+            employeeId,
+            driverOverlapSearchPeriods(dateStart, dateEnd),
+          ),
+          reportId,
+        );
       }
       const journeyId = typeof driverData.journeyId === 'string' ? driverData.journeyId : null;
       let journeyRef: FirebaseFirestore.DocumentReference | null = null;

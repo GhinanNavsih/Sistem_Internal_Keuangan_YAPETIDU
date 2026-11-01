@@ -27,6 +27,10 @@ import {
   type DriverJourneyLocation,
 } from '@/lib/payroll/driverJourney';
 import {
+  driverOverlapSearchPeriods,
+  type PeerDriverReport,
+} from '@/lib/payroll/driverJourneyOverlap';
+import {
   CURRENT_FUEL_RESERVATION_VERSION,
   commitFuelReservation,
   createFuelLedgerContext,
@@ -53,6 +57,10 @@ import {
   requireAuthenticatedProfile,
   requireRole,
 } from '@/lib/server/auth';
+import {
+  assertNoOverlappingDriverJourney,
+  loadDriverPeerReports,
+} from '@/lib/server/driverJourneyOverlap';
 import {
   annualCalendarRef,
   annualDatesFrom,
@@ -382,6 +390,29 @@ export async function POST(request: NextRequest) {
             },
           )
         : null;
+      // Each sopir's other reports, read now because the loop below writes. An
+      // audit that sets or moves a journey's time must not land it on top of
+      // one of them.
+      const periodsBySopir = new Map<string, Set<string>>();
+      reports.forEach((report, index) => {
+        if (command.action !== 'approve_driver' || report.jobCategory !== 'SOPIR') return;
+        const review = command.items[index].driverReview;
+        const dateStart = String(
+          review?.dateStart || report.dateStart || report.activityDate || '',
+        );
+        if (!dateStart) return;
+        const dateEnd = String(review?.dateEnd || report.dateEnd || dateStart);
+        const periods = periodsBySopir.get(String(report.employeeId)) ?? new Set<string>();
+        driverOverlapSearchPeriods(dateStart, dateEnd).forEach((period) => periods.add(period));
+        periodsBySopir.set(String(report.employeeId), periods);
+      });
+      const peerReportsBySopir = new Map<string, PeerDriverReport[]>();
+      for (const [employeeId, periods] of periodsBySopir) {
+        peerReportsBySopir.set(
+          employeeId,
+          await loadDriverPeerReports(transaction, employeeId, [...periods]),
+        );
+      }
       // Periods are open by default, so an approval may be the first event that
       // gives a month a document. Freezing its calendar here means every fee
       // approved from this point is rated against a snapshot that a later
@@ -507,6 +538,20 @@ export async function POST(request: NextRequest) {
             throw new HttpError(
               409,
               error instanceof Error ? error.message : 'Waktu perjalanan audit tidak valid.',
+            );
+          }
+          // Only a first approval or a changed timeline is checked, so an old
+          // overlap does not block an unrelated re-audit (fuel, toll, route).
+          if (timelineChanged || before.status === 'pending') {
+            assertNoOverlappingDriverJourney(
+              {
+                dateStart: editedTimeline.dateStart,
+                dateEnd: editedTimeline.dateEnd,
+                timeStart: reviewTimeStart,
+                timeEnd: reviewTimeEnd,
+              },
+              peerReportsBySopir.get(String(before.employeeId)) ?? [],
+              item.reportId,
             );
           }
           if (!isDriverVehicleName(review.vehicleType)) {
