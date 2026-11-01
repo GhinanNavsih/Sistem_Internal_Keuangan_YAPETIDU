@@ -22,6 +22,10 @@ const KJM_SECTION_OPTIONS: Array<{ key: KjmSection; label: string }> = [
 ];
 const rupiah = (n: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n);
 const inputClass = 'border border-slate-200 rounded-sm px-3 py-2 bg-white text-sm disabled:bg-slate-100 w-full';
+// Firestore returns map keys in its own order, so compare the values, not the key order.
+const sortKeys = (value: unknown): unknown => Array.isArray(value) ? value.map(sortKeys)
+  : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(k => [k, sortKeys((value as Record<string, unknown>)[k])])) : value;
+const sameJson = (a: unknown, b: unknown) => JSON.stringify(sortKeys(a)) === JSON.stringify(sortKeys(b));
 
 function EmployeeSearchSelect({ employees, value, onChange, disabled, ariaLabel }: {
   employees: KjmEmployee[]; value: string; onChange: (id: string) => void; disabled?: boolean; ariaLabel: string;
@@ -486,7 +490,7 @@ function KjmContent() {
     if (draft.status === 'approved') return draft.review;
     return reviewKjm(visibleCourses, edits, master.employees, master.rates, draft.period);
   }, [draft, edits, master, visibleCourses]);
-  const dirty = !!draft && (JSON.stringify(edits) !== JSON.stringify(draft.edits) || JSON.stringify(review) !== JSON.stringify(draft.review) || master.version !== draft.rateVersion);
+  const dirty = !!draft && (!sameJson(edits, draft.edits) || !sameJson(review, draft.review) || master.version !== draft.rateVersion);
   const editable = !!draft && draft.status === 'draft' && !busy && !closed && draft.period === period;
   const courseGroups = useMemo(() => groupKjmCourses(visibleCourses), [visibleCourses]);
   const lecturers = useMemo(() => [...new Set(visibleCourses.map(c => c.lecturer))], [visibleCourses]);
