@@ -109,12 +109,17 @@ export function applyApprovedPaidLeaveToLoyalisEntry(input: {
   const wasAlreadyApplied = DAY_CREDIT_WORK_STATUSES.has(
     String(existing?.['Jam kerja'] || '').trim().toUpperCase(),
   );
+  const expectedMinutes = Math.max(0, input.expectedHours * 60);
   const nextRow: LoyalisPaidLeaveDailyLog = {
     ...(existing || {}),
     Tanggal: dateKey,
     'Jam kerja': LOYALIS_DAY_CREDIT_WORK_STATUS[kind],
     'Scan masuk': ANNUAL_PAID_LEAVE_SCAN_IN.slice(0, 5),
     'Scan pulang': ANNUAL_PAID_LEAVE_SCAN_OUT.slice(0, 5),
+    // The row's own minutes are what the daily table, the employee payslip and
+    // the XLSX export show; carrying the replaced absence's 0 made a paid day
+    // read as unpaid even though the entry totals already counted it.
+    duration: input.isOffDay ? 0 : expectedMinutes,
     ...(kind === 'ganti_libur'
       ? { gantiLibur: true, gantiLiburDate: input.leaveDate }
       : { annualPaidLeave: true, annualPaidLeaveDate: input.leaveDate }),
@@ -141,7 +146,6 @@ export function applyApprovedPaidLeaveToLoyalisEntry(input: {
     return { ...input.entry, dailyLogs, ...creditedDates };
   }
 
-  const expectedMinutes = Math.max(0, input.expectedHours * 60);
   const existingScanIn = String(existing?.['Scan masuk'] || '').trim();
   const existingScanOut = String(existing?.['Scan pulang'] || '').trim();
   const wasAbsent = String(existing?.['Jam kerja'] || '').trim().toUpperCase() === 'TIDAK HADIR';

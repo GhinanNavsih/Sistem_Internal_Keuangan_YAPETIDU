@@ -444,6 +444,10 @@ export default function PresensiLoyalisRawPage() {
     [offDaySet],
   );
 
+  // Bumped when the review card approves or declines something, so the working
+  // table picks the new credit up without a page refresh.
+  const [approvedCreditsReload, setApprovedCreditsReload] = useState(0);
+
   // Approved full-day credits of the period: annual leave and ganti libur.
   // Either list failing to load only drops that list, so the other still shows.
   useEffect(() => {
@@ -498,7 +502,7 @@ export default function PresensiLoyalisRawPage() {
     return () => {
       cancelled = true;
     };
-  }, [canonicalPeriod, year]);
+  }, [canonicalPeriod, year, approvedCreditsReload]);
 
   // The calendar resolves after the table can already be on screen, and the
   // Tanggal Merah editor can change it mid-session. Re-derive every row's
@@ -2312,7 +2316,10 @@ export default function PresensiLoyalisRawPage() {
           <div className="space-y-6">
             <LoyalisPresenceCorrectionsCard
               period={canonicalPeriod}
-              onResolved={fetchExistingPresence}
+              onResolved={async () => {
+                setApprovedCreditsReload((count) => count + 1);
+                await fetchExistingPresence();
+              }}
             />
 
             <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">

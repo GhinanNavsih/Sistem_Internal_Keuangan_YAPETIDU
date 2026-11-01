@@ -34,6 +34,45 @@ test('approved Loyalis paid leave replaces an absence with a full paid day', () 
   assert.equal(result.dailyLogs?.[0]?.['Scan pulang'], '14:00');
 });
 
+test('a credited day shows its paid minutes, not the replaced absence\'s 0', () => {
+  const result = applyApprovedPaidLeaveToLoyalisEntry({
+    entry: {
+      minutes: 1_000,
+      absenceMinutes: 390,
+      absentDaysCount: 1,
+      dailyLogs: [{
+        Tanggal: '22-09-2026',
+        'Jam kerja': 'TIDAK HADIR',
+        'Scan masuk': '',
+        'Scan pulang': '',
+        duration: 0,
+      }],
+    },
+    leaveDate: '2026-09-22',
+    expectedHours: 6.5,
+    workingDays: 25,
+    isOffDay: false,
+  });
+  assert.equal(result.dailyLogs?.[0]?.duration, 390);
+  assert.equal(result.minutes, 1_390);
+
+  // A row saved before this fix (CUTI already in place, duration still 0) is
+  // repaired by the next overlay without paying the day twice.
+  const repaired = applyApprovedPaidLeaveToLoyalisEntry({
+    entry: {
+      ...result,
+      dailyLogs: [{ ...result.dailyLogs![0], duration: 0 }],
+    },
+    leaveDate: '2026-09-22',
+    expectedHours: 6.5,
+    workingDays: 25,
+    isOffDay: false,
+  });
+  assert.equal(repaired.dailyLogs?.[0]?.duration, 390);
+  assert.equal(repaired.minutes, result.minutes);
+  assert.equal(repaired.absenceMinutes, result.absenceMinutes);
+});
+
 test('paid leave on an absent day with kept scans still replaces the whole absence', () => {
   const result = applyApprovedPaidLeaveToLoyalisEntry({
     entry: {
@@ -68,6 +107,7 @@ test('off-day Loyalis paid leave remains visible without reducing another absenc
   });
   assert.equal(result.absenceMinutes, 390);
   assert.equal(result.dailyLogs?.[0]?.['Jam kerja'], 'CUTI');
+  assert.equal(result.dailyLogs?.[0]?.duration, 0);
 });
 
 test('an existing scanner row blocks paid-leave approval', () => {
