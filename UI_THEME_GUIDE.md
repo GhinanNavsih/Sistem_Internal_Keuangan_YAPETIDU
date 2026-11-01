@@ -2,6 +2,8 @@
 
 This document describes the modern, soothing, and premium slate-indigo UI theme design system implemented in the application. Use the specified Tailwind CSS tokens, patterns, and component recipes below to ensure a consistent user experience when building or refactoring pages across the application.
 
+**The reference implementation is `src/app/dashboard/payroll/page.tsx`.** The recipes below are taken from it. When this guide and that page ever differ, the page wins; fix the guide.
+
 ---
 
 ## 🎨 Theme Colors & Palette
@@ -46,7 +48,7 @@ All primary views should use a gradient background layout with absolute decorati
 
 *   **Background Canvas Wrapper**:
     ```html
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 p-6 lg:p-8 pb-24 lg:pb-32 font-sans selection:bg-indigo-100 relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 p-8 font-sans selection:bg-indigo-100 relative overflow-hidden text-slate-800">
     ```
 *   **Decorative Background Blobs** (Place at the top of the canvas, behind content with pointer-events disabled; `rounded-full` is correct here because they are circles):
     ```html
@@ -56,8 +58,8 @@ All primary views should use a gradient background layout with absolute decorati
     ```
 *   **Z-Indexed Main Content Container**:
     ```html
-    <div className="max-w-[1600px] mx-auto space-y-8 relative z-10">
-      {/* Page Content Here */}
+    <div className="relative z-10">
+      {/* Page Content Here: usually one main Card (see Cards below) */}
     </div>
     ```
 
@@ -66,27 +68,35 @@ All primary views should use a gradient background layout with absolute decorati
 ### 2. Page Typography
 *   **Page Title (Heading 1)**:
     ```html
-    <h1 className="text-3xl font-bold text-slate-800">
+    <h1 className="text-2xl font-bold tracking-tight">
       Title Text Here
     </h1>
     ```
-*   **Page Subtitle / Support Text**:
+*   **Summary Stats Row** (figures under the toolbar; the label is plain slate-500 text, the value sits under it in a meaning colour):
     ```html
-    <p className="text-slate-500 text-sm">
-      Description or summary text goes here.
-    </p>
+    <div className="flex flex-wrap gap-6 text-sm">
+      <div>
+        <span className="text-slate-500 block mb-1">Total Karyawan</span>
+        <span className="font-medium">181</span>
+      </div>
+      <div>
+        <span className="text-slate-500 block mb-1">Total Pendapatan</span>
+        <span className="font-medium text-emerald-600">Rp 1.007.150.193</span>
+      </div>
+    </div>
     ```
+    Value colours: `emerald-600` earnings and done, `rose-600` deductions, `amber-600` tax and waiting, and `font-bold text-indigo-600` for the one headline figure (net pay).
 *   **Section Title / Card Title**:
     ```html
-    <h2 className="text-lg font-bold text-slate-800">
+    <span className="font-semibold text-lg">
       Section Header
-    </h2>
+    </span>
     ```
-*   **Table / Column Header Text**:
+*   **Table / Column Header Text** (sentence case, regular size; set it on `TableHead`):
     ```html
-    <th className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-      COLUMN NAME
-    </th>
+    <TableHead className="font-medium text-slate-500">
+      Nama Karyawan
+    </TableHead>
     ```
 
 ---
@@ -96,33 +106,54 @@ Card designs avoid harsh borders and use the medium corner radius (`rounded-md`)
 
 *   **Standard Content Card**:
     ```html
-    <div className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6">
-      {/* Content */}
-    </div>
+    <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none overflow-hidden">
+      <div className="p-8 pb-0">
+        {/* Title, tab switcher, filters, summary stats */}
+      </div>
+      <div className="p-0">
+        {/* Section bars and the table, edge to edge */}
+      </div>
+    </Card>
     ```
-*   **Accent Global Action Bar** (Used for main action rows above grids):
+*   **Section Bar** (a titled strip inside the card with its actions on the right; the card's single row of action buttons):
     ```html
-    <div className="flex flex-wrap items-center gap-3 bg-white p-4 rounded-md border border-slate-200/60 shadow-sm">
-      {/* Buttons / Actions */}
+    <div className="px-8 py-4 flex flex-wrap justify-between items-center gap-4 border-b border-slate-100">
+      <span className="font-semibold text-lg">Validasi Gaji</span>
+      <div className="flex items-center gap-3">
+        {/* Buttons / Actions */}
+      </div>
     </div>
     ```
 
 ---
 
 ### 4. Form Controls & Selectors
-Form items use soft borders, clean typography, the small corner radius (`rounded-sm`), and a smooth light blue border expansion transition on hover.
+Form items use soft borders, small semibold text (`text-xs font-semibold`), the small corner radius (`rounded-sm`), a small shadow, and an indigo focus ring.
 
-*   **Dropdown / Select Trigger (Shadcn/UI SelectTrigger)**:
+*   **Dropdown / Select**:
     ```html
-    <SelectTrigger className="bg-white shadow-sm border-slate-200 rounded-sm font-semibold hover:border-indigo-300 focus:border-indigo-500 transition-all text-slate-700">
-      <SelectValue />
-    </SelectTrigger>
+    <select className="bg-white border border-slate-200 text-slate-600 text-xs font-semibold rounded-sm px-3 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-sm">
+      <option value="all">Semua Kategori</option>
+    </select>
     ```
-*   **Text Inputs / Number Inputs**:
+*   **Search Input** (icon on the left, grows to fill the row):
+    ```html
+    <div className="relative flex-1">
+      <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+        <Search className="w-4 h-4" />
+      </span>
+      <input
+        type="text"
+        placeholder="Cari nama atau ID pegawai..."
+        className="w-full bg-white border border-slate-200 text-slate-700 placeholder:text-slate-400 text-xs font-semibold rounded-sm pl-10 pr-4 py-2.5 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all shadow-sm"
+      />
+    </div>
+    ```
+*   **Period / Date Input** (sits under a plain slate-500 label, as in the summary stats row):
     ```html
     <input
-      type="text"
-      className="rounded-sm border-slate-200 font-bold text-slate-700 text-xs h-10 w-full hover:border-indigo-300 focus:border-indigo-500 transition-all placeholder:text-slate-400"
+      type="month"
+      className="bg-white border border-slate-200 text-slate-700 text-sm font-semibold rounded-sm px-3 py-1 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer"
     />
     ```
 *   **Money (Rupiah) Inputs**: every input that takes an amount of rupiah gets a fixed `Rp` prefix and dots between the thousands while typing (`1000000` shows as `Rp 1.000.000`). Never use a bare `<input>` or `<Input>` for money; use `CurrencyInput` from `src/components/ui/currency-input.tsx`.
@@ -154,41 +185,50 @@ Form items use soft borders, clean typography, the small corner radius (`rounded
 ---
 
 ### 5. Premium Button System
-Buttons use the small corner radius (`rounded-sm`), shadows, soft color filters, and smooth state changes.
+Buttons use the small corner radius (`rounded-sm`), `text-xs font-semibold`, a small shadow, soft color filters, and smooth state changes. Section-bar buttons are `px-4 py-2`; buttons inside a table row are smaller (`px-3 py-1.5`) with the `-600` text shade.
 
-*   **Solid Primary Button** (e.g., *Simpan*, *Submit*):
+*   **Solid Primary Button** (e.g., *Simpan*, *Submit*; used in dialogs and forms):
     ```html
-    <button className="rounded-sm px-6 py-2.5 bg-indigo-600 shadow-lg shadow-indigo-200 text-white font-bold transition-all hover:bg-indigo-700 hover:shadow-indigo-300 flex items-center gap-2">
+    <Button className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center gap-2 shadow-md shadow-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed">
       Save Changes
-    </button>
+    </Button>
     ```
-*   **Outline Soft Indigo Button** (e.g., *Kegiatan SPJ*):
+*   **Outline Soft Indigo Button** (e.g., *Refresh Semua*):
     ```html
-    <button className="rounded-sm border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-all font-semibold flex items-center gap-2 shadow-sm">
+    <button className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-indigo-200 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm">
+      <RefreshCw className="w-4 h-4 text-indigo-500" />
       Action Button
     </button>
     ```
 *   **Outline Soft Teal Button** (e.g., *Review Laporan*):
     ```html
-    <button className="rounded-sm border border-teal-200 text-teal-700 bg-teal-50 hover:bg-teal-100 hover:border-teal-300 transition-all font-semibold flex items-center gap-2 shadow-sm">
+    <button className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-teal-200 text-teal-700 bg-teal-50 hover:bg-teal-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm">
       Review Reports
     </button>
     ```
-*   **Outline Soft Emerald Button** (e.g., *Ekspor PDF*):
+*   **Outline Soft Emerald Button** (e.g., *Verifikasi & Kunci Semua*):
     ```html
-    <button className="rounded-sm border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-300 transition-all font-semibold flex items-center gap-2 shadow-sm">
+    <button className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm">
       Download PDF
     </button>
     ```
-*   **Outline Soft Amber Button** (e.g., *Ekspor Templat*):
+*   **Outline Soft Amber Button** (e.g., *Siapkan Semua Draf*):
     ```html
-    <button className="rounded-sm border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 hover:border-amber-300 transition-all font-semibold flex items-center gap-2 shadow-sm">
+    <button className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm">
       Get Template
     </button>
     ```
-*   **Neutral Outline Button** (e.g., *Tambah Kolom*):
+*   **Row Action Buttons** (inside a table row: Edit is amber, the main row action emerald or indigo; disabled is slate):
     ```html
-    <button className="rounded-sm border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 bg-white font-semibold transition-all shadow-sm flex items-center gap-2">
+    <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200 hover:bg-amber-100 hover:border-amber-300 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm">
+      <Pencil className="w-3.5 h-3.5" />
+      Edit
+    </button>
+    ```
+*   **Neutral Outline Button** (e.g., *Cetak Dokumen*, *Tambah Kolom*):
+    ```html
+    <button className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 hover:shadow-sm transition-all duration-150 shadow-sm cursor-pointer">
+      <Printer className="w-4 h-4 text-slate-500" />
       Add Column
     </button>
     ```
@@ -209,17 +249,17 @@ Buttons use the small corner radius (`rounded-sm`), shadows, soft color filters,
 ---
 
 ### 6. Premium Tab Switcher Container
-Perfect for segmented controls, lists views, and context switching. The container takes the medium radius and the tabs inside it the small one.
+Perfect for segmented controls, lists views, and context switching (the Pekarya / Loyalis switch). The container takes the medium radius and the tabs inside it the small one. The active tab is a white chip with indigo text; there is no solid indigo tab.
 
 ```html
-<div className="flex bg-white p-1 rounded-md w-fit shadow-sm border border-slate-200/60">
+<div className="flex bg-slate-100 p-1 rounded-md">
   {/* Active Tab */}
-  <button className="px-5 py-2.5 rounded-sm text-xs font-bold transition-all flex items-center gap-2 bg-indigo-600 text-white shadow-sm">
+  <button className="px-4 py-1.5 rounded-sm text-xs font-semibold transition-all bg-white text-indigo-600 shadow-sm font-bold">
     Active View
   </button>
-  
+
   {/* Inactive Tab */}
-  <button className="px-5 py-2.5 rounded-sm text-xs font-bold transition-all flex items-center gap-2 text-slate-500 hover:text-slate-800 hover:bg-slate-50">
+  <button className="px-4 py-1.5 rounded-sm text-xs font-semibold transition-all text-slate-500 hover:text-slate-700">
     Inactive View
   </button>
 </div>
@@ -228,37 +268,37 @@ Perfect for segmented controls, lists views, and context switching. The containe
 ---
 
 ### 7. Status Badges
-Small indicators representing records states (used extensively in grid lists & review queues). They are rounded rectangles (`rounded-sm`), never fully rounded pills.
+Small indicators representing records states (used extensively in grid lists & review queues). Use `Badge variant="outline"` with the classes below. They are rounded rectangles (`rounded-sm`), never fully rounded pills, so always pass `rounded-sm`; the component's own default is a pill.
 
 *   **Draft State (Gray)**:
     ```html
-    <span className="px-2.5 py-1 rounded-sm text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+    <Badge variant="outline" className="rounded-sm border-slate-200 bg-slate-100 text-slate-700">
       Draft
-    </span>
+    </Badge>
     ```
 *   **Pending Review (Amber)**:
     ```html
-    <span className="px-2.5 py-1 rounded-sm text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+    <Badge variant="outline" className="rounded-sm border-amber-200 bg-amber-50 text-amber-700">
       Menunggu Review
-    </span>
+    </Badge>
     ```
-*   **Approved (Emerald)**:
+*   **Approved / Open (Emerald)**:
     ```html
-    <span className="px-2.5 py-1 rounded-sm text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+    <Badge variant="outline" className="rounded-sm border-emerald-200 bg-emerald-50 text-emerald-700">
       Disetujui
-    </span>
+    </Badge>
     ```
 *   **Revision Needed (Orange)**:
     ```html
-    <span className="px-2.5 py-1 rounded-sm text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200">
+    <Badge variant="outline" className="rounded-sm border-orange-200 bg-orange-50 text-orange-700">
       Minta Revisi
-    </span>
+    </Badge>
     ```
-*   **Declined (Rose)**:
+*   **Declined / Closed (Rose)**:
     ```html
-    <span className="px-2.5 py-1 rounded-sm text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+    <Badge variant="outline" className="rounded-sm border-rose-200 bg-rose-50 text-rose-700">
       Ditolak
-    </span>
+    </Badge>
     ```
 
 ---
@@ -281,33 +321,62 @@ Used for temporary feedback messages or context notifications inside card bodies
 
 ---
 
-### 9. Inner Tables Grid
-Nested records, workers lists, or action-rich tables.
+### 9. Tables
+Records lists and action-rich tables. Use the `Table` primitives from `src/components/ui/table.tsx` and put the table edge to edge inside the card (no extra border). The first column has `pl-8` and the actions column `pr-8` so the content lines up with the card's `p-8`.
 
 ```html
-<div className="border border-slate-100 rounded-md shadow-sm overflow-visible bg-white">
-  <table className="w-full text-left border-collapse">
-    <thead>
-      <tr className="bg-slate-50 border-b border-slate-100">
-        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-12 text-center">NO</th>
-        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">NAMA PEGAWAI</th>
-        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-[220px]">JUMLAH (RP)</th>
-      </tr>
-    </thead>
-    <tbody className="divide-y divide-slate-100">
-      <tr className="hover:bg-slate-50/50 transition-colors">
-        <td className="px-4 py-3.5 text-center text-xs font-medium text-slate-400">1</td>
-        <td className="px-4 py-3.5 text-xs font-bold text-slate-800">John Doe</td>
-        <td className="px-4 py-3.5 text-xs text-slate-600">Rp 500.000</td>
-      </tr>
-    </tbody>
-  </table>
-</div>
+<Table>
+  <TableHeader className="bg-slate-50/50">
+    <TableRow className="border-slate-100">
+      <TableHead className="font-medium text-slate-500 pl-8">Nama Karyawan</TableHead>
+      <TableHead className="font-medium text-slate-500">Jabatan / Golongan</TableHead>
+      <TableHead className="font-medium text-slate-500">Gaji Bersih</TableHead>
+      <TableHead className="font-medium text-slate-500 text-right pr-8">Aksi</TableHead>
+    </TableRow>
+  </TableHeader>
+  <TableBody>
+    <TableRow className="border-slate-100 transition-colors hover:bg-slate-50/50">
+      <TableCell className="font-medium pl-8 py-4">John Doe</TableCell>
+      <TableCell className="py-4">
+        <div className="flex flex-col">
+          <span>REKTORAT</span>
+          <span className="text-xs text-slate-500">Golongan AA</span>
+        </div>
+      </TableCell>
+      <TableCell className="py-4 font-bold text-indigo-700">Rp 1.975.000</TableCell>
+      <TableCell className="text-right pr-8 py-4">
+        {/* Row Action Buttons, see Buttons */}
+      </TableCell>
+    </TableRow>
+  </TableBody>
+</Table>
 ```
+*   Plain figures are `text-slate-600`; a figure that needs attention takes its meaning colour with `font-semibold` (for example `text-amber-600` for tax). A missing value is a dash.
+*   A row that is done or ready takes a soft tint (`bg-emerald-50 hover:bg-emerald-100/60`), not a badge on every cell.
+*   Empty state: `<div className="p-20 flex flex-col items-center justify-center text-slate-400">` with a `w-12 h-12 mb-4 opacity-20` icon and one line of text.
 
 ---
 
-### 10. File & Image Uploads
+### 10. Dialogs
+Dialogs use the medium radius, a hairline border and a soft large shadow. The title is `text-xl font-bold tracking-tight text-slate-900`; the footer pairs a neutral outline button with the solid primary button.
+
+```html
+<Dialog open={open} onOpenChange={setOpen}>
+  <DialogContent className="sm:max-w-[760px] p-6 rounded-md bg-white border border-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.1)]">
+    <DialogHeader>
+      <DialogTitle className="text-xl font-bold tracking-tight text-slate-900">
+        Cetak Dokumen Payroll
+      </DialogTitle>
+    </DialogHeader>
+    {/* Content */}
+  </DialogContent>
+</Dialog>
+```
+`DialogContent` defaults to `rounded-xl`; always pass `rounded-md`.
+
+---
+
+### 11. File & Image Uploads
 Every feature that takes a photo or scan (receipts, proofs, attachments, ID photos) must accept **many kinds of image files, not a hand-picked few**. People attach what their phone or scanner gave them, and should never have to convert a file first.
 
 *   **Accept the whole list**: JPG/JPEG, PNG, WebP, GIF, BMP, AVIF, **HEIC/HEIF** (the default iPhone photo format), TIFF, and **PDF** (scans, bank and e-wallet receipts). Do not write a new list of MIME types by hand; use `src/lib/uploadFileTypes.ts`:
