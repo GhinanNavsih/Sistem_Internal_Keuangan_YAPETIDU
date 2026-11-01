@@ -1788,7 +1788,7 @@ export default function EmployeePayslipPage() {
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-6 sm:px-8 md:px-12 mt-8 space-y-6 relative z-10">
+      <div className="w-full max-w-screen-2xl mx-auto px-4 sm:px-8 lg:px-12 mt-8 space-y-6 relative z-10">
 
         {/* ── Period Selector Control ────────────────────────────────────── */}
         <div className="py-3.5 px-5 bg-slate-50/80 rounded-md border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4">
@@ -1948,7 +1948,7 @@ export default function EmployeePayslipPage() {
                   <div className="space-y-2.5 divide-y divide-slate-100">
                     {earnings.map((item: PaySlipField, idx: number) => (
                       <div key={idx} className="flex justify-between items-center pt-2 text-xs font-medium">
-                        <span className="text-black uppercase max-w-[200px] truncate" title={item.label}>
+                        <span className="text-black uppercase min-w-0 flex-1 pr-3 break-words" title={item.label}>
                           {item.label}
                         </span>
                         <span className="text-black font-semibold tabular-nums">
@@ -1970,7 +1970,7 @@ export default function EmployeePayslipPage() {
                       .filter((item: PaySlipField) => item.amount && item.amount > 0)
                       .map((item: PaySlipField, idx: number) => (
                         <div key={idx} className="flex justify-between items-center pt-2 text-xs font-medium">
-                          <span className="text-black uppercase max-w-[200px] truncate" title={item.label}>
+                          <span className="text-black uppercase min-w-0 flex-1 pr-3 break-words" title={item.label}>
                             {item.label}
                           </span>
                           <span className="text-black font-semibold tabular-nums">
@@ -1996,7 +1996,7 @@ export default function EmployeePayslipPage() {
                       {taxes.length > 0 ? (
                         taxes.map((item: PaySlipField, idx: number) => (
                           <div key={idx} className="flex justify-between items-center pt-2 text-xs font-medium">
-                            <span className="text-black uppercase max-w-[200px] truncate" title={item.label}>
+                            <span className="text-black uppercase min-w-0 flex-1 pr-3 break-words" title={item.label}>
                               {item.label}
                             </span>
                             <span className="text-black font-semibold tabular-nums">
