@@ -10,6 +10,7 @@ import { canReserveVenues, canSimulateDriverJourneys, getUserRoleLabel } from '@
 import { VENUE_RESERVATION_PATH } from '@/lib/venueReservation';
 import { VENUE_INSPECTION_PATH } from '@/lib/venueInspection';
 import { DRIVER_JOURNEY_SIMULATION_PATH } from '@/lib/driverJourneySimulation';
+import { LOYALIS_TASK_ADMIN_PATH } from '@/lib/loyalisTasks';
 import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
 import { SENAM_PAGI_PATH } from '@/lib/payroll/bonusTriwulan';
 import { Button } from '@/components/ui/button';
@@ -28,6 +29,7 @@ import {
   Clock,
   Compass,
   HandHeart,
+  ListTodo,
   PersonStanding,
   Route,
   ScanLine,
@@ -173,6 +175,12 @@ export default function Sidebar() {
       name: 'Simulasi Perjalanan',
       path: DRIVER_JOURNEY_SIMULATION_PATH,
       icon: Route
+    },
+    {
+      // Super Admin gives individual Loyalis tasks; they appear in the Loyalis menu.
+      name: 'Tugas Loyalis',
+      path: LOYALIS_TASK_ADMIN_PATH,
+      icon: ListTodo
     },
     {
       // Starts the "monitoring" group — rendered below a separator so the

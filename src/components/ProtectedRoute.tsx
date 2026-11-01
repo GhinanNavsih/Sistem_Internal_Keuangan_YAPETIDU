@@ -9,6 +9,7 @@ import {
 } from '@/lib/employeeActivities';
 import { isVenueReservationPath } from '@/lib/venueReservation';
 import { isDriverJourneySimulationPath } from '@/lib/driverJourneySimulation';
+import { LOYALIS_TASK_PATH } from '@/lib/loyalisTasks';
 import { Loader2 } from 'lucide-react';
 
 /**
@@ -25,6 +26,8 @@ const LOYALIS_ROUTES = [
   '/employee/santunan',
   '/employee/facility-reports',
   '/employee/simpan-pinjam',
+  // The page itself sends a Loyalis with no tasks back to the payslip.
+  LOYALIS_TASK_PATH,
 ];
 
 export default function ProtectedRoute({

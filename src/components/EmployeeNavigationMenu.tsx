@@ -13,10 +13,12 @@ import {
   getFacilityReportsPath,
   isBlueCollarFacilityDashboardUser,
 } from '@/lib/facilityReports';
+import { LOYALIS_TASK_PATH } from '@/lib/loyalisTasks';
 import { VENUE_INSPECTION_PATH } from '@/lib/venueInspection';
 import { Button } from '@/components/ui/button';
 import { AccountSwitchMenuItems } from '@/components/AccountSwitcher';
 import { usePendingFacilityReportsCount } from '@/lib/usePendingFacilityReportsCount';
+import { useLoyalisTasksSummary } from '@/lib/useLoyalisTasksSummary';
 import { FloatingSnackbar, type SnackbarMessage } from '@/components/ui/floating-snackbar';
 import {
   Banknote,
@@ -28,6 +30,7 @@ import {
   GraduationCap,
   HandHeart,
   KeyRound,
+  ListTodo,
   Loader2,
   Menu as MenuIcon,
   PiggyBank,
@@ -54,6 +57,8 @@ export default function EmployeeNavigationMenu() {
   const [passwordResetLoading, setPasswordResetLoading] = useState(false);
   const [passwordResetMessage, setPasswordResetMessage] =
     useState<SnackbarMessage | null>(null);
+  // Before the early return below so the hook order never depends on the profile.
+  const loyalisTasks = useLoyalisTasksSummary();
 
   const handlePasswordReset = async () => {
     if (!currentProfile?.email) return;
@@ -158,6 +163,20 @@ export default function EmployeeNavigationMenu() {
             >
               <GraduationCap className="text-indigo-500" />
               Pengajuan T. Keluarga
+            </DropdownMenuItem>
+          )}
+          {isLoyalis && loyalisTasks.hasTasks && pathname !== LOYALIS_TASK_PATH && (
+            <DropdownMenuItem
+              className="min-h-11 rounded-sm px-3.5 py-2.5 text-sm"
+              render={<Link href={LOYALIS_TASK_PATH} />}
+            >
+              <ListTodo className="text-indigo-500" />
+              Daftar Tugas
+              {loyalisTasks.openCount > 0 && (
+                <span className="ml-auto text-xs font-semibold tabular-nums text-slate-500">
+                  {loyalisTasks.openCount}
+                </span>
+              )}
             </DropdownMenuItem>
           )}
           {(isLoyalis || isBlueCollarHonorer) && pathname !== '/employee/santunan' && (
