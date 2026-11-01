@@ -732,6 +732,12 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Tugas Loyalis (to-do tasks Super Admin gives individual Loyalis) are read
+    // and written only by /api/loyalis-tasks and /api/employee/tasks.
+    match /LoyalisTasks/{taskId} {
+      allow read, write: if false;
+    }
+
     // Everything not explicitly listed is denied.
     match /{document=**} {
       allow read, write: if false;

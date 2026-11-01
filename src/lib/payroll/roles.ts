@@ -122,6 +122,17 @@ export function canRecordSenamPagi(role: UserRole | null | undefined): boolean {
   return !!role && SENAM_PAGI_EDITOR_ROLES.includes(role);
 }
 
+/**
+ * Who may give Loyalis tasks (Tugas Loyalis) and edit, reopen or delete them.
+ * The Loyalis themselves only see and complete their own, through
+ * `/api/employee/tasks`. The Sidebar link and `/api/loyalis-tasks` read this list.
+ */
+export const LOYALIS_TASK_ASSIGNER_ROLES: readonly UserRole[] = ['super_admin'];
+
+export function canAssignLoyalisTasks(role: UserRole | null | undefined): boolean {
+  return !!role && LOYALIS_TASK_ASSIGNER_ROLES.includes(role);
+}
+
 export function isUserRole(value: unknown): value is UserRole {
   return typeof value === 'string' && (USER_ROLES as readonly string[]).includes(value);
 }
