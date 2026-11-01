@@ -11,7 +11,6 @@ import {
 } from '@/lib/satker-finance/core';
 import { canCorrectByReversal, entryChangeBlocker, fiscalPeriod, lockedThroughPeriod, reversedEntryIds } from '@/lib/satker-finance/entryEditing';
 import { cashFlowStatementSections } from '@/lib/satker-finance/cashFlowStatement';
-import type { RowInput, Styles } from 'jspdf-autotable';
 import type { FixedAsset } from '@/lib/satker-finance/depreciation';
 import type { BankReconciliation } from '@/lib/satker-finance/bankReconciliation';
 import { monthChecks, openingComesFromPreviousYear, type PreviousYearState } from '@/lib/satker-finance/monthControls';
@@ -396,40 +395,19 @@ export default function SatkerFinancePage() {
     url.search = new URLSearchParams({ unitId, academicYear, month: String(selectedReport.monthIndex).padStart(2, '0'), code: selectedReport.verificationCode }).toString();
     pdf.addImage(await QRCode.toDataURL(url.toString(), { margin: 0, width: 220 }), 'PNG', 165, 160, 30, 30);
     // The cash flow statement gets its own page, laid out like the SatKer's printed Laporan Arus Kas.
-    const cashSections = cashFlowStatementSections({ entries: data.entries || [], accounts: data.accounts, academicYear, monthIndex: selectedReport.monthIndex });
+    const { addCashFlowPage } = await import('@/utils/generateSatkerCashFlowPdf');
     const cashMonth = months.find((item) => item.monthIndex === selectedReport.monthIndex);
-    const bar: Partial<Styles> = { fillColor: [139, 0, 0], textColor: [255, 255, 255], fontStyle: 'bold' };
-    const bold: Partial<Styles> = { fontStyle: 'bold' };
-    const amount = (value: number) => (value ? fmt(value) : '-');
-    const rows: RowInput[] = [];
-    for (const [numeral, key, activity] of [['I', 'OPERATING', 'OPERASIONAL'], ['II', 'INVESTING', 'INVESTASI'], ['III', 'FINANCING', 'PENDANAAN']] as const) {
-      const section = cashSections[key];
-      rows.push([{ content: numeral, styles: bar }, { content: `ARUS KAS DARI AKTIVITAS ${activity}`, colSpan: 3, styles: bar }]);
-      rows.push(['', { content: 'PENERIMAAN', styles: bold }, '', amount(section.receiptTotal)]);
-      rows.push(...section.receipts.map((row) => [row.code, row.name, amount(row.amount), '']));
-      rows.push(['', { content: 'PENGELUARAN', styles: bold }, '', amount(section.paymentTotal)]);
-      rows.push(...section.payments.map((row) => [row.code, row.name, amount(row.amount), '']));
-      rows.push(['', { content: `${section.net < 0 ? 'DEFISIT' : 'SURPLUS'} KAS DARI AKTIVITAS ${activity}`, styles: bold }, '', amount(Math.abs(section.net))]);
-    }
-    const netChange = cashSections.OPERATING.net + cashSections.INVESTING.net + cashSections.FINANCING.net;
-    const openingCash = snapshot.cashFlow.openingCash;
-    const cashAccounts = snapshot.rows.filter((row) => row.account.cashEquivalent).map((row) => ({ code: row.account.code, name: row.account.name, balance: row.endingDebit - row.endingCredit }));
-    rows.push([{ content: netChange < 0 ? 'PENGURANGAN KAS DAN SETARA KAS' : 'PENAMBAHAN KAS DAN SETARA KAS', colSpan: 3, styles: bar }, { content: amount(Math.abs(netChange)), styles: bar }]);
-    rows.push([{ content: 'SALDO KAS DAN SETARA KAS AWAL PERIODE', colSpan: 3, styles: bar }, { content: amount(openingCash), styles: bar }]);
-    rows.push([{ content: 'SALDO KAS DAN SETARA KAS AKHIR PERIODE', colSpan: 3, styles: bar }, { content: amount(openingCash + netChange), styles: bar }]);
-    rows.push(['', { content: 'RINCIAN SALDO KAS DAN SETARA KAS AKHIR PERIODE', colSpan: 2, styles: bold }, '']);
-    rows.push(...cashAccounts.map((row) => [row.code, row.name, amount(row.balance), '']));
-    rows.push([{ content: 'JUMLAH KESELURUHAN', colSpan: 3, styles: bar }, { content: amount(cashAccounts.reduce((sum, row) => sum + row.balance, 0)), styles: bar }]);
-    pdf.addPage();
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(12); pdf.text((selectedReport.unitName || data.unit.name).toUpperCase(), pageWidth / 2, 18, { align: 'center' });
-    pdf.setFontSize(14); pdf.text('LAPORAN ARUS KAS', pageWidth / 2, 27, { align: 'center' });
-    pdf.setFillColor(221, 224, 228); pdf.rect(14, 32, pageWidth - 28, 8, 'F');
-    pdf.setFontSize(10); pdf.text(`01/${String(selectedReport.monthIndex).padStart(2, '0')}/${cashMonth?.year}`, pageWidth / 2, 37.5, { align: 'center' });
-    pdf.setFont('helvetica', 'normal');
-    autoTable(pdf, { startY: 44, body: rows, theme: 'grid', margin: { left: 14, right: 14 }, styles: { fontSize: 9, textColor: [40, 40, 40], lineColor: [190, 190, 190], lineWidth: 0.1 },
-      columnStyles: { 0: { cellWidth: 22 }, 1: { cellWidth: 'auto' }, 2: { cellWidth: 35, halign: 'right' }, 3: { cellWidth: 35, halign: 'right' } } });
+    addCashFlowPage(pdf, {
+      unitName: selectedReport.unitName || data.unit.name,
+      monthIndex: selectedReport.monthIndex,
+      year: cashMonth?.year ?? 0,
+      period,
+      sections: cashFlowStatementSections({ entries: data.entries || [], accounts: data.accounts, academicYear, monthIndex: selectedReport.monthIndex }),
+      openingCash: snapshot.cashFlow.openingCash,
+      cashAccounts: snapshot.rows.filter((row) => row.account.cashEquivalent).map((row) => ({ code: row.account.code, name: row.account.name, balance: row.endingDebit - row.endingCredit })),
+      bakHeadName: selectedReport.bakApprovedName || '',
+      unitHeadName: data.unit.headName || '',
+    });
     pdf.addPage(); pdf.setFontSize(14); pdf.text('Rincian Laba Rugi', 14, 18);
     autoTable(pdf, { startY: 25, head: [['Kode', 'Akun', 'Penerimaan', 'Pengeluaran']], body: snapshot.incomeStatement.rows.map((row) => [row.account.code, row.account.name,
       row.account.type === 'TERIMA' ? fmt(row.creditMovement - row.debitMovement) : '', row.account.type === 'KELUAR' ? fmt(row.debitMovement - row.creditMovement) : '']),

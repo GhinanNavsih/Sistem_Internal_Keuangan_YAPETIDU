@@ -67,19 +67,26 @@ function arithmetic(source: string, sheet: WorkSheet, depth: number): number {
       if (!eat(/^\)/)) unsupported();
       return value;
     }
-    const sum = eat(/^SUM\(([A-Z]+\d+):([A-Z]+\d+)\)/);
-    if (sum) {
-      const from = parseAddress(sum[1]);
-      const to = parseAddress(sum[2]);
-      if (!from || !to) unsupported();
-      let total = 0;
-      for (let row = from!.row; row <= to!.row; row++) {
-        for (let column = from!.column; column <= to!.column; column++) {
-          const address = addressOf(row, column);
-          total += numberAt(valueAt(sheet, address, depth + 1), address);
+    if (eat(/^SUM\(/)) {
+      let sumTotal = 0;
+      do {
+        const range = eat(/^([A-Z]+\d+):([A-Z]+\d+)/);
+        if (range) {
+          const from = parseAddress(range[1]);
+          const to = parseAddress(range[2]);
+          if (!from || !to) unsupported();
+          for (let row = from!.row; row <= to!.row; row++) {
+            for (let column = from!.column; column <= to!.column; column++) {
+              const address = addressOf(row, column);
+              sumTotal += numberAt(valueAt(sheet, address, depth + 1), address);
+            }
+          }
+        } else {
+          sumTotal += expression();
         }
-      }
-      return total;
+      } while (eat(/^,/));
+      if (!eat(/^\)/)) unsupported();
+      return sumTotal;
     }
     const reference = eat(/^([A-Z]+\d+)/);
     if (reference) return numberAt(valueAt(sheet, reference[1], depth + 1), reference[1]);
@@ -142,8 +149,16 @@ export function readAkunSheet(sheet: WorkSheet, label: string): AkunRead {
       const name = textAt(sheet, `C${row}`);
       const position = textAt(sheet, `D${row}`).toUpperCase();
       const report = textAt(sheet, `E${row}`).toUpperCase();
-      const debitValue = valueAt(sheet, `F${row}`);
-      const creditValue = valueAt(sheet, `G${row}`);
+      let debitValue = valueAt(sheet, `F${row}`);
+      let creditValue = valueAt(sheet, `G${row}`);
+      if (typeof debitValue === 'string') {
+        const trimmed = debitValue.trim();
+        if (trimmed === '' || /^[\s,.-]+$/.test(trimmed)) debitValue = null;
+      }
+      if (typeof creditValue === 'string') {
+        const trimmed = creditValue.trim();
+        if (trimmed === '' || /^[\s,.-]+$/.test(trimmed)) creditValue = null;
+      }
       if (seen.has(code)) { problems.push(`${label} baris ${row}: nomor akun ${code} dipakai dua kali.`); continue; }
       seen.add(code);
       if (!name) {
@@ -205,7 +220,7 @@ export function readJurnalSheet(sheet: WorkSheet, label: string, accountCodes: S
   const months = fiscalMonths(academicYear);
   const slug = label.replace(/^Jurnal\s+/i, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'jurnal';
   type Line = BookImportLine & { row: number };
-  let run: { lines: Line[]; debit: number; credit: number; date: string } | null = null;
+  let run: { lines: Line[]; debit: number; credit: number; date: string; monthIndex: number; year: number } | null = null;
 
   const close = () => {
     if (!run) return;
@@ -233,16 +248,32 @@ export function readJurnalSheet(sheet: WorkSheet, label: string, accountCodes: S
   for (let row = JOURNAL_FIRST_ROW; row <= lastRowOf(sheet); row++) {
     try {
       const dateSerial = valueAt(sheet, `A${row}`);
-      const dayValue = valueAt(sheet, `B${row}`);
+      let dayValue = valueAt(sheet, `B${row}`);
       const codeValue = valueAt(sheet, `C${row}`);
       const description = textAt(sheet, `E${row}`);
-      const debitValue = valueAt(sheet, `F${row}`);
-      const creditValue = valueAt(sheet, `G${row}`);
+      let debitValue = valueAt(sheet, `F${row}`);
+      let creditValue = valueAt(sheet, `G${row}`);
+      if (typeof debitValue === 'string') {
+        const trimmed = debitValue.trim();
+        if ((trimmed === '' || /^[\s,.-]+$/.test(trimmed)) && typeof creditValue === 'number') debitValue = null;
+      }
+      if (typeof creditValue === 'string') {
+        const trimmed = creditValue.trim();
+        if ((trimmed === '' || /^[\s,.-]+$/.test(trimmed)) && typeof debitValue === 'number') creditValue = null;
+      }
       if (codeValue === null && !description && debitValue === null && creditValue === null) { close(); continue; }
       if (typeof codeValue !== 'number' || !Number.isInteger(codeValue)) throw new Error('nomor akun harus berupa angka.');
       const code = String(codeValue);
       if (unnamedCodes.has(code)) throw new Error(`akun ${code} dipakai jurnal tetapi belum bernama di sheet Akun.`);
       if (!accountCodes.has(code)) throw new Error(`akun ${code} tidak ada di sheet Akun atau bukan akun posting.`);
+      if (typeof dateSerial === 'number' && (dayValue === null || typeof dayValue !== 'number')) {
+        const nextDay = valueAt(sheet, `B${row + 1}`);
+        if (typeof nextDay === 'number' && Number.isInteger(nextDay)) {
+          dayValue = nextDay;
+        } else if (run && run.date) {
+          dayValue = Number(run.date.slice(8, 10));
+        }
+      }
       if (typeof dateSerial !== 'number' || typeof dayValue !== 'number' || !Number.isInteger(dayValue)) throw new Error('bulan (kolom A) dan tanggal (kolom B) harus diisi.');
       const day = new Date(EXCEL_EPOCH + Math.round(dateSerial) * 86_400_000);
       const year = day.getUTCFullYear();
@@ -256,8 +287,9 @@ export function readJurnalSheet(sheet: WorkSheet, label: string, accountCodes: S
       if (typeof debit !== 'number' || typeof credit !== 'number') throw new Error('nominal berisi teks, bukan angka.');
       if (!Number.isSafeInteger(debit) || !Number.isSafeInteger(credit) || debit < 0 || credit < 0) throw new Error('nominal harus Rupiah bulat dan tidak negatif.');
       if ((debit > 0) === (credit > 0)) throw new Error('isi Debet atau Kredit, salah satu saja.');
-      if (run && run.date !== date) close();
-      run ??= { lines: [], debit: 0, credit: 0, date };
+      if (run && (run.year !== year || run.monthIndex !== month)) close();
+      run ??= { lines: [], debit: 0, credit: 0, date, monthIndex: month, year };
+      run.date = date;
       run.lines.push({ row, code, debit, credit, description });
       run.debit += debit;
       run.credit += credit;

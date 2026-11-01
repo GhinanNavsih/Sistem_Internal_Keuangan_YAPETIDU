@@ -74,14 +74,23 @@ test('groups consecutive lines that balance into one voucher, with formulas eval
     journalRow(10, 7, 51104, 'Konsumsi', '=18*14000', null),
     journalRow(11, 7, 51104, 'Konsumsi', 1_000, null),
     journalRow(12, 7, 11001, 'Konsumsi', null, '=SUM(F10:F11)'),
+    journalRow(14, 8, 51104, 'Biaya Tunggal', 50_000, null),
+    journalRow(15, 8, 11001, 'Biaya Tunggal', ',', '=SUM(F14)'),
+    journalRow(17, 9, 51104, 'Multi Tanggal 1', 20_000, null),
+    journalRow(18, 12, 51104, 'Multi Tanggal 2', 30_000, null),
+    journalRow(19, 12, 11001, 'Pelunasan Bank', null, '=SUM(F17+F18)'),
   ]);
   const read = readJurnalSheet(sheet, 'Jurnal Uji', new Set(['11001', '41000', '51104']), '2026-2027');
   assert.deepEqual(read.problems, []);
   assert.deepEqual(read.vouchers.map((voucher) => [voucher.id, voucher.date, voucher.description, voucher.lines.length]), [
     ['imp-uji-r7', '2026-09-04', 'Setoran dana', 2],
     ['imp-uji-r10', '2026-09-07', 'Konsumsi', 3],
+    ['imp-uji-r14', '2026-09-08', 'Biaya Tunggal', 2],
+    ['imp-uji-r17', '2026-09-12', 'Multi Tanggal 1', 3],
   ]);
   assert.deepEqual(read.vouchers[1].lines.map((line) => [line.code, line.debit, line.credit]), [['51104', 252_000, 0], ['51104', 1_000, 0], ['11001', 0, 253_000]]);
+  assert.deepEqual(read.vouchers[2].lines.map((line) => [line.code, line.debit, line.credit]), [['51104', 50_000, 0], ['11001', 0, 50_000]]);
+  assert.deepEqual(read.vouchers[3].lines.map((line) => [line.code, line.debit, line.credit]), [['51104', 20_000, 0], ['51104', 30_000, 0], ['11001', 0, 50_000]]);
 });
 
 test('reports a run that does not balance before the next blank line, and an account outside the sheet', () => {

@@ -11,6 +11,7 @@ const LEGACY_ID = '';
  * line counts the cash it moved, the same way `cashFlowAllocation` does, so the
  * sections add up to the month's change in cash. A journal that touches no cash
  * moves nothing. An account paid and refunded in the same month shows its net.
+ * Income and expense accounts of a section are listed even with no movement.
  */
 export function cashFlowStatementSections(args: { entries: JournalEntry[]; accounts: FinancialAccount[]; academicYear: string; monthIndex: number }): Record<CashFlowSection, CashFlowSectionLines> {
   const byId = new Map(args.accounts.map((account) => [accountId(account), account]));
@@ -37,12 +38,17 @@ export function cashFlowStatementSections(args: { entries: JournalEntry[]; accou
 
   const sections = {} as Record<CashFlowSection, CashFlowSectionLines>;
   for (const section of CASH_FLOW_SECTIONS) {
-    const rows = [...moves.get(section)!.entries()].filter(([, amount]) => amount !== 0).map(([id, amount]) => {
+    const moved = moves.get(section)!;
+    // Income and expense accounts of the section are listed even with no movement, shown as '-' like the printed form.
+    const statementIds = new Set(args.accounts.filter((account) => account.postable && !account.cashEquivalent && account.cashFlowSection === section && account.reportTarget === 'INCOME_STATEMENT').map(accountId));
+    const lines = [...new Set([...moved.keys(), ...statementIds])].filter((id) => (moved.get(id) ?? 0) !== 0 || statementIds.has(id)).map((id) => {
       const account = byId.get(id);
-      return { code: account?.code ?? '', name: account ? account.name : 'Jurnal sebelum rincian akun', amount };
-    }).sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
-    const receipts = rows.filter((row) => row.amount > 0);
-    const payments = rows.filter((row) => row.amount < 0).map((row) => ({ ...row, amount: -row.amount }));
+      const amount = moved.get(id) ?? 0;
+      // A line with no movement goes under Penerimaan when it is an income account, otherwise under Pengeluaran.
+      return { row: { code: account?.code ?? '', name: account ? account.name : 'Jurnal sebelum rincian akun', amount: Math.abs(amount) }, receipt: amount > 0 || (amount === 0 && account?.type === 'TERIMA') };
+    }).sort((a, b) => a.row.code.localeCompare(b.row.code, undefined, { numeric: true }));
+    const receipts = lines.filter((line) => line.receipt).map((line) => line.row);
+    const payments = lines.filter((line) => !line.receipt).map((line) => line.row);
     const receiptTotal = receipts.reduce((sum, row) => sum + row.amount, 0);
     const paymentTotal = payments.reduce((sum, row) => sum + row.amount, 0);
     sections[section] = { receipts, payments, receiptTotal, paymentTotal, net: receiptTotal - paymentTotal };
