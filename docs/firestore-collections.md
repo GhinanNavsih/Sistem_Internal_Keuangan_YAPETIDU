@@ -2,7 +2,7 @@
 
 ## Database Collections (Firestore)
 
-**Primary app** (`db`/`adminDb`) unless noted. ~43 active top-level collections; grouped by domain:
+**Primary app** (`db`/`adminDb`) unless noted. ~44 active top-level collections; grouped by domain:
 
 **Employee master data**: `Employees_WhiteCollar`, `Employees_BlueCollar`, `Employees_Loyalis` (nested `personal_info.*`), `JabatanStruktural` (position lookup).
 
@@ -19,6 +19,8 @@
 **BanSos**: `BansosRequests` (server-only; one doc per Ajuan Duka / Melahirkan, see `docs/features/santunan-bansos.md`).
 
 **Bonus Triwulan**: `SenamPagi` (server-only; one doc per month: sessions keyed by date, each listing who was present) and `BonusTriwulan` (server-only; one doc per month: who was paid). See `docs/features/bonus-triwulan.md`.
+
+**Tugas Loyalis**: `LoyalisTasks` (server-only; one doc per task Super Admin gives a Loyalis, keyed by the `Employees_Loyalis` id in `assigneeEmployeeId`, see `docs/features/loyalis-tasks.md`).
 
 **Admin / auth / misc**: `users` (one per login account; `personEmployeeId` names the employee it belongs to, for role switching, see `docs/features/account-switching.md`), `EmpEditLog`, `admin_impersonation_sessions`, `audit_logs`, `reactivation_tokens`, `VenueReservationContacts` (server-only; one doc per account holding the WhatsApp number and unit name last used for a venue booking), `DriverJourneySimulations` (server-only; one doc per saved Simulasi Biaya Perjalanan) and `DriverRouteQuotes` (server-only; Google route + toll answers keyed by a hash of the route points, reused for 7 days).
 

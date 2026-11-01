@@ -20,6 +20,10 @@ revision withdraws those payments until it is approved again.
 A Pekarya employee who drives the university's vehicles and is paid per Perjalanan.
 _Avoid_: driver (in user-facing text)
 
+**Tugas Loyalis**:
+A to-do that Super Admin gives to one Loyalis, with a title, an optional description and an optional due date. The Loyalis marks it completed (and may reopen it). A Loyalis sees the **Daftar Tugas** page only while at least one Tugas exists for them, completed or not.
+_Avoid_: to-do, reminder, assignment
+
 ### Journeys and their cost
 
 **Perjalanan**:
