@@ -47,7 +47,15 @@ import { recalculateLoyalisSummary as recalculateSummary } from '@/lib/payroll/l
 import {
   applyApprovedPaidLeaveToLoyalisEntry,
   type LoyalisDayCreditKind,
+  type LoyalisPaidLeaveDailyLog,
 } from '@/lib/payroll/loyalisPaidLeave';
+import {
+  applyApprovedCorrectionsToDailyLogs,
+  isApplicableApprovedCorrection,
+  loyalisCorrectionOverlayApplies,
+  type ApprovedLoyalisCorrection,
+} from '@/lib/payroll/loyalisCorrectionOverlay';
+import { timestampToMillis } from '@/lib/payroll/presenceCorrections';
 import {
   AUTO_ABSENCE_LEAVE_SOURCE,
   describeAutoLeaveSummary,
@@ -120,6 +128,41 @@ interface ApprovedDayCredit {
   leaveDate: string;
   kind: LoyalisDayCreditKind;
 }
+
+/**
+ * Puts every approved izin resmi / scan correction back onto the rows. A
+ * scanner file (or a page save from a table loaded before the approval)
+ * replaces the rows an approval edited, so the approved request stays the
+ * record and this re-applies it. Rows already carrying a correction are left
+ * alone, so a scan the admin edited by hand afterwards is not reverted.
+ */
+const applyApprovedCorrectionsToRows = <
+  T extends { employeeId?: string | null; dailyLogs?: LoyalisPaidLeaveDailyLog[] },
+>(
+  rows: T[],
+  corrections: readonly ApprovedLoyalisCorrection[],
+  expectedHours: number,
+  isOffDayTanggal: (tanggal: string) => boolean,
+): T[] => {
+  if (corrections.length === 0) return rows;
+  const byEmployee = new Map<string, ApprovedLoyalisCorrection[]>();
+  corrections.forEach((correction) => {
+    byEmployee.set(correction.employeeId, [
+      ...(byEmployee.get(correction.employeeId) || []),
+      correction,
+    ]);
+  });
+  return rows.map((row) => {
+    const own = row.employeeId ? byEmployee.get(row.employeeId) : undefined;
+    if (!own) return row;
+    const applied = applyApprovedCorrectionsToDailyLogs(row.dailyLogs || [], own);
+    if (!applied.changed) return row;
+    return {
+      ...row,
+      ...recalculateSummary(applied.dailyLogs, expectedHours, isOffDayTanggal),
+    } as T;
+  });
+};
 
 const applyApprovedPaidLeavesToRows = (
   rows: any[],
@@ -303,6 +346,18 @@ export default function PresensiLoyalisRawPage() {
   const activeWorkingDays = Number(workingDays) || 0;
   const [expectedHours, setExpectedHours] = useState<number>(6.5);
   const [approvedPaidLeaves, setApprovedPaidLeaves] = useState<ApprovedDayCredit[]>([]);
+  const correctionsQuery = useLoyalisPresenceCorrections();
+  // Decided approvals of the month, oldest first so the latest one for a day wins.
+  const approvedCorrections = useMemo<ApprovedLoyalisCorrection[]>(() => {
+    if (!loyalisCorrectionOverlayApplies(canonicalPeriod)) return [];
+    return (correctionsQuery.data || [])
+      .filter(
+        (req) =>
+          String(req.date || '').startsWith(`${canonicalPeriod}-`) &&
+          isApplicableApprovedCorrection(req),
+      )
+      .sort((a, b) => timestampToMillis(a.updatedAt) - timestampToMillis(b.updatedAt));
+  }, [correctionsQuery.data, canonicalPeriod]);
   const [savingPresence, setSavingPresence] = useState(false);
   const [existingPresence, setExistingPresence] = useState<any>(null);
   const [loadingPresence, setLoadingPresence] = useState(false);
@@ -517,7 +572,12 @@ export default function PresensiLoyalisRawPage() {
         ...recalculateSummary(emp.dailyLogs || [], expectedHours, isOffDayTanggal),
       }));
       return applyApprovedPaidLeavesToRows(
-        recalculated,
+        applyApprovedCorrectionsToRows(
+          recalculated,
+          approvedCorrections,
+          expectedHours,
+          isOffDayTanggal,
+        ),
         approvedPaidLeaves,
         expectedHours,
         activeWorkingDays,
@@ -526,6 +586,7 @@ export default function PresensiLoyalisRawPage() {
     });
   }, [
     activeWorkingDays,
+    approvedCorrections,
     approvedPaidLeaves,
     expectedHours,
     isOffDayIso,
@@ -743,7 +804,7 @@ export default function PresensiLoyalisRawPage() {
       ...recalculateSummary(entry.dailyLogs, expectedHours, isOffDayTanggal),
     }));
     return applyApprovedPaidLeavesToRows(
-      rows,
+      applyApprovedCorrectionsToRows(rows, approvedCorrections, expectedHours, isOffDayTanggal),
       approvedPaidLeaves,
       expectedHours,
       activeWorkingDays,
@@ -751,6 +812,7 @@ export default function PresensiLoyalisRawPage() {
     );
   }, [
     activeWorkingDays,
+    approvedCorrections,
     approvedPaidLeaves,
     canonicalPeriod,
     expectedHours,
@@ -806,7 +868,6 @@ export default function PresensiLoyalisRawPage() {
   const [activeDeclineId, setActiveDeclineId] = useState<string | null>(null);
   const [declineReasonInput, setDeclineReasonInput] = useState<Record<string, string>>({});
 
-  const correctionsQuery = useLoyalisPresenceCorrections();
   const loadingCorrections = correctionsQuery.isLoading;
 
   const corrections = useMemo<any[]>(() => {
@@ -1323,7 +1384,12 @@ export default function PresensiLoyalisRawPage() {
     hydratingRef.current = true;
     setUploadedData(
       applyApprovedPaidLeavesToRows(
-        entriesList,
+        applyApprovedCorrectionsToRows(
+          entriesList,
+          approvedCorrections,
+          expectedHours,
+          isOffDayTanggal,
+        ),
         approvedPaidLeaves,
         expectedHours,
         activeWorkingDays,
@@ -1334,6 +1400,7 @@ export default function PresensiLoyalisRawPage() {
     setMessage({ type: 'success', text: 'Mode edit diaktifkan. Anda sekarang dapat mengubah data logs presensi dan menghubungkan pegawai.' });
   }, [
     activeWorkingDays,
+    approvedCorrections,
     approvedPaidLeaves,
     existingPresence,
     expectedHours,

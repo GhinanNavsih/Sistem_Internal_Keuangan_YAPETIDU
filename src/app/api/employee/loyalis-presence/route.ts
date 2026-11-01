@@ -11,6 +11,7 @@ import {
 } from '@/lib/server/annualPaidLeave';
 import { loadApprovedGantiLiburDayOffs } from '@/lib/server/gantiLibur';
 import { applyApprovedPaidLeaveToLoyalisEntry } from '@/lib/payroll/loyalisPaidLeave';
+import { applyApprovedLoyalisCorrectionsToPresence } from '@/lib/server/loyalisCorrections';
 import { isFridayDate } from '@/lib/payroll/attendance';
 
 export const dynamic = 'force-dynamic';
@@ -218,7 +219,10 @@ export async function GET(request: NextRequest) {
 
     for (const snapshot of presenceSnapshots) {
       if (!snapshot.exists) continue;
-      const presenceData = snapshot.data() as PresenceEntry;
+      const presenceData = (await applyApprovedLoyalisCorrectionsToPresence(
+        period,
+        snapshot.data() as PresenceEntry,
+      )) as PresenceEntry;
       const entry = findEmployeeEntry(presenceData, {
         employeeId,
         nipys,

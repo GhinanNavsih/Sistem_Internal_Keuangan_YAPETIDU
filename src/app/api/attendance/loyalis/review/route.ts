@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
   isPresenceCorrectionType,
-  parseDateKey,
   parseDateToDDMMYYYY,
   type PresenceCorrectionType,
   type PresenceCorrectionRequest,
 } from '@/lib/payroll/presenceCorrections';
 import { recalculateLoyalisSummary } from '@/lib/payroll/loyalisPresenceSummary';
+import {
+  applyApprovedCorrectionsToDailyLogs,
+  calculateLoyalisPresenceStratum,
+} from '@/lib/payroll/loyalisCorrectionOverlay';
 import { periodCalendarFromData } from '@/lib/payroll/calendar';
 import { loyalisLogDateToIso } from '@/lib/payroll/loyalisAutoLeave';
 import { isImmutablePayrollStatus } from '@/lib/payroll/domain';
@@ -36,55 +39,6 @@ function parseClockTime(value: unknown, label: string): string {
     throw new HttpError(400, `${label} tidak valid.`);
   }
   return value;
-}
-
-function calculateStratum(
-  minutes: number,
-  mode: 'worked' | 'absent',
-  days: number,
-  hours: number,
-) {
-  const expectedTotal = days * hours * 60;
-  let x = 0;
-  if (mode === 'worked') {
-    x = expectedTotal - minutes;
-    if (x < 0) x = 0;
-  } else {
-    x = minutes;
-  }
-
-  let stratum = 1;
-  let deduction = 0;
-  let netBonus = 250_000;
-
-  if (x === 0) {
-    stratum = 1;
-    deduction = 0;
-    netBonus = 250_000;
-  } else if (x <= days * 30) {
-    stratum = 2;
-    deduction = 100_000;
-    netBonus = 150_000;
-  } else if (x <= days * 35) {
-    stratum = 3;
-    deduction = 150_000;
-    netBonus = 100_000;
-  } else if (x <= days * 40) {
-    stratum = 4;
-    deduction = 200_000;
-    netBonus = 50_000;
-  } else {
-    stratum = 5;
-    deduction = 250_000;
-    netBonus = 0;
-  }
-
-  return {
-    absenceMinutes: x,
-    stratum,
-    deduction,
-    netBonus,
-  };
 }
 
 export async function POST(request: NextRequest) {
@@ -250,44 +204,20 @@ export async function POST(request: NextRequest) {
       throw new HttpError(409, 'Gunakan Ubah Jenis Pengajuan untuk memvalidasi saldo cuti atau Masuk Hari Libur sebelum menyetujui.');
     }
 
-    // 3C. Approve as Izin Resmi or Scan Correction
-    const dailyLogs: LoyalisPaidLeaveDailyLog[] = [...(employeeEntry.dailyLogs || [])];
-    const dayLogIdx = dailyLogs.findIndex((log) => log.Tanggal === dateKey);
-
-    const checkIn =
-      type === 'izin_resmi'
-        ? '07:30'
-        : type !== 'tap_out'
-          ? currentReq.checkInTime || '07:30'
-          : (dailyLogs[dayLogIdx]?.['Scan masuk'] as string) || '';
-    const checkOut =
-      type === 'izin_resmi'
-        ? '14:00'
-        : type !== 'tap_in'
-          ? currentReq.checkOutTime || '14:00'
-          : (dailyLogs[dayLogIdx]?.['Scan pulang'] as string) || '';
-
-    if (dayLogIdx > -1) {
-      dailyLogs[dayLogIdx] = {
-        ...dailyLogs[dayLogIdx],
-        'Jam kerja': 'MASUK',
-        'Scan masuk': checkIn,
-        'Scan pulang': checkOut,
-        scanMasukAuto: type === 'tap_out' ? Boolean(dailyLogs[dayLogIdx].scanMasukAuto) : false,
-        scanPulangAuto: type === 'tap_in' ? Boolean(dailyLogs[dayLogIdx].scanPulangAuto) : false,
-      };
-    } else {
-      dailyLogs.push({
-        Tanggal: dateKey,
-        'Jam kerja': 'MASUK',
-        'Scan masuk': checkIn,
-        'Scan pulang': checkOut,
-        scanMasukAuto: false,
-        scanPulangAuto: false,
-      });
-    }
-
-    dailyLogs.sort((a, b) => parseDateKey(a.Tanggal) - parseDateKey(b.Tanggal));
+    // 3C. Approve as Izin Resmi or Scan Correction. The same function re-applies
+    // this correction whenever a scanner file replaces the row later.
+    const { dailyLogs } = applyApprovedCorrectionsToDailyLogs(
+      (employeeEntry.dailyLogs || []) as LoyalisPaidLeaveDailyLog[],
+      [{
+        id: requestId,
+        employeeId,
+        date,
+        type,
+        status: 'approved',
+        checkInTime: currentReq.checkInTime,
+        checkOutTime: currentReq.checkOutTime,
+      }],
+    );
 
     await adminDb.runTransaction(async (transaction) => {
       const [latestRequest, latestPresence, periodSnapshot, slip, annualCalendar] = await transaction.getAll(
@@ -314,7 +244,7 @@ export async function POST(request: NextRequest) {
       const updatedEmployeeEntry: LoyalisPaidLeaveEntry = {
         ...employeeEntry,
         ...summary,
-        ...calculateStratum(summary.minutes, calcMode, workingDays, expectedHours),
+        ...calculateLoyalisPresenceStratum(summary.minutes, calcMode, workingDays, expectedHours),
         isNotFoundInExcel: false,
       };
       transaction.update(presenceRef, {

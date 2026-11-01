@@ -18,6 +18,7 @@ import {
   type LoyalisPaidLeaveEntry,
 } from '@/lib/payroll/loyalisPaidLeave';
 import { loadApprovedGantiLiburDayOffs } from '@/lib/server/gantiLibur';
+import { applyApprovedLoyalisCorrectionsToPresence } from '@/lib/server/loyalisCorrections';
 
 export const ANNUAL_PAID_LEAVE_REQUESTS_COLLECTION =
   'AnnualPaidLeaveRequests';
@@ -287,7 +288,10 @@ export async function loadAnnualPaidLeaveHolidayDates(
  */
 export async function applyApprovedLoyalisDayCreditsToPresence<
   T extends Record<string, unknown>,
->(period: string, presence: T | null): Promise<T | null> {
+>(period: string, savedPresence: T | null): Promise<T | null> {
+  // Approved izin resmi / scan corrections first: a later scanner file or page
+  // save can have replaced the rows the approval edited.
+  const presence = await applyApprovedLoyalisCorrectionsToPresence(period, savedPresence);
   if (!presence) return null;
   const [posts, gantiLiburDayOffs] = await Promise.all([
     loadApprovedAnnualPaidLeavePosts(period),
