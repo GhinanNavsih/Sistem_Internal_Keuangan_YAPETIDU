@@ -180,9 +180,6 @@ export default function VenueInspectionPage() {
         {!isFieldStaff && (
           <div className="mb-5">
             <h1 className="text-lg font-semibold text-slate-900">Pemeriksaan Ruang</h1>
-            <p className="mt-1 text-[13px] text-slate-500">
-              Kebersihan dan Teknisi memeriksa ruangan dan peralatan setelah dipakai. Data tersimpan di SIMPEL UNIPDU.
-            </p>
           </div>
         )}
 

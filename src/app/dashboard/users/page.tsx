@@ -745,7 +745,6 @@ export default function UserManagementPage() {
               </div>
               <div>
                 <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Manajemen Akses Pengguna</h1>
-                <p className="text-slate-500 text-sm">Kelola akun administrator Badan Administrasi Keuangan (BAK) dan Kepala Satuan Kerja (SatKer)</p>
               </div>
             </div>
           </div>

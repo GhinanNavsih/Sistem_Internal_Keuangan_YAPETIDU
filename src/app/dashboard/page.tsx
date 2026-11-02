@@ -1686,9 +1686,6 @@ export default function TreasuryDashboard() {
             <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 mt-1">
               Yayasan Pesantren Tinggi Darul 'Ulum (YAPETIDU)
             </h1>
-            <p className="text-slate-500 text-sm mt-1">
-              Selamat datang kembali, <span className="font-semibold text-slate-700">{profile.displayName || 'Bendahara'}</span>. Berikut ringkasan arus kas payroll Anda.
-            </p>
           </div>
 
           {/* Middle: Period Selector & Employee type toggle */}

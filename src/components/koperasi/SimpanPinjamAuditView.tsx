@@ -311,7 +311,6 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
           </div>
           <div className="text-right">
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Audit Simpan Pinjam Koperasi</h1>
-            <p className="text-sm text-slate-500">Rekonsiliasi database koperasi unipdu dengan payroll YAPETIDU</p>
           </div>
         </div>
 

@@ -322,12 +322,9 @@ export default function LoginPage() {
             <span className="text-lg font-bold text-slate-800">BAK UNIPDU</span>
           </div>
 
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-2">
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-8">
             Selamat Datang
           </h1>
-          <p className="text-slate-500 text-sm mb-8 leading-relaxed">
-            Masuk dengan akun yang telah terdaftar untuk mengakses sistem.
-          </p>
 
           {/* Smart Reactivation Card for Disabled Accounts */}
           {isDisabledAccount && (

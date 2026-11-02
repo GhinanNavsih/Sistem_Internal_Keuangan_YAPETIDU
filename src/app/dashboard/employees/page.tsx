@@ -2219,7 +2219,6 @@ export default function EmployeesPage() {
                 <Users className="w-6 h-6 text-indigo-500" />
                 Master Data Pegawai
               </h1>
-              <p className="text-slate-500 text-sm">Kelola data induk pegawai unit BAK</p>
             </div>
           </div>
 

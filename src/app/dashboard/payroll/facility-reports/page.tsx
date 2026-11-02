@@ -631,9 +631,6 @@ function FacilityReportReviewContent() {
               <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl lg:text-3xl">
                 Review Kondisi Fasilitas
               </h1>
-              <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-500 sm:text-sm">
-                Tinjau laporan fasilitas yang rusak, kotor, tidak terawat, atau membutuhkan perbaikan dari pegawai.
-              </p>
             </div>
           </div>
         )}

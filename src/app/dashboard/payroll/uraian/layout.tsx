@@ -326,29 +326,6 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
     }
   }, [activeTab]);
 
-  const pageDescription = useMemo(() => {
-    switch (activeTab) {
-      case 'kjm':
-        return 'Upload data mentah, tinjau perhitungan, lalu setujui ke payroll';
-      case 'presensi':
-        return 'Upload rekap PDF/Gambar untuk auto-input';
-      case 'presensi_pekarya':
-        return 'Tinjau scan NIPY, peringatan, koreksi, dan publikasi upah kehadiran';
-      case 'vakasi_karyawan':
-        return 'Kelola pembayaran kegiatan variabel bulanan untuk Loyalis dan Pekarya';
-      case 'presensi_loyalis_raw':
-        return 'Hitung strata dan bonus presensi loyalis';
-      case 'senam_pagi':
-        return 'Catat kehadiran Senam Pagi dan tinjau Bonus Triwulan Loyalis';
-      case 'kegiatan_satker':
-        return 'Ajukan anggaran dan laporkan realisasi kegiatan SatKer (LPJ)';
-      case 'kegiatan_spj':
-        return 'Kelola pembayaran kegiatan variabel pekarya bulanan';
-      default:
-        return '';
-    }
-  }, [activeTab]);
-
   if (!profile) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -393,7 +370,6 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
               <div className="h-2" />
             )}
             <h1 className="text-3xl font-bold text-slate-800">{pageTitle}</h1>
-            <p className="text-slate-500 text-sm">{pageDescription}</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v, 10))}>

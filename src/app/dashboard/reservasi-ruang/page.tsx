@@ -332,10 +332,6 @@ function ReservationsContent() {
             </div>
             <div className="min-w-0">
               <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl lg:text-3xl">Reservasi Ruang</h1>
-              <p className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-500 sm:text-sm">
-                Pesan ruangan dan peralatan kampus untuk kegiatan. Bila ruangan dan peralatan tersedia pada jam
-                tersebut, reservasi langsung terjadwal di SIMPEL UNIPDU dan Pekarya menyiapkan serah terima.
-              </p>
             </div>
           </div>
           <div className="flex shrink-0 gap-2">

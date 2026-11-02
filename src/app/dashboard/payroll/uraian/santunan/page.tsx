@@ -124,10 +124,6 @@ export default function BansosVerificationPage() {
             <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-3">
               <HandHeart className="size-7 text-indigo-500" /> Verifikasi Ajuan Santunan
             </h1>
-            <p className="text-slate-500 text-sm">
-              Periksa bukti Ajuan Duka dan Ajuan Melahirkan pegawai. Setelah Admin Karyawan dan Super Admin sama-sama menerima,
-              santunan melahirkan dibayar bersama gaji, sedangkan santunan duka diserahkan tunai lalu ditandai di sini.
-            </p>
           </div>
           <button
             type="button"

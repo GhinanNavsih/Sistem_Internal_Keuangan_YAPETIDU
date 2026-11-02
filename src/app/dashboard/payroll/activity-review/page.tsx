@@ -2540,7 +2540,6 @@ function ActivityReviewPageContent() {
             </div>
             <div>
               <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight">Review Laporan Kegiatan</h1>
-              <p className="text-slate-500 text-sm">Tinjau, setujui, atau tolak kegiatan yang dilaporkan oleh pekarya.</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
