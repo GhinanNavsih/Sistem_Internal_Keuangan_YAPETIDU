@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
+import { prepareAutomaticLeaveRefund, writeAutomaticLeaveRefund } from '@/lib/server/automaticLeavePosting';
+import { ensurePekaryaAutoLeave } from '@/lib/server/pekaryaAutoLeave';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import {
@@ -545,6 +547,8 @@ export async function POST(request: NextRequest) {
             idempotent: true,
           };
         }
+        const automaticRefund = action === 'approve'
+          ? await prepareAutomaticLeaveRefund(transaction, employeeId, dutyDate) : null;
         assertPeriodAcceptsInput(
           latestPeriod.data(),
           'Periode payroll sudah ditutup; keputusan presensi tidak dapat diubah.',
@@ -561,7 +565,7 @@ export async function POST(request: NextRequest) {
         if (action === 'approve' && hasGantiLiburDayOff(gantiLiburSnapshot.docs.map((doc) => doc.data()), dutyDate, true)) {
           throw new HttpError(409, 'Ganti libur sudah disetujui pada tanggal ini.');
         }
-        if (action === 'approve' && annualPaidLeaveSnapshot.data()?.status === 'approved') {
+        if (action === 'approve' && annualPaidLeaveSnapshot.data()?.status === 'approved' && !automaticRefund) {
           throw new HttpError(
             409,
             'Cuti tahunan berbayar sudah disetujui pada tanggal ini.',
@@ -641,6 +645,7 @@ export async function POST(request: NextRequest) {
           approvedAmount: 0,
           updatedAt: now,
         };
+        writeAutomaticLeaveRefund(transaction, automaticRefund, actor);
         transaction.set(absenceRef, after);
         transaction.create(
           adminDb
@@ -739,6 +744,7 @@ export async function POST(request: NextRequest) {
           idempotent: false,
         };
       });
+      await ensurePekaryaAutoLeave(period, actor, ['SATPAM'], [employeeId]);
       return Response.json(scanResult, {
         headers: { 'Cache-Control': 'no-store' },
       });
@@ -1070,6 +1076,7 @@ export async function POST(request: NextRequest) {
         idempotent: false,
       };
     });
+    await ensurePekaryaAutoLeave(period, actor, ['SATPAM'], [employeeId]);
     await syncSatpamDutyReconciliation(period, actor.uid);
     return Response.json(result, {
       headers: { 'Cache-Control': 'no-store' },

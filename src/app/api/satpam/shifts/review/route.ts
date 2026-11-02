@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
+import { markAutoLeaveDirty, prepareAutomaticLeaveRefund, writeAutomaticLeaveRefund } from '@/lib/server/automaticLeavePosting';
+import { ensurePekaryaAutoLeave } from '@/lib/server/pekaryaAutoLeave';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import {
@@ -541,6 +543,10 @@ export async function POST(request: NextRequest) {
       const annualPaidLeaveSnapshots = secondarySnapshots.slice(
         guardIndexStart + reports.length + 1 + reports.length,
       );
+      const automaticRefunds = await Promise.all(reports.map((report, index) =>
+        command.decisions[index].action === 'approve'
+          ? prepareAutomaticLeaveRefund(transaction, String(report.employeeId), String(occurrence.dutyDate))
+          : Promise.resolve(null)));
 
       assertPeriodAcceptsInput(periodSnapshot.data());
       let latestPlanDay: SatpamDutyPlanDay | null = null;
@@ -677,6 +683,7 @@ export async function POST(request: NextRequest) {
 
       const now = admin.firestore.FieldValue.serverTimestamp();
       let approvedCount = 0;
+      markAutoLeaveDirty(transaction, period, 'SATPAM');
       let declinedCount = 0;
       const payClassificationWarnings: PayClassificationWarningDetail[] = [];
       const existingApprovedCount = Number(occurrence.approvedAssignmentCount || 0);
@@ -734,7 +741,7 @@ export async function POST(request: NextRequest) {
             doc.data().employeeId === before.employeeId && doc.data().dayOffDate === occurrence.dutyDate)) {
             throw new HttpError(409, 'Petugas memiliki ganti libur disetujui pada tanggal ini.');
           }
-          if (annualPaidLeaveSnapshots[index]?.data()?.status === 'approved') {
+          if (annualPaidLeaveSnapshots[index]?.data()?.status === 'approved' && !automaticRefunds[index]) {
             throw new HttpError(
               409,
               `${String(before.employeeName || before.employeeId)} memiliki cuti tahunan berbayar pada tanggal ini.`,
@@ -861,6 +868,7 @@ export async function POST(request: NextRequest) {
                 reviewRevision: Number(before.reviewRevision || 0) + 1,
               };
 
+        writeAutomaticLeaveRefund(transaction, automaticRefunds[index], actor);
         transaction.set(reportRefs[index], after);
 
         if (decision.action === 'approve') {
@@ -1028,6 +1036,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (result.period) {
+      await ensurePekaryaAutoLeave(result.period, actor, ['SATPAM']);
       await syncSatpamDutyReconciliation(result.period, actor.uid);
     }
     return Response.json(result, { headers: { 'Cache-Control': 'no-store' } });
@@ -1385,6 +1394,10 @@ export async function PUT(request: NextRequest) {
       const annualPaidLeaveByEmployeeId = new Map(
         annualPaidLeaveSnapshots.map((snapshot) => [snapshot.id, snapshot.data()]),
       );
+      const automaticEditRefunds = isApprovedEditBranch
+        ? await Promise.all(command.assignments.map((assignment) =>
+            prepareAutomaticLeaveRefund(transaction, assignment.employeeId, command.dutyDate)))
+        : [];
       if (isApprovedEditBranch) {
         for (const assignment of command.assignments) {
           const annualId = annualPaidLeaveDocumentId(
@@ -1395,7 +1408,8 @@ export async function PUT(request: NextRequest) {
             doc.data().employeeId === assignment.employeeId && doc.data().dayOffDate === command.dutyDate)) {
             throw new HttpError(409, 'Petugas memiliki ganti libur disetujui pada tanggal ini.');
           }
-          if (annualPaidLeaveByEmployeeId.get(annualId)?.status === 'approved') {
+          if (annualPaidLeaveByEmployeeId.get(annualId)?.status === 'approved' &&
+              annualPaidLeaveByEmployeeId.get(annualId)?.source !== 'auto_absence') {
             throw new HttpError(
               409,
               'Cuti tahunan berbayar sudah disetujui untuk salah satu petugas pada tanggal ini.',
@@ -1903,6 +1917,8 @@ export async function PUT(request: NextRequest) {
         ),
       );
       const retainedReportIds = new Set(reportIds);
+      markAutoLeaveDirty(transaction, period, 'SATPAM');
+      for (const refund of automaticEditRefunds) writeAutomaticLeaveRefund(transaction, refund, actor);
       const removedPendingSnapshots = isApprovedEditBranch
         ? []
         : oldReportSnapshots.filter(
@@ -2255,6 +2271,7 @@ export async function PUT(request: NextRequest) {
           ),
         ].filter(Boolean);
     for (const period of periodsToReconcile) {
+      await ensurePekaryaAutoLeave(period, actor, ['SATPAM']);
       await syncSatpamDutyReconciliation(period, actor.uid);
     }
     return Response.json(result, {

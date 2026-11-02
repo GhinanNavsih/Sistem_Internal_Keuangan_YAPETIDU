@@ -72,6 +72,7 @@ export interface AttendanceDayCorrection {
 }
 
 export interface EffectiveAttendanceDay {
+  annualPaidLeaveCredit?: { requestId: string; automatic: boolean };
   nipy: string;
   date: string;
   name: string;

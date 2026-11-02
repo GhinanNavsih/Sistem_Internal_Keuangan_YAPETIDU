@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
+import { markAutoLeaveDirty, prepareAutomaticLeaveRefund, writeAutomaticLeaveRefund } from '@/lib/server/automaticLeavePosting';
+import { ensurePekaryaAutoLeave } from '@/lib/server/pekaryaAutoLeave';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
   ATTENDANCE_PAYROLL_START_PERIOD,
@@ -215,6 +217,8 @@ export async function POST(request: NextRequest) {
           idempotent: true,
         };
       }
+      const automaticRefund = present !== false && (present === true || scanIn || scanOut)
+        ? await prepareAutomaticLeaveRefund(transaction, employeeId, date) : null;
       assertPeriodAcceptsInput(periodSnapshot.data());
       if (
         slipSnapshot.exists &&
@@ -228,7 +232,7 @@ export async function POST(request: NextRequest) {
       if (hasGantiLiburDayOff(gantiLiburSnapshot.docs.map((doc) => doc.data()), date, true)) {
         throw new HttpError(409, 'Ganti libur sudah disetujui pada tanggal ini.');
       }
-      if (present && annualPaidLeaveSnapshot.data()?.status === 'approved') {
+      if (present && annualPaidLeaveSnapshot.data()?.status === 'approved' && !automaticRefund) {
         throw new HttpError(
           409,
           'Cuti tahunan berbayar sudah disetujui pada tanggal ini.',
@@ -306,6 +310,7 @@ export async function POST(request: NextRequest) {
       }
       if (hasEffectiveScanIn) effective.scanIn = normalizedEffectiveScanIn;
       if (hasEffectiveScanOut) effective.scanOut = normalizedEffectiveScanOut;
+      if (automaticRefund && (!effective.workStatus || effective.workStatus === 'CUTI')) effective.workStatus = 'MASUK';
       const record = {
         period,
         category,
@@ -334,6 +339,8 @@ export async function POST(request: NextRequest) {
         actorName: actor.displayName,
         createdAt: now,
       };
+      writeAutomaticLeaveRefund(transaction, automaticRefund, actor);
+      markAutoLeaveDirty(transaction, period, category);
       transaction.create(correctionRef, record);
       transaction.set(headRef, {
         ...record,
@@ -493,6 +500,7 @@ export async function POST(request: NextRequest) {
         idempotent: false,
       };
     });
+    await ensurePekaryaAutoLeave(period, actor, [category], [employeeId]);
     return Response.json(result);
   } catch (error) {
     return errorResponse(error);

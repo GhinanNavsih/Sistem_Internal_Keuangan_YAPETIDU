@@ -1,4 +1,6 @@
-import { annualPaidLeaveEntitlementDays, isDateOnly } from './annualPaidLeave';
+import { isDateOnly } from './annualPaidLeave';
+import { planAutoAbsenceLeave, type AutoLeaveUncoveredReason } from './autoAbsenceLeave';
+export type { AutoLeavePlanInput, AutoLeavePlan, AutoLeaveUncoveredReason } from './autoAbsenceLeave';
 
 /**
  * Automatic cuti for a Loyalis who was absent on a working day without any
@@ -21,40 +23,9 @@ export const AUTO_ABSENCE_LEAVE_REASON = 'Tidak hadir pada hari kerja tanpa peng
 export const AUTO_ABSENCE_DECISION_REASON =
   'Cuti otomatis: saldo cuti dipakai untuk hari tidak hadir tanpa pengajuan.';
 
-export type AutoLeaveUncoveredReason = 'saldo_habis' | 'belum_berhak';
-
 export interface AutoLeaveDailyLog {
   Tanggal?: unknown;
   'Jam kerja'?: unknown;
-}
-
-export interface AutoLeavePlanInput {
-  period: string;
-  /** Loyalis date of hire / recognition, YYYY-MM-DD. */
-  serviceDate: string;
-  /** Working days marked absent in the saved presence, YYYY-MM-DD. */
-  absentDates: readonly string[];
-  /** Dates that already carry a leave submission or presence correction. */
-  blockedDates: ReadonlySet<string>;
-  /** Dates of this period already covered by an earlier automatic run. */
-  existingAutoDates: ReadonlySet<string>;
-  /** The year's balance, as stored (usedDays includes the existing auto days). */
-  balance: {
-    reservedDays: number;
-    usedDays: number;
-    manualUsedDays: number;
-  };
-}
-
-export interface AutoLeavePlan {
-  /** Newly covered days. */
-  cover: string[];
-  /** Automatic days that no longer apply: present now, submitted for, or out of balance. */
-  release: string[];
-  /** Automatic days that stay as they are. */
-  keep: string[];
-  /** Absent working days the balance could not cover. */
-  uncovered: Array<{ date: string; reason: AutoLeaveUncoveredReason }>;
 }
 
 /** "29-09-2026" (as stored in dailyLogs) to "2026-09-29", or '' when it is not one. */
@@ -97,42 +68,7 @@ export function autoLeaveAbsentDates(
  * off the top, so re-planning after a save changes nothing unless the presence
  * or the balance moved.
  */
-export function planLoyalisAutoLeave(input: AutoLeavePlanInput): AutoLeavePlan {
-  const empty: AutoLeavePlan = { cover: [], release: [], keep: [], uncovered: [] };
-  if (!isAutoLeavePeriod(input.period) || !isDateOnly(input.serviceDate)) return empty;
-
-  const nonAutoHeld = Math.max(
-    0,
-    input.balance.reservedDays +
-      input.balance.usedDays +
-      input.balance.manualUsedDays -
-      input.existingAutoDates.size,
-  );
-  const candidates = Array.from(new Set(input.absentDates))
-    .filter((date) => isDateOnly(date) && !input.blockedDates.has(date))
-    .sort();
-
-  const wanted = new Set<string>();
-  const uncovered: AutoLeavePlan['uncovered'] = [];
-  for (const date of candidates) {
-    const entitlement = annualPaidLeaveEntitlementDays(input.serviceDate, date);
-    if (entitlement === 0) {
-      uncovered.push({ date, reason: 'belum_berhak' });
-    } else if (nonAutoHeld + wanted.size >= entitlement) {
-      uncovered.push({ date, reason: 'saldo_habis' });
-    } else {
-      wanted.add(date);
-    }
-  }
-
-  const existing = Array.from(input.existingAutoDates).sort();
-  return {
-    cover: Array.from(wanted).filter((date) => !input.existingAutoDates.has(date)),
-    release: existing.filter((date) => !wanted.has(date)),
-    keep: existing.filter((date) => wanted.has(date)),
-    uncovered,
-  };
-}
+export const planLoyalisAutoLeave = planAutoAbsenceLeave;
 
 export interface AutoLeaveEmployeeResult {
   employeeId: string;
@@ -143,6 +79,10 @@ export interface AutoLeaveEmployeeResult {
   released: string[];
   /** Absent working days the balance could not cover. */
   uncovered: Array<{ date: string; reason: AutoLeaveUncoveredReason }>;
+  updated?: string[];
+  balance?: { entitlementDays: number; usedDays: number; reservedDays: number; availableDays: number };
+  /** Dates or employees awaiting reliable source evidence. */
+  held?: Array<{ date: string | null; reason: string }>;
   /** Why this employee was not processed, when that is the case. */
   skipped?: string;
   /** A processing error rather than an ineligible/finalized employee. */

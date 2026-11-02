@@ -1,6 +1,8 @@
 import { referralRecoveriesForSlip, assertReferralDeductions, referralEarningForSlip, assertReferralEarning } from '@/lib/server/loyalisReferralPayroll';
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
+import { ensurePekaryaAutoLeave } from '@/lib/server/pekaryaAutoLeave';
+import { assertAutoLeaveReady, autoLeaveStateRef } from '@/lib/server/automaticLeavePosting';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
   calculatePayrollTotals,
@@ -164,6 +166,14 @@ export async function POST(request: NextRequest) {
     requireRole(actor, FINANCE_ROLES);
     const command = parseCommand(await request.json());
     const slipId = `${command.period}_${command.employeeId}`;
+    const autoPeriod = command.period.replace('_', '-');
+    const autoEmployee = await adminDb.doc(`Employees_BlueCollar/${command.employeeId}`).get();
+    const autoCategory = autoEmployee.exists ? jobCategoryForPayrollPeriod(autoEmployee.data()!, autoPeriod).trim().toUpperCase() : null;
+    if (autoCategory && (isDraftWriteAction(command.action) || command.action === 'verify_and_lock')) {
+      await ensurePekaryaAutoLeave(autoPeriod, actor, [autoCategory], [command.employeeId]);
+      await assertAutoLeaveReady(autoPeriod, [autoCategory]);
+    }
+    const autoRevision = autoCategory ? Number((await autoLeaveStateRef(autoPeriod, autoCategory).get()).data()?.revision || 0) : null;
 
     if (command.action === 'verify_and_lock') {
       const result = await verifyAndLockWithKoperasi(command, actor);
@@ -236,6 +246,12 @@ export async function POST(request: NextRequest) {
       : null;
 
     const result = await adminDb.runTransaction(async (transaction) => {
+      if (autoCategory && isDraftWriteAction(command.action)) {
+        const state = await transaction.get(autoLeaveStateRef(autoPeriod, autoCategory));
+        if (state.data()?.dirty === true || Number(state.data()?.revision || 0) !== autoRevision) {
+          throw new HttpError(409, 'Cuti otomatis berubah; muat ulang perhitungan slip.');
+        }
+      }
       const slipRef = adminDb.collection('PayrollSlipStates').doc(slipId);
       const idempotencyRef = adminDb
         .collection('FinancialIdempotencyKeys')

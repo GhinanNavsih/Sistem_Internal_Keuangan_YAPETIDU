@@ -82,7 +82,10 @@ async function main() {
     await db.doc(`AttendanceImports/${period}`).set({ activeRevisionId: revisionId, activeRevision: 1 });
     await db.doc(`AttendanceImportRevisions/${revisionId}`).set({ fileHash: period });
     for (const fixture of fixtures) {
-      const dates = period === '2026-09' ? ['2026-09-18', '2026-09-25'] : ['2026-10-01', '2026-10-03'];
+      // These cases exercise explicit leave before the replacement-date file
+      // arrives. Confirmed raw absences now use cuti automatically (covered by
+      // testPekaryaAutoLeaveEmulator), so they are not manual-review fixtures.
+      const dates = period === '2026-09' ? ['2026-09-18', '2026-09-25'] : [];
       for (const date of dates) {
         const worked = date === '2026-09-25';
         await db.doc(`AttendanceImportRows/${fixture.employeeId}_${date}`).set({

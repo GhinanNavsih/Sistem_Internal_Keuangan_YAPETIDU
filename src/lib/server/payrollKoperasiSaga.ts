@@ -2,6 +2,7 @@ import { referralRecoveriesForSlip, assertReferralDeductions, settleReferralReco
 import { createHash } from 'node:crypto';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
+import { assertSlipAutoLeaveReady } from './automaticLeavePosting';
 import { calculatePayrollTotals, validateMoneyFields } from '@/lib/payroll/domain';
 import { recalculateSlipTaxes } from '@/lib/payroll/payrollTax';
 import { canVerifyPayroll } from '@/lib/payroll/roles';
@@ -184,6 +185,7 @@ export async function verifyAndLockWithKoperasi(
         transaction.get(blueRef),
         transaction.get(loyalisRef),
       ]);
+    await assertSlipAutoLeaveReady(transaction, blueSnapshot, command.period.replace('_', '-'));
     if (idempotencySnapshot.exists) {
       const previous = idempotencySnapshot.data()!;
       if (previous.requestHash !== commandHash || previous.entityId !== slipId) {
@@ -300,6 +302,7 @@ export async function verifyAndLockWithKoperasi(
         transaction.get(blueRef),
         transaction.get(loyalisRef),
       ]);
+    await assertSlipAutoLeaveReady(transaction, blueSnapshot, command.period.replace('_', '-'));
     if (idempotencySnapshot.exists) {
       const previous = idempotencySnapshot.data()!;
       if (previous.requestHash !== commandHash || previous.entityId !== slipId) {

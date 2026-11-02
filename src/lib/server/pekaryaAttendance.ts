@@ -656,7 +656,7 @@ export async function buildSatpamAttendanceDetails(
   const { identityIndex } = shared;
   const { days } = shared.effective;
   const { premiumDates, periodData } = shared.premium;
-  const [planSnapshot, reportSnapshot, absenceSnapshot, occurrenceSnapshot] =
+  const [planSnapshot, reportSnapshot, absenceSnapshot, occurrenceSnapshot, annualLeavePosts] =
     await Promise.all([
     adminDb
       .collection(SATPAM_DUTY_PLANS_COLLECTION)
@@ -693,6 +693,7 @@ export async function buildSatpamAttendanceDetails(
       .where('payrollPeriod', '==', period)
       .select()
       .get(),
+    adminDb.collection('AnnualPaidLeavePayrollPosts').where('period', '==', period).get(),
   ]);
   const submittedOccurrenceIds = new Set(
     occurrenceSnapshot.docs.map((document) => document.id),
@@ -823,6 +824,16 @@ export async function buildSatpamAttendanceDetails(
         approvedPayType: String(data.approvedPayType || '') || null,
         approvedAmount: Number(data.approvedAmount || 0),
       }));
+      for (const post of annualLeavePosts.docs) {
+        const data = post.data();
+        if (data.employeeId !== guard.employeeId || data.category !== 'SATPAM' || data.status !== 'posted') continue;
+        absences.push({ id: post.id, dutyDate: String(data.leaveDate),
+          shiftName: data.scheduledShift?.shiftName || planDaysByEmployee.get(guard.employeeId)?.find((day) => day.dutyDate === data.leaveDate)?.shiftName || null,
+          status: 'approved', reportType: 'izin_resmi', payable: true,
+          approvedPayType: String(data.payType), approvedAmount: Number(data.amount || 0),
+          leaveKind: 'annual_leave', automatic: data.source === 'auto_absence',
+          ...(data.scheduledShift ? { scheduledShift: data.scheduledShift } : {}) });
+      }
       return buildSatpamAttendanceDetail({
         employee: {
           employeeId: guard.employeeId,
@@ -1057,6 +1068,8 @@ export async function publishPekaryaAttendance(
   if (category === 'SATPAM') {
     throw new Error('Presensi Satpam hanya menjadi bukti dan tidak dipublikasikan sebagai upah.');
   }
+  const autoStateRef = adminDb.doc(`PekaryaAutoLeaveStates/${period.replace('-', '_')}__${category}`);
+  const expectedAutoRevision = Number((await autoStateRef.get()).data()?.revision || 0);
   const view = await buildPekaryaAttendanceView(period, category);
   const blocked = view.employees.filter((employee) => employee.publishBlocked);
   if (blocked.length > 0) {
@@ -1092,6 +1105,10 @@ export async function publishPekaryaAttendance(
     .collection('FinancialIdempotencyKeys')
     .doc(`${actorUid}__${requestId}`);
   return adminDb.runTransaction(async (transaction) => {
+    const autoState = await transaction.get(autoStateRef);
+    if (autoState.data()?.dirty === true || Number(autoState.data()?.revision || 0) !== expectedAutoRevision) {
+      throw new Error('Cuti otomatis berubah. Muat ulang sebelum publikasi.');
+    }
     const [
       publicationSnapshot,
       uraianSnapshot,

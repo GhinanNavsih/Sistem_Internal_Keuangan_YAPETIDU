@@ -1,3 +1,4 @@
+import { refreshEmployeeAutoLeaveHistory } from '@/lib/server/pekaryaAutoLeave';
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
@@ -536,6 +537,7 @@ export async function POST(request: NextRequest) {
         idempotent: false,
       };
     });
+    await refreshEmployeeAutoLeaveHistory(actor.linkedEmployeeId!, actor);
     return Response.json(result, {
       headers: { 'Cache-Control': 'no-store' },
     });

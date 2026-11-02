@@ -1,3 +1,4 @@
+import { refreshEmployeeAutoLeaveHistory } from '@/lib/server/pekaryaAutoLeave';
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
@@ -769,6 +770,7 @@ export async function POST(request: NextRequest) {
       };
     });
 
+    if (employee.kind === 'blue_collar') await refreshEmployeeAutoLeaveHistory(employee.id, actor);
     let reconciliationWarning: string | null = null;
     if (approving && isSatpam && !result.idempotent) {
       try {

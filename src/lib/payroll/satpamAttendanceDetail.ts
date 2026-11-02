@@ -29,6 +29,9 @@ export type SatpamAttendanceDetailStatus =
   | 'scan_only';
 
 export interface SatpamAttendanceDetailRow {
+  leaveKind?: 'annual_leave';
+  automaticAnnualLeave?: boolean;
+  scanOutDate?: string;
   key: string;
   date: string;
   shiftName: SatpamShiftName | null;
@@ -94,6 +97,9 @@ export interface SatpamDetailReport {
 }
 
 export interface SatpamDetailAbsence {
+  leaveKind?: 'annual_leave';
+  automatic?: boolean;
+  scheduledShift?: import('./pekaryaAutoLeave').AutoLeaveScheduledShift;
   id: string;
   dutyDate: string;
   shiftName: string | null;
@@ -251,10 +257,11 @@ export function buildSatpamAttendanceDetail(
 
   for (const date of Array.from(dates).sort()) {
     const plan = planByDate.get(date);
-    const leave = leaveByDate.get(date);
+    const recordedLeave = leaveByDate.get(date);
     const report = [...(regularReportsByDate.get(date) || [])].sort(
       (left, right) => reportRank(left) - reportRank(right),
     )[0];
+    const leave = recordedLeave?.automatic && report?.status === 'approved' ? undefined : recordedLeave;
     const scan = scanDays.get(date);
     const hasScan = Boolean(scan?.scanIn || scan?.scanOut);
     const shiftName =
@@ -297,7 +304,13 @@ export function buildSatpamAttendanceDetail(
         : hasScan
           ? 'Ada scan kehadiran pada tanggal izin yang disetujui.'
           : null;
-      rows.push({ ...base, payType: paid.payType, amount: paid.amount, status: 'leave', warning });
+      const annual = leave.leaveKind === 'annual_leave';
+      const scheduled = leave.scheduledShift;
+      rows.push({ ...base, payType: paid.payType, amount: paid.amount, status: 'leave', warning,
+        ...(annual ? { leaveKind: 'annual_leave' as const, automaticAnnualLeave: leave.automatic === true,
+          scanIn: scheduled?.startsAtIso.slice(11, 16) || base.expectedScanIn,
+          scanOut: scheduled?.endsAtIso.slice(11, 16) || base.expectedScanOut,
+          ...(scheduled ? { scanOutDate: scheduled.endsAtIso.slice(0, 10) } : {}) } : {}) });
     } else if (report?.status === 'approved') {
       rows.push({
         ...base,

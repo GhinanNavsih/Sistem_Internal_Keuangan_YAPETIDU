@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
+import { markAutoLeaveDirty } from '@/lib/server/automaticLeavePosting';
+import { ensurePekaryaAutoLeave, permittedAutoLeaveCategories } from '@/lib/server/pekaryaAutoLeave';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
   ATTENDANCE_PAYROLL_START_PERIOD,
@@ -157,6 +159,7 @@ export async function POST(request: NextRequest) {
       }
       assertPeriodAcceptsInput(periodSnapshot.data());
       const now = admin.firestore.FieldValue.serverTimestamp();
+      markAutoLeaveDirty(transaction, period, target.category);
       transaction.set(linkRef, {
         period,
         sourceKey,
@@ -217,6 +220,7 @@ export async function POST(request: NextRequest) {
       );
     });
 
+    await ensurePekaryaAutoLeave(period, actor, permittedAutoLeaveCategories(actor));
     return Response.json(
       { linked: true, employeeId, sourceKey, dates: sourceRow.dates },
       { status: 201 },
@@ -273,6 +277,7 @@ export async function DELETE(request: NextRequest) {
         : null;
       const now = admin.firestore.FieldValue.serverTimestamp();
       transaction.delete(linkRef);
+      markAutoLeaveDirty(transaction, period, category);
       if (publicationRef && publicationSnapshot?.exists) {
         transaction.update(publicationRef, {
           state: 'stale',
@@ -294,6 +299,7 @@ export async function DELETE(request: NextRequest) {
       );
     });
 
+    await ensurePekaryaAutoLeave(period, actor, permittedAutoLeaveCategories(actor));
     return Response.json({ removed: true, sourceKey });
   } catch (error) {
     return errorResponse(error);

@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
+import { ensurePekaryaAutoLeave } from '@/lib/server/pekaryaAutoLeave';
+import { assertAutoLeaveReady } from '@/lib/server/automaticLeavePosting';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import {
@@ -135,6 +137,7 @@ export async function POST(request: NextRequest) {
       .collection('PayrollPeriods')
       .doc(period)
       .get();
+    let autoCloseStates: FirebaseFirestore.DocumentSnapshot[] = [];
     if (
       attendanceStatus === 'closed' &&
       isPeriodClosed(currentPeriodSnapshot.data()) &&
@@ -153,6 +156,8 @@ export async function POST(request: NextRequest) {
       attendanceStatus === 'closed' &&
       period >= ATTENDANCE_PAYROLL_START_PERIOD
     ) {
+      await ensurePekaryaAutoLeave(period, actor);
+      autoCloseStates = await assertAutoLeaveReady(period, ['SATPAM', 'SOPIR', 'PEKARYA', 'TEKNISI', 'KEBERSIHAN', 'KEBERSIHAN_PONTI', 'PONTI']);
       const [
         periodBeforeClose,
         attendanceImport,
@@ -328,6 +333,11 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await adminDb.runTransaction(async (transaction) => {
+      const latestAutoStates = await Promise.all(autoCloseStates.map((state) => transaction.get(state.ref)));
+      if (latestAutoStates.some((state, index) => state.data()?.dirty === true ||
+          Number(state.data()?.revision || 0) !== Number(autoCloseStates[index].data()?.revision || 0))) {
+        throw new HttpError(409, 'Presensi atau cuti otomatis berubah sebelum penutupan. Ulangi rekonsiliasi.');
+      }
       const periodRef = adminDb.collection('PayrollPeriods').doc(period);
       const calendarRef = adminDb
         .collection('PayrollHolidayCalendars')
@@ -601,6 +611,7 @@ export async function POST(request: NextRequest) {
       return after;
     });
 
+    if (attendanceStatus === 'open') await ensurePekaryaAutoLeave(period, actor);
     return Response.json(result, {
       status:
         'idempotent' in result && result.idempotent === true ? 200 : 201,

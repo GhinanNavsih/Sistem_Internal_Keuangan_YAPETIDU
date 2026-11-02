@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
+import { ensurePekaryaAutoLeave } from '@/lib/server/pekaryaAutoLeave';
 import { ATTENDANCE_PAYROLL_START_PERIOD } from '@/lib/payroll/attendance';
 import { assertRequestId } from '@/lib/payroll/domain';
 import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
@@ -68,6 +69,7 @@ export async function POST(request: NextRequest) {
             typeof warning === 'string' && warning.length <= 100,
         )
       : [];
+    await ensurePekaryaAutoLeave(period, actor, publishCategories);
     const requestHash = createHash('sha256')
       .update(JSON.stringify({ period, category, acknowledgedWarnings }))
       .digest('hex');

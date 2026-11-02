@@ -1,3 +1,4 @@
+import { ensurePekaryaAutoLeave } from '@/lib/server/pekaryaAutoLeave';
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
@@ -738,7 +739,7 @@ async function mutateShift(
     .collection(SATPAM_SHIFT_DRAFTS_COLLECTION)
     .doc(satpamShiftDraftDocumentId(actor.linkedEmployeeId, command.dutyDate));
 
-  return adminDb.runTransaction(async (transaction) => {
+  const result = await adminDb.runTransaction(async (transaction) => {
     const occurrenceRef = adminDb.collection('ShiftOccurrences').doc(occurrenceId);
     const periodRef = adminDb.collection('PayrollPeriods').doc(period);
     const holidayRef = adminDb
@@ -1173,6 +1174,8 @@ async function mutateShift(
 
     return { occurrenceId, revision, anomalies, idempotent: false };
   });
+  await ensurePekaryaAutoLeave(period, actor, ['SATPAM']);
+  return result;
 }
 
 function serializeSatpamDraft(

@@ -1,3 +1,4 @@
+import { refreshEmployeeAutoLeaveHistory } from '@/lib/server/pekaryaAutoLeave';
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
@@ -229,7 +230,8 @@ export async function POST(request: NextRequest) {
         });
         return { id: requestDocumentId, status: 'withdrawn', idempotent: false };
       });
-      return Response.json(result, { headers: { 'Cache-Control': 'no-store' } });
+      if (employee.kind === 'blue_collar') await refreshEmployeeAutoLeaveHistory(employee.id, actor);
+    return Response.json(result, { headers: { 'Cache-Control': 'no-store' } });
     }
 
     const dayOffDate = parseDate(body.dayOffDate, 'Tanggal ganti libur');
@@ -407,6 +409,7 @@ export async function POST(request: NextRequest) {
       return { id: requestDocumentId, status: 'pending', revision, idempotent: false };
     });
 
+    if (employee.kind === 'blue_collar') await refreshEmployeeAutoLeaveHistory(employee.id, actor);
     return Response.json(result, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return errorResponse(error);

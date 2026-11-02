@@ -99,6 +99,7 @@ const SATPAM_ABSENCE_TYPE_OPTIONS = [
 ] as const;
 
 type AttendanceDay = {
+  annualPaidLeaveCredit?: { requestId: string; automatic: boolean };
   date: string;
   workStatus: string;
   scanIn: string | null;
@@ -192,6 +193,7 @@ type AttendanceView = {
   officialLeaves: PekaryaOfficialLeaveRequest[];
   /** Review-only Satpam cards, present on "Semua Pekarya" for accounts that may see Satpam. */
   satpamAttendance?: { employees: SatpamAttendanceDetailEmployee[] } | null;
+  autoLeave?: import('@/lib/payroll/loyalisAutoLeave').AutoLeaveSummary;
 };
 
 type SatpamAbsenceAdminView = {
@@ -1639,6 +1641,11 @@ export default function PekaryaAttendancePage() {
       controller.abort();
     }, LOAD_TIMEOUT_MS);
     try {
+      if (canEdit && period >= '2026-09') {
+        await authenticatedJson('/api/attendance/pekarya/auto-leave', {
+          method: 'POST', body: JSON.stringify({ period, category }), signal,
+        });
+      }
       const paidLeavesPromise = authenticatedJson<{ requests: AnnualPaidLeaveRequest[] }>(
         `/api/payroll/paid-leave/review?year=${year}&period=${encodeURIComponent(period)}&status=all`,
         { signal },
@@ -2387,6 +2394,28 @@ export default function PekaryaAttendancePage() {
         </div>
       )}
 
+      {!loading && data?.autoLeave && data.autoLeave.results.length > 0 && (
+        <details className="rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm">
+          <summary className="cursor-pointer font-semibold text-emerald-900">Cuti otomatis dan saldo cuti
+            {data.autoLeave.results.some((item) => item.held?.length) && (
+              <span className="ml-2 text-amber-800">· {data.autoLeave.results.filter((item) => item.held?.length).length} pegawai menunggu pemeriksaan</span>
+            )}
+          </summary>
+          <div className="mt-3 space-y-3">
+            {data.autoLeave.results.map((item) => (
+              <div key={item.employeeId || item.employeeName}>
+                <p className="font-semibold">{item.employeeName}{item.balance ? ` · Sisa cuti ${item.balance.availableDays} hari` : ''}</p>
+                {item.covered.length > 0 && <p>Cuti otomatis: {item.covered.join(', ')}</p>}
+                {item.released.length > 0 && <p>Dikembalikan: {item.released.join(', ')}</p>}
+                {item.uncovered.length > 0 && <p>Tetap tidak hadir: saldo habis atau belum berhak ({item.uncovered.length} hari).</p>}
+                {item.skipped && <p>{item.skipped}</p>}
+                {item.held && item.held.length > 0 && <p className="text-amber-800">Menunggu pemeriksaan: {[...new Set(item.held.map((held) => held.reason))].join(' ')}</p>}
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
       {!loading && data && canLinkAttendance && unroutedUnmatched.length > 0 && (
         <UnroutedAttendanceRows
           rows={unroutedUnmatched}
@@ -2860,7 +2889,9 @@ export default function PekaryaAttendancePage() {
                                         : 'bg-slate-100 text-slate-600'
                                     }`}
                                   >
-                                    {day.workStatus === 'IZIN RESMI'
+                                    {day.workStatus === 'CUTI'
+                                      ? day.annualPaidLeaveCredit?.automatic ? 'CUTI · Otomatis' : 'CUTI'
+                                      : day.workStatus === 'IZIN RESMI'
                                       ? 'Izin Resmi'
                                       : day.corrected
                                       ? 'Dikoreksi'

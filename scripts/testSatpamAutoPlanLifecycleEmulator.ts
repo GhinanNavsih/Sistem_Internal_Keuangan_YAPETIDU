@@ -160,6 +160,9 @@ async function main() {
   });
   await db.doc(`UraianGaji/${periodToken}_SATPAM`).set({ entries: {} });
   await db.doc(`AttendanceImports/${period}`).set({ activeRevisionId: 'revision-1', activeRevision: 1 });
+  // Source readers require a real revision even when this lifecycle fixture
+  // deliberately has no fingerprint rows (approved reports supply its pay).
+  await db.doc('AttendanceImportRevisions/revision-1').set({ period, revision: 1, status: 'active' });
   // Loyalis conditions for closing, met by a month with no Loyalis on the roster.
   for (const month of bonusTriwulanWindow(period)) {
     await db.doc(`LoyalisPresence/${month.replace('-', '_')}`).set({

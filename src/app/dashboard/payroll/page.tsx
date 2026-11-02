@@ -1814,6 +1814,9 @@ export default function PayrollValidationDashboard() {
     const periodToken = `${targetDate.getFullYear()}-${String(
       targetDate.getMonth() + 1,
     ).padStart(2, '0')}`;
+    await authenticatedJson('/api/attendance/pekarya/auto-leave', {
+      method: 'POST', body: JSON.stringify({ period: periodToken, category: 'ALL' }),
+    });
     const result = await authenticatedJson<{
       previews: Record<string, PekaryaSlipPreview>;
     }>(`/api/payroll/slip-preview?period=${periodToken}`);

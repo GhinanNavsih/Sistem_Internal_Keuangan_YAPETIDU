@@ -649,6 +649,7 @@ export async function buildSatpamDutyReconciliation(
 export async function syncSatpamDutyReconciliation(
   period: string,
   actorUid = 'system',
+  options: { autoLeaveRevision?: number } = {},
 ): Promise<SatpamDutyReconciliationView> {
   const view = await buildSatpamDutyReconciliation(period);
   const rates = satpamRatesForPeriod(period);
@@ -684,9 +685,11 @@ export async function syncSatpamDutyReconciliation(
       ...view.plans.flatMap((plan) => plan.employees.map((employee) => employee.employeeId)),
       ...view.unassignedExternalEmployees.map((employee) => employee.employeeId),
     ]));
-    const [periodSnapshot, uraianSnapshot, ...slipSnapshots] = await Promise.all([
+    const autoLeaveStateRef = adminDb.doc(`PekaryaAutoLeaveStates/${period.replace('-', '_')}__SATPAM`);
+    const [periodSnapshot, uraianSnapshot, autoLeaveState, ...slipSnapshots] = await Promise.all([
       transaction.get(periodRef),
       transaction.get(uraianRef),
+      transaction.get(autoLeaveStateRef),
       ...employeeIds.map((id) => transaction.get(adminDb.doc(`PayrollSlipStates/${period.replace('-', '_')}_${id}`))),
     ]);
     const immutableEmployeeIds = new Set(employeeIds.filter((_, index) => isImmutablePayrollStatus(slipSnapshots[index]?.data()?.status)));
@@ -715,8 +718,11 @@ export async function syncSatpamDutyReconciliation(
         );
       }
     }
-    if (!uraianSnapshot.exists) return;
-    const uraian = uraianSnapshot.data()!;
+    if (options.autoLeaveRevision !== undefined && Number(autoLeaveState.data()?.revision || 0) !== options.autoLeaveRevision) {
+      throw new Error('Kredit cuti Satpam berubah saat rekonsiliasi; ulangi sinkronisasi.');
+    }
+    if (!uraianSnapshot.exists && options.autoLeaveRevision === undefined) return;
+    const uraian = uraianSnapshot.data() || {};
     // July 2026 is a paper-based Satpam pilot. Once an authorised Satker
     // user saves the manual bonus column, later duty-plan reconciliation must
     // refresh shift counts without replacing that explicit 0/1 decision.
@@ -904,14 +910,19 @@ export async function syncSatpamDutyReconciliation(
         },
       };
     }
-    transaction.update(uraianRef, {
+    transaction.set(uraianRef, {
+      period,
+      jobCategory: 'SATPAM',
       entries,
       satpamDutyReconciliation: {
         generatedAtIso: view.generatedAtIso,
         blockerCount: view.blockers.length,
       },
       updatedAt: now,
-    });
+    }, { merge: true });
+    if (options.autoLeaveRevision !== undefined) transaction.set(autoLeaveStateRef, {
+      dirty: false, derivedRevision: options.autoLeaveRevision, reconciledAt: now,
+    }, { merge: true });
   });
   return view;
 }
@@ -1254,6 +1265,9 @@ export async function publishSatpamDutyPlan(input: {
       schemaVersion: SATPAM_DUTY_PLAN_SCHEMA_VERSION,
     };
     transaction.set(planRef, after);
+    if (period >= '2026-09') transaction.set(adminDb.doc(`PekaryaAutoLeaveStates/${period.replace('-', '_')}__SATPAM`), {
+      period, category: 'SATPAM', dirty: true, revision: admin.firestore.FieldValue.increment(1),
+    }, { merge: true });
     transaction.create(
       adminDb
         .collection(SATPAM_DUTY_PLAN_REVISIONS_COLLECTION)
@@ -1327,6 +1341,10 @@ export async function publishSatpamDutyPlan(input: {
     });
   }
   await syncSatpamDutyReconciliation(period, actor.uid);
+  if (!input.autoPublished) {
+    const { ensurePekaryaAutoLeave } = await import('./pekaryaAutoLeave');
+    await ensurePekaryaAutoLeave(period, { ...actor, displayName: 'Rekonsiliasi jadwal dinas', permittedCategories: ['SATPAM'] }, ['SATPAM']);
+  }
   return result;
 }
 

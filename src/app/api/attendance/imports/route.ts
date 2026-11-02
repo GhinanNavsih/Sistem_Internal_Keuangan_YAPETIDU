@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
+import { markAutoLeaveDirty } from '@/lib/server/automaticLeavePosting';
+import { PEKARYA_JOB_CATEGORIES } from '@/lib/payroll/pekaryaSpj';
+import { reconcilePekaryaAutoLeave } from '@/lib/server/pekaryaAutoLeave';
 import admin, { adminDb, adminStorage } from '@/lib/firebase-admin';
 import {
   ATTENDANCE_PAYROLL_START_PERIOD,
@@ -537,6 +540,7 @@ export async function POST(request: NextRequest) {
         const calendarRevision = Number(
           periodLatest.data()?.workCalendar?.revision || 1,
         );
+        for (const category of PEKARYA_JOB_CATEGORIES) markAutoLeaveDirty(transaction, period, category);
         transaction.set(rootRef, {
           period,
           activeRevision: claim.revision,
@@ -615,9 +619,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const autoLeave = await reconcilePekaryaAutoLeave(period, actor);
     return Response.json(
       {
         ...preview,
+        autoLeave,
+        autoLeavePending: autoLeave.results.some((item) => item.failed),
         activeRevision: claim.revision,
         activeRevisionId: claim.revisionId,
         idempotent: claim.idempotent,

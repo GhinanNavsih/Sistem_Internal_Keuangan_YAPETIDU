@@ -38,6 +38,7 @@ import {
   normalizeSatpamUraianEntry,
 } from '@/lib/payroll/satpamCompensation';
 import { categoryUsesAttendanceImport } from '@/utils/rekapConfig';
+import { autoLeaveStateRef } from './automaticLeavePosting';
 import { RekapColumn, SalaryMatrix, UraianEntry } from '@/types';
 
 /**
@@ -192,7 +193,8 @@ async function loadCategoryAttendanceState(
       (periodData?.workCalendar as { revision?: unknown } | undefined)
         ?.revision || 1,
     );
-    const satisfied =
+    const autoLeaveState = await autoLeaveStateRef(period, category).get();
+    const satisfied = autoLeaveState.data()?.dirty !== true &&
       Boolean(activeImportRevisionId) &&
       publicationSnapshot.exists &&
       publication?.state === 'published' &&
@@ -204,7 +206,7 @@ async function loadCategoryAttendanceState(
       gate: {
         required: true,
         satisfied,
-        reason: satisfied
+        reason: autoLeaveState.data()?.dirty === true ? 'Rekonsiliasi cuti otomatis belum selesai.' : satisfied
           ? undefined
           : `Presensi ${category} belum dipublikasikan pada revisi import dan kalender terbaru.`,
       },
@@ -214,6 +216,7 @@ async function loadCategoryAttendanceState(
   }
 
   if (category === 'SATPAM' && isSatpamDutyPlanRequired(period, periodData)) {
+    const autoLeaveState = await autoLeaveStateRef(period, category).get();
     const blockerCount = asNumber(
       (uraianData?.satpamDutyReconciliation as { blockerCount?: unknown } | undefined)
         ?.blockerCount,
@@ -225,9 +228,9 @@ async function loadCategoryAttendanceState(
         // satpamDutySource warning after this period-wide verdict. It still
         // exposes the Rekap shift columns provisionally while this gate is
         // pending, but keeps slip creation blocked.
-        satisfied: blockerCount === 0,
+        satisfied: blockerCount === 0 && autoLeaveState.data()?.dirty !== true,
         reason:
-          blockerCount === 0
+          blockerCount === 0 && autoLeaveState.data()?.dirty !== true
             ? undefined
             : 'Rekonsiliasi kewajiban dinas dan bonus Satpam belum final.',
       },

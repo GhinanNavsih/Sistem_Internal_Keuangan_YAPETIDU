@@ -201,8 +201,8 @@ export function SatpamAttendanceDetailCard({
             </p>
           )}
           <p className="mb-3 text-xs text-slate-500">
-            Upah Satpam dihitung dari laporan shift dan izin resmi yang
-            disetujui, bukan dari scan. Scan ditampilkan sebagai bukti kehadiran.
+            Upah Satpam mengikuti laporan shift, cuti, dan izin resmi yang
+            disetujui. Jam pada hari cuti mengikuti jadwal dinas.
           </p>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[700px] text-sm">
@@ -229,7 +229,9 @@ export function SatpamAttendanceDetailCard({
                   </tr>
                 )}
                 {employee.days.map((row) => {
-                  const badge = STATUS_BADGE[row.status];
+                  const badge = row.leaveKind === 'annual_leave'
+                    ? { ...STATUS_BADGE.leave, label: row.automaticAnnualLeave ? 'CUTI · Otomatis' : 'CUTI' }
+                    : STATUS_BADGE[row.status];
                   const reviewable = Boolean(
                     row.pendingAbsenceId && canReviewAbsence(row.pendingAbsenceId),
                   );
@@ -241,7 +243,9 @@ export function SatpamAttendanceDetailCard({
                         <ShiftTypeCell row={row} />
                       </td>
                       <td className="p-3">{row.scanIn || '—'}</td>
-                      <td className="p-3">{row.scanOut || '—'}</td>
+                      <td className="p-3">{row.scanOut || '—'}{row.scanOutDate && row.scanOutDate !== row.date && (
+                        <span className="block text-xs text-slate-500">{row.scanOutDate}</span>
+                      )}</td>
                       <td className="p-3">
                         {row.amount > 0 ? (
                           <span className="font-semibold">{rupiah(row.amount)}</span>

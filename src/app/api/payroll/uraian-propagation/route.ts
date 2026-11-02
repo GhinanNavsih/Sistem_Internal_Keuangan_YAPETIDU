@@ -35,6 +35,8 @@ import {
   type AuthenticatedProfile,
 } from '@/lib/server/auth';
 import { reconcileAndLoadLoyalisPresence } from '@/lib/server/loyalisPresence';
+import { ensurePekaryaAutoLeave } from '@/lib/server/pekaryaAutoLeave';
+import { assertAutoLeaveReady, autoLeaveStateRef } from '@/lib/server/automaticLeavePosting';
 import { employeeInPayrollPeriod } from '@/lib/employeeConversion';
 
 export const dynamic = 'force-dynamic';
@@ -266,6 +268,13 @@ export async function POST(request: NextRequest) {
     const command = parseCommand(await request.json());
     assertCategoryAllowed(actor, command);
 
+    let expectedAutoRevision = 0;
+    if (command.scope === 'pekarya') {
+      await ensurePekaryaAutoLeave(command.periodToken, actor, [command.jobCategory]);
+      await assertAutoLeaveReady(command.periodToken, [command.jobCategory]);
+      expectedAutoRevision = Number((await autoLeaveStateRef(command.periodToken, command.jobCategory).get()).data()?.revision || 0);
+    }
+
     const targets =
       command.scope === 'pekarya'
         ? await collectPekaryaTargets(command)
@@ -276,6 +285,12 @@ export async function POST(request: NextRequest) {
     for (let offset = 0; offset < targets.length; offset += CHUNK_SIZE) {
       const chunk = targets.slice(offset, offset + CHUNK_SIZE);
       const chunkOutcomes = await adminDb.runTransaction(async (transaction) => {
+        if (command.scope === 'pekarya') {
+          const state = await transaction.get(autoLeaveStateRef(command.periodToken, command.jobCategory));
+          if (state.data()?.dirty === true || Number(state.data()?.revision || 0) !== expectedAutoRevision) {
+            throw new HttpError(409, 'Cuti otomatis berubah; ulangi pembaruan slip.');
+          }
+        }
         const slipRefs = chunk.map((target) =>
           adminDb
             .collection('PayrollSlipStates')

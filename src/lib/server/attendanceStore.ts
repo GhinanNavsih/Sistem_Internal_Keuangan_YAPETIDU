@@ -20,6 +20,7 @@ import {
   type DriverJourneyInterval,
 } from '@/lib/payroll/driverJourneyAttendance';
 import { MANUAL_OVERRIDES, normalizeName } from '@/lib/payroll/employeeNames';
+import { applyAutomaticPekaryaLeave, type AutomaticAttendanceCredit } from '@/lib/payroll/pekaryaAutoLeave';
 
 export const ATTENDANCE_IMPORTS_COLLECTION = 'AttendanceImports';
 export const ATTENDANCE_REVISIONS_COLLECTION = 'AttendanceImportRevisions';
@@ -405,6 +406,7 @@ export async function markDriverAttendancePublicationsStale(
     }
   }
   const marked: string[] = [];
+  const { ensurePekaryaAutoLeave } = await import('./pekaryaAutoLeave');
   for (const period of periods) {
     if (period < DRIVER_JOURNEY_ATTENDANCE_START_PERIOD) continue;
     const [periodSnapshot, publicationSnapshot] = await Promise.all([
@@ -415,6 +417,8 @@ export async function markDriverAttendancePublicationsStale(
         .get(),
     ]);
     if (periodSnapshot.data()?.attendanceStatus === 'closed') continue;
+    await ensurePekaryaAutoLeave(period, { uid: 'system:driver-attendance', role: 'super_admin', email: null,
+      displayName: 'Rekonsiliasi presensi perjalanan', permittedCategories: [] }, ['SOPIR']);
     const publication = publicationSnapshot.data();
     if (!publication || publication.state !== 'published' || publication.stale === true) {
       continue;
@@ -434,6 +438,8 @@ export async function loadEffectiveAttendanceDays(
   period: string,
   options: {
     allowMissingActiveImport?: boolean;
+    /** The reconciler needs actual attendance before its own cuti overlay. */
+    includeAutomaticLeave?: boolean;
     /**
      * Supplying the identity index turns on the name fallback for rows the
      * file mis-identifies. Only the Pekarya pipeline passes it.
@@ -535,7 +541,7 @@ export async function loadEffectiveAttendanceDays(
       corrections,
     );
   // There is nothing for a journey to complement until a monthly file is active.
-  const days =
+  const baseDays =
     wantsDriverJourneys && importData.activeRevisionId && driverJourneys.length > 0
       ? applyDriverJourneyCredits({
           days: consolidatedDays,
@@ -553,6 +559,15 @@ export async function loadEffectiveAttendanceDays(
           correctedKeys: new Set(corrections.keys()),
         })
       : consolidatedDays;
+  const automaticPosts = identities && options.includeAutomaticLeave !== false
+    ? await adminDb.collection('AnnualPaidLeavePayrollPosts').where('period', '==', period).get()
+    : null;
+  const days = automaticPosts
+    ? applyAutomaticPekaryaLeave(baseDays,
+        automaticPosts.docs.map((document) => document.data() as AutomaticAttendanceCredit),
+        new Map((identities?.identities || []).map((identity) =>
+          [identity.employeeId, attendanceJoinNipy(identity)])))
+    : baseDays;
   return {
     days,
     rows: linkedRows,

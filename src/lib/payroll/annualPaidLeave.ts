@@ -19,6 +19,7 @@ export type AnnualPaidLeaveStatus =
 export type AnnualPaidLeavePayType = 'Harian' | 'Jumat & Libur';
 
 export interface AnnualPaidLeaveRequest extends LeaveTypeChangeHistory {
+  scheduledShift?: import('./pekaryaAutoLeave').AutoLeaveScheduledShift;
   id: string;
   employeeId: string;
   employeeName: string;

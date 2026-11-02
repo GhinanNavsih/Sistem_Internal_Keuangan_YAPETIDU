@@ -186,7 +186,14 @@ export async function GET(request: NextRequest) {
             .collection(PEKARYA_OFFICIAL_LEAVE_REQUESTS_COLLECTION)
             .where('period', '==', period)
             .get();
+    const autoLeaveStates = await adminDb.collection('PekaryaAutoLeaveStates').where('period', '==', period).get();
+    const autoLeaveResults = autoLeaveStates.docs.filter((doc) => {
+      const itemCategory = String(doc.data().category);
+      return (category === ALL_BLUE_COLLAR_CATEGORY || category === itemCategory) &&
+        (actor.role !== 'satker_head' || actor.permittedCategories.includes(itemCategory));
+    }).flatMap((doc) => doc.data().summary?.results || []);
     return Response.json({
+      autoLeave: { period, applicable: period >= '2026-09', results: autoLeaveResults },
       ...restrictUnrouted(result, actor),
       ...(satpamAttendance ? { satpamAttendance } : {}),
       officialLeaves:
