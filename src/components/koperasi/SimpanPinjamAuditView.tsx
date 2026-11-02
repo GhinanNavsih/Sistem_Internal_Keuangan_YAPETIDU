@@ -303,7 +303,7 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
         
         {/* Header navigation bar */}
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Audit Simpan Pinjam Koperasi</h1>
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Audit Simpan Pinjam Koperasi</h1>
         </div>
 
         {/* Stats Metrics Cards */}

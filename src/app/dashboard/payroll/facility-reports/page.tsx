@@ -628,7 +628,7 @@ function FacilityReportReviewContent() {
               <Wrench className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl lg:text-3xl">
+              <h1 className="text-3xl font-bold tracking-tight text-slate-900">
                 Review Kondisi Fasilitas
               </h1>
             </div>

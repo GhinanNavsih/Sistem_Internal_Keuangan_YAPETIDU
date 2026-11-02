@@ -639,7 +639,7 @@ function JourneyDashboardContent() {
               <span className="text-[10px] font-bold text-slate-400">Memuat data...</span>
             )}
           </div>
-          <h1 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+          <h1 className="text-3xl font-black text-slate-800 tracking-tight flex items-center gap-2">
             <span className={`inline-flex items-center justify-center w-7 h-7 rounded-lg ${accentStyles.iconBg}`}>
               <ActiveCategoryIcon className="w-4 h-4" />
             </span>

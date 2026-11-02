@@ -366,7 +366,7 @@ export default function SimulasiPerjalananPage() {
         {!editor ? (
           <>
             <div className="mb-5 flex items-center justify-between gap-3">
-              <h1 className="text-lg font-semibold text-slate-900">Simulasi Biaya Perjalanan</h1>
+              <h1 className="text-3xl font-semibold text-slate-900">Simulasi Biaya Perjalanan</h1>
               <Button type="button" variant="accent" onClick={openNew}>
                 <Plus />
                 Simulasi baru

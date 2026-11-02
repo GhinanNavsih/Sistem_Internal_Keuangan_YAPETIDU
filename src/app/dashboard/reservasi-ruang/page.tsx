@@ -331,7 +331,7 @@ function ReservationsContent() {
               <CalendarCheck className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl lg:text-3xl">Reservasi Ruang</h1>
+              <h1 className="text-3xl font-bold tracking-tight text-slate-900">Reservasi Ruang</h1>
             </div>
           </div>
           <div className="flex shrink-0 gap-2">

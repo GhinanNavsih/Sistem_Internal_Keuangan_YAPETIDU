@@ -179,7 +179,7 @@ export default function VenueInspectionPage() {
       <div className="mx-auto w-full max-w-5xl px-3 py-5 sm:px-6 sm:py-6">
         {!isFieldStaff && (
           <div className="mb-5">
-            <h1 className="text-lg font-semibold text-slate-900">Pemeriksaan Ruang</h1>
+            <h1 className="text-3xl font-semibold text-slate-900">Pemeriksaan Ruang</h1>
           </div>
         )}
 

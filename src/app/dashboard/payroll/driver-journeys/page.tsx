@@ -1656,7 +1656,7 @@ function DriverJourneysContent() {
       <div className="p-4 sm:p-6 lg:p-8 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+          <h1 className="text-3xl font-black text-slate-800 tracking-tight flex items-center gap-2">
             <Compass className="w-6 h-6 text-indigo-600 animate-spin-slow" />
             Pre-Otorisasi Perjalanan Driver
           </h1>

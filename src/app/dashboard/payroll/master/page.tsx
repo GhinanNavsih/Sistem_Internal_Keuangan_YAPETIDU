@@ -468,7 +468,7 @@ export default function SalaryMasterPage() {
               </Button>
             </Link>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+              <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
                 <FileSpreadsheet className="w-6 h-6 text-indigo-500" />
                 Master Data Gaji Pokok
               </h1>

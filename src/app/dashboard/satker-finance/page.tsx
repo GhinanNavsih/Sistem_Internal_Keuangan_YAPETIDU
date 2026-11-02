@@ -539,7 +539,7 @@ export default function SatkerFinancePage() {
     <div className="space-y-5 px-4 pt-6 pb-16 sm:px-8 sm:pt-8">
       {/* This page has no shell top bar, so the title sits in the toolbar row instead of a banner. */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-base font-semibold text-slate-900">Buku keuangan satuan kerja</h1>
+        <h1 className="text-3xl font-semibold text-slate-900">Buku keuangan satuan kerja</h1>
         <div className="flex gap-2"><button className={`${lightButton} !px-2`} onClick={() => void load()} aria-label="Muat ulang" title="Muat ulang"><RefreshCw className="h-4 w-4" /></button>{['satker_finance_admin', 'rector_finance'].includes(visibleProfile?.role || '') && <><AccountSwitcher label="always" className="h-auto rounded-md border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50" /><button className={lightButton} onClick={requestLogout}>Keluar</button></>}</div>
       </div>
       <div className="flex flex-wrap items-end gap-3 border-b border-slate-200 pb-5">

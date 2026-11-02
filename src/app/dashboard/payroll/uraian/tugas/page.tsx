@@ -258,7 +258,7 @@ export default function LoyalisTasksAdminPage() {
         <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none overflow-hidden">
           <div className="p-5 pb-0 sm:p-8 sm:pb-0">
             <div className="mb-6 flex items-start justify-between gap-4">
-              <h1 className="text-2xl font-bold tracking-tight">Tugas Loyalis</h1>
+              <h1 className="text-3xl font-bold tracking-tight">Tugas Loyalis</h1>
               <Button
                 type="button"
                 onClick={openNew}

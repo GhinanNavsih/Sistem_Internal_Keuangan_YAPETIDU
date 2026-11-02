@@ -2539,7 +2539,7 @@ function ActivityReviewPageContent() {
               <ClipboardCheck className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight">Review Laporan Kegiatan</h1>
+              <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Review Laporan Kegiatan</h1>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">

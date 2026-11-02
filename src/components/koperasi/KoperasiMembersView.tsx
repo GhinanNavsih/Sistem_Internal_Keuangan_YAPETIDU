@@ -78,7 +78,7 @@ export default function KoperasiMembersView({ members, employees, reload, disabl
   async function staleReload() { setEditing(null); setLinking(null); setSyncing(false); await reload(); }
   return <div className="space-y-7 pb-10">
     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <h1 className="text-2xl font-bold tracking-tight text-slate-900">Anggota Koperasi</h1>
+      <h1 className="text-3xl font-bold tracking-tight text-slate-900">Anggota Koperasi</h1>
       <Button variant="outline" className="h-10 shrink-0 rounded-sm border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900" disabled={disabled || bankRows.length === 0} onClick={() => setSyncing(true)}><Landmark className="size-4 text-indigo-600" />Samakan rekening <span className="rounded-sm bg-slate-100 px-1.5 py-0.5 tabular-nums text-slate-600">{syncCount}</span></Button>
     </div>
     {message && <p role="status" className="flex items-start gap-2 rounded-md border border-indigo-100 bg-indigo-50 p-4 text-sm leading-relaxed text-indigo-800"><BadgeCheck className="mt-0.5 size-4 shrink-0" />{message}</p>}

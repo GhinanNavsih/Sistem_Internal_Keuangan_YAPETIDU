@@ -3523,7 +3523,7 @@ export default function PayrollValidationDashboard() {
                       className="h-10 w-auto object-contain hover:scale-105 transition-transform duration-300 cursor-pointer"
                     />
                   </div>
-                  <h1 className="text-2xl font-bold tracking-tight ml-2">BAK UNIPDU Payroll</h1>
+                  <h1 className="text-3xl font-bold tracking-tight ml-2">BAK UNIPDU Payroll</h1>
                   <div className="w-2.5 h-2.5 rounded-full bg-red-500 mt-1"></div>
                 </div>
 
