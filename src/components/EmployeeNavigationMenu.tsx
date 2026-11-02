@@ -127,6 +127,14 @@ export default function EmployeeNavigationMenu() {
           }
         >
           <MenuIcon className="w-4.5 h-4.5 text-indigo-500" />
+          {isLoyalis && loyalisTasks.openCount > 0 && (
+            <span
+              className="absolute -top-1.5 -right-1.5 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white shadow-sm leading-none tabular-nums"
+              aria-label={`${loyalisTasks.openCount} tugas belum selesai`}
+            >
+              {loyalisTasks.openCount > 99 ? '99+' : loyalisTasks.openCount}
+            </span>
+          )}
           {showFacilityBadge && pendingFacilityCount > 0 && (
             <span
               className="absolute -top-1.5 -right-1.5 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white shadow-sm leading-none tabular-nums"
@@ -173,8 +181,8 @@ export default function EmployeeNavigationMenu() {
               <ListTodo className="text-indigo-500" />
               Daftar Tugas
               {loyalisTasks.openCount > 0 && (
-                <span className="ml-auto text-xs font-semibold tabular-nums text-slate-500">
-                  {loyalisTasks.openCount}
+                <span className="ml-auto inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-bold shadow-sm leading-none tabular-nums shrink-0">
+                  {loyalisTasks.openCount > 99 ? '99+' : loyalisTasks.openCount}
                 </span>
               )}
             </DropdownMenuItem>
