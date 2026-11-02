@@ -203,6 +203,31 @@ import remains available for audit.
 
 ## Payroll propagation
 
+### Automatic annual leave for full-day absence
+
+From period `2026-09`, a working day recorded as `TIDAK HADIR` automatically
+uses one available day of annual leave. Days are covered in date order until
+the allowance is exhausted, respecting service eligibility and the allowance
+already used or reserved. Fridays and declared holidays do not consume leave.
+Pending or approved leave/correction submissions keep their existing workflow.
+
+Both autosave and **Simpan Data Presensi** reconcile this rule. Payroll
+propagation also reconciles it before calculating draft pay, so an interrupted
+browser save cannot leave eligible absences unpaid. The main payroll dashboard
+loads effective attendance through `/api/payroll/loyalis-presence`; single-slip
+and bulk refresh reconcile the allowance before building their previews.
+Each covered day appears as
+`CUTI`, with **07:30** scan-in, **14:00** scan-out, and the full daily credit
+(390 minutes at the standard 6.5-hour target). It contributes to Presensi and
+Bonus Presensi exactly like approved annual leave.
+
+The original attendance remains stored separately from the effective credit.
+Automatic requests, payroll posts, revisions, balance deductions, and financial
+audit records are written transactionally. Repeated saves do not spend leave
+twice. A corrected attendance day releases its automatic leave and returns the
+allowance. The source attendance and period closure are re-read in each
+transaction; closed periods and finalized slips remain protected.
+
 After a Loyalis presence result is saved, the payroll process uses these four
 rows:
 
@@ -234,3 +259,8 @@ the fallback.
 The behavior is covered by the payroll propagation tests, especially the
 Loyalis presence cases in `src/lib/payroll/uraianPropagation.test.ts`, and by
 the official-window cases in `src/lib/payroll/loyalisPresenceWindow.test.ts`.
+
+`npm run test:loyalis-auto-leave:integration` exercises the authenticated
+automatic-leave and payroll-propagation APIs against local Firestore/Auth
+emulators, including allowance deductions, full-day scans/pay, repeated
+refreshes, correction refunds, and closed-period/finalized-slip safeguards.

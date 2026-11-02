@@ -5,6 +5,7 @@ import {
   nextAnnualPaidLeaveBalanceRevision,
 } from '@/lib/payroll/annualPaidLeave';
 import { isImmutablePayrollStatus } from '@/lib/payroll/domain';
+import { periodCalendarFromData } from '@/lib/payroll/calendar';
 import { isActiveGantiLiburStatus } from '@/lib/payroll/gantiLibur';
 import {
   AUTO_ABSENCE_DECISION_REASON,
@@ -32,7 +33,12 @@ import {
   loadLoyalisOffDayChecker,
   loyalisPresenceRefs,
 } from '@/lib/server/gantiLibur';
-import { isPeriodClosed, jakartaToday } from '@/lib/server/payrollPeriod';
+import {
+  annualCalendarRef,
+  annualDatesFrom,
+  isPeriodClosed,
+  jakartaToday,
+} from '@/lib/server/payrollPeriod';
 
 const CORRECTIONS_COLLECTION = 'LoyalisPresenceCorrections';
 const CONCURRENCY = 5;
@@ -62,7 +68,6 @@ async function loadSavedPresence(period: string) {
 async function reconcileEmployee(
   period: string,
   employee: NonNullable<ReturnType<typeof annualPaidLeaveEmployeeFromData>>,
-  absentDates: readonly string[],
   actor: AuthenticatedProfile,
 ): Promise<AutoLeaveEmployeeResult> {
   const result: AutoLeaveEmployeeResult = {
@@ -81,7 +86,8 @@ async function reconcileEmployee(
     .doc(`${period.replace('-', '_')}_${employee.id}`);
 
   await adminDb.runTransaction(async (transaction) => {
-    const [requestsSnapshot, balanceSnapshot, slipSnapshot, gantiLiburSnapshot, correctionsSnapshot] =
+    const [requestsSnapshot, balanceSnapshot, slipSnapshot, gantiLiburSnapshot, correctionsSnapshot,
+      periodSnapshot, annualCalendar, ...presenceSnapshots] =
       await Promise.all([
         transaction.get(
           adminDb
@@ -94,11 +100,19 @@ async function reconcileEmployee(
         transaction.get(
           adminDb.collection(CORRECTIONS_COLLECTION).where('employeeId', '==', employee.id),
         ),
+        transaction.get(adminDb.collection('PayrollPeriods').doc(period)),
+        transaction.get(annualCalendarRef(period)),
+        ...loyalisPresenceRefs(period).map((reference) => transaction.get(reference)),
       ]);
 
     result.covered = [];
     result.released = [];
     result.uncovered = [];
+    delete result.skipped;
+    if (isPeriodClosed(periodSnapshot.data())) {
+      result.skipped = 'Periode payroll sudah ditutup; cuti otomatis tidak diubah.';
+      return;
+    }
     if (slipSnapshot.exists && isImmutablePayrollStatus(slipSnapshot.data()?.status)) {
       result.skipped = 'Slip periode ini sudah final; cuti otomatis tidak diubah.';
       return;
@@ -135,6 +149,18 @@ async function reconcileEmployee(
     }
 
     const balance = balanceSnapshot.data() || {};
+    // A concurrent autosave, correction, or period closure retries this
+    // transaction against the latest source rather than spending stale dates.
+    const presence = presenceSnapshots.find((snapshot) => snapshot.exists)?.data();
+    if (!presence) throw new HttpError(409, `Data presensi Loyalis ${period} belum disimpan.`);
+    const offDays = new Set(periodCalendarFromData(
+      period, periodSnapshot.data(), annualDatesFrom(annualCalendar),
+    ).premiumDates);
+    const absentDates = autoLeaveAbsentDates(
+      presence.entries?.[employee.id]?.dailyLogs,
+      period,
+      (date) => offDays.has(date),
+    );
     const usedDays = Math.max(0, Number(balance.usedDays || 0));
     const reservedDays = Math.max(0, Number(balance.reservedDays || 0));
     const plan = planLoyalisAutoLeave({
@@ -405,7 +431,7 @@ export async function reconcileLoyalisAutoLeave(
     if (!employee.active) continue;
     work.push(async () => {
       try {
-        return await reconcileEmployee(period, employee, absentDates, actor);
+        return await reconcileEmployee(period, employee, actor);
       } catch (error) {
         console.error(`Cuti otomatis ${period} gagal untuk ${employee.id}:`, error);
         return {
@@ -415,6 +441,7 @@ export async function reconcileLoyalisAutoLeave(
           released: [],
           uncovered: [],
           skipped: error instanceof Error ? error.message : 'Cuti otomatis gagal diproses.',
+          failed: true,
         };
       }
     });

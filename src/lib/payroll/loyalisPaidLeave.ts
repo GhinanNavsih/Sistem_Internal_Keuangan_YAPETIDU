@@ -195,3 +195,23 @@ export function applyApprovedPaidLeaveToLoyalisEntry(input: {
     ...creditedDates,
   };
 }
+
+/** Display automatic credits without writing synthetic scans into the raw
+ * editor. A corrected raw day immediately stops showing the old credit while
+ * the next reconciliation returns its allowance to the balance. */
+export function applyAutomaticPaidLeaveToLoyalisEntry(
+  input: Parameters<typeof applyApprovedPaidLeaveToLoyalisEntry>[0],
+): LoyalisPaidLeaveEntry {
+  const dateKey = paidLeaveIsoToLoyalisDate(input.leaveDate);
+  const raw = input.entry.dailyLogs?.find((row) => row.Tanggal === dateKey);
+  if (String(raw?.['Jam kerja'] || '').trim().toUpperCase() !== 'TIDAK HADIR') {
+    return input.entry;
+  }
+  const credited = applyApprovedPaidLeaveToLoyalisEntry(input);
+  return {
+    ...credited,
+    dailyLogs: credited.dailyLogs?.map((row) => row.Tanggal === dateKey
+      ? { ...row, automaticAnnualPaidLeave: true, scanMasukAuto: false, scanPulangAuto: false }
+      : row),
+  };
+}

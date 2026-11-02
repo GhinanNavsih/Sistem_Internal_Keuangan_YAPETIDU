@@ -145,6 +145,8 @@ export interface AutoLeaveEmployeeResult {
   uncovered: Array<{ date: string; reason: AutoLeaveUncoveredReason }>;
   /** Why this employee was not processed, when that is the case. */
   skipped?: string;
+  /** A processing error rather than an ineligible/finalized employee. */
+  failed?: boolean;
 }
 
 export interface AutoLeaveSummary {

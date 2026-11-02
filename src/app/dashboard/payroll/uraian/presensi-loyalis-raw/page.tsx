@@ -46,6 +46,7 @@ import { parseLoyalisPresenceWorkbook } from '@/lib/payroll/loyalisPresenceWorkb
 import { recalculateLoyalisSummary as recalculateSummary } from '@/lib/payroll/loyalisPresenceSummary';
 import {
   applyApprovedPaidLeaveToLoyalisEntry,
+  applyAutomaticPaidLeaveToLoyalisEntry,
   type LoyalisDayCreditKind,
   type LoyalisPaidLeaveDailyLog,
 } from '@/lib/payroll/loyalisPaidLeave';
@@ -127,6 +128,7 @@ interface ApprovedDayCredit {
   employeeId: string;
   leaveDate: string;
   kind: LoyalisDayCreditKind;
+  automatic?: boolean;
 }
 
 /**
@@ -174,7 +176,10 @@ const applyApprovedPaidLeavesToRows = (
   let next = row;
   for (const leave of paidLeaves) {
     if (!row.employeeId || leave.employeeId !== row.employeeId) continue;
-    next = applyApprovedPaidLeaveToLoyalisEntry({
+    const apply = leave.automatic
+      ? applyAutomaticPaidLeaveToLoyalisEntry
+      : applyApprovedPaidLeaveToLoyalisEntry;
+    next = apply({
       entry: next,
       leaveDate: leave.leaveDate,
       expectedHours,
@@ -346,6 +351,7 @@ export default function PresensiLoyalisRawPage() {
   const activeWorkingDays = Number(workingDays) || 0;
   const [expectedHours, setExpectedHours] = useState<number>(6.5);
   const [approvedPaidLeaves, setApprovedPaidLeaves] = useState<ApprovedDayCredit[]>([]);
+  const [approvedAutomaticLeaves, setApprovedAutomaticLeaves] = useState<ApprovedDayCredit[]>([]);
   const correctionsQuery = useLoyalisPresenceCorrections();
   // Decided approvals of the month, oldest first so the latest one for a day wins.
   const approvedCorrections = useMemo<ApprovedLoyalisCorrection[]>(() => {
@@ -528,12 +534,17 @@ export default function PresensiLoyalisRawPage() {
       if (gantiLibur.status === 'rejected') {
         console.error('Gagal memuat overlay ganti libur Loyalis:', gantiLibur.reason);
       }
+      setApprovedAutomaticLeaves(annualLeave.status === 'fulfilled'
+        ? annualLeave.value.requests
+          .filter((item) => item.employeeKind === 'loyalis' && item.source === AUTO_ABSENCE_LEAVE_SOURCE)
+          .map((item) => ({ employeeId: item.employeeId, leaveDate: item.leaveDate,
+            kind: 'annual_leave' as const, automatic: true }))
+        : []);
       setApprovedPaidLeaves([
         ...(annualLeave.status === 'fulfilled'
           ? annualLeave.value.requests
-              // Automatic cuti is decided from the saved raw presence on every
-              // save (server side), so the table must not show it as CUTI: a
-              // day the admin fixes has to be able to fall out of it again.
+              // Automatic credits are applied only to displayRows. Keep their
+              // synthetic scans out of the raw editor and saved source.
               .filter(
                 (item) =>
                   item.employeeKind === 'loyalis' &&
@@ -1183,6 +1194,18 @@ export default function PresensiLoyalisRawPage() {
     };
   }, []);
 
+  const reconcileAutomaticLeave = useCallback(async () => {
+    const summary = await authenticatedJson<AutoLeaveSummary>('/api/attendance/loyalis/auto-leave', {
+      method: 'POST',
+      body: JSON.stringify({ period: periodToken }),
+    });
+    if (summary.results.some((result) => result.failed)) {
+      throw new Error(`Cuti otomatis belum selesai diproses.${describeAutoLeaveSummary(summary)}`);
+    }
+    setApprovedCreditsReload((revision) => revision + 1);
+    return summary;
+  }, [periodToken]);
+
   const saveDraftAutomatically = useCallback(async () => {
     const rows = uploadedDataRef.current;
     if (!rows || rows.length === 0) return;
@@ -1221,6 +1244,8 @@ export default function PresensiLoyalisRawPage() {
         activeCalendarRevision,
       });
       await setDoc(doc(db, 'LoyalisPresence', presenceDocId), payload);
+      const autoLeaveNote = describeAutoLeaveSummary(await reconcileAutomaticLeave());
+      if (autoLeaveNote) setMessage({ type: 'success', text: `Draf presensi tersimpan.${autoLeaveNote}` });
       autosaveBaselineRef.current = serialized;
       failedAutosaveSerializedRef.current = '';
       if (serializeWorkingTable() === serialized) setAutosaveState('saved');
@@ -1255,6 +1280,7 @@ export default function PresensiLoyalisRawPage() {
     approvedPaidLeaves,
     isOffDayIso,
     calculatePresenceStratum,
+    reconcileAutomaticLeave,
     serializeWorkingTable,
     scheduleAutosave,
   ]);
@@ -1470,7 +1496,10 @@ export default function PresensiLoyalisRawPage() {
         }))
         .sort((a, b) => (a.employeeName || '').localeCompare(b.employeeName || ''));
 
-      return assignRowKeys([...matchedRows, ...unmatchedExcelRows, ...unmatchedDbRows]);
+      return assignRowKeys(applyApprovedPaidLeavesToRows(
+        [...matchedRows, ...unmatchedExcelRows, ...unmatchedDbRows],
+        approvedAutomaticLeaves, expectedHours, activeWorkingDays, isOffDayIso,
+      ));
     }
     if (existingPresence && existingPresence.entries) {
       const entriesList = Object.values(existingPresence.entries).map((entry: any) => ({
@@ -1497,10 +1526,13 @@ export default function PresensiLoyalisRawPage() {
       const matched = entriesList.filter(e => !e.isNotFoundInExcel).sort((a, b) => (a.employeeName || '').localeCompare(b.employeeName || ''));
       const unmatched = entriesList.filter(e => e.isNotFoundInExcel).sort((a, b) => (a.employeeName || '').localeCompare(b.employeeName || ''));
 
-      return assignRowKeys([...matched, ...unmatched]);
+      return assignRowKeys(applyApprovedPaidLeavesToRows(
+        [...matched, ...unmatched],
+        approvedAutomaticLeaves, expectedHours, activeWorkingDays, isOffDayIso,
+      ));
     }
     return null;
-  }, [uploadedData, loyalisEmployees, existingPresence, calcMode, workingDays, activeWorkingDays, expectedHours, calculatePresenceStratum, corrections]);
+  }, [uploadedData, loyalisEmployees, existingPresence, calcMode, workingDays, activeWorkingDays, expectedHours, calculatePresenceStratum, corrections, approvedAutomaticLeaves, isOffDayIso]);
 
   // Staff converted from Pekarya this month whose scans did not reach this
   // page: the scanner still routes them by its own department column, so a
@@ -2092,15 +2124,9 @@ export default function PresensiLoyalisRawPage() {
       // day of the employee's balance while it lasts. It runs after the
       // corrections above (a rejected one leaves its day absent, an approved
       // one excuses it) and before slips are refreshed, so pay includes it.
-      // Never on autosave, which does not propagate either.
       let autoLeaveNote = '';
       try {
-        autoLeaveNote = describeAutoLeaveSummary(
-          await authenticatedJson<AutoLeaveSummary>('/api/attendance/loyalis/auto-leave', {
-            method: 'POST',
-            body: JSON.stringify({ period: periodToken }),
-          }),
-        );
+        autoLeaveNote = describeAutoLeaveSummary(await reconcileAutomaticLeave());
       } catch (autoLeaveError) {
         console.error('Gagal memproses cuti otomatis presensi Loyalis:', autoLeaveError);
         autoLeaveNote =
@@ -3118,6 +3144,7 @@ export default function PresensiLoyalisRawPage() {
                                         const isEditable =
                                           !!uploadedData &&
                                           row.excelName !== '-' &&
+                                          !log.automaticAnnualPaidLeave &&
                                           !usesSharedImport;
                                         // Scan masuk/pulang are editable on every
                                         // row regardless of period — status
@@ -3125,7 +3152,7 @@ export default function PresensiLoyalisRawPage() {
                                         // flow above, since a shared-import row's
                                         // status comes from the source file.
                                         const scanEditable =
-                                          !!uploadedData && row.excelName !== '-';
+                                          !!uploadedData && row.excelName !== '-' && !log.automaticAnnualPaidLeave;
                                         // Jumat / Tanggal Merah: the employee was
                                         // not expected in, so the row is tinted and
                                         // its minutes are excluded from every total.
@@ -3175,11 +3202,12 @@ export default function PresensiLoyalisRawPage() {
                                                   </SelectContent>
                                                 </Select>
                                               ) : (
-                                                <span className={`inline-flex px-2 py-0.5 rounded-sm text-[10px] font-bold ${log['Jam kerja'] === 'MASUK' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                                                <span title={log.automaticAnnualPaidLeave ? 'Menggunakan 1 hari saldo cuti, dibayar penuh dengan presensi 07:30–14:00.' : undefined} className={`inline-flex px-2 py-0.5 rounded-sm text-[10px] font-bold ${log['Jam kerja'] === 'MASUK' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
                                                     log['Jam kerja'] === 'Tidak Hadir' ? 'bg-rose-50 text-rose-600 border border-rose-100' :
                                                       'bg-slate-50 text-slate-600 border border-slate-100'
                                                   }`}>
                                                   {log['Jam kerja']}
+                                                  {log.automaticAnnualPaidLeave ? ' · Otomatis' : ''}
                                                 </span>
                                               )}
                                             </td>

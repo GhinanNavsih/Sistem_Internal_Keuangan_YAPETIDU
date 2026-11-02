@@ -2,8 +2,34 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   applyApprovedPaidLeaveToLoyalisEntry,
+  applyAutomaticPaidLeaveToLoyalisEntry,
   loyalisHasPayableAttendance,
 } from './loyalisPaidLeave';
+
+test('automatic leave displays a full paid day while preserving the editable absence', () => {
+  const entry = {
+    minutes: 0, absenceMinutes: 390, absentDaysCount: 1,
+    dailyLogs: [{ Tanggal: '01-10-2026', 'Jam kerja': 'TIDAK HADIR',
+      'Scan masuk': '', 'Scan pulang': '', duration: 0 }],
+  };
+  const input = { entry, leaveDate: '2026-10-01', expectedHours: 6.5, workingDays: 1, isOffDay: false };
+  const result = applyAutomaticPaidLeaveToLoyalisEntry(input);
+  assert.equal(result.minutes, 390);
+  assert.equal(result.absenceMinutes, 0);
+  assert.equal(result.netBonus, 250_000);
+  assert.equal(result.dailyLogs?.[0]['Jam kerja'], 'CUTI');
+  assert.equal(result.dailyLogs?.[0]['Scan masuk'], '07:30');
+  assert.equal(result.dailyLogs?.[0]['Scan pulang'], '14:00');
+  assert.equal(result.dailyLogs?.[0].automaticAnnualPaidLeave, true);
+  assert.equal(entry.dailyLogs[0]['Jam kerja'], 'TIDAK HADIR');
+  assert.equal(entry.dailyLogs[0]['Scan masuk'], '');
+  assert.equal(entry.minutes, 0);
+
+  const corrected = { ...entry, dailyLogs: [{ ...entry.dailyLogs[0], 'Jam kerja': 'MASUK',
+    'Scan masuk': '08:30', 'Scan pulang': '14:00' }] };
+  assert.equal(applyAutomaticPaidLeaveToLoyalisEntry({ ...input, entry: corrected }), corrected,
+    'a correction immediately stops displaying the old automatic credit');
+});
 
 test('approved Loyalis paid leave replaces an absence with a full paid day', () => {
   const result = applyApprovedPaidLeaveToLoyalisEntry({

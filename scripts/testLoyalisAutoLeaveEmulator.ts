@@ -19,6 +19,8 @@ async function main() {
 
   const { adminDb: db } = await import('../src/lib/firebase-admin');
   const { POST } = await import('../src/app/api/attendance/loyalis/auto-leave/route');
+  const { POST: propagate } = await import('../src/app/api/payroll/uraian-propagation/route');
+  const { GET: readPresence, POST: refreshPresence } = await import('../src/app/api/payroll/loyalis-presence/route');
   const { annualPaidLeaveDocumentId, applyApprovedLoyalisDayCreditsToPresence } = await import(
     '../src/lib/server/annualPaidLeave'
   );
@@ -121,6 +123,9 @@ async function main() {
 
   // ── Only Loyalis Admin / Super Admin may run it; it needs a saved presence.
   assert.equal((await run(PERIOD, outsider)).status, 403);
+  assert.equal((await readPresence(new NextRequest('http://localhost/api/payroll/loyalis-presence?period=2026-09', {
+    headers: { authorization: outsider },
+  }))).status, 403);
   assert.equal((await run('2026-10')).status, 409);
 
   // ── First run: earliest absent working days covered until the balance ends.
@@ -221,11 +226,101 @@ async function main() {
   const early = await run('2026-08');
   assert.equal(early.body.applicable, false);
 
+  // Payroll refresh must apply the rule even when the presence was autosaved
+  // and the browser never called the separate automatic-leave endpoint.
+  await db.doc('Employees_Loyalis/L4').set({
+    personal_info: { name: 'Dewi', status: 'AKTIF' },
+    employment_profile: { date_of_hire: '2018-01-01' },
+  });
+  await db.doc('LoyalisPresence/2026_10').set({
+    period: '2026-10', workingDays: 1, expectedHours: 6.5, mode: 'worked',
+    entries: {
+      L4: {
+        employeeId: 'L4', minutes: 0, absenceMinutes: 390, absentDaysCount: 1,
+        dailyLogs: [{
+          Tanggal: '01-10-2026', 'Jam kerja': 'TIDAK HADIR',
+          'Scan masuk': '', 'Scan pulang': '', duration: 0,
+        }],
+      },
+    },
+  });
+  await db.doc('LoyalisPresence/2026-10').set({
+    workingDays: 1, expectedHours: 4, entries: {},
+  }); // A stale alternate ID must not override the document the editor saved.
+  await db.doc('PayrollSlipStates/2026_10_L4').set({
+    status: 'draft', earnings: [], deductions: [], taxes: [], revision: 1,
+  });
+  const refresh = () => propagate(new NextRequest('http://localhost/api/payroll/uraian-propagation', {
+    method: 'POST', headers: { authorization: admin, 'content-type': 'application/json' },
+    body: JSON.stringify({ scope: 'loyalis', period: '2026-10', requestId: 'auto_leave_payroll_test' }),
+  }));
+  const initialRead = await readPresence(new NextRequest('http://localhost/api/payroll/loyalis-presence?period=2026-10', {
+    headers: { authorization: admin },
+  }));
+  assert.equal(initialRead.status, 200);
+  assert.equal((await initialRead.json()).presence.entries.L4.minutes, 0);
+  assert.equal(await usedDays('L4'), 0, 'simply viewing the dashboard never spends leave');
+  // A failed leave transaction must not publish a payslip using the unpaid
+  // absence. Simulate a conflicting revision, then retry after it is removed.
+  const conflictingRevision = db.doc(`AnnualPaidLeaveRequestRevisions/${annualPaidLeaveDocumentId('L4', '2026-10-01')}__r1`);
+  await conflictingRevision.set({ testConflict: true });
+  assert.equal((await refresh()).status, 409);
+  assert.equal(await usedDays('L4'), 0);
+  assert.equal((await db.doc('PayrollSlipStates/2026_10_L4').get()).data()?.revision, 1);
+  await conflictingRevision.delete();
+  const dashboardRefresh = await refreshPresence(new NextRequest('http://localhost/api/payroll/loyalis-presence', {
+    method: 'POST', headers: { authorization: admin, 'content-type': 'application/json' },
+    body: JSON.stringify({ period: '2026-10' }),
+  }));
+  assert.equal(dashboardRefresh.status, 200);
+  const dashboardPresence = (await dashboardRefresh.json()).presence;
+  assert.equal(dashboardPresence.entries.L4.minutes, 390);
+  assert.equal(dashboardPresence.entries.L4.absenceMinutes, 0);
+  assert.equal(await usedDays('L4'), 1, 'the main dashboard refresh also applies leave');
+  const refreshed = await refresh();
+  assert.equal(refreshed.status, 200, JSON.stringify(await refreshed.json()));
+  assert.equal(await usedDays('L4'), 1, 'payroll refresh spends one day of available leave');
+  const effective = await applyApprovedLoyalisDayCreditsToPresence(
+    '2026-10', (await db.doc('LoyalisPresence/2026_10').get()).data()!,
+  );
+  const credited = effective!.entries.L4;
+  assert.equal(credited.minutes, 390);
+  assert.equal(credited.absenceMinutes, 0);
+  assert.equal(credited.dailyLogs[0]['Jam kerja'], 'CUTI');
+  assert.equal(credited.dailyLogs[0]['Scan masuk'], '07:30');
+  assert.equal(credited.dailyLogs[0]['Scan pulang'], '14:00');
+  assert.equal(credited.dailyLogs[0].duration, 390);
+  const dashboardRead = await readPresence(new NextRequest('http://localhost/api/payroll/loyalis-presence?period=2026-10', {
+    headers: { authorization: admin },
+  }));
+  assert.equal(dashboardRead.status, 200);
+  assert.equal((await dashboardRead.json()).presence.entries.L4.minutes, 390);
+  const paidSlip = (await db.doc('PayrollSlipStates/2026_10_L4').get()).data()!;
+  assert.equal(paidSlip.earnings.find((row: { label: string }) => row.label === 'Presensi')?.amount, 10_725);
+  assert.equal(paidSlip.deductions.find((row: { label: string }) => row.label === 'Potongan Presensi')?.amount || 0, 0);
+  const repeated = await Promise.all([refresh(), refresh()]);
+  repeated.forEach((response) => assert.equal(response.status, 200));
+  assert.equal(await usedDays('L4'), 1, 'refreshing again never deducts twice');
+
+  // A corrected raw date returns its allowance and pays the actual hours.
+  await db.doc('LoyalisPresence/2026_10').update({
+    'entries.L4': {
+      employeeId: 'L4', minutes: 330, absenceMinutes: 60, absentDaysCount: 0,
+      dailyLogs: [{ Tanggal: '01-10-2026', 'Jam kerja': 'MASUK',
+        'Scan masuk': '08:30', 'Scan pulang': '14:00', duration: 330 }],
+    },
+  });
+  assert.equal((await refresh()).status, 200);
+  assert.equal(await usedDays('L4'), 0);
+  assert.equal((await postRef('L4', '2026-10-01').get()).exists, false);
+  const correctedSlip = (await db.doc('PayrollSlipStates/2026_10_L4').get()).data()!;
+  assert.equal(correctedSlip.deductions.find((row: { label: string }) => row.label === 'Potongan Presensi')?.amount, 1_650);
+
   // ── Every automatic change left an audit entry.
   const audit = await db.collection('FinancialAuditLogs').get();
   const count = (action: string) => audit.docs.filter((item) => item.data().action === action).length;
-  assert.equal(count('ANNUAL_PAID_LEAVE_AUTO_APPLIED'), 7);
-  assert.equal(count('ANNUAL_PAID_LEAVE_AUTO_RELEASED'), 2);
+  assert.equal(count('ANNUAL_PAID_LEAVE_AUTO_APPLIED'), 8);
+  assert.equal(count('ANNUAL_PAID_LEAVE_AUTO_RELEASED'), 3);
 
   console.log('Loyalis auto-leave emulator checks passed.');
 }

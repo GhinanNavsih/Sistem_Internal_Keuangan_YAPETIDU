@@ -89,6 +89,7 @@ import CetakRekapDialog from '@/components/CetakRekapDialog';
 import CetakKebutuhanDanaGajiDialog from '@/components/CetakKebutuhanDanaGajiDialog';
 import { generatePayrollStatementPdf, PayrollStatementData, PayrollStatementEmployee } from '@/utils/generatePayrollStatementPdf';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
+import type { LoyalisPresenceDocument } from '@/lib/payroll/uraianPropagation';
 import {
   defaultPayrollPeriodToken,
   isTransferEligibleStatus,
@@ -245,6 +246,14 @@ function replaceClientKoperasiDeduction(
   });
   if (!replaced) next.push({ label: 'Pinjaman Kop. UNIPDU', amount });
   return next;
+}
+
+async function fetchLoyalisPresence(period: string, reconcile = false) {
+  const result = await authenticatedJson<{ presence: LoyalisPresenceDocument | null }>(
+    `/api/payroll/loyalis-presence?period=${encodeURIComponent(period)}`,
+    reconcile ? { method: 'POST', body: JSON.stringify({ period }) } : undefined,
+  );
+  return result.presence;
 }
 
 export default function PayrollValidationDashboard() {
@@ -1745,10 +1754,10 @@ export default function PayrollValidationDashboard() {
       try {
         const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
 
-        const [snapshot, slipStatesSnapshot, presenceSnap] = await Promise.all([
+        const [snapshot, slipStatesSnapshot, presenceData] = await Promise.all([
           getDocs(collection(db, 'UraianGaji')),
           getDocs(collection(db, 'PayrollSlipStates')),
-          getDoc(doc(db, 'LoyalisPresence', period)),
+          fetchLoyalisPresence(period),
         ]);
         if (cancelled) return;
 
@@ -1784,11 +1793,7 @@ export default function PayrollValidationDashboard() {
           }
         });
         setSlipStates(persistedStates);
-        if (presenceSnap.exists()) {
-          setLoyalisPresenceData(presenceSnap.data());
-        } else {
-          setLoyalisPresenceData(null);
-        }
+        setLoyalisPresenceData(presenceData);
         setPeriodDataLoadedFor(period.replace('_', '-'));
       } catch (err) {
         console.error('Error fetching period data:', err);
@@ -2440,7 +2445,7 @@ export default function PayrollValidationDashboard() {
         matrixConfigSnap,
         fConfigSnap,
         kepConfigSnap,
-        presenceSnap,
+        presenceData,
         vakasiSnap,
         loanSnapshot,
         userSnapshot,
@@ -2450,7 +2455,7 @@ export default function PayrollValidationDashboard() {
         getDoc(doc(db, matrixCollection, '_config')),
         getDoc(doc(db, 'SalaryMatrix_Functional', '_config')),
         getDoc(doc(db, 'SalaryMatrix_Kepangkatan', '_config')),
-        getDoc(doc(db, 'LoyalisPresence', period)),
+        isLoyalisTab ? fetchLoyalisPresence(period, true) : Promise.resolve(null),
         getDocs(collection(db, 'VakasiTambahan')),
         getDocs(collection(secondaryDb, 'simpanPinjam')),
         getDocs(collection(secondaryDb, 'users')),
@@ -2501,7 +2506,7 @@ export default function PayrollValidationDashboard() {
       });
       setKepangkatanDesignations(freshKepDesignations);
 
-      let freshPresenceData = presenceSnap.exists() ? presenceSnap.data() : null;
+      const freshPresenceData = presenceData;
       setLoyalisPresenceData(freshPresenceData);
 
       // Map UraianGaji documents
@@ -3024,8 +3029,7 @@ export default function PayrollValidationDashboard() {
     setKepangkatanDesignations(freshKepDesignations);
 
     // 4. Fetch Presence data
-    const presenceSnap = await getDoc(doc(db, 'LoyalisPresence', period));
-    let freshPresenceData = presenceSnap.exists() ? presenceSnap.data() : null;
+    const freshPresenceData = isLoyalis ? await fetchLoyalisPresence(period, true) : null;
     setLoyalisPresenceData(freshPresenceData);
 
     // Presence calculations helpers

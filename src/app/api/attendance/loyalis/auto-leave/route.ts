@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 /**
  * Spends annual cuti on the unexcused absences of a saved Loyalis presence
  * (and takes it back from days that no longer qualify). Called by the presence
- * page right after "Simpan Data Presensi", before slips are refreshed.
+ * page after manual saves and autosaves, before slips are refreshed.
  */
 export async function POST(request: NextRequest) {
   try {

@@ -34,7 +34,7 @@ import {
   requireRole,
   type AuthenticatedProfile,
 } from '@/lib/server/auth';
-import { loadEffectiveLoyalisPresence } from '@/lib/server/loyalisPresence';
+import { reconcileAndLoadLoyalisPresence } from '@/lib/server/loyalisPresence';
 import { employeeInPayrollPeriod } from '@/lib/employeeConversion';
 
 export const dynamic = 'force-dynamic';
@@ -196,9 +196,12 @@ async function collectPekaryaTargets(command: PropagationCommand): Promise<SlipT
 }
 
 /** Loyalis targets, built from the presence calculator's saved document. */
-async function collectLoyalisTargets(command: PropagationCommand): Promise<SlipTarget[]> {
+async function collectLoyalisTargets(
+  command: PropagationCommand,
+  actor: AuthenticatedProfile,
+): Promise<SlipTarget[]> {
   const [presence, employeeSnapshot] = await Promise.all([
-    loadEffectiveLoyalisPresence(command.periodToken),
+    reconcileAndLoadLoyalisPresence(command.periodToken, actor),
     adminDb.collection('Employees_Loyalis').get(),
   ]);
 
@@ -266,7 +269,7 @@ export async function POST(request: NextRequest) {
     const targets =
       command.scope === 'pekarya'
         ? await collectPekaryaTargets(command)
-        : await collectLoyalisTargets(command);
+        : await collectLoyalisTargets(command, actor);
 
     const outcomes: EmployeeOutcome[] = [];
 
