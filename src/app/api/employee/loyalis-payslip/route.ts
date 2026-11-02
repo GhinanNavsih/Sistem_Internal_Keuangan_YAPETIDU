@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
+import { isTransferEligibleStatus } from '@/lib/payroll/domain';
 import {
   buildInitialDeductions,
   buildInitialEarnings,
@@ -51,10 +52,10 @@ async function loadActiveRows(collectionName: string) {
 }
 
 /**
- * Return the same read-only Loyalis draft that the Finance dashboard shows
- * when PayrollSlipStates has not been materialized yet.  This endpoint is
- * deliberately scoped to one employee: a real Loyalis can request only its
- * own data, while UI Preview may request the selected employee as Super Admin.
+ * Return the Loyalis slip details calculated the same way the Finance dashboard
+ * shows them.  This endpoint is deliberately scoped to one employee: a real
+ * Loyalis can request only its own data and only for a final slip, while UI
+ * Preview may request the selected employee as Super Admin.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -92,6 +93,9 @@ export async function GET(request: NextRequest) {
     ]);
     if (!employeeSnapshot.exists) {
       throw new HttpError(404, 'Data karyawan Loyalis tidak ditemukan.');
+    }
+    if (actor.role === 'loyalis' && !isTransferEligibleStatus(savedSlipSnapshot.data()?.status)) {
+      throw new HttpError(403, 'Slip gaji periode ini belum dikunci.');
     }
 
     const employee: LoyalisEmployeeData = {

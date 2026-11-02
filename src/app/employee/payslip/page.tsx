@@ -949,13 +949,15 @@ export default function EmployeePayslipPage() {
           source.gradeLevel = source.salaryProfile?.salaryGradeCode || '';
           const historySlip = historySlipSnap.exists() ? historySlipSnap.data() : null;
           const isFinal = Boolean(historySlip) && isTransferEligibleStatus(historySlip?.status);
+          // A Loyalis only ever receives the figures of a final slip.
+          const shownSlip = isFinal || roleStr !== 'loyalis' ? historySlip : null;
           setPekaryaHistoryMonth(true);
           setEmployeeData(source);
           setConfirmedSlip(isFinal ? historySlip : null);
           setIsConfirmed(isFinal);
-          setCalculatedEarnings(historySlip ? normalizeSlipFields(historySlip.earnings) : []);
-          setCalculatedDeductions(historySlip ? normalizeSlipFields(historySlip.deductions) : []);
-          setCalculatedTaxes(historySlip ? normalizeTaxFields(historySlip.taxes) : []);
+          setCalculatedEarnings(shownSlip ? normalizeSlipFields(shownSlip.earnings) : []);
+          setCalculatedDeductions(shownSlip ? normalizeSlipFields(shownSlip.deductions) : []);
+          setCalculatedTaxes(shownSlip ? normalizeTaxFields(shownSlip.taxes) : []);
           setPresenceInfo({ workingDays: 0, expectedHours: 0, absenceMinutes: 0, bonusDeduction: 0 });
           setVakasiEvents([]);
           setKepangkatanDesignations({});
@@ -982,8 +984,9 @@ export default function EmployeePayslipPage() {
 
         // A final PayrollSlipStates snapshot remains authoritative.  When it
         // does not exist yet (the normal state while Finance is preparing a
-        // period), build a read-only employee draft from the employee's own
-        // profile, approved activity reports, and their own cooperative data.
+        // period), Pekarya get a read-only employee draft built from their own
+        // profile, approved activity reports, and their own cooperative data;
+        // a Loyalis sees no slip until it is final (checked below).
         // All queries below are scoped to this employee and never expose an
         // institution-wide payroll collection to the browser.
         const activityQuery = query(
@@ -1160,6 +1163,13 @@ export default function EmployeePayslipPage() {
         const slipSnap = await getDocFromServer(slipRef);
         if (cancelled) return;
 
+        // A Loyalis sees a slip only once it is final. Stop here so no draft
+        // figures are loaded; the render shows a "not available yet" notice.
+        if (roleStr === 'loyalis' && !isTransferEligibleStatus(slipSnap.data()?.status)) {
+          setLoading(false);
+          return;
+        }
+
         // LoyalisPresence and the salary matrices are institution-owned data.
         // Fetch only this employee's daily logs and calculated draft rows
         // through scoped server routes. This keeps UI Preview aligned with the
@@ -1298,8 +1308,8 @@ export default function EmployeePayslipPage() {
           return;
         }
 
-        // Draft/verification records are visible to the employee as a
-        // read-only snapshot. Finance-owned rows stay frozen until Refresh.
+        // Draft/verification records are visible to Pekarya as a read-only
+        // snapshot. Finance-owned rows stay frozen until Refresh.
         // Attendance is the narrow exception requested for the unified import:
         // once an active upload exists, those two provisional rows mirror the
         // shared preview even on an older editable draft. Final slips returned
@@ -1854,6 +1864,15 @@ export default function EmployeePayslipPage() {
               <RefreshCw className="mr-2 h-4 w-4" />
               Coba Lagi
             </Button>
+          </div>
+        ) : profile.role === 'loyalis' && !isConfirmed ? (
+          <div className="py-16 px-6 text-center text-black bg-slate-50/50 rounded-md border border-slate-100">
+            <Lock className="w-12 h-12 text-slate-400 mx-auto mb-4" />
+            <p className="text-base font-bold">Slip Gaji Belum Tersedia</p>
+            <p className="mt-2 mx-auto max-w-lg text-sm text-slate-600">
+              Slip gaji periode {periodText} belum difinalkan dan dikunci oleh BAK.
+              Slip akan muncul di sini setelah dikunci.
+            </p>
           </div>
         ) : (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
