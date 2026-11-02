@@ -24,6 +24,8 @@ interface SearchSelectProps {
   disabled?: boolean
   /** Extra classes for the text box. */
   className?: string
+  /** Extra classes for each option's label in the list. */
+  optionClassName?: string
 }
 
 /**
@@ -43,6 +45,7 @@ export function SearchSelect({
   "aria-label": ariaLabel,
   disabled,
   className,
+  optionClassName,
 }: SearchSelectProps) {
   const selected = options.find((option) => option.value === value) ?? null
   // Combobox keeps the typed text itself; this copy is only for ranking the list.
@@ -88,7 +91,7 @@ export function SearchSelect({
                   value={option}
                   className="flex min-h-9 cursor-default items-center justify-between gap-3 rounded-md px-3 py-1.5 text-sm text-slate-700 outline-none select-none data-highlighted:bg-slate-50 data-highlighted:text-slate-900"
                 >
-                  <span>{option.label}</span>
+                  <span className={optionClassName}>{option.label}</span>
                   <Combobox.ItemIndicator>
                     <CheckIcon className="size-4 text-accent-600" />
                   </Combobox.ItemIndicator>

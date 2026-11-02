@@ -42,6 +42,11 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
     '/presensi-loyalis-raw',
     '/rekap-pekarya',
   ].some((segment) => pathname.includes(segment));
+  const isStandaloneToolTab = [
+    '/simulasi-perjalanan',
+    '/tugas',
+    '/santunan',
+  ].some((segment) => pathname.endsWith(segment));
 
   // Land on the month being compiled: before the 6th that is still the
   // previous period, unless it has already been closed. Only kicks in when
@@ -49,7 +54,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
   // link is always honored exactly as given.
   const hasExplicitPeriod = searchParams.has('month') || searchParams.has('year');
   useEffect(() => {
-    if (!profile || hasExplicitPeriod) return;
+    if (!profile || hasExplicitPeriod || isStandaloneToolTab) return;
     const now = new Date();
     const previousPeriod = previousPayrollPeriodToken(now);
     if (defaultPayrollPeriodToken(now, false) !== previousPeriod) {
@@ -88,7 +93,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
     // listed) — reacting to every param change here would also re-fire it on
     // an unrelated category pick.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile, hasExplicitPeriod, pathname]);
+  }, [profile, hasExplicitPeriod, pathname, isStandaloneToolTab]);
 
   const [activeCategories, setActiveCategories] = useState<string[]>([]);
   const [categoriesLoaded, setCategoriesLoaded] = useState(false);
@@ -177,6 +182,9 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
     if (pathname.includes('/kegiatan-satker')) return 'kegiatan_satker';
     if (pathname.includes('/presensi-loyalis-raw')) return 'presensi_loyalis_raw';
     if (pathname.includes('/senam-pagi')) return 'senam_pagi';
+    if (pathname.includes('/simulasi-perjalanan')) return 'simulasi_perjalanan';
+    if (pathname.includes('/tugas')) return 'tugas';
+    if (pathname.includes('/santunan')) return 'santunan';
     if (pathname.includes('/spj-pekarya')) return 'kegiatan_spj';
     return '';
   }, [pathname]);
@@ -196,6 +204,9 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
       tab === 'kegiatan_satker' ||
       tab === 'presensi_loyalis_raw' ||
       tab === 'senam_pagi' ||
+      tab === 'simulasi_perjalanan' ||
+      tab === 'tugas' ||
+      tab === 'santunan' ||
       tab === 'driver-journeys'
     ) {
       params.delete('category');
@@ -219,7 +230,8 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
       if (
         activeTab !== 'presensi_loyalis_raw' &&
         activeTab !== 'presensi_pekarya' &&
-        activeTab !== 'senam_pagi'
+        activeTab !== 'senam_pagi' &&
+        activeTab !== 'santunan'
       ) {
         params.delete('category');
         router.replace(`/dashboard/payroll/uraian/presensi-loyalis-raw?${params.toString()}`);
@@ -228,7 +240,8 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
       if (
         activeTab !== 'vakasi_karyawan' &&
         activeTab !== 'kegiatan_satker' &&
-        activeTab !== 'presensi_loyalis_raw'
+        activeTab !== 'presensi_loyalis_raw' &&
+        activeTab !== 'simulasi_perjalanan'
       ) {
         router.replace(`/dashboard/payroll/uraian/vakasi-karyawan${getCleanParamsString('vakasi_karyawan')}`);
       }
@@ -362,7 +375,8 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
 
       <div className="p-6 lg:p-8 pb-24 lg:pb-32 space-y-8 relative z-10">
 
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        {!isStandaloneToolTab && (
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-1">
             {profile?.role !== 'super_admin' && activeTab === 'kegiatan_spj' ? (
               <Button
@@ -481,7 +495,8 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
             )}
 
           </div>
-        </div>
+          </div>
+        )}
 
         {/* Tab Switcher for Super Admin & Badan Keuangan; the other roles navigate from the sidebar. */}
         {profile && profile.role !== 'satker_head' && profile.role !== 'satker_head_loyalis' && profile.role !== 'loyalis_admin' && (

@@ -5,14 +5,20 @@ import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { usePendingFacilityReportsCount } from '@/lib/usePendingFacilityReportsCount';
 import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
+import { VENUE_RESERVATION_PATH } from '@/lib/venueReservation';
+import { VENUE_INSPECTION_PATH } from '@/lib/venueInspection';
 import {
   ScanLine,
   Banknote,
   ClipboardCheck,
+  CalendarCheck,
   Clock,
   Car,
   FileText,
+  HandHeart,
+  ListTodo,
   PersonStanding,
+  Route,
   UsersRound,
   Wrench,
 } from 'lucide-react';
@@ -43,6 +49,9 @@ export default function UraianNavToggles() {
     if (pathname.includes('/kegiatan-satker')) return 'kegiatan_satker';
     if (pathname.includes('/presensi-loyalis-raw')) return 'presensi_loyalis_raw';
     if (pathname.includes('/senam-pagi')) return 'senam_pagi';
+    if (pathname.includes('/simulasi-perjalanan')) return 'simulasi_perjalanan';
+    if (pathname.includes('/tugas')) return 'tugas';
+    if (pathname.includes('/santunan')) return 'santunan';
     if (pathname.includes('/spj-pekarya')) return 'kegiatan_spj';
     if (pathname.includes('/activity-review')) return 'activity_review';
     if (pathname.includes('/driver-journeys')) return 'driver_journeys';
@@ -62,6 +71,9 @@ export default function UraianNavToggles() {
       tab === 'kegiatan_satker' ||
       tab === 'presensi_loyalis_raw' ||
       tab === 'senam_pagi' ||
+      tab === 'simulasi_perjalanan' ||
+      tab === 'tugas' ||
+      tab === 'santunan' ||
       tab === 'driver-journeys' ||
       tab === 'activity-review'
     ) {
@@ -147,6 +159,33 @@ export default function UraianNavToggles() {
               Senam Pagi
             </button>
           )}
+          {profile.role === 'super_admin' && (
+            <button
+              onClick={() => router.push(`/dashboard/payroll/uraian/simulasi-perjalanan${getCleanParamsString('simulasi_perjalanan')}`)}
+              className={btnCls(activeTab === 'simulasi_perjalanan')}
+            >
+              <Route className="w-4 h-4" />
+              Simulasi Perjalanan
+            </button>
+          )}
+          {profile.role === 'super_admin' && (
+            <button
+              onClick={() => router.push(`/dashboard/payroll/uraian/tugas${getCleanParamsString('tugas')}`)}
+              className={btnCls(activeTab === 'tugas')}
+            >
+              <ListTodo className="w-4 h-4" />
+              Tugas Loyalis
+            </button>
+          )}
+          {profile.role === 'super_admin' && (
+            <button
+              onClick={() => router.push(`/dashboard/payroll/uraian/santunan${getCleanParamsString('santunan')}`)}
+              className={btnCls(activeTab === 'santunan')}
+            >
+              <HandHeart className="w-4 h-4" />
+              Verifikasi Santunan
+            </button>
+          )}
         </div>
       </div>
 
@@ -205,6 +244,24 @@ export default function UraianNavToggles() {
                     {pendingFacilityCount > 99 ? '99+' : pendingFacilityCount}
                   </span>
                 )}
+              </button>
+            )}
+            {profile.role === 'super_admin' && (
+              <button
+                onClick={() => router.push(VENUE_RESERVATION_PATH)}
+                className={btnCls(false)}
+              >
+                <CalendarCheck className="w-4 h-4" />
+                Reservasi Ruang
+              </button>
+            )}
+            {profile.role === 'super_admin' && (
+              <button
+                onClick={() => router.push(VENUE_INSPECTION_PATH)}
+                className={btnCls(false)}
+              >
+                <ClipboardCheck className="w-4 h-4" />
+                Pemeriksaan Ruang
               </button>
             )}
           </div>

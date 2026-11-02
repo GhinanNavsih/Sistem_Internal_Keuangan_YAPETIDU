@@ -113,6 +113,7 @@ test('the page exists for a Loyalis with any task, completed or not', () => {
 
 test('both task pages are recognised by path', () => {
   assert.equal(isLoyalisTaskPath('/employee/tugas'), true);
+  assert.equal(isLoyalisTaskPath('/dashboard/payroll/uraian/tugas'), true);
   assert.equal(isLoyalisTaskPath('/dashboard/tugas'), true);
   assert.equal(isLoyalisTaskPath('/employee/tugasku'), false);
   assert.equal(isLoyalisTaskPath('/employee/payslip'), false);

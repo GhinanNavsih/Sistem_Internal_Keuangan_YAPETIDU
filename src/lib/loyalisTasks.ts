@@ -6,14 +6,17 @@
  */
 
 export const LOYALIS_TASK_PATH = '/employee/tugas';
-export const LOYALIS_TASK_ADMIN_PATH = '/dashboard/tugas';
+export const LOYALIS_TASK_ADMIN_PATH = '/dashboard/payroll/uraian/tugas';
+const LEGACY_LOYALIS_TASK_ADMIN_PATH = '/dashboard/tugas';
 
 export function isLoyalisTaskPath(pathname: string): boolean {
   return (
     pathname === LOYALIS_TASK_PATH ||
     pathname === LOYALIS_TASK_ADMIN_PATH ||
+    pathname === LEGACY_LOYALIS_TASK_ADMIN_PATH ||
     pathname.startsWith(`${LOYALIS_TASK_PATH}/`) ||
-    pathname.startsWith(`${LOYALIS_TASK_ADMIN_PATH}/`)
+    pathname.startsWith(`${LOYALIS_TASK_ADMIN_PATH}/`) ||
+    pathname.startsWith(`${LEGACY_LOYALIS_TASK_ADMIN_PATH}/`)
   );
 }
 

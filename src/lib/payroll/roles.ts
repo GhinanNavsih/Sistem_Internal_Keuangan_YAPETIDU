@@ -25,6 +25,8 @@ export const LEGACY_ROLE_ALIASES: Readonly<Record<string, UserRole>> = {
   loyalis_presence_admin: 'loyalis_admin',
 };
 
+export const SANTUNAN_REVIEW_PATH = '/dashboard/payroll/uraian/santunan';
+
 /**
  * Admin Karyawan (stored as `loyalis_admin`) keeps master data of Loyalis and
  * Pekarya employees and runs Loyalis presence: the monthly import/calculator,
@@ -35,7 +37,8 @@ export const LEGACY_ROLE_ALIASES: Readonly<Record<string, UserRole>> = {
  */
 export const LOYALIS_ADMIN_PATHS = [
   '/dashboard/employees',
-  '/dashboard/santunan',
+  SANTUNAN_REVIEW_PATH,
+  '/dashboard/santunan', // Legacy URL redirects to the uraian route.
   '/dashboard/payroll/uraian/presensi-loyalis-raw',
   '/dashboard/payroll/uraian/senam-pagi',
   '/dashboard/payroll/uraian/presensi-pekarya',

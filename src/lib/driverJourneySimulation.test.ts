@@ -48,8 +48,10 @@ const surabayaQuote: RouteQuote = {
   measuredAt: '2026-10-15T02:00:00.000Z',
 };
 
-test('the simulation path is its own page', () => {
+test('the simulation path recognizes its uraian route and legacy URL', () => {
+  assert.equal(isDriverJourneySimulationPath('/dashboard/payroll/uraian/simulasi-perjalanan'), true);
   assert.equal(isDriverJourneySimulationPath('/dashboard/simulasi-perjalanan'), true);
+  assert.equal(isDriverJourneySimulationPath('/dashboard/payroll/uraian/simulasi-perjalanan-lain'), false);
   assert.equal(isDriverJourneySimulationPath('/dashboard/simulasi-perjalanan-lain'), false);
 });
 

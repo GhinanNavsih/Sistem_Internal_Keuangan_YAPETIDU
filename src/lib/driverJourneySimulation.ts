@@ -21,12 +21,15 @@ import {
  * calculation journey authorization uses.
  */
 
-export const DRIVER_JOURNEY_SIMULATION_PATH = '/dashboard/simulasi-perjalanan';
+export const DRIVER_JOURNEY_SIMULATION_PATH = '/dashboard/payroll/uraian/simulasi-perjalanan';
+const LEGACY_DRIVER_JOURNEY_SIMULATION_PATH = '/dashboard/simulasi-perjalanan';
 
 export function isDriverJourneySimulationPath(pathname: string): boolean {
   return (
     pathname === DRIVER_JOURNEY_SIMULATION_PATH ||
-    pathname.startsWith(`${DRIVER_JOURNEY_SIMULATION_PATH}/`)
+    pathname.startsWith(`${DRIVER_JOURNEY_SIMULATION_PATH}/`) ||
+    pathname === LEGACY_DRIVER_JOURNEY_SIMULATION_PATH ||
+    pathname.startsWith(`${LEGACY_DRIVER_JOURNEY_SIMULATION_PATH}/`)
   );
 }
 

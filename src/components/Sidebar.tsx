@@ -6,11 +6,14 @@ import Image from 'next/image';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
-import { canReserveVenues, canSimulateDriverJourneys, getUserRoleLabel } from '@/lib/payroll/roles';
+import {
+  canReserveVenues,
+  canSimulateDriverJourneys,
+  getUserRoleLabel,
+  SANTUNAN_REVIEW_PATH,
+} from '@/lib/payroll/roles';
 import { VENUE_RESERVATION_PATH } from '@/lib/venueReservation';
-import { VENUE_INSPECTION_PATH } from '@/lib/venueInspection';
 import { DRIVER_JOURNEY_SIMULATION_PATH } from '@/lib/driverJourneySimulation';
-import { LOYALIS_TASK_ADMIN_PATH } from '@/lib/loyalisTasks';
 import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
 import { SENAM_PAGI_PATH } from '@/lib/payroll/bonusTriwulan';
 import { Button } from '@/components/ui/button';
@@ -29,7 +32,6 @@ import {
   Clock,
   Compass,
   HandHeart,
-  ListTodo,
   PersonStanding,
   Route,
   ScanLine,
@@ -146,41 +148,9 @@ export default function Sidebar() {
       icon: Banknote
     },
     {
-      // Admin Karyawan verifies BanSos here; Super Admin only views it and
-      // decides its own side from the Vakasi Tambahan page.
-      name: 'Verifikasi Santunan',
-      path: '/dashboard/santunan',
-      icon: HandHeart
-    },
-    {
       name: 'Keuangan SatKer',
       path: '/dashboard/satker-finance',
       icon: FileSpreadsheet
-    },
-    {
-      // Books rooms in SIMPEL UNIPDU.
-      name: 'Reservasi Ruang',
-      path: VENUE_RESERVATION_PATH,
-      icon: CalendarCheck
-    },
-    {
-      // Return checks after a room is used. Teknisi/Kebersihan reach it from
-      // their employee menu; Super Admin sees it here.
-      name: 'Pemeriksaan Ruang',
-      path: VENUE_INSPECTION_PATH,
-      icon: ClipboardCheck
-    },
-    {
-      // Kepala SatKer Loyalis prices an event's transport here; Super Admin tests it.
-      name: 'Simulasi Perjalanan',
-      path: DRIVER_JOURNEY_SIMULATION_PATH,
-      icon: Route
-    },
-    {
-      // Super Admin gives individual Loyalis tasks; they appear in the Loyalis menu.
-      name: 'Tugas Loyalis',
-      path: LOYALIS_TASK_ADMIN_PATH,
-      icon: ListTodo
     },
     {
       // Starts the "monitoring" group — rendered below a separator so the
@@ -286,9 +256,9 @@ export default function Sidebar() {
     },
     {
       name: 'Verifikasi Santunan',
-      path: '/dashboard/santunan',
+      path: SANTUNAN_REVIEW_PATH,
       icon: HandHeart,
-      activePattern: '/dashboard/santunan',
+      activePattern: SANTUNAN_REVIEW_PATH,
     },
     {
       name: 'Presensi Loyalis',
@@ -318,8 +288,6 @@ export default function Sidebar() {
       : currentProfile.role === 'loyalis_admin'
         ? employeeAdminMenuItems
         : adminMenuItems.filter(item => {
-          if (item.path === VENUE_RESERVATION_PATH) return canReserveVenues(currentProfile.role);
-          if (item.path === DRIVER_JOURNEY_SIMULATION_PATH) return canSimulateDriverJourneys(currentProfile.role);
           if (currentProfile.role === 'super_admin') return true;
           return item.path === '/dashboard/payroll' || item.path === '/dashboard/satker-finance';
         });
