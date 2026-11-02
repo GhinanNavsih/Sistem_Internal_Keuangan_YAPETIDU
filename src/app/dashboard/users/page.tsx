@@ -1265,51 +1265,6 @@ export default function UserManagementPage() {
           </Card>
         )}
 
-        {/* Super Admin Impersonation Feature Header Card */}
-        <Card className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-md shadow-lg border-none p-6 relative overflow-hidden">
-          <div className="absolute right-0 top-0 translate-x-4 -translate-y-4 opacity-10 pointer-events-none">
-            <UserCog className="w-64 h-64 text-indigo-300" />
-          </div>
-          <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-            <div className="space-y-1.5 max-w-2xl">
-              <div className="flex items-center gap-2">
-                <Badge className="rounded-sm bg-amber-500/20 text-amber-300 border-amber-400/30 px-2.5 py-0.5 font-bold text-xs uppercase tracking-wider">
-                  Super Admin Feature
-                </Badge>
-                <Badge className="rounded-sm bg-rose-500/20 text-rose-300 border-rose-400/30 px-2.5 py-0.5 font-bold text-xs uppercase tracking-wider">
-                  Dual-Mode Active
-                </Badge>
-              </div>
-              <h3 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-                <UserCog className="w-5 h-5 text-indigo-400" />
-                Impersonasi & Akses Pengguna ("View-As")
-              </h3>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-3 bg-white/10 p-3.5 rounded-md backdrop-blur-md border border-white/10 shrink-0 text-xs">
-              <div className="flex items-center gap-2.5 text-amber-200">
-                <div className="w-7 h-7 rounded-sm bg-amber-500/20 border border-amber-400/30 flex items-center justify-center shrink-0">
-                  <Eye className="w-4 h-4 text-amber-300" />
-                </div>
-                <div>
-                  <div className="font-bold text-white">1. Mode Preview UI (<Eye className="w-3 h-3 inline" />)</div>
-                  <div className="text-[11px] text-slate-300">Preview UI cepat tanpa ubah sesi auth.</div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2.5 text-rose-200">
-                <div className="w-7 h-7 rounded-sm bg-rose-500/20 border border-rose-400/30 flex items-center justify-center shrink-0">
-                  <KeyRound className="w-4 h-4 text-rose-300" />
-                </div>
-                <div>
-                  <div className="font-bold text-white">2. Sesi Penuh (<KeyRound className="w-3 h-3 inline" />)</div>
-                  <div className="text-[11px] text-slate-300">Switch Firebase token resmi.</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </Card>
-
         {/* Users Table List */}
         <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.02)] border-none overflow-hidden">
           <CardHeader className="p-6 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4">
