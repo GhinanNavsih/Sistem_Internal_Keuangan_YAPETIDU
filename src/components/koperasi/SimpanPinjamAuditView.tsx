@@ -302,16 +302,8 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
         {navigation}
         
         {/* Header navigation bar */}
-        <div className="flex flex-wrap justify-between items-center gap-4 mb-8">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 px-3 py-1 bg-indigo-50 border border-indigo-100 rounded-sm">
-              <Banknote className="w-5 h-5 text-indigo-600" />
-              <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wider">Audit Panel</span>
-            </div>
-          </div>
-          <div className="text-right">
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Audit Simpan Pinjam Koperasi</h1>
-          </div>
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Audit Simpan Pinjam Koperasi</h1>
         </div>
 
         {/* Stats Metrics Cards */}
