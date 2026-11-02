@@ -43,6 +43,7 @@ import {
 } from '@/lib/payroll/satpamDutyPlan';
 import { satpamAttendanceReportType } from '@/lib/payroll/satpamAttendance';
 import {
+  ensureCurrentSatpamDutyPlans,
   SATPAM_ABSENCE_REQUESTS_COLLECTION,
   SATPAM_DUTY_PLANS_COLLECTION,
   syncSatpamDutyReconciliation,
@@ -364,6 +365,8 @@ export async function POST(request: NextRequest) {
     }
 
     const command = parseCommand(await request.json());
+    // A report filed before this month's plan existed must still be approvable.
+    await ensureCurrentSatpamDutyPlans();
     const requestHash = createHash('sha256').update(JSON.stringify(command)).digest('hex');
 
     const result = await adminDb.runTransaction(async (transaction) => {

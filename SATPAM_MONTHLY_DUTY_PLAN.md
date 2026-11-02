@@ -13,7 +13,8 @@ approved shift payment.
 
 The system publishes each team's plan automatically for the current month, so
 the `Ketua Shift` normally does nothing. The first Satpam request of the month
-(the Ketua's report or schedule page, or a leave page) creates any missing plan
+(a report, schedule or leave page, or submitting or approving a shift report)
+creates any missing plan
 by continuing the previous month's rotation. This is recorded as a system action
 (`publishedBy: system`, `autoPublished: true`, audit action
 `SATPAM_DUTY_PLAN_AUTO_PUBLISHED`), and an existing plan is never overwritten.

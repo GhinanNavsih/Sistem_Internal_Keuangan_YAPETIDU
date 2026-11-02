@@ -42,7 +42,10 @@ import {
   type SatpamDutyPlanDay,
 } from '@/lib/payroll/satpamDutyPlan';
 import { satpamAttendanceReportType } from '@/lib/payroll/satpamAttendance';
-import { SATPAM_DUTY_PLANS_COLLECTION } from '@/lib/server/satpamDutyPlan';
+import {
+  ensureCurrentSatpamDutyPlans,
+  SATPAM_DUTY_PLANS_COLLECTION,
+} from '@/lib/server/satpamDutyPlan';
 import {
   errorResponse,
   HttpError,
@@ -676,6 +679,8 @@ async function mutateShift(
     actor.linkedEmployeeId,
     mode === 'edit',
   );
+  // A page left open overnight can send the month's first request from here.
+  await ensureCurrentSatpamDutyPlans();
   const { teamSnapshot, teamNumber } = await getKetuaTeam(actor.linkedEmployeeId);
   const team = teamSnapshot.data();
   const members = Array.isArray(team.memberEmployeeIds)
