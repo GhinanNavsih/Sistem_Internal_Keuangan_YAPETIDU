@@ -22,6 +22,7 @@ import {
 } from '@/lib/payroll/satpamAttendance';
 import {
   findSatpamTeamForEmployee,
+  ensureCurrentSatpamDutyPlans,
   loadSatpamShiftRegistrations,
   loadSatpamDutyPlanContext,
   SATPAM_ABSENCE_REQUESTS_COLLECTION,
@@ -136,6 +137,7 @@ export async function GET(request: NextRequest) {
     }> = [];
     let teamAssigned: boolean | undefined;
     if (isEmployee && actor.linkedEmployeeId) {
+      await ensureCurrentSatpamDutyPlans();
       const team = await findSatpamTeamForEmployee(actor.linkedEmployeeId);
       teamAssigned = Boolean(team);
       if (team) {
@@ -225,6 +227,7 @@ export async function POST(request: NextRequest) {
     if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
       throw new HttpError(400, 'Revisi pengajuan tidak valid.');
     }
+    await ensureCurrentSatpamDutyPlans();
     const period = payrollPeriodForDutyDate(dutyDate);
     const periodSnapshot = await adminDb.collection('PayrollPeriods').doc(period).get();
     const team = await findSatpamTeamForEmployee(actor.linkedEmployeeId);

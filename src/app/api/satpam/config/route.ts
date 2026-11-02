@@ -16,6 +16,7 @@ import {
 import { isSatpamFlexibilityEnabled } from '@/lib/server/satpamFlexibility';
 import {
   SATPAM_DUTY_PLANS_COLLECTION,
+  ensureCurrentSatpamDutyPlans,
   loadSatpamDutyPlanContext,
 } from '@/lib/server/satpamDutyPlan';
 import { satpamAttendanceReportType } from '@/lib/payroll/satpamAttendance';
@@ -44,6 +45,7 @@ export async function GET(request: NextRequest) {
     } catch {
       throw new HttpError(400, 'dutyDate wajib berupa tanggal YYYY-MM-DD yang valid.');
     }
+    await ensureCurrentSatpamDutyPlans();
     const year = dutyDate.slice(0, 4);
     const teamQuery = await adminDb
       .collection('SatpamShiftTeams')

@@ -31,6 +31,7 @@
     "test:satpam-leave-pay:integration": "firebase emulators:exec --only firestore,auth --project demo-satpam-leave-pay --config firebase.kjm-test.json 'NEXT_PUBLIC_FIREBASE_PROJECT_ID=demo-satpam-leave-pay npx tsx scripts/testSatpamLeavePayEmulator.ts'",
     "repair:satpam-leave-pay": "tsx scripts/repairSatpamApprovedLeavePay.ts",
     "audit:satpam-payroll": "tsx scripts/auditSatpamPayrollReadOnly.ts",
+    "test:satpam-auto-plan:integration": "firebase emulators:exec --only firestore --project demo-satpam-auto-plan --config firebase.kjm-test.json 'NEXT_PUBLIC_FIREBASE_PROJECT_ID=demo-satpam-auto-plan npx tsx scripts/testSatpamAutoPublishEmulator.ts'",
     "test:satpam-empty-post:integration": "firebase emulators:exec --only firestore,auth --project demo-satpam-empty-post --config firebase.kjm-test.json 'NEXT_PUBLIC_FIREBASE_PROJECT_ID=demo-satpam-empty-post npx tsx scripts/testSatpamEmptyPostEmulator.ts'",
     "reconcile:satpam-flexible": "tsx scripts/reconcileSatpamFlexibleReports.ts",
     "recompute:driver-komponen-waktu": "tsx scripts/recomputeDriverKomponenWaktu.ts",

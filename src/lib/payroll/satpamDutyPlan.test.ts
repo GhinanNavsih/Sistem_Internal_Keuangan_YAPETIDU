@@ -15,6 +15,7 @@ import {
   isSatpamDutyPlanRequired,
   nextSatpamRotationAssignments,
   reconcileSatpamDuties,
+  resolveSatpamPlanContinuation,
   satpamHarianCountWithApprovedAbsences,
   satpamDutyKey,
   satpamMonthlyScheduledShiftTarget,
@@ -171,6 +172,100 @@ test('rotation continuation advances every guard from the prior final day', () =
     july.generatedDays[4].offDutyEmployeeId,
   );
   assert.deepEqual(august.generatedDays[0].assignments, july.generatedDays[4].assignments);
+});
+
+function novemberPlanData(overrides: Record<string, unknown> = {}) {
+  const november = generatePlan('2026-11-01', '2026-11-30');
+  return {
+    schemaVersion: 2,
+    rotationVersion: SATPAM_DUTY_PLAN_ROTATION_VERSION,
+    status: 'published',
+    revision: 3,
+    ketuaShiftId,
+    fixedPost9EmployeeId,
+    rosterEmployeeIds: roster,
+    seedDays: november.seedDays,
+    generatedDays: november.generatedDays,
+    ...overrides,
+  };
+}
+
+function resolveDecember(
+  previousPlan: Record<string, unknown> | null,
+  overrides: { ketuaShiftId?: string; rosterEmployeeIds?: string[]; fixedPost9EmployeeId?: string } = {},
+) {
+  return resolveSatpamPlanContinuation({
+    previousPlanId: '202611__team_1',
+    previousPlan,
+    previousPeriodEndsOn: '2026-11-30',
+    currentPeriodStartsOn: '2026-12-01',
+    ketuaShiftId,
+    rosterEmployeeIds: roster,
+    ...overrides,
+  });
+}
+
+test('a new month continues one rotation step after the previous final day', () => {
+  const previous = novemberPlanData();
+  const continuation = resolveDecember(previous);
+  assert.ok(continuation);
+  assert.equal(continuation.sourcePlanId, '202611__team_1');
+  assert.equal(continuation.sourceRevision, 3);
+  assert.equal(continuation.fixedPost9EmployeeId, fixedPost9EmployeeId);
+  const december = validateAndGenerateSatpamDutyPlan({
+    periodStart: '2026-12-01',
+    periodEnd: '2026-12-31',
+    rosterEmployeeIds: roster,
+    ketuaShiftId,
+    fixedPost9EmployeeId,
+    firstDayAssignments: continuation.firstDayAssignments,
+  });
+  // 30 November is day 30, so 1 December behaves as day 31 of one long cycle.
+  const unbroken = generatePlan('2026-11-01', '2026-12-31');
+  assert.deepEqual(
+    december.generatedDays[0].assignments,
+    unbroken.generatedDays[30].assignments,
+  );
+  assert.equal(
+    december.generatedDays[0].offDutyEmployeeId,
+    unbroken.generatedDays[30].offDutyEmployeeId,
+  );
+});
+
+test('a one-day edit on the final date does not bend the next rotation', () => {
+  const previous = novemberPlanData();
+  const generatedDays = (previous.generatedDays as SatpamDutyPlanDay[]).map((day) =>
+    day.dutyDate === '2026-11-30'
+      ? { ...day, offDutyEmployeeId: 'SOMEONE-ELSE', overridden: true }
+      : day,
+  );
+  assert.deepEqual(
+    resolveDecember({ ...previous, generatedDays })?.firstDayAssignments,
+    resolveDecember(previous)?.firstDayAssignments,
+  );
+});
+
+test('a month cannot continue automatically when the team or plan changed', () => {
+  const swappedRoster = [...roster.slice(0, -1), 'SAT-NEW'];
+  assert.equal(resolveDecember(null), null);
+  assert.equal(resolveDecember(novemberPlanData({ status: 'stale' })), null);
+  assert.equal(resolveDecember(novemberPlanData({ schemaVersion: 1 })), null);
+  assert.equal(resolveDecember(novemberPlanData({ rotationVersion: 'OLD' })), null);
+  assert.equal(resolveDecember(novemberPlanData({ fixedPost9EmployeeId: '' })), null);
+  assert.equal(resolveDecember(novemberPlanData(), { rosterEmployeeIds: swappedRoster }), null);
+  assert.equal(resolveDecember(novemberPlanData(), { ketuaShiftId: 'SAT-NEW' }), null);
+  assert.equal(resolveDecember(novemberPlanData(), { fixedPost9EmployeeId: 'SAT-NEW' }), null);
+  assert.equal(
+    resolveSatpamPlanContinuation({
+      previousPlanId: '202611__team_1',
+      previousPlan: novemberPlanData(),
+      previousPeriodEndsOn: '2026-11-30',
+      currentPeriodStartsOn: '2026-12-02',
+      ketuaShiftId,
+      rosterEmployeeIds: roster,
+    }),
+    null,
+  );
 });
 
 test('manual start requires all eight rotating members exactly once', () => {

@@ -127,6 +127,7 @@ type DutyPlan = {
   seedDays?: PlanDay[];
   generatedDays?: PlanDay[];
   lateBackfillDates?: string[];
+  autoPublished?: boolean;
 };
 
 type DutyPlanResponse = {
@@ -338,6 +339,7 @@ export function SatpamDutyPlanPanel(props: {
   const [previewLateBackfillDates, setPreviewLateBackfillDates] = useState<
     string[]
   >([]);
+  const [revising, setRevising] = useState(false);
   const [editingDay, setEditingDay] = useState<PlanDay | null>(null);
   const [pendingLiburSwap, setPendingLiburSwap] =
     useState<PendingPlanLiburSwap | null>(null);
@@ -378,6 +380,7 @@ export function SatpamDutyPlanPanel(props: {
     if (!team || !period) return;
     setLoading(true);
     setError('');
+    setRevising(false);
     try {
       const response = await authenticatedJson<DutyPlanResponse>(
         `/api/satpam/duty-plans?period=${encodeURIComponent(period)}`,
@@ -784,9 +787,11 @@ export function SatpamDutyPlanPanel(props: {
           <div className="rounded-md border border-indigo-200 bg-indigo-50 p-4 text-indigo-900">
             <p className="font-bold">Perencanaan Bulan Berikutnya</p>
             <p className="mt-1 text-sm">
-              Rencana boleh disiapkan dan diterbitkan sekarang. Laporan harian,
-              izin, dan pembayaran baru aktif setelah Superadmin membuka
-              periode tersebut.
+              {view?.continuation && !hasPublishedPlan
+                ? 'Tidak perlu diterbitkan: jadwal dibuat otomatis saat periode dimulai. Terbitkan sekarang hanya jika ingin menyiapkannya lebih awal.'
+                : 'Rencana boleh disiapkan dan diterbitkan sekarang.'}{' '}
+              Laporan harian, izin, dan pembayaran baru aktif setelah Superadmin
+              membuka periode tersebut.
             </p>
           </div>
         )}
@@ -814,7 +819,7 @@ export function SatpamDutyPlanPanel(props: {
             Periode ini masih memakai alur lama. Rencana dinas mulai wajib pada
             periode berikutnya yang dibuka setelah fitur diaktifkan.
           </div>
-        ) : hasPublishedPlan && plan ? (
+        ) : hasPublishedPlan && plan && !revising ? (
           <>
             <div
               className={`rounded-md border p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ${
@@ -827,6 +832,12 @@ export function SatpamDutyPlanPanel(props: {
                 <p className="font-bold">
                   {statusLabel(plan.status)} · revisi {plan.revision}
                 </p>
+                {plan.autoPublished && (
+                  <p className="mt-1 text-sm">
+                    Dibuat otomatis dengan melanjutkan rotasi periode
+                    sebelumnya. Anda tidak perlu menerbitkannya.
+                  </p>
+                )}
                 {(plan.lateBackfillDates?.length || 0) > 0 && (
                   <p className="mt-1 text-sm">
                     {plan.lateBackfillDates?.length || 0} tanggal diterbitkan
@@ -834,24 +845,39 @@ export function SatpamDutyPlanPanel(props: {
                   </p>
                 )}
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                className="h-10 px-3.5 gap-2 rounded-sm border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-100 font-bold text-xs shadow-xs shrink-0 cursor-pointer"
-                onClick={() => {
-                  generateSatpamDutyPlanPdf({
-                    period,
-                    ketuaShiftName: employeeName(rosterEmployees, team?.ketuaShiftId || ''),
-                    status: plan.status,
-                    revision: plan.revision,
-                    employees: rosterEmployees,
-                    days: plan.generatedDays || [],
-                  });
-                }}
-              >
-                <Printer className="h-4 w-4 text-emerald-600" />
-                Cetak PDF (Horizontal)
-              </Button>
+              <div className="flex flex-wrap gap-2 shrink-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-10 px-3.5 gap-2 rounded-sm border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-100 font-bold text-xs shadow-xs cursor-pointer"
+                  disabled={(plan.generatedDays || []).every((day) => day.started === true)}
+                  onClick={() => {
+                    setMessage('');
+                    setRevising(true);
+                  }}
+                >
+                  <Pencil className="h-4 w-4 text-emerald-600" />
+                  Ubah Susunan
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-10 px-3.5 gap-2 rounded-sm border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-100 font-bold text-xs shadow-xs cursor-pointer"
+                  onClick={() => {
+                    generateSatpamDutyPlanPdf({
+                      period,
+                      ketuaShiftName: employeeName(rosterEmployees, team?.ketuaShiftId || ''),
+                      status: plan.status,
+                      revision: plan.revision,
+                      employees: rosterEmployees,
+                      days: plan.generatedDays || [],
+                    });
+                  }}
+                >
+                  <Printer className="h-4 w-4 text-emerald-600" />
+                  Cetak PDF (Horizontal)
+                </Button>
+              </div>
             </div>
             <div className="space-y-3">
               {(plan.generatedDays || []).map((day) => {
@@ -907,6 +933,42 @@ export function SatpamDutyPlanPanel(props: {
           </>
         ) : (
           <>
+            {revising && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-amber-900 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <p className="font-bold">Ubah susunan rotasi</p>
+                  <p className="mt-1 text-sm">
+                    Perubahan hanya berlaku untuk tanggal mendatang. Tanggal yang
+                    sudah dimulai atau dilaporkan tidak berubah.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-sm min-h-12 shrink-0 bg-white"
+                  disabled={working}
+                  onClick={() => {
+                    resetPreview();
+                    void load();
+                  }}
+                >
+                  Batal
+                </Button>
+              </div>
+            )}
+            {!revising &&
+              !selectedOpenPeriod?.planningOnly &&
+              (!plan || plan.status === 'missing') && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-amber-900">
+                  <p className="font-bold">Jadwal perlu disusun manual</p>
+                  <p className="mt-1 text-sm">
+                    Sistem biasanya membuat jadwal otomatis, tetapi periode ini
+                    tidak bisa dilanjutkan dari periode sebelumnya, misalnya
+                    karena susunan regu atau Ketua berubah. Mohon periksa lalu
+                    terbitkan di bawah ini.
+                  </p>
+                </div>
+              )}
             {plan?.status === 'stale' && (
               <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-amber-900">
                 <p className="font-bold">Susunan regu berubah</p>
@@ -1258,8 +1320,8 @@ export function SatpamDutyPlanPanel(props: {
           Jadwal Regu Satu Periode
         </CardTitle>
         <p className="text-base text-slate-600">
-          Pilih Pos 9 Satpam Regu dan susunan awal. Sistem melanjutkan
-          rotasi delapan hari untuk seluruh jendela payroll.
+          Sistem menerbitkan jadwal otomatis setiap bulan dengan melanjutkan
+          rotasi delapan hari. Ubah hanya bila ada perubahan.
         </p>
       </CardHeader>
       {body}

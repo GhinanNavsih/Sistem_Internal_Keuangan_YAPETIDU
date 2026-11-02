@@ -11,8 +11,18 @@ approved shift payment.
 
 ## Who prepares the plan?
 
-The `Ketua Shift` prepares and publishes the plan for their own ten-person team.
-The team consists of:
+The system publishes each team's plan automatically for the current month, so
+the `Ketua Shift` normally does nothing. The first Satpam request of the month
+(the Ketua's report or schedule page, or a leave page) creates any missing plan
+by continuing the previous month's rotation. This is recorded as a system action
+(`publishedBy: system`, `autoPublished: true`, audit action
+`SATPAM_DUTY_PLAN_AUTO_PUBLISHED`), and an existing plan is never overwritten.
+
+The Ketua prepares the plan by hand only when it can't safely continue (see the
+rotation section), and can still change a published plan: **Ubah** edits one
+future date, and **Ubah Susunan** republishes the arrangement for future dates.
+
+Each ten-person team consists of:
 
 - one Ketua Shift recorded at Pos 2 Stasiun while serving as the roaming
   coordinator;
@@ -24,15 +34,16 @@ The system still records nine unique primary post assignments and one unique
 Libur member each day. The Ketua patrols every post, takes the optional report
 photos, and submits the actual roster for the team.
 
-The Ketua Shift can plan the immediately following calendar month before
-Superadmin opens that payroll period. This is called **Perencanaan awal**. Daily
+The Ketua Shift can optionally plan the immediately following calendar month
+before Superadmin opens that payroll period. This is called **Perencanaan awal**.
+Automatic publishing never runs ahead of the month it belongs to. Daily
 shift reports, absence requests, attendance processing, and payroll posting
 remain unavailable until Superadmin opens the period.
 
 ## The eight-day rotation
 
-The Ketua first chooses the monthly permanent Pos 9 guard. The remaining eight
-members then follow this order:
+A manually prepared plan starts with the Ketua choosing the monthly permanent
+Pos 9 guard. The remaining eight members then follow this order:
 
 `Pos 1 → Pos 8 → Pos 6 → Pos 5 → Pos 7 → Pos 4 → Pos 3 → Libur`
 
@@ -40,9 +51,11 @@ When there is no compatible previous plan, the Ketua assigns the eight rotating
 members to the first date's seven posts and Libur slot. The server advances each
 member one slot per calendar date. Day 9 therefore repeats Day 1.
 
-When the previous period has the same roster, Ketua, and permanent Pos 9 guard,
-the new period continues from the next rotation step automatically. A roster or
-fixed-guard change requires a new manual first-date arrangement. The actual
+When the previous period has the same roster and Ketua, and its plan is not
+stale, the new period keeps the same permanent Pos 9 guard and continues from the
+next rotation step automatically. A roster or Ketua change, a stale or missing
+previous plan, or a Ketua choosing a different Pos 9 guard requires a new manual
+first-date arrangement. The actual
 shift name still follows the applicable Pagi/Sore/Malam team rota.
 
 The plan is saved with a revision and a roster snapshot. A team-roster change

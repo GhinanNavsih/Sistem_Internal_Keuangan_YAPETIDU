@@ -476,6 +476,74 @@ export function nextSatpamRotationAssignments(
   }));
 }
 
+function sameEmployeeSet(left: unknown, right: readonly string[]): boolean {
+  if (!Array.isArray(left)) return false;
+  const normalized = left.filter(
+    (value): value is string => typeof value === 'string' && Boolean(value),
+  );
+  return (
+    normalized.length === right.length &&
+    new Set(normalized).size === right.length &&
+    right.every((employeeId) => normalized.includes(employeeId))
+  );
+}
+
+export interface SatpamPlanContinuation {
+  sourcePlanId: string;
+  sourceRevision: number;
+  fixedPost9EmployeeId: string;
+  firstDayAssignments: SatpamRotationSlotAssignment[];
+}
+
+/**
+ * Decides whether a period can carry on from the previous period's plan, and
+ * returns the next rotation step when it can. Both the Ketua's pre-filled form
+ * and the automatic monthly publish rely on this, so a roster, Ketua or Pos 9
+ * change always falls back to a manual first-date arrangement.
+ */
+export function resolveSatpamPlanContinuation(input: {
+  previousPlanId: string;
+  previousPlan: Record<string, unknown> | null | undefined;
+  previousPeriodEndsOn: string;
+  currentPeriodStartsOn: string;
+  ketuaShiftId: string;
+  rosterEmployeeIds: readonly string[];
+  fixedPost9EmployeeId?: string;
+}): SatpamPlanContinuation | null {
+  const data = input.previousPlan;
+  if (!data) return null;
+  const fixedPost9EmployeeId = String(data.fixedPost9EmployeeId || '');
+  const compatible =
+    Number(data.schemaVersion || 0) === SATPAM_DUTY_PLAN_SCHEMA_VERSION &&
+    data.rotationVersion === SATPAM_DUTY_PLAN_ROTATION_VERSION &&
+    data.status !== 'stale' &&
+    String(data.ketuaShiftId || '') === input.ketuaShiftId &&
+    sameEmployeeSet(data.rosterEmployeeIds, input.rosterEmployeeIds) &&
+    addCalendarDays(input.previousPeriodEndsOn, 1) === input.currentPeriodStartsOn &&
+    (!input.fixedPost9EmployeeId ||
+      input.fixedPost9EmployeeId === fixedPost9EmployeeId);
+  const generatedDays = Array.isArray(data.generatedDays)
+    ? (data.generatedDays as SatpamDutyPlanDay[])
+    : [];
+  const previousGeneratedDay = generatedDays.find(
+    (day) => day.dutyDate === input.previousPeriodEndsOn,
+  );
+  const seedDays = Array.isArray(data.seedDays)
+    ? (data.seedDays as SatpamDutyPlanDay[])
+    : [];
+  const previousDay = previousGeneratedDay
+    ? seedDays[Number(previousGeneratedDay.sourceSeedIndex)] ||
+      previousGeneratedDay
+    : null;
+  if (!compatible || !previousDay || !fixedPost9EmployeeId) return null;
+  return {
+    sourcePlanId: input.previousPlanId,
+    sourceRevision: Number(data.revision || 0),
+    fixedPost9EmployeeId,
+    firstDayAssignments: nextSatpamRotationAssignments(previousDay),
+  };
+}
+
 export function validateSatpamDutyPlanDay(
   day: SatpamDutyPlanSeedDay,
   rosterEmployeeIds: readonly string[],

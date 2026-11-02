@@ -215,6 +215,12 @@ publishes a ten-day seed containing nine unique posts and one unique Off-duty
 member per day; every member must be Off-duty exactly once. The server repeats
 that matrix over the exact payroll window and retains every revision.
 
+The system publishes the current month's plan automatically on the first Satpam
+request of the month, by continuing the previous month's rotation. Ketua Shift
+publishes by hand only when that isn't safe: a changed roster or Ketua, or a stale
+or missing previous plan. A past month with no plan is never filled in
+automatically.
+
 Ketua Shift may also prepare and publish the immediately following calendar
 month before Superadmin opens its payroll period. This advance plan is limited
 to one upcoming month. Daily reports, absence requests, attendance processing,
@@ -254,7 +260,7 @@ independently create or remove Satpam pay.
 | Issue formula-based Pekarya NIPY | `super_admin`, `loyalis_admin` |
 | Reissue an incorrect Pekarya NIPY | `super_admin` |
 | Review, correct, and publish Pekarya attendance | scoped `satker_head` |
-| Publish/edit future Satpam duty plan | `ketua_shift_satpam` |
+| Publish (when it can't continue automatically) or edit future Satpam duty plan | `ketua_shift_satpam` |
 | Correct started Satpam plan dates / review absence | scoped `satker_head` |
 | Set period red dates | `super_admin` |
 | Permanently close payroll period | `super_admin`, `finance_verifier` |

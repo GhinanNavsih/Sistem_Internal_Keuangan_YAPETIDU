@@ -43,8 +43,8 @@ export function SatpamDutyPlanBodySkeleton() {
           Jadwal Regu Satu Periode
         </CardTitle>
         <p className="text-base text-slate-600">
-          Pilih Pos 9 Satpam Regu dan susunan awal. Sistem melanjutkan
-          rotasi delapan hari untuk seluruh jendela payroll.
+          Sistem menerbitkan jadwal otomatis setiap bulan dengan melanjutkan
+          rotasi delapan hari. Ubah hanya bila ada perubahan.
         </p>
       </CardHeader>
       <div className="space-y-5 p-4 sm:p-5">

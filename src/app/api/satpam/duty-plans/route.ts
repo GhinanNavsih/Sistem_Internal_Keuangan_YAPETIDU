@@ -1,11 +1,8 @@
-import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
-  addCalendarDays,
   assertDateOnly,
   assertRequestId,
-  guardDutyIndexId,
   isImmutablePayrollStatus,
   SATPAM_POSTS,
   shiftOccurrenceId,
@@ -19,10 +16,7 @@ import {
   isSatpamAdvancePlanningPeriod,
   isSatpamDutyPlanRequired,
   isSatpamPlanDayStarted,
-  nextSatpamRotationAssignments,
   satpamDutyPlanId,
-  SATPAM_DUTY_PLAN_ROTATION_VERSION,
-  SATPAM_DUTY_PLAN_SCHEMA_VERSION,
   SATPAM_ROTATION_SLOTS,
   validateAndGenerateSatpamDutyPlan,
   validateSatpamDutyPlanDay,
@@ -32,8 +26,14 @@ import {
   type SatpamRotationSlotAssignment,
 } from '@/lib/payroll/satpamDutyPlan';
 import {
+  ensureCurrentSatpamDutyPlans,
+  loadSatpamPlanContinuation,
+  publishSatpamDutyPlan,
+  reopenAffectedOccurrences,
+  rosterIdsFromTeam,
   SATPAM_DUTY_PLANS_COLLECTION,
   SATPAM_DUTY_PLAN_REVISIONS_COLLECTION,
+  stableHash,
   syncSatpamDutyReconciliation,
 } from '@/lib/server/satpamDutyPlan';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
@@ -55,10 +55,6 @@ const AUDITOR_ROLES = [
   'finance_verifier',
   'satker_head',
 ] as const;
-
-function stableHash(value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
-}
 
 function assertPeriod(period: string) {
   if (!/^\d{4}-\d{2}$/.test(period)) {
@@ -85,20 +81,6 @@ async function teamForKetua(employeeId: string) {
     throw new HttpError(409, 'Konfigurasi regu Ketua Shift harus tepat satu.');
   }
   return query.docs[0];
-}
-
-function rosterIdsFromTeam(team: FirebaseFirestore.DocumentSnapshot): string[] {
-  const data = team.data() || {};
-  return Array.from(
-    new Set<string>([
-      String(data.ketuaShiftId || ''),
-      ...(Array.isArray(data.memberEmployeeIds)
-        ? data.memberEmployeeIds.filter(
-            (value: unknown): value is string => typeof value === 'string',
-          )
-        : []),
-    ]),
-  ).filter(Boolean);
 }
 
 function parseFirstDayAssignments(value: unknown): SatpamRotationSlotAssignment[] {
@@ -172,102 +154,6 @@ function parseDay(value: unknown): SatpamDutyPlanSeedDay {
   };
 }
 
-function previousPayrollPeriod(period: string): string {
-  const [year, month] = period.split('-').map(Number);
-  const previous = new Date(Date.UTC(year, month - 2, 1));
-  return `${previous.getUTCFullYear()}-${String(previous.getUTCMonth() + 1).padStart(2, '0')}`;
-}
-
-function sameEmployeeSet(left: unknown, right: readonly string[]): boolean {
-  if (!Array.isArray(left)) return false;
-  const normalized = left.filter(
-    (value): value is string => typeof value === 'string' && Boolean(value),
-  );
-  return (
-    normalized.length === right.length &&
-    new Set(normalized).size === right.length &&
-    right.every((employeeId) => normalized.includes(employeeId))
-  );
-}
-
-async function loadContinuation(input: {
-  period: string;
-  teamId: string;
-  ketuaShiftId: string;
-  rosterEmployeeIds: readonly string[];
-  fixedPost9EmployeeId?: string;
-}) {
-  const previousPeriod = previousPayrollPeriod(input.period);
-  const [previousPlan, previousWindow] = await Promise.all([
-    adminDb
-      .collection(SATPAM_DUTY_PLANS_COLLECTION)
-      .doc(satpamDutyPlanId(previousPeriod, input.teamId))
-      .get(),
-    Promise.resolve(pekaryaPayrollWindow(previousPeriod)),
-  ]);
-  if (!previousPlan.exists) return null;
-  const data = previousPlan.data()!;
-  const currentWindow = pekaryaPayrollWindow(input.period);
-  const fixedPost9EmployeeId = String(data.fixedPost9EmployeeId || '');
-  const compatible =
-    Number(data.schemaVersion || 0) === SATPAM_DUTY_PLAN_SCHEMA_VERSION &&
-    data.rotationVersion === SATPAM_DUTY_PLAN_ROTATION_VERSION &&
-    data.status !== 'stale' &&
-    String(data.ketuaShiftId || '') === input.ketuaShiftId &&
-    sameEmployeeSet(data.rosterEmployeeIds, input.rosterEmployeeIds) &&
-    addCalendarDays(previousWindow.endsOn, 1) === currentWindow.startsOn &&
-    (!input.fixedPost9EmployeeId ||
-      input.fixedPost9EmployeeId === fixedPost9EmployeeId);
-  const generatedDays = Array.isArray(data.generatedDays)
-    ? (data.generatedDays as SatpamDutyPlanDay[])
-    : [];
-  const previousGeneratedDay = generatedDays.find(
-    (day) => day.dutyDate === previousWindow.endsOn,
-  );
-  const seedDays = Array.isArray(data.seedDays)
-    ? (data.seedDays as SatpamDutyPlanDay[])
-    : [];
-  const previousDay = previousGeneratedDay
-    ? seedDays[Number(previousGeneratedDay.sourceSeedIndex)] ||
-      previousGeneratedDay
-    : null;
-  if (!compatible || !previousDay || !fixedPost9EmployeeId) return null;
-  return {
-    sourcePlanId: previousPlan.id,
-    sourceRevision: Number(data.revision || 0),
-    fixedPost9EmployeeId,
-    firstDayAssignments: nextSatpamRotationAssignments(previousDay),
-  };
-}
-
-async function rosterSnapshot(rosterEmployeeIds: string[]) {
-  const snapshots = await adminDb.getAll(
-    ...rosterEmployeeIds.map((employeeId) =>
-      adminDb.collection('Employees_BlueCollar').doc(employeeId),
-    ),
-  );
-  const invalid = snapshots.find((snapshot) => {
-    const employee = snapshot.data();
-    return (
-      !snapshot.exists ||
-      employee?.employment?.jobCategory !== 'SATPAM' ||
-      (employee?.employment?.status !== 'active' &&
-        employee?.flags?.isActive !== true)
-    );
-  });
-  if (invalid) {
-    throw new HttpError(
-      409,
-      `Anggota ${invalid.id} tidak aktif atau bukan Satpam.`,
-    );
-  }
-  return snapshots.map((snapshot) => ({
-    employeeId: snapshot.id,
-    name: String(snapshot.data()?.name || snapshot.id),
-    nipy: String(snapshot.data()?.nipy || ''),
-  }));
-}
-
 export async function GET(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
@@ -279,6 +165,7 @@ export async function GET(request: NextRequest) {
     requireSatpamScope(actor);
     const period = request.nextUrl.searchParams.get('period') || '';
     assertPeriod(period);
+    await ensureCurrentSatpamDutyPlans();
     const periodSnapshot = await adminDb.collection('PayrollPeriods').doc(period).get();
     const advancePlanning = isSatpamAdvancePlanningPeriod(period);
     // Periods are open by default. A month with no PayrollPeriods document has
@@ -333,7 +220,7 @@ export async function GET(request: NextRequest) {
       actor.role === 'ketua_shift_satpam' &&
       actor.linkedEmployeeId &&
       ketuaTeamSnapshot
-        ? await loadContinuation({
+        ? await loadSatpamPlanContinuation({
             period,
             teamId: ketuaTeamSnapshot.id,
             ketuaShiftId: actor.linkedEmployeeId,
@@ -391,7 +278,7 @@ export async function POST(request: NextRequest) {
     const window = pekaryaPayrollWindow(period);
     const continuation =
       rotationStartMode === 'continued'
-        ? await loadContinuation({
+        ? await loadSatpamPlanContinuation({
             period,
             teamId: teamSnapshot.id,
             ketuaShiftId: actor.linkedEmployeeId,
@@ -476,276 +363,27 @@ export async function POST(request: NextRequest) {
     if (body.previewHash !== previewHash) {
       throw new HttpError(409, 'Pratinjau berubah. Periksa kembali sebelum menerbitkan.');
     }
-    const [periodSnapshot, employeeRoster, immutableSlipSnapshot] =
-      await Promise.all([
-      adminDb.collection('PayrollPeriods').doc(period).get(),
-      rosterSnapshot(rosterEmployeeIds),
-      adminDb
-        .collection('PayrollSlipStates')
-        .where('period', '==', period.replace('-', '_'))
-        .get(),
-    ]);
-    const currentPeriod = pekaryaPayrollPeriodForDate(jakartaToday());
-    const advancePlanning = isSatpamAdvancePlanningPeriod(period);
-    // Periods are open by default: the live current period (and any past
-    // period nobody has closed yet) accepts a duty plan without ever being
-    // explicitly opened. Only the immediately following month is advance-only.
-    const openCanonicalPeriod =
-      period <= currentPeriod &&
-      !isPeriodClosed(periodSnapshot.data()) &&
-      isSatpamDutyPlanRequired(period, periodSnapshot.exists ? periodSnapshot.data() : null);
-    if (
-      !openCanonicalPeriod &&
-      !(advancePlanning && !isPeriodClosed(periodSnapshot.data()))
-    ) {
-      throw new HttpError(
-        409,
-        'Rencana hanya dapat diterbitkan untuk periode terbuka atau satu periode berikutnya.',
-      );
-    }
-    if (
-      immutableSlipSnapshot.docs.some((snapshot) =>
-        isImmutablePayrollStatus(snapshot.data().status),
-      )
-    ) {
-      throw new HttpError(
-        409,
-        'Ada slip immutable pada periode ini; rencana tidak dapat diterbitkan ulang.',
-      );
-    }
-    const nowDate = new Date();
-    const lateBackfillDates = generatedDays
-      .filter((day) => isSatpamPlanDayStarted(day, nowDate))
-      .map((day) => day.dutyDate);
-    const requestHash = stableHash({
-      action,
+    const result = await publishSatpamDutyPlan({
+      actor,
       period,
       teamId: teamSnapshot.id,
+      ketuaShiftId: actor.linkedEmployeeId,
+      rosterEmployeeIds,
+      fixedPost9EmployeeId,
+      rotationStartMode: rotationStartMode as 'manual' | 'continued',
+      firstDayAssignments,
+      continuation,
+      generation,
+      requestId: body.requestId,
+      requestHash: stableHash({
+        action,
+        period,
+        teamId: teamSnapshot.id,
+        expectedRevision,
+        previewHash,
+      }),
       expectedRevision,
-      previewHash,
     });
-    const planRef = adminDb
-      .collection(SATPAM_DUTY_PLANS_COLLECTION)
-      .doc(satpamDutyPlanId(period, teamSnapshot.id));
-    const idempotencyRef = adminDb
-      .collection('FinancialIdempotencyKeys')
-      .doc(`${actor.uid}__${body.requestId}`);
-    const reportedOccurrencesQuery = adminDb
-      .collection('ShiftOccurrences')
-      .where('payrollPeriod', '==', period);
-    const continuationRef = continuation
-      ? adminDb
-          .collection(SATPAM_DUTY_PLANS_COLLECTION)
-          .doc(continuation.sourcePlanId)
-      : null;
-    const result = await adminDb.runTransaction(async (transaction) => {
-      const [
-        planBefore,
-        idempotencyBefore,
-        reportedOccurrences,
-        continuationBefore,
-        latestPeriod,
-      ] =
-        await Promise.all([
-          transaction.get(planRef),
-          transaction.get(idempotencyRef),
-          transaction.get(reportedOccurrencesQuery),
-          continuationRef
-            ? transaction.get(continuationRef)
-            : Promise.resolve(null),
-          transaction.get(adminDb.collection('PayrollPeriods').doc(period)),
-        ]);
-      if (idempotencyBefore.exists) {
-        if (idempotencyBefore.data()?.requestHash !== requestHash) {
-          throw new HttpError(409, 'requestId sudah digunakan untuk rencana berbeda.');
-        }
-        return {
-          planId: planRef.id,
-          revision: Number(idempotencyBefore.data()?.revision || expectedRevision),
-          firstPublication:
-            idempotencyBefore.data()?.firstPublication === true,
-          lateBackfillDates:
-            idempotencyBefore.data()?.lateBackfillDates || [],
-          idempotent: true,
-        };
-      }
-      if (isPeriodClosed(latestPeriod.data())) {
-        throw new HttpError(
-          409,
-          'Periode payroll sudah ditutup; rencana dinas tidak dapat diterbitkan.',
-        );
-      }
-      const currentRevision = planBefore.exists
-        ? Number(planBefore.data()?.revision || 0)
-        : 0;
-      if (currentRevision !== expectedRevision) {
-        throw new HttpError(409, 'Rencana telah berubah. Muat ulang sebelum menerbitkan.');
-      }
-      if (
-        continuation &&
-        (!continuationBefore?.exists ||
-          Number(continuationBefore.data()?.revision || 0) !==
-            continuation.sourceRevision)
-      ) {
-        throw new HttpError(
-          409,
-          'Rencana periode sebelumnya berubah. Periksa kembali kelanjutan rotasi.',
-        );
-      }
-      const current = planBefore.data() || {};
-      const currentDays = new Map<string, SatpamDutyPlanDay>(
-        Array.isArray(current.generatedDays)
-          ? current.generatedDays.map((day: SatpamDutyPlanDay) => [
-              day.dutyDate,
-              day,
-            ])
-          : [],
-      );
-      const reportedDates = new Set(
-        reportedOccurrences.docs
-          .filter(
-            (occurrence) =>
-              occurrence.data().teamId === teamSnapshot.id,
-          )
-          .map((occurrence) =>
-            String(occurrence.data().dutyDate || ''),
-          ),
-      );
-      const preservedLockedDates: string[] = [];
-      const finalGeneratedDays = generatedDays.map((generatedDay) => {
-        const existingDay = currentDays.get(generatedDay.dutyDate);
-        if (
-          existingDay &&
-          (isSatpamPlanDayStarted(existingDay, nowDate) ||
-            reportedDates.has(existingDay.dutyDate))
-        ) {
-          preservedLockedDates.push(existingDay.dutyDate);
-          return existingDay;
-        }
-        return generatedDay;
-      });
-      const reconciliationEmployeeIds = Array.from(
-        new Set([
-          ...rosterEmployeeIds,
-          ...finalGeneratedDays.flatMap((day) => [
-            day.offDutyEmployeeId,
-            ...day.assignments.map((assignment) => assignment.employeeId),
-          ]),
-        ]),
-      );
-      const revision = currentRevision + 1;
-      const effectiveLateBackfillDates = planBefore.exists
-        ? Array.isArray(current.lateBackfillDates)
-          ? current.lateBackfillDates
-          : []
-        : lateBackfillDates;
-      const status = 'published';
-      const now = admin.firestore.FieldValue.serverTimestamp();
-      const after = {
-        period,
-        teamId: teamSnapshot.id,
-        periodStart: window.startsOn,
-        periodEnd: window.endsOn,
-        ketuaShiftId: actor.linkedEmployeeId,
-        fixedPost9EmployeeId,
-        rotatingEmployeeIds,
-        firstDayAssignments,
-        rotationVersion: SATPAM_DUTY_PLAN_ROTATION_VERSION,
-        rotationStartMode,
-        continuedFromPlanId: continuation?.sourcePlanId || null,
-        continuedFromRevision: continuation?.sourceRevision || null,
-        rosterEmployeeIds,
-        reconciliationEmployeeIds,
-        rosterSnapshot: employeeRoster.map((employee) => ({
-          ...employee,
-          dutyRole:
-            employee.employeeId === actor.linkedEmployeeId
-              ? 'ketua'
-              : employee.employeeId === fixedPost9EmployeeId
-                ? 'fixed_pos_9'
-                : 'rotating',
-        })),
-        seedDays,
-        generatedDays: finalGeneratedDays,
-        status,
-        revision,
-        lateBackfillDates: effectiveLateBackfillDates,
-        staleDates: [],
-        publishedAt: now,
-        publishedBy: actor.uid,
-        updatedAt: now,
-        advancePublished: !openCanonicalPeriod,
-        schemaVersion: SATPAM_DUTY_PLAN_SCHEMA_VERSION,
-      };
-      transaction.set(planRef, after);
-      transaction.create(
-        adminDb
-          .collection(SATPAM_DUTY_PLAN_REVISIONS_COLLECTION)
-          .doc(`${planRef.id}__r${revision}`),
-        {
-          planId: planRef.id,
-          revision,
-          action: 'published',
-          before: planBefore.exists ? planBefore.data() : null,
-          after,
-          actorUid: actor.uid,
-          requestId: body.requestId,
-          createdAt: now,
-        },
-      );
-      transaction.create(
-        newFinancialAuditRef(),
-        buildFinancialAuditRecord(actor, {
-          action: 'SATPAM_DUTY_PLAN_PUBLISHED',
-          entityType: 'SatpamDutyPlan',
-          entityId: planRef.id,
-          requestId: body.requestId,
-          reason: 'Ketua Shift menerbitkan pola rotasi dinas delapan hari.',
-          before: planBefore.exists ? planBefore.data() : null,
-          after,
-          metadata: {
-            lateBackfillDates: effectiveLateBackfillDates,
-            preservedLockedDates,
-            rotationStartMode,
-            continuedFromPlanId: continuation?.sourcePlanId || null,
-            continuedFromRevision: continuation?.sourceRevision || null,
-          },
-        }),
-      );
-      transaction.create(idempotencyRef, {
-        actorUid: actor.uid,
-        requestId: body.requestId,
-        requestHash,
-        entityType: 'SatpamDutyPlan',
-        entityId: planRef.id,
-        revision,
-        firstPublication: !planBefore.exists,
-        lateBackfillDates: effectiveLateBackfillDates,
-        createdAt: now,
-      });
-      return {
-        planId: planRef.id,
-        revision,
-        status,
-        preservedLockedDates,
-        firstPublication: !planBefore.exists,
-        lateBackfillDates: effectiveLateBackfillDates,
-        idempotent: false,
-      };
-    });
-    if (result.firstPublication && result.lateBackfillDates.length > 0) {
-      await reopenAffectedOccurrences({
-        period,
-        teamId: teamSnapshot.id,
-        dutyDates: result.lateBackfillDates,
-        actor,
-        requestId: body.requestId,
-        reason:
-          'Publikasi pertama rencana dinas dilakukan setelah shift dimulai; klasifikasi lama harus diperiksa ulang.',
-        dutyPlanRevision: result.revision,
-      });
-    }
-    await syncSatpamDutyReconciliation(period, actor.uid);
     return Response.json(result, {
       headers: { 'Cache-Control': 'no-store' },
     });
@@ -1193,124 +831,4 @@ export async function PATCH(request: NextRequest) {
   } catch (error) {
     return errorResponse(error);
   }
-}
-
-async function reopenAffectedOccurrences(input: {
-  period: string;
-  teamId: string;
-  dutyDates: string[];
-  actor: AuthenticatedProfile;
-  requestId: string;
-  reason: string;
-  dutyPlanRevision: number;
-}) {
-  const occurrences = await adminDb
-    .collection('ShiftOccurrences')
-    .where('payrollPeriod', '==', input.period)
-    .get();
-  const selectedDates = new Set(input.dutyDates);
-  const writer = adminDb.bulkWriter();
-  for (const occurrenceSnapshot of occurrences.docs.filter(
-    (occurrence) =>
-      occurrence.data().teamId === input.teamId &&
-      selectedDates.has(String(occurrence.data().dutyDate || '')),
-  )) {
-    const occurrence = occurrenceSnapshot.data();
-    const occurrenceDutyDate = String(occurrence.dutyDate || '');
-    const reportIds = Array.isArray(occurrence.reportIds)
-      ? occurrence.reportIds.filter(
-          (value: unknown): value is string => typeof value === 'string',
-        )
-      : [];
-    const reports =
-      reportIds.length > 0
-        ? await adminDb.getAll(
-            ...reportIds.map((reportId) =>
-              adminDb.collection('ActivityReports').doc(reportId),
-            ),
-          )
-        : [];
-    const reopenedIds: string[] = [];
-    for (const report of reports) {
-      if (!report.exists || report.data()?.status !== 'approved') continue;
-      const before = report.data()!;
-      reopenedIds.push(report.id);
-      writer.update(report.ref, {
-        status: 'pending',
-        dutyPlanRevision: input.dutyPlanRevision,
-        dutyPlanReopenedAt: admin.firestore.FieldValue.serverTimestamp(),
-        dutyPlanReopenedBy: input.actor.uid,
-        dutyPlanReopenedFromApproval: {
-          shiftType: before.shiftType || null,
-          fee: before.fee || 0,
-          approvedAt: before.approvedAt || null,
-          approvedBy: before.approvedBy || null,
-        },
-      });
-      writer.delete(adminDb.collection('PayrollLedgerEntries').doc(report.id));
-      writer.delete(
-        adminDb
-          .collection('GuardDutyIndexes')
-          .doc(
-            guardDutyIndexId(
-              occurrenceDutyDate,
-              String(
-                occurrence.reportedShiftName || occurrence.shiftName || '',
-              ) as SatpamShiftName,
-              String(before.employeeId || ''),
-            ),
-          ),
-      );
-      writer.create(
-        newFinancialAuditRef(),
-        buildFinancialAuditRecord(input.actor, {
-          action: 'SATPAM_SHIFT_REOPENED_FOR_DUTY_PLAN',
-          entityType: 'ActivityReport',
-          entityId: report.id,
-          requestId: input.requestId,
-          reason: input.reason,
-          before,
-          after: {
-            status: 'pending',
-            dutyPlanRevision: input.dutyPlanRevision,
-          },
-        }),
-      );
-    }
-    const pendingReportIds = Array.from(
-      new Set([
-        ...(Array.isArray(occurrence.pendingReportIds)
-          ? occurrence.pendingReportIds
-          : []),
-        ...reopenedIds,
-      ]),
-    );
-    writer.update(occurrenceSnapshot.ref, {
-      status: 'pending_review',
-      reviewStatus: 'pending',
-      dutyPlanId:
-        String(occurrence.dutyPlanId || '') ||
-        satpamDutyPlanId(input.period, input.teamId),
-      dutyPlanRevision: input.dutyPlanRevision,
-      dutyPlanStale: true,
-      pendingReportIds,
-      pendingAssignmentCount: pendingReportIds.length,
-      approvedAssignmentCount: Math.max(
-        0,
-        Number(occurrence.approvedAssignmentCount || 0) - reopenedIds.length,
-      ),
-      anomalyCodes: Array.from(
-        new Set([
-          ...(Array.isArray(occurrence.anomalyCodes)
-            ? occurrence.anomalyCodes.filter(
-                (code: unknown) => code !== 'DUTY_PLAN_MISSING',
-              )
-            : []),
-          'DUTY_PLAN_CHANGED_AFTER_REPORT',
-        ]),
-      ),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-  }
-  await writer.close();
 }

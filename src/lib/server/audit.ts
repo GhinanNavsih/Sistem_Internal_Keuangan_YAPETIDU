@@ -13,7 +13,7 @@ export interface FinancialAuditInput {
 }
 
 export function buildFinancialAuditRecord(
-  actor: AuthenticatedProfile,
+  actor: Pick<AuthenticatedProfile, 'uid' | 'email'> & { role: string },
   input: FinancialAuditInput,
 ): Record<string, unknown> {
   return {
