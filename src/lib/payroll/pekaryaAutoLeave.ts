@@ -53,7 +53,10 @@ export function pekaryaAutoLeaveCandidates(input: {
   const result: PekaryaAutoLeaveCandidates = { dates: [], shifts: new Map(), held: [] };
   const hold = (date: string | null, reason: string) => result.held.push({ date, reason });
   if (!input.identityValid) { hold(null, 'Identitas presensi belum unik atau belum lengkap.'); return result; }
-  const rows = input.rows.filter((row) => row.nipy === input.nipy &&
+  const employeeRows = input.rows.filter((row) => row.nipy === input.nipy);
+  const invalidDates = new Set(employeeRows.filter((row) =>
+    row.issues.some((issue) => INVALID_SOURCE_ISSUES.has(issue))).map((row) => row.date));
+  const rows = employeeRows.filter((row) =>
     !row.issues.some((issue) => INVALID_SOURCE_ISSUES.has(issue)));
   if (!input.importAvailable || !rows.some((row) => row.date.startsWith(`${input.period}-`))) {
     hold(null, 'Menunggu data presensi pegawai pada import aktif.'); return result;
@@ -81,6 +84,10 @@ export function pekaryaAutoLeaveCandidates(input: {
     // A partial punch or actual journey credit is attendance, never a full absence.
     if (rows.some((row) => evidenceDates.includes(row.date) && (row.scanIn || row.scanOut)) ||
         days.some((day) => evidenceDates.includes(day.date) && (day.present || day.scanIn || day.scanOut))) continue;
+    if (evidenceDates.some((evidenceDate) => invalidDates.has(evidenceDate))) {
+      hold(date, 'Ada bukti presensi yang belum valid pada tanggal ini.');
+      continue;
+    }
     if (evidenceDates.some((evidenceDate) => !rowsByDate.has(evidenceDate))) {
       hold(date, scheduled?.shiftName === 'Malam'
         ? 'Menunggu bukti presensi lengkap hingga akhir shift malam.'

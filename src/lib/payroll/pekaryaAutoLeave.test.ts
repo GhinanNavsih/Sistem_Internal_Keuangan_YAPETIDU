@@ -41,6 +41,11 @@ test('a partial punch, corrected presence, or journey credit prevents automatic 
   const days = consolidateAttendanceDays([row('2026-10-01')]);
   assert.deepEqual(candidates({ days: [{ ...days[0], present: true, journeyCredit: { scanIn: true, scanOut: false, journeyIds: ['J1'] } }] }).dates, []);
 });
+test('an invalid duplicate row prevents a blank row from proving full absence', () => {
+  const result = candidates({ rows: [row('2026-10-01'), row('2026-10-01', { issues: ['TIME_INVALID'] })] });
+  assert.deepEqual(result.dates, []);
+  assert.ok(result.held.some((item) => item.date === '2026-10-01'));
+});
 for (const shiftName of ['Pagi', 'Sore', 'Malam'] as const) {
   test(`SATPAM ${shiftName}: uses the published scheduled bounds and waits for full evidence`, () => {
     const rows = [row('2026-10-01'), row('2026-10-02')];
