@@ -36,6 +36,10 @@ export type AttendanceIdentifierSource = 'NIPY' | 'PIN';
 
 export type AttendanceIssueCode =
   | 'IDENTIFIER_MISSING'
+  /**
+   * Retired: no longer emitted. Rows imported before November 2026 may still
+   * carry it; {@link dropRetiredIdentifierConflict} strips it on load.
+   */
   | 'IDENTIFIER_CONFLICT'
   | 'DATE_INVALID'
   | 'TIME_INVALID'
@@ -281,9 +285,9 @@ export function normalizeAttendanceWorkbookRow(
   const sourceNipy = normalizeNipy(fields.get('NIPY')) || null;
   const sourcePin = normalizeNipy(fields.get('PIN')) || null;
   const issues: AttendanceIssueCode[] = [];
-  if (sourceNipy && sourcePin && sourceNipy !== sourcePin) {
-    issues.push('IDENTIFIER_CONFLICT');
-  }
+  // An export with both columns always has them differ: PIN is the scanner's
+  // own number, NIPY the payroll one. That is not a conflict, so NIPY wins and
+  // PIN is kept only as `sourcePin`, the fallback when NIPY is blank.
   const nipy = sourceNipy || sourcePin || '';
   if (!nipy) issues.push('IDENTIFIER_MISSING');
 
@@ -323,6 +327,21 @@ export function normalizeAttendanceWorkbookRow(
     scanIn,
     scanOut,
     issues: Array.from(new Set(issues)),
+  };
+}
+
+/**
+ * Strips the retired IDENTIFIER_CONFLICT flag from a stored row. Every reader
+ * treats that flag as blocking, so without this a revision imported before the
+ * rule was retired would keep its scans hidden until someone re-uploaded it.
+ */
+export function dropRetiredIdentifierConflict(
+  row: AttendanceNormalizedRow,
+): AttendanceNormalizedRow {
+  if (!row.issues?.includes('IDENTIFIER_CONFLICT')) return row;
+  return {
+    ...row,
+    issues: row.issues.filter((issue) => issue !== 'IDENTIFIER_CONFLICT'),
   };
 }
 

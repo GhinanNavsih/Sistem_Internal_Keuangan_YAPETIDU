@@ -7,6 +7,7 @@ import {
   attendanceDayKey,
   classifyAttendanceDepartment,
   consolidateAttendanceDays,
+  dropRetiredIdentifierConflict,
   normalizeNipy,
   resolveEmployeeAttendanceNipy,
 } from '@/lib/payroll/attendance';
@@ -255,7 +256,9 @@ export async function loadActiveAttendanceRows(
     importData,
     revisionData: revisionSnapshot.data()!,
     rows: rowsSnapshot.docs
-      .map((snapshot) => snapshot.data() as AttendanceNormalizedRow)
+      .map((snapshot) =>
+        dropRetiredIdentifierConflict(snapshot.data() as AttendanceNormalizedRow),
+      )
       .sort((left, right) => left.rowNumber - right.rowNumber),
   };
 }

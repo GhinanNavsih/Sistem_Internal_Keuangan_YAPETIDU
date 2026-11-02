@@ -8,6 +8,7 @@ import {
   autoFillAttendanceScan,
   classifyAttendanceDepartment,
   consolidateAttendanceDays,
+  dropRetiredIdentifierConflict,
   hasSatpamAttendanceEvidence,
   isPremiumAttendanceDate,
   normalizeAttendanceWorkbookRow,
@@ -18,22 +19,45 @@ import {
 } from './attendance';
 import { parseAttendanceWorkbook } from '../server/attendanceWorkbook';
 
-test('NIPY is preferred and conflicting PIN is reported', () => {
+test('NIPY is preferred and the scanner PIN beside it is kept, not flagged', () => {
+  // Shaped like the October 2026 export, which carries both columns: the PIN
+  // is the machine's own number and never equals the payroll NIPY.
   const row = normalizeAttendanceWorkbookRow(
     {
-      NIPY: ' np-001 ',
-      PIN: '2',
-      Tanggal: '01-08-2026',
+      PIN: '238',
+      NIPY: '15181009012',
+      Nama: 'Didik Siswanto',
+      Departemen: 'SECURITY',
+      Tanggal: '01-10-2026',
       'Jam kerja': 'MASUK',
-      'Scan masuk': '08:01:02',
-      'Scan pulang': '14:02:03',
+      'Scan masuk': '07:01:30',
+      'Scan pulang': '19:02:10',
     },
     2,
-    '2026-08',
+    '2026-10',
   );
-  assert.equal(row.nipy, 'NP-001');
+  assert.equal(row.nipy, '15181009012');
   assert.equal(row.identifierSource, 'NIPY');
-  assert.ok(row.issues.includes('IDENTIFIER_CONFLICT'));
+  assert.equal(row.sourcePin, '238');
+  assert.deepEqual(row.issues, []);
+});
+
+test('a stored row flagged before the NIPY/PIN rule was retired loses only that flag', () => {
+  const row = normalizeAttendanceWorkbookRow(
+    {
+      PIN: '238',
+      NIPY: '15181009012',
+      Tanggal: '01-10-2026',
+      'Jam kerja': 'MASUK',
+      'Scan masuk': '07:01:30',
+      'Scan pulang': '',
+    },
+    2,
+    '2026-10',
+  );
+  const stored = { ...row, issues: [...row.issues, 'IDENTIFIER_CONFLICT' as const] };
+  assert.deepEqual(dropRetiredIdentifierConflict(stored).issues, ['INCOMPLETE_PUNCH']);
+  assert.equal(dropRetiredIdentifierConflict(row), row);
 });
 
 test('existing Loyalis NIY is accepted as the attendance NIPY', () => {

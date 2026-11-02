@@ -2476,6 +2476,14 @@ export default function PresensiLoyalisRawPage() {
                               Revisi {revision.revision} · {revision.status}
                             </span>
                           )}
+                          {revision.fileName && (
+                            <span
+                              className="max-w-[14rem] truncate font-normal text-slate-500"
+                              title={revision.fileName}
+                            >
+                              {revision.fileName}
+                            </span>
+                          )}
                           {revision.status === 'writing' && (
                             <button
                               type="button"
