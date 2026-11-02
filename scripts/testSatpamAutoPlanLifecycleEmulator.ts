@@ -261,6 +261,16 @@ async function main() {
   assert.match(refused.error, /Rekonsiliasi Satpam belum selesai/);
   console.log('PASS close: refused while reports are missing');
 
+  // The same refusal applies to a month nobody has saved anything for yet.
+  const periodRef = db.doc(`PayrollPeriods/${period}`);
+  const storedPeriod = (await periodRef.get()).data()!;
+  await periodRef.delete();
+  const refusedWithoutRecord = await call(changePeriod, admin, closeBody, 409);
+  assert.match(refusedWithoutRecord.error, /Rekonsiliasi Satpam belum selesai/);
+  assert.equal((await periodRef.get()).exists, false);
+  await periodRef.set(storedPeriod);
+  console.log('PASS close: refused while reports are missing, with no period record either');
+
   // ── 1. Every Ketua reports every date, and each report is approved.
   // T1_G5 misses three planned duties, so the bonus has someone to refuse.
   const absentDates = new Set(
@@ -336,6 +346,12 @@ async function main() {
   await call(changePeriod, admin, closeBody, 201);
   assert.equal((await db.doc(`PayrollPeriods/${period}`).get()).data()?.attendanceStatus, 'closed');
   console.log('PASS close: the month closes on automatic plans');
+
+  // A month with no period record still closes once everything is reviewed.
+  await periodRef.delete();
+  await call(changePeriod, admin, closeBody, 201);
+  assert.equal((await periodRef.get()).data()?.attendanceStatus, 'closed');
+  console.log('PASS close: a fully reviewed month with no period record closes');
 
   // ── 1 (edge). A page left open across midnight sends the month's first request.
   async function forgetCurrentPlans() {

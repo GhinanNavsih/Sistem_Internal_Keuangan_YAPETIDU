@@ -293,8 +293,9 @@ export async function POST(request: NextRequest) {
         .collection('PayrollPeriods')
         .doc(period)
         .get();
+      // Periods are open by default, so a month with no stored document still
+      // owes its duty plans and reviewed reports before it can close.
       if (
-        satpamPeriodSnapshot.exists &&
         isSatpamDutyPlanRequired(
           period,
           satpamPeriodSnapshot.data() || null,
