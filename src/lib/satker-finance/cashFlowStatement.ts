@@ -55,3 +55,34 @@ export function cashFlowStatementSections(args: { entries: JournalEntry[]; accou
   }
   return sections;
 }
+
+export type JournalReceiptRef = { entryId: string; date: string; description: string; cashChange: number; totalAmount: number; index: number; count: number };
+
+/**
+ * Every receipt attached to the month's journals (the images in the Jurnal tab), in date order, each
+ * journal's receipts in the order they were attached. `cashChange` is what the journal moved in cash
+ * (zero for one that touches no cash); `index` and `count` place a receipt within its journal.
+ */
+export function journalReceiptRefs(args: { entries: (JournalEntry & { receiptCount?: number })[]; accounts: FinancialAccount[]; academicYear: string; monthIndex: number }): JournalReceiptRef[] {
+  const byId = new Map(args.accounts.map((account) => [accountId(account), account]));
+  const month = fiscalMonths(args.academicYear).find((item) => item.monthIndex === args.monthIndex);
+  const prefix = month ? `${month.year}-${String(month.monthIndex).padStart(2, '0')}` : '';
+  return args.entries
+    .filter((entry) => entry.academicYear === args.academicYear && entry.date.startsWith(prefix) && (entry.receiptCount ?? 0) > 0)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .flatMap((entry) => {
+      const cashChange = entry.lines.reduce((sum, line) => sum + (byId.get(line.accountCode)?.cashEquivalent ? line.debit - line.credit : 0), 0);
+      return Array.from({ length: entry.receiptCount ?? 0 }, (_, index) => ({
+        entryId: entry.id, date: entry.date, description: entry.description, cashChange, totalAmount: entry.totalAmount, index, count: entry.receiptCount ?? 0,
+      }));
+    });
+}
+
+/** The sections without the accounts that had no movement that month, which `cashFlowStatementSections` lists as '-' like the printed form. */
+export function movedCashFlowSections(sections: Record<CashFlowSection, CashFlowSectionLines>): Record<CashFlowSection, CashFlowSectionLines> {
+  const moved = {} as Record<CashFlowSection, CashFlowSectionLines>;
+  for (const section of CASH_FLOW_SECTIONS) {
+    moved[section] = { ...sections[section], receipts: sections[section].receipts.filter((row) => row.amount !== 0), payments: sections[section].payments.filter((row) => row.amount !== 0) };
+  }
+  return moved;
+}

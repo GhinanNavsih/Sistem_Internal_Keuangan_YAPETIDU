@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildFinancialStatements, buildVoucher, DEFAULT_ACCOUNTS, type JournalEntry } from './core';
-import { cashFlowStatementSections } from './cashFlowStatement';
+import { cashFlowStatementSections, journalReceiptRefs, movedCashFlowSections } from './cashFlowStatement';
 
 const academicYear = '2026-2027';
 
@@ -37,4 +37,33 @@ test('income and expense accounts with no movement are listed at zero, balance-s
   assert.deepEqual(sections.INVESTING.receipts, []);
   assert.deepEqual(sections.INVESTING.payments, []);
   assert.equal(sections.OPERATING.receiptTotal, 1_000);
+});
+
+test("a month prints every receipt of its journals by date, with the cash each journal moved", () => {
+  const withReceipts = (value: JournalEntry, receiptCount: number) => ({ ...value, receiptCount });
+  // The expense is owed instead of paid, so the journal touches no cash.
+  const onCredit = (value: JournalEntry): JournalEntry => ({ ...value, lines: value.lines.map((line) => line.accountCode === '10000' ? { ...line, accountCode: '20001', accountName: 'Hutang Lain-Lain' } : line) });
+  const entries = [
+    withReceipts(entry('late', '2026-10-20', { kind: 'EXPENSE', accountCode: '52000', paymentAccountCode: '10000', amount: 500 }), 1),
+    withReceipts(entry('early', '2026-10-03', { kind: 'INFLOW', accountCode: '41000', paymentAccountCode: '10000', amount: 8_150_000 }), 2),
+    withReceipts(onCredit(entry('on-credit', '2026-10-10', { kind: 'EXPENSE', accountCode: '52000', paymentAccountCode: '10000', amount: 900 })), 1),
+    withReceipts(entry('no-receipt', '2026-10-04', { kind: 'EXPENSE', accountCode: '52000', paymentAccountCode: '10000', amount: 700 }), 0),
+    withReceipts(entry('other-month', '2026-09-02', { kind: 'INFLOW', accountCode: '41000', paymentAccountCode: '10000', amount: 999 }), 1),
+  ];
+  const refs = journalReceiptRefs({ entries, accounts: DEFAULT_ACCOUNTS, academicYear, monthIndex: 10 });
+
+  assert.deepEqual(refs.map((ref) => [ref.entryId, ref.index, ref.count, ref.cashChange]), [['early', 0, 2, 8_150_000], ['early', 1, 2, 8_150_000], ['on-credit', 0, 1, 0], ['late', 0, 1, -500]]);
+  assert.equal(refs.find((ref) => ref.entryId === 'on-credit')?.totalAmount, 900);
+});
+
+test('accounts with no movement that month can be left out without changing any total', () => {
+  const entries = [entry('in', '2026-10-03', { kind: 'INFLOW', accountCode: '41000', paymentAccountCode: '10000', amount: 1_000 })];
+  const sections = cashFlowStatementSections({ entries, accounts: DEFAULT_ACCOUNTS, academicYear, monthIndex: 10 });
+  const moved = movedCashFlowSections(sections);
+
+  assert.ok(sections.OPERATING.receipts.length > 1);
+  assert.deepEqual(moved.OPERATING.receipts.map((row) => [row.code, row.amount]), [['41000', 1_000]]);
+  assert.deepEqual(moved.OPERATING.payments, []);
+  assert.equal(moved.OPERATING.receiptTotal, sections.OPERATING.receiptTotal);
+  assert.equal(moved.OPERATING.net, sections.OPERATING.net);
 });
