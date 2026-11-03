@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -11,7 +11,7 @@ import {
   User,
 } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
-import { doc, getDocFromCache, getDocFromServer } from 'firebase/firestore';
+import { doc, getDocFromServer } from 'firebase/firestore';
 import { normalizeUserRole, UserRole } from '@/lib/payroll/roles';
 import { getRoleHomePath } from '@/lib/roleHome';
 import type { LinkedAccountSummary } from '@/lib/accountGroups';
@@ -71,14 +71,16 @@ const CUSTOM_TOKEN_SESSION_KEY = 'bak_custom_token_session';
 // transient issue (network/timeout/offline), as opposed to a confirmed absence.
 // Callers must NOT treat this the same as "no profile" (e.g. must not sign the user out).
 class ProfileFetchError extends Error {
+  readonly code = 'auth/profile-unavailable';
+
   constructor() {
     super('PROFILE_FETCH_FAILED');
     this.name = 'ProfileFetchError';
   }
 }
 
-const PROFILE_SERVER_TIMEOUT_MS = 3_000;
-const PROFILE_CACHE_TIMEOUT_MS = 1_000;
+const PROFILE_SERVER_TIMEOUT_MS = 15_000;
+const PROFILE_RETRY_DELAY_MS = 500;
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -93,49 +95,42 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
 
 async function getUserProfile(uid: string): Promise<UserProfile | null> {
   const docRef = doc(db, 'users', uid);
+  const deadline = Date.now() + PROFILE_SERVER_TIMEOUT_MS;
 
-  try {
-    const docSnap = await withTimeout(
-      getDocFromServer(docRef),
-      PROFILE_SERVER_TIMEOUT_MS
-    );
-
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      const role = normalizeUserRole(data.role);
-      return role ? ({ uid, ...data, role } as UserProfile) : null;
-    }
-    return null;
-  } catch (err) {
-    const errorCode =
-      typeof err === 'object' && err !== null && 'code' in err
-        ? String(err.code)
-        : '';
-    if (errorCode === 'permission-denied' || errorCode === 'firestore/permission-denied') {
-      return null;
-    }
-
-    // A server request can remain pending while the browser is offline or
-    // Firestore is negotiating its connection. Never wait for that original
-    // promise after the timeout; use the local cache, then let auth settle.
-    console.warn('getUserProfile server request failed or timed out. Trying cache fallback...', err);
+  for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const cacheSnap = await withTimeout(
-        getDocFromCache(docRef),
-        PROFILE_CACHE_TIMEOUT_MS
+      // A cold Firestore connection can take longer than three seconds. Keep
+      // that request alive; cached roles/disabled flags cannot decide a login.
+      const docSnap = await withTimeout(
+        getDocFromServer(docRef),
+        Math.max(1, deadline - Date.now()),
       );
-      if (cacheSnap.exists()) {
-        const data = cacheSnap.data();
+      if (docSnap.exists()) {
+        const data = docSnap.data();
         const role = normalizeUserRole(data.role);
-        return role ? ({ uid, ...data, role } as UserProfile) : null;
+        return role ? ({ ...data, uid, role } as UserProfile) : null;
       }
-    } catch (cacheErr) {
-      console.warn('Profile cache fallback unavailable:', cacheErr);
+      return null;
+    } catch (err) {
+      const code = typeof err === 'object' && err !== null && 'code' in err
+        ? String(err.code).replace(/^firestore\//, '')
+        : '';
+      const retryable = [
+        'unavailable', 'deadline-exceeded', 'aborted', 'internal', 'unknown',
+        // Firestore may still be replacing the anonymous/previous credential
+        // when Firebase Auth first announces a new session. Retry once; a
+        // persistent denial still grants no access and never means "missing".
+        'unauthenticated', 'permission-denied',
+      ].includes(code);
+      if (!retryable || attempt === 1 || Date.now() + PROFILE_RETRY_DELAY_MS >= deadline) {
+        // In particular, permission-denied is not proof that a profile is
+        // absent. A failed read must never be converted into a forced logout.
+        throw new ProfileFetchError();
+      }
+      await new Promise(resolve => setTimeout(resolve, PROFILE_RETRY_DELAY_MS));
     }
-    // Couldn't confirm the profile either way (e.g. offline, flaky mobile network).
-    // Signal this distinctly so the caller doesn't force a sign-out on a transient blip.
-    throw new ProfileFetchError();
   }
+  throw new ProfileFetchError();
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -153,6 +148,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [switchingAccount, setSwitchingAccount] = useState<LinkedAccountSummary | null>(null);
   const [accountSwitchError, setAccountSwitchError] = useState<string | null>(null);
   const authCallIdRef = useRef(0);
+  const profileRequestRef = useRef<{ user: User; callId: number; promise: Promise<void> } | null>(null);
+  const invalidateProfileRequest = useCallback(() => {
+    ++authCallIdRef.current;
+    profileRequestRef.current = null;
+  }, []);
+
+  const loadAuthenticatedUser = useCallback((firebaseUser: User): Promise<void> => {
+    // The observer and the sign-in promise describe the same Firebase session.
+    // Give them one verification/settlement, rather than two competing reads.
+    if (profileRequestRef.current?.user === firebaseUser) {
+      return profileRequestRef.current.promise;
+    }
+    const callId = ++authCallIdRef.current;
+    const isCurrent = () => callId === authCallIdRef.current && auth.currentUser === firebaseUser;
+    setLoading(true);
+    setUser(null);
+    setProfile(null);
+
+    const promise = (async () => {
+      try {
+        const prof = await getUserProfile(firebaseUser.uid);
+        if (!isCurrent()) {
+          throw Object.assign(new Error('Sesi telah berubah.'), { code: 'auth/session-changed' });
+        }
+        if (!prof || prof.disabled === true) {
+          await signOut(auth);
+          throw Object.assign(new Error('Profil pengguna tidak aktif atau belum terdaftar.'), {
+            code: prof?.disabled === true ? 'auth/user-disabled' : 'auth/profile-not-found',
+          });
+        }
+        setUser(firebaseUser);
+        setProfile(prof);
+      } finally {
+        if (callId === authCallIdRef.current) setLoading(false);
+        if (profileRequestRef.current?.callId === callId) profileRequestRef.current = null;
+      }
+    })();
+    profileRequestRef.current = { user: firebaseUser, callId, promise };
+    return promise;
+  }, []);
 
   // Restore stored impersonation state on mount
   useEffect(() => {
@@ -178,41 +213,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      // Firebase can fire this callback more than once in quick succession in
-      // production (e.g. token refresh, multi-tab persistence negotiation).
-      // Track the latest call so a slower, out-of-order resolution can't
-      // clobber state a newer call already settled.
-      const callId = ++authCallIdRef.current;
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (auth.currentUser !== firebaseUser) return;
       if (firebaseUser) {
-        try {
-          const prof = await getUserProfile(firebaseUser.uid);
-          if (callId !== authCallIdRef.current) return;
-          if (prof && prof.disabled !== true) {
-            setUser(firebaseUser);
-            setProfile(prof);
-          } else {
-            // Profile confirmed missing or disabled — this is a real sign-out case.
-            await signOut(auth);
-            setUser(null);
-            setProfile(null);
+        void loadAuthenticatedUser(firebaseUser).catch((err) => {
+          if (auth.currentUser === firebaseUser) {
+            console.warn('Unable to verify the signed-in user profile:', err);
           }
-        } catch (err) {
-          if (callId !== authCallIdRef.current) return;
-          // Couldn't confirm the profile due to a transient error (network/timeout).
-          // Don't force a sign-out on a blip — keep whatever state we already had.
-          console.error("Error loading user profile on auth state change:", err);
-        }
+        });
       } else {
+        invalidateProfileRequest();
         setUser(null);
         setProfile(null);
         setImpersonatedUiProfile(null);
         sessionStorage.removeItem(UI_IMPERSONATION_KEY);
+        setLoading(false);
       }
-      if (callId === authCallIdRef.current) setLoading(false);
     });
-    return () => unsubscribe();
-  }, []);
+    return () => {
+      unsubscribe();
+      invalidateProfileRequest();
+    };
+  }, [loadAuthenticatedUser, invalidateProfileRequest]);
 
   const isSuperAdmin = profile?.role === 'super_admin';
   const isImpersonatingUi = isSuperAdmin && !!impersonatedUiProfile;
@@ -384,10 +406,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Redirect target user to their appropriate role home page
       window.location.href = getRoleHomePath(data.targetProfile);
-    } catch (err: any) {
+    } catch (err) {
       localStorage.removeItem(CUSTOM_TOKEN_SESSION_KEY);
       setImpersonationSessionInfo(null);
-      if (err?.code === 'auth/user-disabled') {
+      if (typeof err === 'object' && err !== null && 'code' in err && err.code === 'auth/user-disabled') {
         throw new Error('Akun ini telah dinonaktifkan (Disabled) dalam sistem Firebase Authentication.');
       }
       throw err;
@@ -431,31 +453,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signInWithEmail = async (email: string, password: string) => {
-    const credential = await signInWithEmailAndPassword(auth, email, password);
-    const firebaseUser = credential.user;
-    const prof = await getUserProfile(firebaseUser.uid);
-    if (!prof || prof.disabled === true) {
-      await signOut(auth);
-      throw new Error('Akun Anda belum terdaftar dalam sistem. Silakan hubungi administrator Badan Administrasi Keuangan (BAK).');
-    }
-    setUser(firebaseUser);
-    setProfile(prof);
+    const credential = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
+    await loadAuthenticatedUser(credential.user);
   };
 
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
     const credential = await signInWithPopup(auth, provider);
-    const firebaseUser = credential.user;
-    const prof = await getUserProfile(firebaseUser.uid);
-    if (!prof || prof.disabled === true) {
-      await signOut(auth);
-      throw new Error('Akun Anda belum terdaftar dalam sistem. Silakan hubungi administrator Badan Administrasi Keuangan (BAK).');
-    }
-    setUser(firebaseUser);
-    setProfile(prof);
+    await loadAuthenticatedUser(credential.user);
   };
 
   const logout = async () => {
+    invalidateProfileRequest();
     setImpersonatedUiProfile(null);
     setImpersonationSessionInfo(null);
     sessionStorage.removeItem(UI_IMPERSONATION_KEY);

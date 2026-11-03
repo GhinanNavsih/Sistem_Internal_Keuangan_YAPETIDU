@@ -4,6 +4,8 @@
 
 Roles are defined in `src/lib/payroll/roles.ts` (`USER_ROLES`) and enforced by route-level confinement in `src/components/ProtectedRoute.tsx`. There is **no generic `employee` role** — the closest equivalent is `honorer`.
 
+Login and the Firebase Auth observer share one pending profile verification. It reads the current `users/{uid}` document from the server, with a 15-second total deadline and one retry after 500 ms for temporary connection or credential-propagation failures. Cached roles and disabled flags cannot grant access or force a logout. Only a successful server read confirming an absent, invalid, or disabled profile rejects the account; an unreadable profile reports a verification error. Responses from an older account or a logged-out session cannot change the current session. `npm run test:auth` exercises the real login page and provider with deterministic Firebase boundaries, and runs before the main test suite.
+
 ### Roles:
 - `super_admin`: Unrestricted. Redirected out of `/employee/*` back to `/dashboard/users` unless previewing.
 - `finance_verifier`: Confined to `/dashboard/payroll*`. Can verify/operate payments alongside `super_admin` (`canVerifyPayroll`, `canOperatePayments`).

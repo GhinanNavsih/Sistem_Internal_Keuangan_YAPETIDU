@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
@@ -8,7 +8,7 @@ import { getRoleHomePath } from '@/lib/roleHome';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
-  Hexagon, Mail, Lock, Eye, EyeOff, AlertCircle, Loader2, LogIn, CheckCircle2,
+  Mail, Lock, Eye, EyeOff, AlertCircle, Loader2, LogIn, CheckCircle2,
 } from 'lucide-react';
 
 // Inline Google icon — no external icon package needed
@@ -55,10 +55,17 @@ const FIREBASE_ERROR_MESSAGES: Record<string, string> = {
   'auth/cancelled-popup-request': 'Login Google dibatalkan.',
   'auth/user-disabled': 'Akun Anda ditangguhkan sementara. Silakan buka kotak masuk email Anda dan klik tautan reaktivasi untuk mengaktifkan kembali akun Anda.',
   'auth/network-request-failed': 'Gagal terhubung ke jaringan. Periksa koneksi internet Anda.',
+  'auth/profile-unavailable': 'Login berhasil diverifikasi, tetapi profil belum dapat dimuat. Periksa koneksi internet Anda dan coba lagi.',
+  'auth/profile-not-found': 'Akun Anda belum terdaftar dalam sistem. Silakan hubungi administrator Badan Administrasi Keuangan (BAK).',
+  'auth/session-changed': 'Sesi telah berubah. Silakan masuk kembali.',
 };
 
 function getAuthErrorMessage(code: string): string {
   return FIREBASE_ERROR_MESSAGES[code] ?? 'Terjadi kesalahan. Silakan coba lagi.';
+}
+
+function getErrorCode(error: unknown): string {
+  return typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
 }
 
 export default function LoginPage() {
@@ -75,6 +82,7 @@ export default function LoginPage() {
   const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
   const [isDisabledAccount, setIsDisabledAccount] = useState(false);
   const [reactivationLoading, setReactivationLoading] = useState(false);
+  const loginInFlightRef = useRef(false);
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -87,30 +95,35 @@ export default function LoginPage() {
   useEffect(() => {
     const trimmedEmail = email.trim().toLowerCase();
     if (!trimmedEmail || !trimmedEmail.includes('@') || trimmedEmail.length < 5) {
-      setIsDisabledAccount(false);
       return;
     }
 
+    let cancelled = false;
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/auth/check-email?email=${encodeURIComponent(trimmedEmail)}`);
+        const res = await fetch(`/api/auth/check-email?email=${encodeURIComponent(trimmedEmail)}`, {
+          signal: controller.signal,
+          cache: 'no-store',
+        });
         const data = await res.json();
-        if (data.disabled === true) {
-          setIsDisabledAccount(true);
-        } else {
-          setIsDisabledAccount(false);
-        }
+        if (!cancelled && res.ok) setIsDisabledAccount(data.disabled === true);
       } catch (e) {
-        console.warn('Failed to check email status:', e);
+        if (!cancelled) console.warn('Failed to check email status:', e);
       }
     }, 400);
 
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearTimeout(timer);
+    };
   }, [email]);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) return;
+    if (!email || !password || loginInFlightRef.current) return;
+    loginInFlightRef.current = true;
     setError(null);
     setSuccessMessage(null);
     setIsDisabledAccount(false);
@@ -118,29 +131,35 @@ export default function LoginPage() {
     try {
       await signInWithEmail(email, password);
       // Redirect is handled by the useEffect above once profile loads
-    } catch (err: any) {
-      if (err?.code === 'auth/user-disabled') {
+    } catch (err) {
+      const code = getErrorCode(err);
+      if (code === 'auth/user-disabled') {
         setIsDisabledAccount(true);
       }
-      setError(getAuthErrorMessage(err?.code ?? ''));
+      setError(getAuthErrorMessage(code));
     } finally {
+      loginInFlightRef.current = false;
       setSubmitting(false);
     }
   };
 
   const handleGoogleLogin = async () => {
+    if (loginInFlightRef.current) return;
+    loginInFlightRef.current = true;
     setError(null);
     setSuccessMessage(null);
     setIsDisabledAccount(false);
     setGoogleLoading(true);
     try {
       await signInWithGoogle();
-    } catch (err: any) {
-      if (err?.code === 'auth/user-disabled') {
+    } catch (err) {
+      const code = getErrorCode(err);
+      if (code === 'auth/user-disabled') {
         setIsDisabledAccount(true);
       }
-      setError(getAuthErrorMessage(err?.code ?? ''));
+      setError(getAuthErrorMessage(code));
     } finally {
+      loginInFlightRef.current = false;
       setGoogleLoading(false);
     }
   };
@@ -172,8 +191,8 @@ export default function LoginPage() {
         `Tautan reaktivasi telah dikirimkan ke ${targetEmail}. Silakan periksa pesan email Anda dan klik tautan untuk mengaktifkan kembali akun Anda.`
       );
       setIsDisabledAccount(false);
-    } catch (err: any) {
-      setError(err?.message || 'Gagal mengirimkan tautan reaktivasi.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Gagal mengirimkan tautan reaktivasi.');
     } finally {
       setReactivationLoading(false);
     }
@@ -211,7 +230,7 @@ export default function LoginPage() {
   };
 
   // Show loading spinner while auth state resolves
-  if (loading) {
+  if (loading && !submitting && !googleLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 flex items-center justify-center relative overflow-hidden">
         {/* Subtle decorative blobs */}
@@ -394,7 +413,7 @@ export default function LoginPage() {
                   autoComplete="email"
                   placeholder="nama@unipdu.ac.id"
                   value={email}
-                  onChange={(e) => { setEmail(e.target.value); setError(null); }}
+                  onChange={(e) => { setEmail(e.target.value); setError(null); setIsDisabledAccount(false); }}
                   className="pl-11 h-12 bg-white border-slate-200 rounded-2xl text-sm font-medium focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10 transition-all"
                   required
                 />
@@ -443,7 +462,7 @@ export default function LoginPage() {
             <Button
               id="btn-login-email"
               type="submit"
-              disabled={submitting || !email || !password}
+              disabled={submitting || googleLoading || !email || !password}
               className="w-full h-12 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold text-sm shadow-lg shadow-indigo-200 hover:shadow-indigo-300 transition-all duration-300 mt-2 disabled:opacity-60"
             >
               {submitting ? (
