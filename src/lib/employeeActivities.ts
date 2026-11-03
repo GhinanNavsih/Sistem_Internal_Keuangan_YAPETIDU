@@ -24,6 +24,7 @@ const KETUA_SHIFT_SATPAM_ROUTES = [
   '/employee/satpam-duty-plan',
   '/employee/leave',
   '/employee/payslip',
+  '/employee/santunan',
   '/employee/facility-reports',
   '/employee/simpan-pinjam',
 ] as const;

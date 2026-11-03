@@ -169,6 +169,18 @@ test('Ketua Shift can use Satpam support pages but not Sopir pages', () => {
   );
 });
 
+test('Ketua Shift can open Ajuan Santunan but not its admin review page', () => {
+  const ketua = {
+    role: 'ketua_shift_satpam',
+    permittedCategories: ['SATPAM'],
+  };
+  assert.equal(getEmployeeRouteRedirect(ketua, '/employee/santunan'), null);
+  assert.equal(
+    getEmployeeRouteRedirect(ketua, '/dashboard/santunan'),
+    EMPLOYEE_ACTIVITY_PATHS.satpam,
+  );
+});
+
 test('retired activity URLs are not recognized as compatibility routes', () => {
   assert.equal(getEmployeeActivityWorkflowFromPath('/employee/activities'), null);
   assert.equal(
