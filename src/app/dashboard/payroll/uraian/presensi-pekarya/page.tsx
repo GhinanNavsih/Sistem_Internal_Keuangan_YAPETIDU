@@ -1537,7 +1537,14 @@ export default function PekaryaAttendancePage() {
   // blue-collar category together. An older link with ?category=SATPAM simply
   // opens it.
   const category = ALL_BLUE_COLLAR_CATEGORY;
-  const period = `${year}-${String(month).padStart(2, '0')}`;
+  // The header's category picker only narrows the list of employees below. The
+  // page still loads, reviews and publishes every blue-collar category together.
+  const requestedCategory = (searchParams.get('category') || '').trim().toUpperCase();
+  const categoryFilter =
+    requestedCategory && requestedCategory !== ALL_BLUE_COLLAR_CATEGORY
+      ? requestedCategory
+      : '';
+  const period =`${year}-${String(month).padStart(2, '0')}`;
   const [data, setData] = useState<AttendanceView | null>(null);
   // `loading` is the blocking first load of a period/category (the results are
   // swapped for a placeholder). `refreshing` is every reload after an action:
@@ -2249,13 +2256,23 @@ export default function PekaryaAttendancePage() {
     }));
     const nameOf = (row: (typeof linked)[number] | (typeof satpam)[number]) =>
       row.employee?.name || row.satpam?.name || '';
+    // Rows the import could not link have no category, so they only appear in
+    // the combined view.
+    const shownLinked = categoryFilter
+      ? linked.filter((row) => row.employee?.category === categoryFilter)
+      : linked;
+    const shownSatpam = !categoryFilter || categoryFilter === 'SATPAM' ? satpam : [];
     return [
-      ...[...linked, ...satpam].sort((left, right) =>
+      ...[...shownLinked, ...shownSatpam].sort((left, right) =>
         nameOf(left).localeCompare(nameOf(right), 'id'),
       ),
-      ...unlinked,
+      ...(categoryFilter ? [] : unlinked),
     ];
-  }, [data, departmentUnmatched]);
+  }, [categoryFilter, data, departmentUnmatched]);
+  const unlinkedRowCount = useMemo(
+    () => attendanceRows.filter((row) => row.unlinked).length,
+    [attendanceRows],
+  );
 
   // Rows with no department and no matching employee.
   const unroutedUnmatched = useMemo(() => {
@@ -2449,7 +2466,7 @@ export default function PekaryaAttendancePage() {
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="font-bold text-slate-900">
-              {category ? categoryLabel(category) : 'Pilih kategori'} · {period}
+              {categoryLabel(categoryFilter || category)} · {period}
             </p>
             <p className="mt-1 text-sm text-slate-500">
               {data
@@ -2614,9 +2631,9 @@ export default function PekaryaAttendancePage() {
               <strong className="text-indigo-600 font-mono">
                 {attendanceRows.length}
               </strong>{' '}
-              data ({data.employees.length + (data.satpamAttendance?.employees.length || 0)} Terhubung
-              {departmentUnmatched.length > 0
-                ? `, ${departmentUnmatched.length} Belum Terhubung`
+              data ({attendanceRows.length - unlinkedRowCount} Terhubung
+              {unlinkedRowCount > 0
+                ? `, ${unlinkedRowCount} Belum Terhubung`
                 : ''}
               )
             </span>

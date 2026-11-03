@@ -169,6 +169,8 @@ export default function RekapPekaryaPage() {
   const [satpamDutyPlanRequired, setSatpamDutyPlanRequired] = useState(false);
   const [satpamScheduledShiftData, setSatpamScheduledShiftData] = useState<SatpamScheduledShiftData | null>(null);
   const [satpamPendingLeaveCounts, setSatpamPendingLeaveCounts] = useState<Record<string, number>>({});
+  // Counts finished Satpam rekap syncs; the saved rekap is read again on each.
+  const [satpamRekapSyncs, setSatpamRekapSyncs] = useState(0);
   const [periodPremiumDates, setPeriodPremiumDates] = useState<Set<string>>(new Set());
   const [activeAttendanceImportRevisionId, setActiveAttendanceImportRevisionId] = useState<string | null>(null);
   const [attendanceMoneyLoadFailed, setAttendanceMoneyLoadFailed] = useState(false);
@@ -283,6 +285,34 @@ export default function RekapPekaryaPage() {
       active = false;
     };
   }, [category, period, user]);
+
+  // Opening the Satpam rekap refreshes its saved figures (shift counts and the
+  // monthly bonus) from the duty reconciliation, as Presensi Pekarya does, so
+  // the rekap never has to wait for that page to be opened. This is separate
+  // from the read above because the sync is refused for a closed period; the
+  // rekap then simply stays as saved. After a sync the saved rekap is read
+  // again, which the load effect skips while there are unsaved edits.
+  const canSyncSatpamRekap =
+    profile?.role === 'super_admin' || profile?.role === 'satker_head';
+  useEffect(() => {
+    let active = true;
+
+    if (category !== 'SATPAM' || !user || !canSyncSatpamRekap) return () => {
+      active = false;
+    };
+
+    authenticatedJson(
+      `/api/satpam/duty-reconciliation?period=${encodeURIComponent(period)}&refresh=true`,
+    )
+      .then(() => {
+        if (active) setSatpamRekapSyncs((count) => count + 1);
+      })
+      .catch((error) => console.error('Satpam rekap refresh failed', error));
+
+    return () => {
+      active = false;
+    };
+  }, [canSyncSatpamRekap, category, period, user]);
 
   useEffect(() => {
     let active = true;
@@ -851,7 +881,7 @@ export default function RekapPekaryaPage() {
     // `ketuaShiftIds` and the roster are cache-backed now, so the effect has to
     // re-run when they arrive — the guard above is what keeps that re-run from
     // wiping in-progress edits.
-  }, [category, month, year, period, docId, profile, ketuaShiftIds, employees]);
+  }, [category, month, year, period, docId, profile, ketuaShiftIds, employees, satpamRekapSyncs]);
 
   const handleFileUpload = useCallback(async (newFile: File, rot: number = rotation) => {
     setFile(newFile); setDetectedColumnOrder(null);
