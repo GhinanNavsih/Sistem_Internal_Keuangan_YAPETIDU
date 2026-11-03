@@ -81,7 +81,6 @@ async function checkSources(transaction: FirebaseFirestore.Transaction, source: 
 async function reconcileEmployee(period: string, employeeId: string, source: Sources,
   actor: AutomaticLeaveActor, now: Date, dryRun: boolean): Promise<AutoLeaveEmployeeResult> {
   return adminDb.runTransaction(async (transaction) => {
-    await checkSources(transaction, source);
     const year = Number(period.slice(0, 4));
     const employeeRef = adminDb.doc(`Employees_BlueCollar/${employeeId}`);
     const balanceRef = adminDb.doc(`AnnualPaidLeaveBalances/${annualPaidLeaveBalanceDocumentId(employeeId, year)}`);
@@ -170,6 +169,9 @@ async function reconcileEmployee(period: string, employeeId: string, source: Sou
     });
     result.updated = updated;
     if (dryRun || !(plan.cover.length || plan.release.length || updated.length)) return result;
+    // The source guard re-reads every employee and activity report, so it runs
+    // only for the employees that actually write; a no-op result moves no money.
+    await checkSources(transaction, source);
     const timestamp = admin.firestore.FieldValue.serverTimestamp();
     const materialization = buildPeriodMaterialization({ period, periodData: periodDoc.data(), annualDates: annualDatesFrom(holiday),
       actorUid: actor.uid, reason: 'Kalender dibekukan saat penerapan cuti otomatis Pekarya.' });

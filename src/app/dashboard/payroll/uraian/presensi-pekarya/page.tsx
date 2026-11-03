@@ -84,6 +84,7 @@ import { attendanceWorkedSeconds } from '@/lib/payroll/attendance';
 import { SatpamAttendanceDetailCard } from '@/components/satpam/SatpamAttendanceDetailCard';
 import { UnroutedAttendanceRows } from '@/components/attendance/UnroutedAttendanceRows';
 import { SatpamAttendanceFindings } from '@/components/satpam/SatpamAttendanceFindings';
+import type { AutoLeaveSummary } from '@/lib/payroll/loyalisAutoLeave';
 import type { PekaryaPresenceBonus } from '@/lib/payroll/pekaryaPresenceBonus';
 import type { SatpamAttendanceDetailEmployee } from '@/lib/payroll/satpamAttendanceDetail';
 
@@ -193,7 +194,7 @@ type AttendanceView = {
   officialLeaves: PekaryaOfficialLeaveRequest[];
   /** Review-only Satpam cards, present on "Semua Pekarya" for accounts that may see Satpam. */
   satpamAttendance?: { employees: SatpamAttendanceDetailEmployee[] } | null;
-  autoLeave?: import('@/lib/payroll/loyalisAutoLeave').AutoLeaveSummary;
+  autoLeave?: AutoLeaveSummary;
 };
 
 type SatpamAbsenceAdminView = {
@@ -1549,8 +1550,27 @@ export default function PekaryaAttendancePage() {
   const [refreshing, setRefreshing] = useState(false);
   const loadSequence = useRef(0);
   const loadAbort = useRef<AbortController | null>(null);
+  // Cuti otomatis is re-checked after the results are on screen. One check runs
+  // per period at a time; a load that arrives meanwhile queues a single re-run.
+  const autoLeaveRuns = useRef(
+    new Map<string, { queued: boolean; controller: AbortController }>(),
+  );
+  const viewedPeriod = useRef('');
+  const loadRef = useRef<
+    ((options?: { silent?: boolean; reconcile?: boolean }) => Promise<void>) | null
+  >(null);
+  const [autoLeaveRunning, setAutoLeaveRunning] = useState(false);
   // A page that is left mid-load stops asking the server for results nobody sees.
-  useEffect(() => () => loadAbort.current?.abort(), []);
+  useEffect(() => {
+    const runs = autoLeaveRuns.current;
+    return () => {
+      loadAbort.current?.abort();
+      for (const run of runs.values()) run.controller.abort();
+    };
+  }, []);
+  useEffect(() => {
+    viewedPeriod.current = period;
+  }, [period]);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
   // An object per message so showing the same text twice in a row still
@@ -1609,7 +1629,10 @@ export default function PekaryaAttendancePage() {
   // Same authority as manual linking — the corrections endpoint accepts both.
   const canEditScans = canLinkAttendance;
 
-  const load = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
+  const load = useCallback(async ({
+    silent = false,
+    reconcile = true,
+  }: { silent?: boolean; reconcile?: boolean } = {}) => {
     // A newer load supersedes this one: only the latest may write results or
     // clear the loading flags, so a slow reload finishing late can never put
     // a previous category's data back on screen.
@@ -1640,12 +1663,66 @@ export default function PekaryaAttendancePage() {
       timedOut = true;
       controller.abort();
     }, LOAD_TIMEOUT_MS);
-    try {
-      if (canEdit && period >= '2026-09') {
-        await authenticatedJson('/api/attendance/pekarya/auto-leave', {
-          method: 'POST', body: JSON.stringify({ period, category }), signal,
-        });
+    const reconcileAutoLeave = async () => {
+      const running = autoLeaveRuns.current.get(period);
+      if (running) {
+        running.queued = true;
+        return;
       }
+      const run = { queued: false, controller: new AbortController() };
+      autoLeaveRuns.current.set(period, run);
+      setAutoLeaveRunning(true);
+      try {
+        do {
+          run.queued = false;
+          let summary: AutoLeaveSummary | null = null;
+          let failure = '';
+          try {
+            summary = await authenticatedJson<AutoLeaveSummary>(
+              '/api/attendance/pekarya/auto-leave',
+              {
+                method: 'POST',
+                body: JSON.stringify({ period, category }),
+                signal: run.controller.signal,
+              },
+            );
+          } catch (cause) {
+            if (run.controller.signal.aborted) return;
+            failure =
+              cause instanceof Error
+                ? cause.message
+                : 'Rekonsiliasi cuti otomatis gagal.';
+          }
+          // The reviewer moved to another month: its results are not on screen.
+          if (viewedPeriod.current !== period) return;
+          if (summary) {
+            const latest = summary;
+            setData((current) =>
+              current?.period === period ? { ...current, autoLeave: latest } : current,
+            );
+          }
+          // A failed run may still have written some employees, so it reloads too.
+          const changed =
+            failure !== '' ||
+            Boolean(
+              summary?.results.some(
+                (item) =>
+                  item.failed ||
+                  item.covered.length > 0 ||
+                  item.released.length > 0 ||
+                  (item.updated?.length ?? 0) > 0,
+              ),
+            );
+          if (changed) await loadRef.current?.({ silent: true, reconcile: false });
+          // After the reload, which clears the error line when it starts.
+          if (failure && viewedPeriod.current === period) setError(failure);
+        } while (run.queued);
+      } finally {
+        autoLeaveRuns.current.delete(period);
+        setAutoLeaveRunning(autoLeaveRuns.current.size > 0);
+      }
+    };
+    try {
       const paidLeavesPromise = authenticatedJson<{ requests: AnnualPaidLeaveRequest[] }>(
         `/api/payroll/paid-leave/review?year=${year}&period=${encodeURIComponent(period)}&status=all`,
         { signal },
@@ -1685,6 +1762,10 @@ export default function PekaryaAttendancePage() {
       setSatpamSubmissions(submissions);
       setPaidLeaves(paidLeavesRes.requests || []);
       setGantiLiburs(gantiLibursRes.requests || []);
+      // The reconcile reads the whole month and can take far longer than the
+      // results above, so it must not hold them back. Whatever it changes
+      // arrives as one silent reload.
+      if (reconcile && canEdit && period >= '2026-09') void reconcileAutoLeave();
       // Opening the page used to refresh the saved Satpam rekap (shift counts
       // and the monthly bonus) from the reconciliation. That now happens here,
       // in the background, so the page does not wait on it.
@@ -1712,6 +1793,10 @@ export default function PekaryaAttendancePage() {
       }
     }
   }, [canEdit, canViewSatpamCategory, category, period, year]);
+
+  useEffect(() => {
+    loadRef.current = load;
+  }, [load]);
 
   // Reload after an action: keeps the results on screen and updates them in
   // place instead of collapsing the page to the loading placeholder.
@@ -2375,6 +2460,11 @@ export default function PekaryaAttendancePage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {autoLeaveRunning && (
+              <span className="text-xs text-slate-500" role="status">
+                Memeriksa cuti otomatis…
+              </span>
+            )}
             <Button
               variant="outline"
               className="rounded-sm min-h-12 gap-2"
