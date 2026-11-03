@@ -5,6 +5,7 @@ import { ensurePekaryaAutoLeave } from '@/lib/server/pekaryaAutoLeave';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
   ATTENDANCE_PAYROLL_START_PERIOD,
+  attendancePublicationMatchesPolicy,
   isPremiumAttendanceDate,
   normalizeAttendanceTime,
   pekaryaAttendanceAmount,
@@ -42,6 +43,7 @@ import {
 } from '@/lib/server/annualPaidLeave';
 
 import { employeeGantiLiburQuery } from '@/lib/server/gantiLibur';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { hasGantiLiburDayOff } from '@/lib/payroll/gantiLibur';
 
 export const dynamic = 'force-dynamic';
@@ -120,7 +122,7 @@ export async function POST(request: NextRequest) {
     const employee = employeeSnapshot.data();
     if (
       !employeeSnapshot.exists ||
-      employee?.employment?.jobCategory !== category ||
+      jobCategoryForPayrollPeriod(employee || {}, period) !== category ||
       employee?.employment?.status !== 'active' ||
       employee?.flags?.isActive === false ||
       employee?.flags?.isPayrollEligible === false
@@ -272,6 +274,12 @@ export async function POST(request: NextRequest) {
           ? headSnapshot.data()!.effectiveValue
           : {};
       const effective: Record<string, unknown> = {
+        // Once a reviewer edits an inferred day, preserve the interpreted
+        // recorded side rather than restoring the scanner's misplaced column.
+        ...(rawDay?.scansInferred ? {
+          scanIn: rawDay.scanInAuto ? null : rawDay.scanIn,
+          scanOut: rawDay.scanOutAuto ? null : rawDay.scanOut,
+        } : {}),
         ...previousEffective,
         ...(present !== undefined ? { present } : {}),
         ...(workStatus !== undefined ? { workStatus } : {}),
@@ -334,6 +342,7 @@ export async function POST(request: NextRequest) {
         effectiveValue: effective,
         importRevisionId: view.importRevisionId,
         calendarRevision: view.calendarRevision,
+        singleScanPolicy: view.singleScanPolicy,
         reason,
         actorUid: actor.uid,
         actorName: actor.displayName,
@@ -350,7 +359,8 @@ export async function POST(request: NextRequest) {
       });
       if (
         publicationSnapshot.data()?.state === 'published' &&
-        publicationSnapshot.data()?.stale !== true
+        publicationSnapshot.data()?.stale !== true &&
+        attendancePublicationMatchesPolicy(publicationSnapshot.data(), view.singleScanPolicy)
       ) {
         if (!uraianSnapshot.exists) {
           throw new HttpError(
@@ -384,9 +394,10 @@ export async function POST(request: NextRequest) {
             new Set(view.premiumDates),
           );
           const nextDayAmount = pekaryaAttendanceAmount(
-            normalizedEffectiveScanIn,
-            normalizedEffectiveScanOut,
+            'scanIn' in effective ? normalizedEffectiveScanIn : (rawDay?.scanInAuto ? null : rawDay?.scanIn || null),
+            'scanOut' in effective ? normalizedEffectiveScanOut : (rawDay?.scanOutAuto ? null : rawDay?.scanOut || null),
             isPremiumDay,
+            view.singleScanPolicy,
           );
           if (isPremiumDay) {
             nextPremium += 1;
@@ -433,6 +444,7 @@ export async function POST(request: NextRequest) {
           attendanceSource: {
             importRevisionId: view.importRevisionId,
             calendarRevision: view.calendarRevision,
+            singleScanPolicy: view.singleScanPolicy,
             publicationRevision: nextPublicationRevision,
           },
         };
@@ -443,6 +455,7 @@ export async function POST(request: NextRequest) {
           attendancePublication: {
             importRevisionId: view.importRevisionId,
             calendarRevision: view.calendarRevision,
+            singleScanPolicy: view.singleScanPolicy,
             publicationRevision: nextPublicationRevision,
           },
           updatedAt: now,
@@ -481,6 +494,7 @@ export async function POST(request: NextRequest) {
             category,
             importRevisionId: view.importRevisionId,
             calendarRevision: view.calendarRevision,
+            singleScanPolicy: view.singleScanPolicy,
             revision,
           },
         }),

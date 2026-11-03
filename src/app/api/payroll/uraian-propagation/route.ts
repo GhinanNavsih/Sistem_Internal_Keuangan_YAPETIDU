@@ -38,6 +38,8 @@ import { reconcileAndLoadLoyalisPresence } from '@/lib/server/loyalisPresence';
 import { ensurePekaryaAutoLeave } from '@/lib/server/pekaryaAutoLeave';
 import { assertAutoLeaveReady, autoLeaveStateRef } from '@/lib/server/automaticLeavePosting';
 import { employeeInPayrollPeriod } from '@/lib/employeeConversion';
+import { attendancePublicationMatchesPolicy, pekaryaSingleScanPolicy } from '@/lib/payroll/attendance';
+import { pekaryaPublicationId } from '@/lib/server/attendanceStore';
 
 export const dynamic = 'force-dynamic';
 
@@ -308,6 +310,15 @@ export async function POST(request: NextRequest) {
         );
         const periodClosed =
           periodSnapshot.data()?.attendanceStatus === 'closed';
+        if (command.scope === 'pekarya' && !periodClosed) {
+          const publication = await transaction.get(adminDb.doc(
+            `PekaryaAttendancePublications/${pekaryaPublicationId(command.periodToken, command.jobCategory)}`,
+          ));
+          if (publication.exists && !attendancePublicationMatchesPolicy(publication.data(),
+            pekaryaSingleScanPolicy(command.jobCategory, periodSnapshot.data(), publication.data()))) {
+            throw new HttpError(409, 'Publikasikan ulang presensi dengan aturan scan terbaru sebelum memperbarui slip.');
+          }
+        }
         const results: EmployeeOutcome[] = [];
 
         chunk.forEach((target, index) => {

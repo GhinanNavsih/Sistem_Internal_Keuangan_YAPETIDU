@@ -40,6 +40,7 @@ import {
 } from '@/lib/server/pekaryaSlipPreview';
 import { isPayrollEmployeeEligible } from '@/lib/payroll/payrollRoster';
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
+import { ATTENDANCE_PAYROLL_START_PERIOD, attendancePublicationMatchesPolicy, pekaryaSingleScanPolicy } from '@/lib/payroll/attendance';
 import { employeeInPayrollPeriod } from '@/lib/employeeConversion';
 import { synchronizeFamilyAllowanceEarnings } from '@/lib/payroll/familyAllowance';
 import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
@@ -174,6 +175,20 @@ export async function POST(request: NextRequest) {
       await assertAutoLeaveReady(autoPeriod, [autoCategory]);
     }
     const autoRevision = autoCategory ? Number((await autoLeaveStateRef(autoPeriod, autoCategory).get()).data()?.revision || 0) : null;
+
+    // Reject an outdated attendance policy before preparing external loan
+    // plans; the transaction below repeats this check against the latest data.
+    if (isDraftWriteAction(command.action) && autoCategory && autoPeriod >= ATTENDANCE_PAYROLL_START_PERIOD) {
+      const [periodSnapshot, publication] = await adminDb.getAll(
+        adminDb.doc(`PayrollPeriods/${autoPeriod}`),
+        adminDb.collection(PEKARYA_PUBLICATIONS_COLLECTION).doc(pekaryaPublicationId(autoPeriod, autoCategory)),
+      );
+      const policy = pekaryaSingleScanPolicy(autoCategory, periodSnapshot.data(), publication.data());
+      if (periodSnapshot.data()?.attendanceStatus !== 'closed' && policy !== 'offset_150_minutes' &&
+          !attendancePublicationMatchesPolicy(publication.data(), policy)) {
+        throw new HttpError(409, 'Publikasikan ulang presensi dengan aturan scan terbaru sebelum menyimpan slip.');
+      }
+    }
 
     if (command.action === 'verify_and_lock') {
       const result = await verifyAndLockWithKoperasi(command, actor);
@@ -389,6 +404,18 @@ export async function POST(request: NextRequest) {
         | { harian: number; jumatLibur: number; bonusPresensiBulanan: number }
         | null = null;
       const validateNewSlipSources = shouldValidateNewSlipSources(before);
+      if (isDraftWriteAction(command.action) && before && blueEmployeeSnapshot.exists && !periodClosed &&
+          command.period.replace('_', '-') >= ATTENDANCE_PAYROLL_START_PERIOD) {
+        const category = jobCategoryForPayrollPeriod(blueEmployeeSnapshot.data()!, command.period.replace('_', '-'));
+        const policy = pekaryaSingleScanPolicy(category, periodData);
+        if (policy !== 'offset_150_minutes') {
+          const publication = await transaction.get(adminDb.collection(PEKARYA_PUBLICATIONS_COLLECTION)
+            .doc(pekaryaPublicationId(command.period.replace('_', '-'), category)));
+          if (!attendancePublicationMatchesPolicy(publication.data(), policy)) {
+            throw new HttpError(409, 'Publikasikan ulang presensi dengan aturan scan terbaru sebelum menyimpan slip.');
+          }
+        }
+      }
       // Canonical source validation applies when the slip is materialized for
       // the first time (including the legacy missing-draft repair). An existing
       // editable draft is a stored snapshot: ordinary saves preserve Finance's
@@ -492,13 +519,15 @@ export async function POST(request: NextRequest) {
             !publicationSnapshot.exists ||
             publication?.state !== 'published' ||
             publication?.stale === true ||
+            !attendancePublicationMatchesPolicy(publication,
+              pekaryaSingleScanPolicy(jobCategory, periodSnapshot.data(), publication)) ||
             publication?.importRevisionId !==
               importSnapshot.data()?.activeRevisionId ||
             Number(publication?.calendarRevision || 0) !== calendarRevision
           ) {
             throw new HttpError(
               409,
-              `Presensi ${jobCategory} belum dipublikasikan pada revisi import dan kalender terbaru.`,
+              `Presensi ${jobCategory} belum dipublikasikan pada revisi import, kalender, dan aturan scan terbaru.`,
             );
           }
           const entry = uraianSnapshot.data()?.entries?.[command.employeeId];

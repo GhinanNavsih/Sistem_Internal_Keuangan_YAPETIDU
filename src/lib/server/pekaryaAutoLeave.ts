@@ -5,7 +5,7 @@ import { annualPaidLeaveBalanceEntitlementForYear, nextAnnualPaidLeaveBalanceRev
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { periodCalendarFromData, periodDateRange } from '@/lib/payroll/calendar';
 import { calculateEditableDriverJourneyTimeline } from '@/lib/payroll/driverJourney';
-import { pekaryaAttendanceAmount } from '@/lib/payroll/attendance';
+import { attendancePublicationMatchesPolicy, pekaryaAttendanceAmount } from '@/lib/payroll/attendance';
 import { isImmutablePayrollStatus, satpamRatesForDutyDate, type SatpamShiftName } from '@/lib/payroll/domain';
 import { PEKARYA_JOB_CATEGORIES, ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
 import { presenceBonusColumnKey } from '@/lib/payroll/pekaryaPresenceBonus';
@@ -257,6 +257,7 @@ async function refreshDerived(period: string, category: string, actor: Automatic
       throw new HttpError(409, 'Sumber cuti berubah; ulangi rekonsiliasi.');
     }
     if (publication.data()?.state === 'published' && publication.data()?.stale !== true &&
+        attendancePublicationMatchesPolicy(publication.data(), view.singleScanPolicy) &&
         publication.data()?.importRevisionId === view.importRevisionId && Number(publication.data()?.calendarRevision) === view.calendarRevision) {
       if (!uraian.exists) throw new HttpError(409, 'Rekap Uraian publikasi belum tersedia.');
       const entries = { ...(uraian.data()?.entries || {}) };
@@ -269,10 +270,11 @@ async function refreshDerived(period: string, category: string, actor: Automatic
           values: { ...(current.values || {}), harian: employee.harianAmount, jumatLibur: employee.jumatLiburAmount,
             ...(bonusKey && employee.presenceBonus ? { [bonusKey]: employee.presenceBonus.amount } : {}) },
           counts: { ...(current.counts || {}), harian: employee.harianCount, jumatLibur: employee.jumatLiburCount },
-          attendanceSource: { importRevisionId: view.importRevisionId, calendarRevision: view.calendarRevision, publicationRevision } };
+          attendanceSource: { importRevisionId: view.importRevisionId, calendarRevision: view.calendarRevision,
+            singleScanPolicy: view.singleScanPolicy, publicationRevision } };
       }
       transaction.set(uraianRef, { entries, attendancePublication: { importRevisionId: view.importRevisionId,
-        calendarRevision: view.calendarRevision, publicationRevision }, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+        calendarRevision: view.calendarRevision, singleScanPolicy: view.singleScanPolicy, publicationRevision }, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
       transaction.update(publicationRef, { publicationRevision, totals: {
         harian: view.employees.reduce((sum, employee) => sum + employee.harianCount, 0),
         jumatLibur: view.employees.reduce((sum, employee) => sum + employee.jumatLiburCount, 0),

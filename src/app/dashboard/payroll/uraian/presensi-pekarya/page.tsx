@@ -273,9 +273,7 @@ function workedDuration(day: AttendanceDay) {
 
 /**
  * A scan time, flagged when it was generated rather than recorded — the
- * employee forgot this side, so it was filled in 150 minutes off the side
- * that was scanned. Mirrors the "Auto" badge Loyalis presence already uses
- * for the same situation.
+ * employee forgot this side, so it was filled using the category's policy.
  */
 /**
  * A scan time cell. Editable cells are uncontrolled and keyed on the current
@@ -336,7 +334,7 @@ function ScanCell({
         {auto && (
           <span
             className="inline-flex shrink-0 select-none items-center rounded-sm bg-amber-50 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-amber-700 border border-amber-200 cursor-help"
-            title="Diisi otomatis (150 menit dari scan yang tercatat) karena satu sisi lupa discan."
+            title="Diisi otomatis sesuai aturan kategori karena satu sisi lupa discan."
           >
             Auto
           </span>
@@ -360,7 +358,7 @@ function ScanCell({
       <span className="font-mono text-amber-700 font-semibold">{value}</span>
       <span
         className="inline-flex px-1.5 py-0.5 rounded-sm text-[9px] font-extrabold uppercase bg-amber-50 text-amber-700 border border-amber-200 select-none shrink-0 cursor-help"
-        title="Diisi otomatis (150 menit dari scan yang tercatat) karena satu sisi lupa discan."
+        title="Diisi otomatis sesuai aturan kategori karena satu sisi lupa discan."
       >
         Auto
       </span>

@@ -1,9 +1,11 @@
 import { refreshEmployeeAutoLeaveHistory } from '@/lib/server/pekaryaAutoLeave';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
   ATTENDANCE_PAYROLL_START_PERIOD,
+  attendancePublicationMatchesPolicy,
   isPremiumAttendanceDate,
   normalizeAttendanceTime,
   pekaryaAttendanceAmount,
@@ -170,7 +172,7 @@ export async function POST(request: NextRequest) {
     const employee = employeeSnapshot.data();
     if (
       !employeeSnapshot.exists ||
-      employee?.employment?.jobCategory !== category ||
+      jobCategoryForPayrollPeriod(employee || {}, period) !== category ||
       employee?.employment?.status !== 'active' ||
       employee?.flags?.isActive === false ||
       employee?.flags?.isPayrollEligible === false
@@ -544,6 +546,7 @@ export async function POST(request: NextRequest) {
         approvedScanIn,
         approvedScanOut,
         premium,
+        view.singleScanPolicy,
       );
       const after = {
         ...current,
@@ -604,6 +607,7 @@ export async function POST(request: NextRequest) {
           effectiveValue: correction,
           importRevisionId: view.importRevisionId,
           calendarRevision: view.calendarRevision,
+          singleScanPolicy: view.singleScanPolicy,
           reason: `${reportType === 'scan' ? 'Laporan presensi' : 'Izin resmi'}: ${String(current.reason || '')}\nKeputusan: ${reason}`,
           actorUid: actor.uid,
           actorName: actor.displayName,
@@ -624,7 +628,8 @@ export async function POST(request: NextRequest) {
 
         if (
           publicationSnapshot.data()?.state === 'published' &&
-          publicationSnapshot.data()?.stale !== true
+          publicationSnapshot.data()?.stale !== true &&
+          attendancePublicationMatchesPolicy(publicationSnapshot.data(), view.singleScanPolicy)
         ) {
           if (!uraianSnapshot.exists) {
             throw new HttpError(
@@ -695,6 +700,7 @@ export async function POST(request: NextRequest) {
             attendanceSource: {
               importRevisionId: view.importRevisionId,
               calendarRevision: view.calendarRevision,
+              singleScanPolicy: view.singleScanPolicy,
               publicationRevision: nextPublicationRevision,
             },
           };
@@ -705,6 +711,7 @@ export async function POST(request: NextRequest) {
             attendancePublication: {
               importRevisionId: view.importRevisionId,
               calendarRevision: view.calendarRevision,
+              singleScanPolicy: view.singleScanPolicy,
               publicationRevision: nextPublicationRevision,
             },
             updatedAt: now,

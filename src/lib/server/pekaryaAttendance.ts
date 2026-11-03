@@ -3,9 +3,11 @@ import { createHash } from 'node:crypto';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
   attendanceDayKey,
+  attendancePublicationMatchesPolicy,
   AttendanceNormalizedRow,
   classifyAttendanceDepartment,
   hasSatpamAttendanceEvidence,
+  pekaryaSingleScanPolicy,
   satpamAttendanceEvidenceDates,
   summarizePekaryaAttendance,
 } from '@/lib/payroll/attendance';
@@ -409,6 +411,8 @@ export async function buildPekaryaAttendanceView(
     .doc(pekaryaPublicationId(period, category))
     .get();
 
+  const singleScanPolicy = pekaryaSingleScanPolicy(category, shared.premium.periodData, publicationSnapshot.data());
+
   const activeEmployees = identities
     .filter(
       (identity) =>
@@ -435,7 +439,7 @@ export async function buildPekaryaAttendanceView(
       // on a synthetic per-employee token instead. They stay blocked from
       // publishing until a real NIPY exists — see publishBlocked below.
       const joinNipy = attendanceJoinNipy(employee);
-      const summary = summarizePekaryaAttendance(joinNipy, days, premiumDates);
+      const summary = summarizePekaryaAttendance(joinNipy, days, premiumDates, singleScanPolicy);
       const summarizedDays = summary.days.map((day) => ({
         ...day,
         correctionRevision:
@@ -456,18 +460,16 @@ export async function buildPekaryaAttendanceView(
       if (!days.some((day) => day.nipy === joinNipy)) {
         warnings.push('NO_IMPORTED_ROWS');
       }
-      // Scored on the days as recorded (not the display days, whose missing
-      // scans are generated), once an attendance file is active.
+      // Only a recorded arrival counts as late, including after machine-column
+      // inference. A generated 07:30 arrival is never evidence of lateness.
       const presenceBonus =
         presenceBonusColumnKey(category) && importData.activeRevisionId
           ? calculatePekaryaPresenceBonus({
               period,
-              days: days
-                .filter((day) => day.nipy === joinNipy)
-                .map((day) => ({
+              days: summary.days.map((day) => ({
                   date: day.date,
                   present: day.present,
-                  scanIn: day.scanIn,
+                  scanIn: day.scanInAuto ? null : day.scanIn,
                 })),
               premiumDates,
             })
@@ -505,6 +507,7 @@ export async function buildPekaryaAttendanceView(
   return {
     period,
     category,
+    singleScanPolicy,
     importRevision: Number(importData.activeRevision || 0),
     importRevisionId: String(importData.activeRevisionId || ''),
     importHash: String(revisionData.fileHash || revisionData.sha256 || ''),
@@ -517,7 +520,10 @@ export async function buildPekaryaAttendanceView(
       category: employee.jobCategory || category,
     })),
     publication: publicationSnapshot.exists
-      ? ({ id: publicationSnapshot.id, ...publicationSnapshot.data() } as {
+      ? ({ id: publicationSnapshot.id, ...publicationSnapshot.data(),
+          stale: publicationSnapshot.data()?.stale === true ||
+            !attendancePublicationMatchesPolicy(publicationSnapshot.data(), singleScanPolicy),
+        } as {
           id: string;
           state?: string;
           stale?: boolean;
@@ -1214,6 +1220,7 @@ export async function publishPekaryaAttendance(
         values,
         counts,
         attendanceSource: {
+          singleScanPolicy: view.singleScanPolicy,
           importRevisionId: view.importRevisionId,
           calendarRevision: view.calendarRevision,
           publicationRevision: nextPublicationRevision,
@@ -1229,6 +1236,7 @@ export async function publishPekaryaAttendance(
         jobCategory: category,
         entries,
         attendancePublication: {
+          singleScanPolicy: view.singleScanPolicy,
           importRevisionId: view.importRevisionId,
           calendarRevision: view.calendarRevision,
           publicationRevision: nextPublicationRevision,
@@ -1243,6 +1251,7 @@ export async function publishPekaryaAttendance(
         period,
         category,
         state: 'published',
+        singleScanPolicy: view.singleScanPolicy,
         stale: false,
         importRevision: view.importRevision,
         importRevisionId: view.importRevisionId,

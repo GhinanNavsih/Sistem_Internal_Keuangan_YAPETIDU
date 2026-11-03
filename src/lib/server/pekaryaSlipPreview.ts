@@ -5,7 +5,10 @@ import {
 import { adminDb } from '@/lib/firebase-admin';
 import { jobCategoryForPayrollPeriod, withPayrollJobCategory } from '@/lib/payroll/blueCollarCategory';
 import {
+  type AttendanceSingleScanPolicy,
+  attendancePublicationMatchesPolicy,
   attendanceWorkedSeconds,
+  pekaryaSingleScanPolicy,
   summarizePekaryaAttendance,
 } from '@/lib/payroll/attendance';
 import { periodCalendarFromData } from '@/lib/payroll/calendar';
@@ -125,6 +128,7 @@ async function loadPiketSchedules(
 }
 
 interface CategoryAttendanceState {
+  singleScanPolicy?: AttendanceSingleScanPolicy;
   gate: PekaryaAttendanceGate;
   entries: Record<string, UraianEntry>;
   customColumns: RekapColumn[];
@@ -189,6 +193,7 @@ async function loadCategoryAttendanceState(
       .doc(pekaryaPublicationId(period, category))
       .get();
     const publication = publicationSnapshot.data();
+    const singleScanPolicy = pekaryaSingleScanPolicy(category, periodData, publication);
     const calendarRevision = asNumber(
       (periodData?.workCalendar as { revision?: unknown } | undefined)
         ?.revision || 1,
@@ -199,16 +204,18 @@ async function loadCategoryAttendanceState(
       publicationSnapshot.exists &&
       publication?.state === 'published' &&
       publication?.stale !== true &&
+      attendancePublicationMatchesPolicy(publication, singleScanPolicy) &&
       publication?.importRevisionId === activeImportRevisionId &&
       asNumber(publication?.calendarRevision) === calendarRevision;
 
     return {
+      singleScanPolicy,
       gate: {
         required: true,
         satisfied,
         reason: autoLeaveState.data()?.dirty === true ? 'Rekonsiliasi cuti otomatis belum selesai.' : satisfied
           ? undefined
-          : `Presensi ${category} belum dipublikasikan pada revisi import dan kalender terbaru.`,
+          : `Presensi ${category} belum dipublikasikan pada revisi import, kalender, dan aturan scan terbaru.`,
       },
       entries,
       customColumns,
@@ -364,6 +371,14 @@ export async function loadPekaryaSlipPreviews(
   const activeImportRevisionId = String(
     effectiveAttendance?.importData.activeRevisionId || '',
   );
+  const attendanceStates = new Map<string, CategoryAttendanceState>();
+  await Promise.all(
+    categories.map(async (category) => {
+      attendanceStates.set(category, await loadCategoryAttendanceState(
+        period, periodKey, category, periodData, activeImportRevisionId,
+      ));
+    }),
+  );
   const attendanceIdentityByEmployeeId = new Map(
     (attendanceIdentities?.identities || [])
       .filter(
@@ -389,6 +404,7 @@ export async function loadPekaryaSlipPreviews(
         attendanceJoinNipy(identity),
         effectiveAttendance.days,
         premiumDates,
+        attendanceStates.get(categoryOf(employee))?.singleScanPolicy,
       );
       if (shouldReturnAttendanceLogs) {
         attendanceLogs[employee.id] = summary.days.map((day) => ({
@@ -407,7 +423,6 @@ export async function loadPekaryaSlipPreviews(
         }));
       }
       const bonusKey = presenceBonusColumnKey(categoryOf(employee));
-      const joinNipy = attendanceJoinNipy(identity);
       uploadedAttendanceEntries[employee.id] = {
         employeeId: employee.id,
         name: identity.name,
@@ -419,12 +434,10 @@ export async function loadPekaryaSlipPreviews(
             ? {
                 [bonusKey]: calculatePekaryaPresenceBonus({
                   period,
-                  days: effectiveAttendance.days
-                    .filter((day) => day.nipy === joinNipy)
-                    .map((day) => ({
+                  days: summary.days.map((day) => ({
                       date: day.date,
                       present: day.present,
-                      scanIn: day.scanIn,
+                      scanIn: day.scanInAuto ? null : day.scanIn,
                     })),
                   premiumDates,
                 }).amount,
@@ -449,22 +462,6 @@ export async function loadPekaryaSlipPreviews(
   const events: KegiatanSpjFinancialLike[] = eventSnapshot.docs.map(
     (document) =>
       ({ id: document.id, ...document.data() }) as KegiatanSpjFinancialLike,
-  );
-
-  const attendanceStates = new Map<string, CategoryAttendanceState>();
-  await Promise.all(
-    categories.map(async (category) => {
-      attendanceStates.set(
-        category,
-        await loadCategoryAttendanceState(
-          period,
-          periodKey,
-          category,
-          periodData,
-          activeImportRevisionId,
-        ),
-      );
-    }),
   );
 
   const previews: Record<string, PekaryaSlipPreview> = {};

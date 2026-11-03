@@ -13,6 +13,8 @@ import {
 import { pekaryaPayrollWindow } from '@/lib/payroll/pekaryaSpj';
 import {
   ATTENDANCE_PAYROLL_START_PERIOD,
+  attendancePublicationMatchesPolicy,
+  pekaryaSingleScanPolicy,
 } from '@/lib/payroll/attendance';
 import {
   normalizePeriodPremiumDates,
@@ -138,6 +140,7 @@ export async function POST(request: NextRequest) {
       .doc(period)
       .get();
     let autoCloseStates: FirebaseFirestore.DocumentSnapshot[] = [];
+    let closePublications: Array<{ category: string; ref: FirebaseFirestore.DocumentReference }> = [];
     if (
       attendanceStatus === 'closed' &&
       isPeriodClosed(currentPeriodSnapshot.data()) &&
@@ -168,7 +171,7 @@ export async function POST(request: NextRequest) {
         adminDb.collection('PayrollPeriods').doc(period).get(),
         adminDb.collection(ATTENDANCE_IMPORTS_COLLECTION).doc(period).get(),
         adminDb.collection('LoyalisPresence').doc(period.replace('-', '_')).get(),
-        loadAttendanceEmployeeIdentities(),
+        loadAttendanceEmployeeIdentities(period),
         adminDb
           .collection('ShiftOccurrences')
           .where('payrollPeriod', '==', period)
@@ -253,22 +256,25 @@ export async function POST(request: NextRequest) {
               ),
             )
           : [];
+      closePublications = publicationSnapshots.map((snapshot, index) => ({ category: categories[index], ref: snapshot.ref }));
       const calendarRevision = periodCalendarFromData(
         period,
         periodBeforeClose.data()!,
       ).revision;
       const staleCategory = publicationSnapshots.find(
-        (snapshot) =>
+        (snapshot, index) =>
           !snapshot.exists ||
           snapshot.data()?.state !== 'published' ||
           snapshot.data()?.stale === true ||
+          !attendancePublicationMatchesPolicy(snapshot.data(),
+            pekaryaSingleScanPolicy(categories[index], periodBeforeClose.data(), snapshot.data())) ||
           Number(snapshot.data()?.importRevision || 0) !== importRevision ||
           Number(snapshot.data()?.calendarRevision || 0) !== calendarRevision,
       );
       if (staleCategory) {
         throw new HttpError(
           409,
-          'Semua kategori Pekarya non-Satpam harus dipublikasikan dari revisi presensi dan kalender terbaru.',
+          'Semua kategori Pekarya non-Satpam harus dipublikasikan dari revisi presensi, kalender, dan aturan scan terbaru.',
         );
       }
       const calendarReopened = reopenedShiftSnapshot.docs.find((snapshot) => {
@@ -361,6 +367,11 @@ export async function POST(request: NextRequest) {
         transaction.get(loyalisEmployeesQuery),
       ]);
       const before = snapshot.exists ? snapshot.data()! : null;
+      const latestPublications = await Promise.all(closePublications.map(({ ref }) => transaction.get(ref)));
+      if (latestPublications.some((publication, index) => !attendancePublicationMatchesPolicy(publication.data(),
+        pekaryaSingleScanPolicy(closePublications[index].category, before, publication.data())))) {
+        throw new HttpError(409, 'Aturan scan presensi berubah sebelum penutupan. Publikasikan ulang presensi.');
+      }
       let validatedPayrollRosterSeal: Record<string, unknown> | null = null;
       // Periods are open by default, so closing a month that nobody explicitly
       // opened is normal and must materialize it rather than be rejected.

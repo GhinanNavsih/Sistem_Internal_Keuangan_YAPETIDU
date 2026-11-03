@@ -4,6 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import {
   attendanceDayKey,
+  attendancePublicationMatchesPolicy,
   attendanceWorkedSeconds,
   autoFillAttendanceScan,
   classifyAttendanceDepartment,
@@ -14,6 +15,7 @@ import {
   normalizeAttendanceWorkbookRow,
   normalizeNipy,
   pekaryaAttendanceAmount,
+  pekaryaSingleScanPolicy,
   resolveEmployeeAttendanceNipy,
   summarizePekaryaAttendance,
 } from './attendance';
@@ -183,6 +185,145 @@ test('a forgotten scan is filled in 150 minutes off the one recorded, like Loyal
   // at 13:00 would fill scan keluar to 15:30, but the window ends at 14:00.
   assert.equal(autoFillAttendanceScan('13:00:00', 'out'), '14:00:00');
   assert.equal(attendanceWorkedSeconds('13:00:00', null), 3_600);
+});
+
+test('the work-window policy fills only the missing scan in the requested examples', () => {
+  const rows = [
+    normalizeAttendanceWorkbookRow({ NIPY: 'P1', Nama: 'Budianto', Tanggal: '01-10-2026', 'Scan pulang': '17:03' }, 2, '2026-10'),
+    normalizeAttendanceWorkbookRow({ NIPY: 'P1', Nama: 'Pribadi', Tanggal: '03-10-2026', 'Scan masuk': '06:34' }, 3, '2026-10'),
+  ];
+  const summary = summarizePekaryaAttendance('P1', consolidateAttendanceDays(rows), new Set(), 'work_window');
+  assert.deepEqual(summary.days.map(day => [day.scanIn, day.scanOut, day.amount]), [
+    ['07:30:00', '17:03:00', 12_500],
+    ['06:34:00', '14:00:00', 12_500],
+  ]);
+  assert.equal(summary.workedSeconds, 46_800);
+  assert.equal(summary.incompletePunchCount, 2);
+  assert.equal(rows[0].scanIn, null);
+  assert.equal(rows[1].scanOut, null);
+});
+
+test('Sugeng daytime attendance survives overnight duplicates and a misplaced afternoon scan', () => {
+  const rows = [
+    ['26', '06:51:22', null], ['26', '19:39:59', '06:46:26'],
+    ['28', '06:50:51', null], ['28', '19:46:07', '06:58:26'],
+    ['29', '15:01:40', null],
+  ].map(([date, scanIn, scanOut], i) => normalizeAttendanceWorkbookRow({
+    NIPY: 'SUGENG', Tanggal: `${date}-10-2026`, 'Jam kerja': 'MASUK', 'Scan masuk': scanIn, 'Scan pulang': scanOut,
+  }, i + 2, '2026-10'));
+  const before = structuredClone(rows);
+  const summary = summarizePekaryaAttendance('SUGENG', consolidateAttendanceDays(rows), new Set(), pekaryaSingleScanPolicy('KEBERSIHAN'));
+  assert.deepEqual(summary.days.map(d => [d.scanIn, d.scanOut, d.amount]), [
+    ['06:51:22', '14:00:00', 12_500],
+    ['06:50:51', '14:00:00', 12_500],
+    ['07:30:00', '15:01:40', 12_500],
+  ]);
+  assert.deepEqual(summary.days.map(d => [d.scanInAuto, d.scanOutAuto, d.completePunch]), [
+    [false, true, false], [false, true, false], [true, false, false],
+  ]);
+  assert.deepEqual(rows, before);
+});
+
+test('only Kebersihan and Teknisi use the new policy, and closed publications retain their policy', () => {
+  for (const category of ['KEBERSIHAN', 'TEKNISI']) {
+    assert.equal(pekaryaSingleScanPolicy(category), 'work_window_inferred');
+    assert.equal(pekaryaSingleScanPolicy(category, { attendanceStatus: 'closed' }), 'offset_150_minutes');
+    assert.equal(pekaryaSingleScanPolicy(category, { attendanceStatus: 'closed' }, { singleScanPolicy: 'work_window' }), 'work_window');
+    assert.equal(pekaryaSingleScanPolicy(category, { attendanceStatus: 'closed' }, { singleScanPolicy: 'work_window_inferred' }), 'work_window_inferred');
+    assert.equal(attendancePublicationMatchesPolicy({ singleScanPolicy: 'work_window' }, pekaryaSingleScanPolicy(category)), false);
+    assert.equal(attendancePublicationMatchesPolicy({}, pekaryaSingleScanPolicy(category)), false);
+  }
+  for (const category of ['KEBERSIHAN_PONTI', 'SATPAM', 'SOPIR', 'PEKARYA', 'PONTI', 'LOYALIS']) {
+    const policy = pekaryaSingleScanPolicy(category);
+    assert.equal(policy, 'offset_150_minutes');
+    assert.equal(attendanceWorkedSeconds('06:34', null, policy), 9_000);
+    assert.equal(attendancePublicationMatchesPolicy({}, policy), true);
+  }
+});
+
+test('inference handles same-side scans but respects manual decisions, absences, daytime pairs and night-only evidence', () => {
+  const rows = [
+    ['01', null, '06:34'], ['03', '06:50', '06:58'], ['04', '15:01', '17:03'],
+    ['05', '08:30', '12:00'], ['06', '19:46', '06:58'], ['07', '15:01', null],
+    ['08', '15:01', null], ['10', '06:34', null],
+  ].map(([date, scanIn, scanOut], i) => normalizeAttendanceWorkbookRow({
+    NIPY: 'P1', Tanggal: `${date}-10-2026`, 'Jam kerja': date === '10' ? 'TIDAK HADIR' : 'MASUK',
+    'Scan masuk': scanIn, 'Scan pulang': scanOut,
+  }, i + 2, '2026-10'));
+  const days = consolidateAttendanceDays(rows, new Map([
+    [attendanceDayKey('P1', '2026-10-07'), { present: true, scanIn: '15:01:00', scanOut: null }],
+    [attendanceDayKey('P1', '2026-10-08'), { present: false }],
+  ]));
+  const summary = summarizePekaryaAttendance('P1', days, new Set(), pekaryaSingleScanPolicy('TEKNISI'));
+  assert.deepEqual(summary.days.map(d => [d.scanIn, d.scanOut, d.amount]), [
+    ['06:34:00', '14:00:00', 12_500], ['06:50:00', '14:00:00', 12_500],
+    ['07:30:00', '17:03:00', 12_500], ['08:30:00', '12:00:00', 6_731],
+    ['19:46:00', '06:58:00', 0], ['15:01:00', '14:00:00', 0],
+    ['15:01:00', null, 0], ['06:34:00', null, 0],
+  ]);
+  // The earlier policy stays reproducible for publications closed under it.
+  const legacy = summarizePekaryaAttendance('P1', days, new Set(), 'work_window');
+  assert.equal(legacy.days[1].scanOut, '06:58:00');
+  assert.equal(legacy.days[2].scanIn, '15:01:00');
+});
+
+test('inference consolidates duplicate punches after interpreting their actual side', () => {
+  const rows = [
+    ['01', '15:01', null], ['01', '17:03', null],
+    ['03', '06:51', null], ['03', null, '06:58'],
+    ['04', '06:51', null], ['04', '15:01', null],
+  ].map(([date, scanIn, scanOut], i) => normalizeAttendanceWorkbookRow({
+    NIPY: 'P1', Tanggal: `${date}-10-2026`, 'Scan masuk': scanIn, 'Scan pulang': scanOut,
+  }, i + 2, '2026-10'));
+  const summary = summarizePekaryaAttendance('P1', consolidateAttendanceDays(rows), new Set(), pekaryaSingleScanPolicy('KEBERSIHAN'));
+  assert.deepEqual(summary.days.map(d => [d.scanIn, d.scanOut]), [
+    ['07:30:00', '17:03:00'], ['06:51:00', '14:00:00'], ['06:51:00', '15:01:00'],
+  ]);
+  assert.equal(summary.totalAmount, 37_500);
+});
+
+test('work-window fill preserves late arrivals, early departures and existing pay rates', () => {
+  assert.equal(attendanceWorkedSeconds('08:30', null, 'work_window'), 19_800);
+  assert.equal(pekaryaAttendanceAmount('08:30', null, false, 'work_window'), 10_577);
+  assert.equal(attendanceWorkedSeconds(null, '12:00', 'work_window'), 16_200);
+  assert.equal(pekaryaAttendanceAmount(null, '12:00', false, 'work_window'), 8_654);
+  assert.equal(pekaryaAttendanceAmount(null, '17:03', true, 'work_window'), 25_001);
+  assert.equal(attendanceWorkedSeconds('15:00', null, 'work_window'), 0);
+  assert.equal(attendanceWorkedSeconds(null, '06:00', 'work_window'), 0);
+  assert.equal(autoFillAttendanceScan('invalid', 'out', 'work_window'), null);
+});
+
+test('work-window fill respects complete pairs, missing evidence, duplicate rows and explicit corrections', () => {
+  const rows = [
+    ['01', '08:30', '12:00', 'MASUK'],
+    ['02', null, null, 'MASUK'],
+    ['03', '06:34', null, 'TIDAK HADIR'],
+    ['04', '06:34', null, 'MASUK'],
+    ['04', null, '12:00', 'MASUK'],
+    ['05', '06:34', null, 'MASUK'],
+    ['06', null, null, 'MASUK'],
+  ].map(([date, scanIn, scanOut, status], i) => normalizeAttendanceWorkbookRow({
+    NIPY: 'P1', Tanggal: `${date}-10-2026`, 'Jam kerja': status, 'Scan masuk': scanIn, 'Scan pulang': scanOut,
+  }, i + 2, '2026-10'));
+  const before = structuredClone(rows);
+  const days = consolidateAttendanceDays(rows, new Map([
+    [attendanceDayKey('P1', '2026-10-05'), { present: false }],
+    [attendanceDayKey('P1', '2026-10-06'), { present: true, scanIn: '08:30:00' }],
+  ]));
+  const summary = summarizePekaryaAttendance('P1', days, new Set(), 'work_window');
+  assert.deepEqual(summary.days.map(d => [d.scanIn, d.scanOut, d.amount]), [
+    ['08:30:00', '12:00:00', 6_731],
+    [null, null, 0],
+    ['06:34:00', null, 0],
+    ['06:34:00', '12:00:00', 8_654],
+    ['06:34:00', null, 0],
+    ['08:30:00', '14:00:00', 10_577],
+  ]);
+  assert.equal(summary.days[3].scanOutAuto, false);
+  assert.equal(summary.days[5].scanOutAuto, true);
+  assert.equal(summary.days[5].completePunch, false);
+  assert.equal(summary.days[5].corrected, true);
+  assert.deepEqual(rows, before);
 });
 
 test('the offset is measured from the window boundary, not the raw scan, for a scan outside the window', () => {
