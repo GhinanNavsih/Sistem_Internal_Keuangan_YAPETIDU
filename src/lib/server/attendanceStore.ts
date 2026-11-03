@@ -21,6 +21,7 @@ import {
 } from '@/lib/payroll/driverJourneyAttendance';
 import { MANUAL_OVERRIDES, normalizeName } from '@/lib/payroll/employeeNames';
 import { applyAutomaticPekaryaLeave, type AutomaticAttendanceCredit } from '@/lib/payroll/pekaryaAutoLeave';
+import { createPromiseCache } from './promiseCache';
 
 export const ATTENDANCE_IMPORTS_COLLECTION = 'AttendanceImports';
 export const ATTENDANCE_REVISIONS_COLLECTION = 'AttendanceImportRevisions';
@@ -86,6 +87,20 @@ export function employeeNipy(data: Record<string, unknown>): string {
   return resolveEmployeeAttendanceNipy(data);
 }
 
+/**
+ * The only fields the Loyalis and white-collar identities below read (their
+ * profiles are large). Add a field here whenever that code, or
+ * `resolveEmployeeAttendanceNipy`, starts reading another one.
+ */
+const NON_BLUE_IDENTITY_FIELDS = [
+  'nipy',
+  'name',
+  'employment.status',
+  'personal_info.name',
+  'personal_info.status',
+  'personal_info.employee_id_niy',
+] as const;
+
 export async function loadAttendanceEmployeeIdentities(period?: string): Promise<{
   identities: AttendanceEmployeeIdentity[];
   byNipy: Map<string, AttendanceEmployeeIdentity[]>;
@@ -93,8 +108,8 @@ export async function loadAttendanceEmployeeIdentities(period?: string): Promise
 }> {
   const [blueSnapshot, loyalisSnapshot, whiteSnapshot] = await Promise.all([
     adminDb.collection('Employees_BlueCollar').get(),
-    adminDb.collection('Employees_Loyalis').get(),
-    adminDb.collection('Employees_WhiteCollar').get(),
+    adminDb.collection('Employees_Loyalis').select(...NON_BLUE_IDENTITY_FIELDS).get(),
+    adminDb.collection('Employees_WhiteCollar').select(...NON_BLUE_IDENTITY_FIELDS).get(),
   ]);
   const identities: AttendanceEmployeeIdentity[] = [];
   for (const snapshot of blueSnapshot.docs) {
@@ -223,6 +238,32 @@ export function resolveIdentityByName(
   return uniqueMatch(contained);
 }
 
+async function readRevisionRows(revisionId: string): Promise<AttendanceNormalizedRow[]> {
+  const rowsSnapshot = await adminDb
+    .collection(ATTENDANCE_ROWS_COLLECTION)
+    .where('revisionId', '==', revisionId)
+    .get();
+  return rowsSnapshot.docs
+    .map((snapshot) =>
+      dropRetiredIdentifierConflict(snapshot.data() as AttendanceNormalizedRow),
+    )
+    .sort((left, right) => left.rowNumber - right.rowNumber);
+}
+
+/**
+ * A revision's rows are all written before the revision is activated and are
+ * never edited afterwards (a new file is a new revision), so they are kept in
+ * memory by revision id: the month's scan file is thousands of rows and the
+ * slowest read behind the presence pages. The emulator tests edit rows in place
+ * under one revision id, so they always read fresh.
+ */
+const revisionRowsCache = createPromiseCache<AttendanceNormalizedRow[]>(6);
+
+function revisionRows(revisionId: string): Promise<AttendanceNormalizedRow[]> {
+  if (process.env.FIRESTORE_EMULATOR_HOST) return readRevisionRows(revisionId);
+  return revisionRowsCache.get(revisionId, () => readRevisionRows(revisionId));
+}
+
 export async function loadActiveAttendanceRows(
   period: string,
   options: { allowMissingActiveImport?: boolean } = {},
@@ -243,12 +284,9 @@ export async function loadActiveAttendanceRows(
   }
   const importData = importSnapshot.data()!;
   const revisionId = String(importData.activeRevisionId);
-  const [revisionSnapshot, rowsSnapshot] = await Promise.all([
+  const [revisionSnapshot, rows] = await Promise.all([
     adminDb.collection(ATTENDANCE_REVISIONS_COLLECTION).doc(revisionId).get(),
-    adminDb
-      .collection(ATTENDANCE_ROWS_COLLECTION)
-      .where('revisionId', '==', revisionId)
-      .get(),
+    revisionRows(revisionId),
   ]);
   if (!revisionSnapshot.exists) {
     throw new Error('Metadata revisi presensi aktif tidak ditemukan.');
@@ -256,11 +294,9 @@ export async function loadActiveAttendanceRows(
   return {
     importData,
     revisionData: revisionSnapshot.data()!,
-    rows: rowsSnapshot.docs
-      .map((snapshot) =>
-        dropRetiredIdentifierConflict(snapshot.data() as AttendanceNormalizedRow),
-      )
-      .sort((left, right) => left.rowNumber - right.rowNumber),
+    // A copy of the array, so a caller sorting or trimming it cannot change
+    // what the next request is served.
+    rows: [...rows],
   };
 }
 
@@ -457,6 +493,7 @@ export async function loadEffectiveAttendanceDays(
     correctionsSnapshot,
     manualLinks,
     driverJourneys,
+    automaticPosts,
   ] = await Promise.all([
     loadActiveAttendanceRows(period, options),
     adminDb
@@ -465,6 +502,9 @@ export async function loadEffectiveAttendanceDays(
       .get(),
     loadAttendanceManualLinks(period),
     wantsDriverJourneys ? loadApprovedDriverJourneys(period) : Promise.resolve([]),
+    options.identities && options.includeAutomaticLeave !== false
+      ? adminDb.collection('AnnualPaidLeavePayrollPosts').where('period', '==', period).get()
+      : Promise.resolve(null),
   ]);
   const corrections = new Map<string, AttendanceDayCorrection>();
   const correctionRevisions = new Map<string, number>();
@@ -559,9 +599,6 @@ export async function loadEffectiveAttendanceDays(
           correctedKeys: new Set(corrections.keys()),
         })
       : consolidatedDays;
-  const automaticPosts = identities && options.includeAutomaticLeave !== false
-    ? await adminDb.collection('AnnualPaidLeavePayrollPosts').where('period', '==', period).get()
-    : null;
   const days = automaticPosts
     ? applyAutomaticPekaryaLeave(baseDays,
         automaticPosts.docs.map((document) => document.data() as AutomaticAttendanceCredit),

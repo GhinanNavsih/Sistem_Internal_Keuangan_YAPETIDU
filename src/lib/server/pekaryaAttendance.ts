@@ -23,6 +23,7 @@ import {
   PEKARYA_PUBLICATIONS_COLLECTION,
 } from '@/lib/server/attendanceStore';
 import { isPeriodClosed } from './payrollPeriod';
+import { createPromiseCache } from './promiseCache';
 import {
   SATPAM_ABSENCE_REQUESTS_COLLECTION,
   SATPAM_DUTY_PLANS_COLLECTION,
@@ -139,21 +140,35 @@ export interface PekaryaAttendanceViewOptions {
  * saved presence for the period. Its links live in that saved presence, keyed
  * by the name as the file writes it, not in the shared manual links.
  */
-export async function loadLoyalisHandledNames(period: string): Promise<Set<string>> {
-  const snapshot = await adminDb
-    .doc(`LoyalisPresence/${period.replace('-', '_')}`)
-    .get();
-  const entries = snapshot.data()?.entries;
-  const handled = new Set<string>();
-  if (!entries || typeof entries !== 'object') return handled;
-  for (const entry of Object.values(entries as Record<string, Record<string, unknown>>)) {
-    const name = String(entry?.excelName ?? '').trim().toLowerCase();
-    if (entry?.employeeId && name && name !== '-' && entry.isNotFoundInExcel !== true) {
-      handled.add(name);
+export async function loadLoyalisHandledNames(
+  period: string,
+): Promise<ReadonlySet<string>> {
+  const ref = adminDb.doc(`LoyalisPresence/${period.replace('-', '_')}`);
+  // The saved presence is a large document (every Loyalis employee's days) and
+  // only changes when someone saves it. A read that returns no fields still
+  // carries its update time, so the names are rebuilt only after a save.
+  const [probe] = await adminDb.getAll(ref, { fieldMask: ['updateTimeProbe'] });
+  const version = probe.updateTime
+    ? `${ref.path}@${probe.updateTime.seconds}.${probe.updateTime.nanoseconds}`
+    : null;
+  const read = async () => {
+    const snapshot = await ref.get();
+    const entries = snapshot.data()?.entries;
+    const handled = new Set<string>();
+    if (!entries || typeof entries !== 'object') return handled;
+    for (const entry of Object.values(entries as Record<string, Record<string, unknown>>)) {
+      const name = String(entry?.excelName ?? '').trim().toLowerCase();
+      if (entry?.employeeId && name && name !== '-' && entry.isNotFoundInExcel !== true) {
+        handled.add(name);
+      }
     }
-  }
-  return handled;
+    return handled;
+  };
+  // A document that does not exist has nothing to cache.
+  return version ? loyalisHandledNamesCache.get(version, read) : read();
 }
+
+const loyalisHandledNamesCache = createPromiseCache<ReadonlySet<string>>(6);
 
 export interface DepartmentUnmatchedRow {
   sourceKey: string;
@@ -646,18 +661,13 @@ export async function buildPekaryaAttendanceViewForCategories(
  * it explains scans against the duty plan, shift reports and approved leave,
  * and changes no pay, so it never feeds the Pekarya totals or publication.
  */
-export async function buildSatpamAttendanceDetails(
-  period: string,
-  options: PekaryaAttendanceViewOptions = {},
-  now: Date = new Date(),
-  context?: AttendanceViewContext,
-): Promise<{ employees: SatpamAttendanceDetailEmployee[] }> {
-  const shared = context ?? (await loadAttendanceViewContext(period, options));
-  const { identityIndex } = shared;
-  const { days } = shared.effective;
-  const { premiumDates, periodData } = shared.premium;
-  const [planSnapshot, reportSnapshot, absenceSnapshot, occurrenceSnapshot, annualLeavePosts] =
-    await Promise.all([
+/**
+ * What the Satpam cards read besides the scan file. None of it depends on the
+ * roster or the scan file, so a caller can start it at the same time as them
+ * and pass the promise to `buildSatpamAttendanceDetails`.
+ */
+export function loadSatpamDetailSources(period: string) {
+  return Promise.all([
     adminDb
       .collection(SATPAM_DUTY_PLANS_COLLECTION)
       .where('period', '==', period)
@@ -695,6 +705,21 @@ export async function buildSatpamAttendanceDetails(
       .get(),
     adminDb.collection('AnnualPaidLeavePayrollPosts').where('period', '==', period).get(),
   ]);
+}
+
+export async function buildSatpamAttendanceDetails(
+  period: string,
+  options: PekaryaAttendanceViewOptions = {},
+  now: Date = new Date(),
+  context?: AttendanceViewContext,
+  sources?: ReturnType<typeof loadSatpamDetailSources>,
+): Promise<{ employees: SatpamAttendanceDetailEmployee[] }> {
+  const shared = context ?? (await loadAttendanceViewContext(period, options));
+  const { identityIndex } = shared;
+  const { days } = shared.effective;
+  const { premiumDates, periodData } = shared.premium;
+  const [planSnapshot, reportSnapshot, absenceSnapshot, occurrenceSnapshot, annualLeavePosts] =
+    await (sources ?? loadSatpamDetailSources(period));
   const submittedOccurrenceIds = new Set(
     occurrenceSnapshot.docs.map((document) => document.id),
   );

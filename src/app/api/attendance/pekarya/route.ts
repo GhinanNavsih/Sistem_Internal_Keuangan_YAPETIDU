@@ -10,6 +10,7 @@ import {
   buildSatpamAttendanceMismatches,
   listActivePekaryaAttendanceCategories,
   loadAttendanceViewContext,
+  loadSatpamDetailSources,
 } from '@/lib/server/pekaryaAttendance';
 import { loadAttendanceEmployeeIdentities } from '@/lib/server/attendanceStore';
 import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
@@ -138,6 +139,34 @@ export async function GET(request: NextRequest) {
       }
       visibleCategories = category === 'SATPAM' ? null : [category];
     }
+    // Satpam is paid from shift reports and approved leave, not from scans, so
+    // it is shown beside the Pekarya cards for review only. It follows the same
+    // access the Satpam view itself has.
+    const canViewSatpam =
+      actor.role !== 'satker_head' ||
+      actor.permittedCategories
+        .map((item) => item.trim().toUpperCase())
+        .includes('SATPAM');
+    // Past the access check, so a refused account reads none of this. These
+    // depend on neither the roster nor the scan file, so they run beside the
+    // scan file instead of after it. The no-op catch only keeps an early failure
+    // elsewhere from leaving them as unhandled rejections; each is awaited below.
+    const officialLeavePromise =
+      category === 'SATPAM'
+        ? Promise.resolve(null)
+        : adminDb
+            .collection(PEKARYA_OFFICIAL_LEAVE_REQUESTS_COLLECTION)
+            .where('period', '==', period)
+            .get();
+    const autoLeaveStatesPromise = adminDb
+      .collection('PekaryaAutoLeaveStates')
+      .where('period', '==', period)
+      .get();
+    const satpamSourcesPromise =
+      identityIndex && canViewSatpam ? loadSatpamDetailSources(period) : null;
+    for (const early of [officialLeavePromise, autoLeaveStatesPromise, satpamSourcesPromise]) {
+      early?.catch(() => undefined);
+    }
     // "Semua Pekarya" shows several categories, plus Satpam, of one month. They
     // share the roster, the scan file and the correction log, so these load once.
     const sharedContext = identityIndex
@@ -147,14 +176,6 @@ export async function GET(request: NextRequest) {
           identityIndex,
         )
       : null;
-    // Satpam is paid from shift reports and approved leave, not from scans, so
-    // it is shown beside the Pekarya cards for review only. It follows the same
-    // access the Satpam view itself has.
-    const canViewSatpam =
-      actor.role !== 'satker_head' ||
-      actor.permittedCategories
-        .map((item) => item.trim().toUpperCase())
-        .includes('SATPAM');
     const [result, satpamAttendance] = await Promise.all([
       category === 'SATPAM'
         ? buildSatpamAttendanceMismatches(period, VIEW_OPTIONS)
@@ -172,6 +193,7 @@ export async function GET(request: NextRequest) {
             VIEW_OPTIONS,
             new Date(),
             sharedContext,
+            satpamSourcesPromise ?? undefined,
           ).catch((error) => {
             // Review-only extra: never take the Pekarya cards down with it.
             console.error('Satpam attendance detail failed', error);
@@ -179,14 +201,10 @@ export async function GET(request: NextRequest) {
           })
         : Promise.resolve(null),
     ]);
-    const officialLeaveSnapshot =
-      category === 'SATPAM'
-        ? null
-        : await adminDb
-            .collection(PEKARYA_OFFICIAL_LEAVE_REQUESTS_COLLECTION)
-            .where('period', '==', period)
-            .get();
-    const autoLeaveStates = await adminDb.collection('PekaryaAutoLeaveStates').where('period', '==', period).get();
+    const [officialLeaveSnapshot, autoLeaveStates] = await Promise.all([
+      officialLeavePromise,
+      autoLeaveStatesPromise,
+    ]);
     const autoLeaveResults = autoLeaveStates.docs.filter((doc) => {
       const itemCategory = String(doc.data().category);
       return (category === ALL_BLUE_COLLAR_CATEGORY || category === itemCategory) &&
