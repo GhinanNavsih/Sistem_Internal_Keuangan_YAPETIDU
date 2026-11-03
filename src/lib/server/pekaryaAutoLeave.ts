@@ -330,9 +330,16 @@ export async function reconcilePekaryaAutoLeave(period: string, actor: Automatic
     }
   }
   if (!options.dryRun) for (const category of categories) {
+    const categoryResults = results.filter((result) =>
+      employees.find((employee) => employee.id === result.employeeId && jobCategoryForPayrollPeriod(employee.data(), period).trim().toUpperCase() === category) || result.employeeName === category);
+    // A run for chosen employees must not erase what the page lists for the rest.
+    const chosen = options.employeeIds;
+    const kept: AutoLeaveEmployeeResult[] = chosen
+      ? ((await autoLeaveStateRef(period, category).get()).data()?.summary?.results || [])
+          .filter((item: AutoLeaveEmployeeResult) => item.employeeId && !chosen.includes(item.employeeId))
+      : [];
     await autoLeaveStateRef(period, category).set({ period, category,
-      summary: { period, applicable: true, results: results.filter((result) =>
-        employees.find((employee) => employee.id === result.employeeId && jobCategoryForPayrollPeriod(employee.data(), period).trim().toUpperCase() === category) || result.employeeName === category) },
+      summary: { period, applicable: true, results: [...kept, ...categoryResults] },
     }, { merge: true });
   }
   return { period, applicable: true, results };

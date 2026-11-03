@@ -14,7 +14,7 @@ async function main() {
   const { GET } = await import('../src/app/api/attendance/pekarya/route');
   const { POST: correct } = await import('../src/app/api/attendance/pekarya/corrections/route');
   const { POST: reviewShift } = await import('../src/app/api/satpam/shifts/review/route');
-  const { reconcilePekaryaAutoLeave } = await import('../src/lib/server/pekaryaAutoLeave');
+  const { reconcilePekaryaAutoLeave, ensurePekaryaAutoLeave } = await import('../src/lib/server/pekaryaAutoLeave');
   const { assertAutoLeaveReady } = await import('../src/lib/server/automaticLeavePosting');
   const { loadEffectiveAttendanceDays, loadAttendanceEmployeeIdentities, pekaryaPublicationId } = await import('../src/lib/server/attendanceStore');
   const { buildPekaryaAttendanceView, buildSatpamAttendanceDetails } = await import('../src/lib/server/pekaryaAttendance');
@@ -97,6 +97,18 @@ async function main() {
   assert.ok(resultOf(ids.PONTI).held.length);
   assert.equal(await used(ids.PONTI), 0);
   assert.equal(await used(ids.KEBERSIHAN), 0);
+  assert.equal(await used(ids.TEKNISI), 1);
+  // A run for one employee (what linking attendance does) rechecks only that
+  // employee and leaves what the page lists for everyone else in place.
+  const summaryIds = async (category: string) => ((await db.doc(`PekaryaAutoLeaveStates/${period.replace('-', '_')}__${category}`).get())
+    .data()?.summary?.results ?? []).map((item: { employeeId: string }) => item.employeeId).sort();
+  const teknisiBefore = await summaryIds('TEKNISI');
+  const sopirBefore = await summaryIds('SOPIR');
+  assert.ok(teknisiBefore.includes(ids.TEKNISI) && sopirBefore.includes(ids.SOPIR));
+  const scoped = await ensurePekaryaAutoLeave(period, actor, ['TEKNISI', 'SOPIR'], [ids.TEKNISI]);
+  assert.deepEqual(scoped.results.map((item) => item.employeeId), [ids.TEKNISI]);
+  assert.deepEqual(await summaryIds('TEKNISI'), teknisiBefore);
+  assert.deepEqual(await summaryIds('SOPIR'), sopirBefore);
   assert.equal(await used(ids.TEKNISI), 1);
   assert.equal(await used(ids.SOPIR), 3); // 1, 4, 31; journey attendance protects 5.
   assert.equal((await requestRef(ids.SOPIR, '2026-10-05').get()).exists, false);

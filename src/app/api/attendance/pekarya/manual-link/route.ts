@@ -7,6 +7,7 @@ import {
   ATTENDANCE_PAYROLL_START_PERIOD,
   resolveEmployeeAttendanceNipy,
 } from '@/lib/payroll/attendance';
+import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { assertRequestId } from '@/lib/payroll/domain';
 import {
   attendanceJoinNipy,
@@ -42,6 +43,7 @@ function assertPeriod(period: string) {
  * means the actor is unrestricted.
  */
 async function resolveLinkTarget(
+  period: string,
   employeeId: string,
   permittedCategories: readonly string[] | null,
 ) {
@@ -79,10 +81,39 @@ async function resolveLinkTarget(
   const nipy = resolveEmployeeAttendanceNipy(employee || {});
   return {
     category,
+    payrollCategory: jobCategoryForPayrollPeriod(employee || {}, period)
+      .trim()
+      .toUpperCase(),
     nipy,
     joinNipy: attendanceJoinNipy({ employeeId, nipy }),
     name: String(employee?.name || ''),
   };
+}
+
+/**
+ * A link moves one employee's attendance, so only that employee's cuti otomatis
+ * is rechecked, as the scan-correction route does. Rechecking the whole month
+ * made every link wait on every employee. Without a known employee the whole
+ * month is rechecked, as before.
+ */
+async function reconcileLinkedEmployee(
+  period: string,
+  actor: Awaited<ReturnType<typeof requireAuthenticatedProfile>>,
+  employeeId: string | null,
+  categories: readonly string[],
+) {
+  const permitted = permittedAutoLeaveCategories(actor);
+  if (!employeeId) {
+    await ensurePekaryaAutoLeave(period, actor, permitted);
+    return;
+  }
+  const scoped = [...new Set(categories.map((item) => item.trim().toUpperCase()))].filter(
+    (item) => permitted.includes(item),
+  );
+  // An employee outside the automatic-leave categories has nothing to recheck.
+  if (scoped.length > 0) {
+    await ensurePekaryaAutoLeave(period, actor, scoped, [employeeId]);
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -111,6 +142,7 @@ export async function POST(request: NextRequest) {
       item.trim().toUpperCase(),
     );
     const target = await resolveLinkTarget(
+      period,
       employeeId,
       actor.role === 'super_admin' ? null : permittedCategories,
     );
@@ -220,7 +252,10 @@ export async function POST(request: NextRequest) {
       );
     });
 
-    await ensurePekaryaAutoLeave(period, actor, permittedAutoLeaveCategories(actor));
+    await reconcileLinkedEmployee(period, actor, employeeId, [
+      target.category,
+      target.payrollCategory,
+    ]);
     return Response.json(
       { linked: true, employeeId, sourceKey, dates: sourceRow.dates },
       { status: 201 },
@@ -244,7 +279,7 @@ export async function DELETE(request: NextRequest) {
       .collection(ATTENDANCE_MANUAL_LINKS_COLLECTION)
       .doc(attendanceManualLinkId(period, sourceKey));
 
-    await adminDb.runTransaction(async (transaction) => {
+    const removed = await adminDb.runTransaction(async (transaction) => {
       const [periodSnapshot, linkSnapshot] = await Promise.all([
         transaction.get(adminDb.collection('PayrollPeriods').doc(period)),
         transaction.get(linkRef),
@@ -297,9 +332,25 @@ export async function DELETE(request: NextRequest) {
           after: null,
         }),
       );
+      return { employeeId: String(before.employeeId || ''), category };
     });
 
-    await ensurePekaryaAutoLeave(period, actor, permittedAutoLeaveCategories(actor));
+    // The employee's category for this month can differ from the one stored on
+    // the link; with no employee on record the whole month is rechecked.
+    const employeeSnapshot = removed.employeeId
+      ? await adminDb.collection('Employees_BlueCollar').doc(removed.employeeId).get()
+      : null;
+    await reconcileLinkedEmployee(
+      period,
+      actor,
+      employeeSnapshot?.exists ? removed.employeeId : null,
+      [
+        removed.category,
+        ...(employeeSnapshot?.exists
+          ? [jobCategoryForPayrollPeriod(employeeSnapshot.data() || {}, period)]
+          : []),
+      ],
+    );
     return Response.json({ removed: true, sourceKey });
   } catch (error) {
     return errorResponse(error);
