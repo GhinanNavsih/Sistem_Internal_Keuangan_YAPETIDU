@@ -779,7 +779,7 @@ test('approved absence fulfills duty at fixed pay, while a work conflict blocks 
   assert.equal(conflict.eligibleForBonus, false);
 });
 
-test('annual paid leave can fulfill scheduled duty without becoming a worked or bonus shift', () => {
+test('annual paid leave on a scheduled duty counts as a worked shift towards the bonus', () => {
   const employeeId = roster[0];
   const dutyDate = '2026-08-01';
   const key = satpamDutyKey(employeeId, dutyDate);
@@ -800,14 +800,15 @@ test('annual paid leave can fulfill scheduled duty without becoming a worked or 
     pendingDutyKeys: new Set(),
     unfinishedDutyKeys: new Set(),
     extraDutyKeys: new Set(),
-    workedShiftCountsByEmployee: new Map([[employeeId, 0]]),
+    // The server adds one worked shift per posted Cuti day on a planned duty.
+    workedShiftCountsByEmployee: new Map([[employeeId, 1]]),
     periodComplete: true,
   })[0];
   assert.equal(result.fulfilledByAbsence, 1);
   assert.equal(result.fulfilledDuties, 1);
-  assert.equal(result.workedShiftCount, 0);
-  assert.equal(result.eligibleForBonus, false);
-  assert.equal(result.bonusAmount, 0);
+  assert.equal(result.workedShiftCount, 1);
+  assert.equal(result.eligibleForBonus, true);
+  assert.equal(result.bonusAmount, SATPAM_MONTHLY_ATTENDANCE_BONUS);
 });
 
 test('off-duty annual paid leave does not create a duty or worked shift', () => {

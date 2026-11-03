@@ -352,6 +352,19 @@ export async function buildSatpamDutyReconciliation(
   const gantiLiburCounts = new Map<string, number>();
   const conflictKeys = new Set<string>();
 
+  // Cuti counts as a worked shift for the monthly bonus, but only on a date
+  // the plan really assigns the guard to a post; leave on a Libur date is not
+  // a duty and must not lift the count above the target.
+  const plannedPostDutyKeys = new Set(
+    plans.flatMap((plan) =>
+      plan.generatedDays.flatMap((day) =>
+        day.assignments.map((assignment) =>
+          satpamDutyKey(assignment.employeeId, day.dutyDate),
+        ),
+      ),
+    ),
+  );
+
   for (const paidLeaveDocument of annualPaidLeaveSnapshot.docs) {
     const paidLeave = paidLeaveDocument.data();
     if (paidLeave.status !== 'posted' || paidLeave.category !== 'SATPAM') continue;
@@ -361,9 +374,11 @@ export async function buildSatpamDutyReconciliation(
     const key = satpamDutyKey(employeeId, leaveDate);
     approvedAbsenceKeys.add(key);
     annualPaidLeaveEmployeeIds.add(employeeId);
-    if (!workedShiftCountsByEmployee.has(employeeId)) {
-      workedShiftCountsByEmployee.set(employeeId, 0);
-    }
+    workedShiftCountsByEmployee.set(
+      employeeId,
+      Number(workedShiftCountsByEmployee.get(employeeId) || 0) +
+        (plannedPostDutyKeys.has(key) ? 1 : 0),
+    );
     const counts = annualPaidLeaveCounts.get(employeeId) || { harian: 0, premium: 0 };
     if (paidLeave.payType === 'Jumat & Libur') counts.premium += 1;
     else counts.harian += 1;
