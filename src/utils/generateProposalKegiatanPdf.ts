@@ -38,6 +38,9 @@ const formatIDR = (amount: number): string => {
   }).format(amount);
 };
 
+// A zero total is left blank in the Total column.
+const formatTotal = (amount: number): string => (amount ? formatIDR(amount) : '');
+
 const parseQty = (q: string): number => {
   if (!q) return 0;
   const trimmed = q.trim();
@@ -62,6 +65,15 @@ const parseQty = (q: string): number => {
   }
   const match = trimmed.match(/[\d\.]+/);
   return match ? parseFloat(match[0]) : 0;
+};
+
+// Sums the item rows that follow a group header, up to the next header.
+const sumGroupItems = (rows: RealisasiRow[], headerIdx: number): number => {
+  let total = 0;
+  for (let i = headerIdx + 1; i < rows.length && rows[i].type !== 'group_header'; i++) {
+    total += parseQty(rows[i].rincianQty) * (rows[i].rincianRate || 0);
+  }
+  return total;
 };
 
 function renderLetterhead(doc: jsPDF) {
@@ -111,9 +123,6 @@ export function generateProposalKegiatanPdf(data: ProposalKegiatanPdfData, saveT
   } else {
     titleText += ` (${data.period})`;
   }
-  if (data.queueNumber) {
-    titleText += `\n[ FIFO QUEUE #${data.queueNumber} ]`;
-  }
 
   const tableStartY = renderTitle(doc, titleText, 43);
 
@@ -138,9 +147,18 @@ export function generateProposalKegiatanPdf(data: ProposalKegiatanPdfData, saveT
 
   // 1. Pemasukan
   if (data.pemasukanRows && data.pemasukanRows.length > 0) {
+    const totalPemasukanAnggaran = data.pemasukanRows.reduce((sum, r) => sum + (parseQty(r.rincianQty) * (r.rincianRate || 0)), 0);
+    const yayasanPct = data.yayasanPercentage ?? 20;
+    const unipduPct = data.unipduPercentage ?? 20;
+    const yayasanAnggaran = totalPemasukanAnggaran * (yayasanPct / 100);
+    const unipduAnggaran = totalPemasukanAnggaran * (unipduPct / 100);
+    const totalPengembanganAnggaran = yayasanAnggaran + unipduAnggaran;
+    const danaOperasionalAnggaran = totalPemasukanAnggaran - totalPengembanganAnggaran;
+
     tableRows.push([
       { content: '', styles: { fontStyle: 'bold' as const } },
       { content: 'PEMASUKAN (RENCANA PENDAPATAN)', colSpan: 3, styles: { fontStyle: 'bold' as const } },
+      { content: formatTotal(totalPemasukanAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const } },
     ]);
 
     let pIdx = 0;
@@ -153,67 +171,66 @@ export function generateProposalKegiatanPdf(data: ProposalKegiatanPdfData, saveT
         row.uraian,
         rincianStr,
         { content: formatIDR(anggaran), styles: { halign: 'right' as const } },
+        '',
       ]);
     });
-
-    const totalPemasukanAnggaran = data.pemasukanRows.reduce((sum, r) => sum + (parseQty(r.rincianQty) * (r.rincianRate || 0)), 0);
 
     // 2. Dana Pengembangan Header
     tableRows.push([
       { content: '', styles: { fontStyle: 'bold' as const } },
       { content: 'Dana Pengembangan', colSpan: 3, styles: { fontStyle: 'bold' as const } },
+      { content: formatTotal(totalPengembanganAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const } },
     ]);
-
-    const yayasanPct = data.yayasanPercentage ?? 20;
-    const unipduPct = data.unipduPercentage ?? 20;
-    const yayasanAnggaran = totalPemasukanAnggaran * (yayasanPct / 100);
-    const unipduAnggaran = totalPemasukanAnggaran * (unipduPct / 100);
 
     tableRows.push([
       '',
       'Yayasan',
       `${yayasanPct}%  x  ${formatIDR(totalPemasukanAnggaran)}`,
       { content: formatIDR(yayasanAnggaran), styles: { halign: 'right' as const } },
+      '',
     ]);
     tableRows.push([
       '',
       'UNIPDU',
       `${unipduPct}%  x  ${formatIDR(totalPemasukanAnggaran)}`,
       { content: formatIDR(unipduAnggaran), styles: { halign: 'right' as const } },
+      '',
     ]);
 
     // 3. Dana Operasional
-    const totalPengembanganAnggaran = yayasanAnggaran + unipduAnggaran;
-    const danaOperasionalAnggaran = totalPemasukanAnggaran - totalPengembanganAnggaran;
-
     tableRows.push([
       { content: '', styles: { fontStyle: 'bold' as const } },
-      { content: 'Dana Operasional (Batas Biaya)', styles: { fontStyle: 'bold' as const } },
-      '',
-      { content: formatIDR(danaOperasionalAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const } },
+      { content: 'Dana Operasional (Batas Biaya)', colSpan: 3, styles: { fontStyle: 'bold' as const } },
+      { content: formatTotal(danaOperasionalAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const } },
     ]);
 
     // Blank row gap
     tableRows.push([
       { content: '', styles: { minCellHeight: 5 } },
-      { content: '', colSpan: 3, styles: { minCellHeight: 5 } },
+      { content: '', colSpan: 4, styles: { minCellHeight: 5 } },
     ]);
   }
 
   // 4. Pengeluaran
   if (data.pengeluaranRows && data.pengeluaranRows.length > 0) {
+    const pengeluaranRows = data.pengeluaranRows;
+    const expItems = pengeluaranRows.filter(r => r.type === 'item');
+    const jumlahAnggaran = expItems.reduce((sum, r) => sum + (parseQty(r.rincianQty) * (r.rincianRate || 0)), 0);
+
     tableRows.push([
       { content: '', styles: { fontStyle: 'bold' as const } },
       { content: 'PENGELUARAN (RENCANA BIAYA OPERASIONAL)', colSpan: 3, styles: { fontStyle: 'bold' as const } },
+      { content: formatTotal(jumlahAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const } },
     ]);
 
     let oIdx = 0;
-    data.pengeluaranRows.forEach(row => {
+    pengeluaranRows.forEach((row, idx) => {
       if (row.type === 'group_header') {
         oIdx = 0;
         tableRows.push([
           { content: '', styles: { fontStyle: 'bold' as const } },
           { content: row.uraian, colSpan: 3, styles: { fontStyle: 'bold' as const } },
+          { content: formatTotal(sumGroupItems(pengeluaranRows, idx)), styles: { fontStyle: 'bold' as const, halign: 'right' as const } },
         ]);
       } else {
         oIdx++;
@@ -224,12 +241,10 @@ export function generateProposalKegiatanPdf(data: ProposalKegiatanPdfData, saveT
           row.uraian,
           rincianStr,
           { content: formatIDR(anggaran), styles: { halign: 'right' as const } },
+          '',
         ]);
       }
     });
-
-    const expItems = data.pengeluaranRows.filter(r => r.type === 'item');
-    const jumlahAnggaran = expItems.reduce((sum, r) => sum + (parseQty(r.rincianQty) * (r.rincianRate || 0)), 0);
     const kepPerc = (data.kepanitiaaanPercentage ?? 10) / 100;
     const kepAnggaran = jumlahAnggaran * kepPerc;
     const totalAnggaran = jumlahAnggaran + kepAnggaran;
@@ -242,16 +257,17 @@ export function generateProposalKegiatanPdf(data: ProposalKegiatanPdfData, saveT
 
     const summaryFill = [240, 244, 255] as [number, number, number];
     tableRows.push(
-      [{ content: '', styles: { fillColor: summaryFill } }, { content: 'Jumlah Pengeluaran', colSpan: 2, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(jumlahAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }],
-      [{ content: '', styles: { fillColor: summaryFill } }, { content: `Kepanitiaan ${data.kepanitiaaanPercentage ?? 10}% Pengeluaran`, colSpan: 2, styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepAnggaran), styles: { halign: 'right' as const, fillColor: summaryFill } }],
-      [{ content: '', styles: { fillColor: summaryFill } }, { content: 'TOTAL PENGELUARAN', colSpan: 2, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(totalAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }],
+      [{ content: '', styles: { fillColor: summaryFill } }, { content: 'Jumlah Pengeluaran', colSpan: 2, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(jumlahAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: '', styles: { fillColor: summaryFill } }],
+      [{ content: '', styles: { fillColor: summaryFill } }, { content: `Kepanitiaan ${data.kepanitiaaanPercentage ?? 10}% Pengeluaran`, colSpan: 2, styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepAnggaran), styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: '', styles: { fillColor: summaryFill } }],
+      [{ content: '', styles: { fillColor: summaryFill } }, { content: 'TOTAL PENGELUARAN', colSpan: 2, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(totalAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: '', styles: { fillColor: summaryFill } }],
     );
 
     if (data.pemasukanRows && data.pemasukanRows.length > 0) {
       tableRows.push([
         { content: '', styles: { fillColor: summaryFill } },
         { content: 'SISA DANA OPERASIONAL', colSpan: 2, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } },
-        { content: formatIDR(sisaDanaOperasional), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }
+        { content: formatIDR(sisaDanaOperasional), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } },
+        { content: '', styles: { fillColor: summaryFill } }
       ]);
     }
   }
@@ -259,7 +275,7 @@ export function generateProposalKegiatanPdf(data: ProposalKegiatanPdfData, saveT
   autoTable(doc, {
     startY: tableStartY,
     margin: { left: marginSide, right: marginSide },
-    head: [['NO', 'URAIAN PENGELUARAN', 'RINCIAN', 'ESTIMASI ANGGARAN']],
+    head: [['NO', 'URAIAN PENGELUARAN', 'RINCIAN', 'ESTIMASI ANGGARAN', 'TOTAL']],
     body: tableRows,
     theme: 'grid',
     headStyles: { ...headStyles, halign: 'center' as const },
@@ -268,9 +284,10 @@ export function generateProposalKegiatanPdf(data: ProposalKegiatanPdfData, saveT
     tableWidth,
     columnStyles: {
       0: { cellWidth: 10, halign: 'center' as const },
-      1: { cellWidth: 80, halign: 'left' as const },
-      2: { cellWidth: 50, halign: 'right' as const },
-      3: { cellWidth: 40, halign: 'right' as const },
+      1: { cellWidth: 66, halign: 'left' as const },
+      2: { cellWidth: 46, halign: 'right' as const },
+      3: { cellWidth: 29, halign: 'right' as const },
+      4: { cellWidth: 29, halign: 'right' as const },
     },
   });
 
