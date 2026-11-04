@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   bankDetailsDiffer, employeeLinkedToMember, hasSakuBank, KOPERASI_PAYMENT_LABELS,
@@ -59,13 +60,21 @@ export default function KoperasiMembersView({ members, employees, reload, disabl
     { label: 'Belum tertaut', count: rows.filter(unlinked).length, icon: Link2Off, iconStyle: 'bg-amber-50 text-amber-600', detail: 'Role Member tanpa pegawai SAKU' },
     { label: 'Rekening berbeda', count: bankRows.length, icon: AlertTriangle, iconStyle: 'bg-rose-50 text-rose-600', detail: 'Berbeda dari rekening SAKU' },
   ];
+  const matchesFilter = (row: (typeof rows)[number], value: Filter) => {
+    const { member } = row;
+    if (value === 'Potong Gaji') return member.paymentStatus === 'Payroll Deduction';
+    if (value === 'Subsidi Yayasan') return member.paymentStatus === 'Yayasan Subsidy';
+    if (value === 'Lainnya') return !['Payroll Deduction', 'Yayasan Subsidy'].includes(member.paymentStatus || '');
+    if (value === 'Belum tertaut') return unlinked(row);
+    if (value === 'Rekening berbeda') return row.different;
+    return true;
+  };
+  const filterOptions = FILTERS.map(value => ({ value, count: rows.filter(row => matchesFilter(row, value)).length }));
+  // Text of the widest option, used to size the trigger so it never changes width.
+  const longestFilterText = filterOptions.map(option => `${option.value} (${option.count})`).reduce((a, b) => (b.length > a.length ? b : a));
   const filtered = rows.filter(row => {
     const { member, employee } = row;
-    if (filter === 'Potong Gaji' && member.paymentStatus !== 'Payroll Deduction') return false;
-    if (filter === 'Subsidi Yayasan' && member.paymentStatus !== 'Yayasan Subsidy') return false;
-    if (filter === 'Lainnya' && ['Payroll Deduction', 'Yayasan Subsidy'].includes(member.paymentStatus || '')) return false;
-    if (filter === 'Belum tertaut' && !unlinked(row)) return false;
-    if (filter === 'Rekening berbeda' && !row.different) return false;
+    if (!matchesFilter(row, filter)) return false;
     return [member.nama, member.name, member.fullName, member.displayName, member.nomorAnggota, member.memberNumber,
       member.kantor, member.office, member.satuanKerja, member.unit, employee?.name, employee?.id,
       employee?.employment_profile?.department_unit, employee?.employment?.jobCategory].join(' ').toLowerCase().includes(search.toLowerCase().trim());
@@ -85,11 +94,18 @@ export default function KoperasiMembersView({ members, employees, reload, disabl
     <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">{stats.map(stat => <Card key={stat.label} className="gap-0 rounded-md border-0 bg-white p-4 shadow-[0_8px_30px_rgb(15,23,42,0.04)] ring-1 ring-slate-200/70 sm:p-5"><div className="flex items-start justify-between gap-2"><div><p className="text-xs font-semibold text-slate-500">{stat.label}</p><p className="mt-2 text-2xl font-extrabold tabular-nums tracking-tight text-slate-900">{stat.count}</p></div><div className={`flex size-9 shrink-0 items-center justify-center rounded-sm ${stat.iconStyle}`}><stat.icon className="size-[18px]" /></div></div><p className="mt-3 hidden text-[11px] text-slate-400 sm:block">{stat.detail}</p></Card>)}</div>
     <section className="overflow-hidden rounded-md border border-slate-200/70 bg-white shadow-[0_12px_40px_rgb(15,23,42,0.045)]" aria-label="Daftar anggota Koperasi">
       <div className="border-b border-slate-100 p-4 sm:p-5">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div><h2 className="flex items-center gap-2 text-base font-bold text-slate-800"><Building2 className="size-4 text-indigo-600" />Direktori anggota</h2><p className="mt-1 text-xs text-slate-500">{filtered.length} dari {rows.length} akun ditampilkan. Belum tertaut menghitung akun dengan role Member.</p></div>
-          <div className="relative w-full xl:max-w-sm"><Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" /><Input aria-label="Cari anggota Koperasi" className="h-10 rounded-sm border-slate-200 bg-slate-50/60 pl-10 text-sm shadow-none transition-colors placeholder:text-slate-400 focus-visible:border-indigo-400 focus-visible:bg-white focus-visible:ring-indigo-500/20" placeholder="Cari nama, No. Anggota, unit, atau pegawai SAKU..." value={search} onChange={event => setSearch(event.target.value)} /></div>
+        <div><h2 className="flex items-center gap-2 text-base font-bold text-slate-800"><Building2 className="size-4 text-indigo-600" />Direktori anggota</h2><p className="mt-1 text-xs text-slate-500">{filtered.length} dari {rows.length} akun ditampilkan. Belum tertaut menghitung akun dengan role Member.</p></div>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative w-full sm:min-w-72 sm:flex-1"><Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" /><Input aria-label="Cari anggota Koperasi" className="h-10 rounded-sm border-slate-200 bg-slate-50/60 pl-10 text-sm shadow-none transition-colors placeholder:text-slate-400 focus-visible:border-indigo-400 focus-visible:bg-white focus-visible:ring-indigo-500/20" placeholder="Cari nama, No. Anggota, unit, atau pegawai SAKU..." value={search} onChange={event => setSearch(event.target.value)} /></div>
+          <Select value={filter} onValueChange={value => setFilter((value ?? 'Semua') as Filter)}>
+            <SelectTrigger aria-label="Filter anggota" className="h-10 w-full shrink-0 rounded-sm border-slate-200 bg-white text-sm font-semibold shadow-sm sm:w-fit">
+              <SelectValue><span className="grid"><span className="col-start-1 row-start-1 truncate">{filter}</span><span aria-hidden className="invisible col-start-1 row-start-1 h-0 overflow-hidden pr-2 font-normal">{longestFilterText}</span></span></SelectValue>
+            </SelectTrigger>
+            <SelectContent className="w-max min-w-(--anchor-width) max-w-[calc(100vw-2rem)] bg-white rounded-md border border-slate-100 shadow-xl">
+              {filterOptions.map(option => <SelectItem key={option.value} value={option.value}>{option.value} ({option.count})</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
-        <div className="mt-4 flex gap-2 overflow-x-auto pb-1" aria-label="Filter anggota">{FILTERS.map(value => <Button key={value} size="sm" variant={filter === value ? 'default' : 'outline'} className={`h-8 shrink-0 rounded-sm px-3 text-xs font-semibold transition-colors ${filter === value ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm hover:border-indigo-700 hover:bg-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700'}`} aria-pressed={filter === value} onClick={() => setFilter(value)}>{value}</Button>)}</div>
       </div>
       <div className="max-w-full overflow-x-auto"><Table className="min-w-[960px]"><TableHeader className="bg-slate-50/75"><TableRow className="border-slate-100 hover:bg-transparent">
       {['Nama / No. Anggota', 'Kantor / SatKer', 'Status keanggotaan', 'Status Pembayaran', 'Iuran Pokok / Wajib', 'Rekening', ''].map((label, index) => <TableHead key={index} className={index === 0 ? 'pl-6' : index === 6 ? 'pr-6 text-right' : ''}>{label}</TableHead>)}

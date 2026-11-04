@@ -12,6 +12,14 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  canAdminDeclineKoperasiLoan,
+  KOPERASI_ACTIVE_STATUSES,
+  KOPERASI_PAST_STATUSES,
+} from '@/lib/payroll/koperasiLoanApplication';
+import { FloatingSnackbar, type SnackbarMessage } from '@/components/ui/floating-snackbar';
+import KoperasiLoanDeclineDialog from './KoperasiLoanDeclineDialog';
 import {
   Table,
   TableBody,
@@ -117,16 +125,28 @@ interface ProcessedLoan extends SimpanPinjamDoc {
   monthlyInstallment: number;
 }
 
-export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navigation }: {
+export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navigation, reload, disabled }: {
   loans: SimpanPinjamDoc[];
   kopUsers: KoperasiUser[];
   employees: InternalEmployee[];
   navigation: React.ReactNode;
+  reload: () => Promise<void>;
+  disabled: boolean;
 }) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'warnings' | 'completed' | 'restructured'>('active');
+  // 'all' | 'active' | 'warnings' | `status:<exact loan status>`
+  const [statusFilter, setStatusFilter] = useState('active');
   const [selectedLoan, setSelectedLoan] = useState<ProcessedLoan | null>(null);
   const [showDetailedMatch, setShowDetailedMatch] = useState(false);
+  const [decliningLoan, setDecliningLoan] = useState<ProcessedLoan | null>(null);
+  const [message, setMessage] = useState<SnackbarMessage | null>(null);
+
+  const handleDeclined = async (text: string) => {
+    setDecliningLoan(null);
+    setSelectedLoan(null);
+    setMessage({ type: 'success', text });
+    await reload();
+  };
 
   // 2. Perform Linkage Match
   const processedLoans = useMemo<ProcessedLoan[]>(() => {
@@ -229,22 +249,48 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
     };
   }, [processedLoans]);
 
+  // Dropdown options: shortcuts first, then every known status plus any unexpected one found in the data.
+  const filterOptions = useMemo(() => {
+    const known: string[] = [...KOPERASI_ACTIVE_STATUSES, ...KOPERASI_PAST_STATUSES];
+    const counts = new Map<string, number>();
+    processedLoans.forEach(loan => counts.set(loan.status, (counts.get(loan.status) || 0) + 1));
+    const extras = [...counts.keys()].filter(status => !known.includes(status));
+    const all = processedLoans.length;
+    const active = processedLoans.filter(l => l.status === 'Disetujui dan Aktif' && (l.sisaHutang || 0) > 0).length;
+    const warnings = processedLoans.filter(l => l.warnings.length > 0).length;
+    const statuses = [...known, ...extras].map(status => ({
+      value: `status:${status}`,
+      label: status || 'Tanpa status',
+      count: counts.get(status) || 0,
+    }));
+    // Text of the widest option, used to size the trigger so it never changes width.
+    const longest = [
+      `Semua status (${all})`,
+      `Aktif & Berjalan (${active})`,
+      `Warnings / Anomali (${warnings})`,
+      ...statuses.map(option => `${option.label} (${option.count})`),
+    ].reduce((a, b) => (b.length > a.length ? b : a));
+    return { all, active, warnings, statuses, longest };
+  }, [processedLoans]);
+
+  const statusFilterLabel =
+    statusFilter === 'all' ? 'Semua status'
+    : statusFilter === 'active' ? 'Aktif & Berjalan'
+    : statusFilter === 'warnings' ? 'Warnings / Anomali'
+    : filterOptions.statuses.find(option => option.value === statusFilter)?.label ?? 'Semua status';
+
   // 4. Filtering and Sorting
   const filteredLoans = useMemo<ProcessedLoan[]>(() => {
     return processedLoans.filter(loan => {
-      // Tab filter
-      if (activeTab === 'active') {
+      // Status filter
+      if (statusFilter === 'active') {
         // Loan must be active with sisaHutang > 0
         if (loan.status !== 'Disetujui dan Aktif' || (loan.sisaHutang || 0) <= 0) return false;
-      } else if (activeTab === 'warnings') {
+      } else if (statusFilter === 'warnings') {
         // Must have at least 1 warning indicator
         if (loan.warnings.length === 0) return false;
-      } else if (activeTab === 'completed') {
-        // Loan is completed (fully paid) and not restructured
-        if (loan.status !== 'Lunas') return false;
-      } else if (activeTab === 'restructured') {
-        // Loan is restructured or pending restructuring
-        if (loan.status !== 'Direstrukturisasi' && loan.status !== 'Menunggu Persetujuan Restrukturisasi') return false;
+      } else if (statusFilter.startsWith('status:')) {
+        if (loan.status !== statusFilter.slice('status:'.length)) return false;
       }
 
       // Search Query filter
@@ -260,7 +306,7 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
 
       return true;
     });
-  }, [processedLoans, activeTab, searchQuery]);
+  }, [processedLoans, statusFilter, searchQuery]);
 
   // Format date helper
   const formatDate = (ts?: { seconds: number }) => {
@@ -353,48 +399,9 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
         <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.03)] border-none overflow-hidden">
           
           {/* Filter Bar */}
-          <div className="px-8 py-5 border-b border-slate-100 flex flex-wrap justify-between items-center gap-4 bg-slate-50/30">
-            {/* Tabs */}
-            <div className="flex gap-1 bg-slate-100/60 p-1 rounded-md">
-              <button
-                type="button"
-                onClick={() => setActiveTab('active')}
-                className={`px-4 py-2 text-xs font-bold rounded-sm transition-all cursor-pointer ${activeTab === 'active' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                Aktif & Berjalan ({processedLoans.filter(l => l.status === 'Disetujui dan Aktif' && l.sisaHutang > 0).length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('warnings')}
-                className={`px-4 py-2 text-xs font-bold rounded-sm transition-all cursor-pointer ${activeTab === 'warnings' ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                Warnings / Anomali ({processedLoans.filter(l => l.warnings.length > 0).length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('restructured')}
-                className={`px-4 py-2 text-xs font-bold rounded-sm transition-all cursor-pointer ${activeTab === 'restructured' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                Restrukturisasi ({processedLoans.filter(l => l.status === 'Direstrukturisasi' || l.status === 'Menunggu Persetujuan Restrukturisasi').length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('completed')}
-                className={`px-4 py-2 text-xs font-bold rounded-sm transition-all cursor-pointer ${activeTab === 'completed' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                Lunas / Selesai ({processedLoans.filter(l => l.status === 'Lunas').length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('all')}
-                className={`px-4 py-2 text-xs font-bold rounded-sm transition-all cursor-pointer ${activeTab === 'all' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                Semua ({processedLoans.length})
-              </button>
-            </div>
-
+          <div className="px-8 py-5 border-b border-slate-100 flex flex-wrap items-center gap-3 bg-slate-50/30">
             {/* Search */}
-            <div className="relative w-full sm:w-72">
+            <div className="relative w-full sm:min-w-72 sm:flex-1">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <Input
                 type="text"
@@ -404,6 +411,30 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
                 className="pl-10 pr-4 py-2 text-xs rounded-sm border-slate-200 bg-white focus-visible:ring-indigo-500 shadow-sm"
               />
             </div>
+
+            {/* Status */}
+            <Select value={statusFilter} onValueChange={value => setStatusFilter(value ?? 'all')}>
+              <SelectTrigger className="h-9 w-full shrink-0 rounded-sm border-slate-200 bg-white text-xs font-semibold shadow-sm sm:w-fit">
+                <SelectValue>
+                  <span className="grid">
+                    <span className="col-start-1 row-start-1 truncate">{statusFilterLabel}</span>
+                    <span aria-hidden className="invisible col-start-1 row-start-1 h-0 overflow-hidden pr-2 text-sm font-normal">
+                      {filterOptions.longest}
+                    </span>
+                  </span>
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent className="w-max min-w-(--anchor-width) max-w-[calc(100vw-2rem)] bg-white rounded-md border border-slate-100 shadow-xl">
+                <SelectItem value="all">Semua status ({filterOptions.all})</SelectItem>
+                <SelectItem value="active">Aktif & Berjalan ({filterOptions.active})</SelectItem>
+                <SelectItem value="warnings">Warnings / Anomali ({filterOptions.warnings})</SelectItem>
+                {filterOptions.statuses.map(option => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label} ({option.count})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Table Container */}
@@ -519,14 +550,27 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
 
                       {/* Action trigger details modal */}
                       <TableCell className="pr-8 text-center">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={() => setSelectedLoan(loan)}
-                          className="h-8 px-3 text-xs font-semibold border border-slate-200 text-slate-700 hover:text-indigo-600 hover:bg-slate-50 rounded-sm transition-all shadow-sm bg-white cursor-pointer"
-                        >
-                          Audit Details
-                        </Button>
+                        <div className="flex items-center justify-center gap-2">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => setSelectedLoan(loan)}
+                            className="h-8 px-3 text-xs font-semibold border border-slate-200 text-slate-700 hover:text-indigo-600 hover:bg-slate-50 rounded-sm transition-all shadow-sm bg-white cursor-pointer"
+                          >
+                            Audit Details
+                          </Button>
+                          {canAdminDeclineKoperasiLoan(loan) && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled={disabled}
+                              onClick={() => setDecliningLoan(loan)}
+                              className="h-8 px-3 text-xs font-semibold border-rose-200 bg-white text-rose-600 hover:bg-rose-50 hover:text-rose-700 rounded-sm shadow-sm cursor-pointer"
+                            >
+                              Tolak
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -904,6 +948,17 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
             </div>
 
             <div className="mt-8 pt-4 border-t border-slate-100 flex justify-end gap-3">
+              {canAdminDeclineKoperasiLoan(selectedLoan) && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={disabled}
+                  onClick={() => setDecliningLoan(selectedLoan)}
+                  className="rounded-sm px-5 border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 cursor-pointer"
+                >
+                  Tolak pinjaman
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="outline"
@@ -916,6 +971,14 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
           </DialogContent>
         )}
       </Dialog>
+
+      <KoperasiLoanDeclineDialog
+        key={decliningLoan?.id ?? 'none'}
+        loan={decliningLoan}
+        onClose={() => setDecliningLoan(null)}
+        onDeclined={handleDeclined}
+      />
+      <FloatingSnackbar message={message} onDismiss={() => setMessage(null)} />
     </div>
   );
 }

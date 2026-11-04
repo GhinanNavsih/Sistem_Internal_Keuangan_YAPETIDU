@@ -125,6 +125,36 @@ export function canRespondToKoperasiRevision(loan: KoperasiLoanLike): boolean {
   return resolveKoperasiLoanStatus(loan) === 'Direvisi BAK';
 }
 
+/**
+ * Stages where Super Admin may still decline an application from SAKU: before
+ * any money has moved. The Koperasi app lets BAK reject at the same stages.
+ */
+export const KOPERASI_ADMIN_DECLINABLE_STATUSES = [
+  'Menunggu Persetujuan BAK',
+  'Menunggu Persetujuan Wakil Rektor 2',
+  'Menunggu Transfer BAK',
+] as const;
+
+/** A finished status in both apps, so the member can apply again afterwards. */
+export const KOPERASI_ADMIN_DECLINE_STATUS = 'Ditolak BAK';
+
+export function isKoperasiAdminDeclinableStatus(status: string): boolean {
+  return (KOPERASI_ADMIN_DECLINABLE_STATUSES as readonly string[]).includes(status);
+}
+
+export function canAdminDeclineKoperasiLoan(loan: KoperasiLoanLike): boolean {
+  return isKoperasiAdminDeclinableStatus(resolveKoperasiLoanStatus(loan));
+}
+
+/** Returns an error message, or null when the decline reason is acceptable. */
+export function validateKoperasiDeclineReason(reason: unknown): string | null {
+  if (typeof reason !== 'string' || !reason.trim()) return 'Alasan penolakan wajib diisi.';
+  if (reason.trim().length > KOPERASI_MAX_NOTE_LENGTH) {
+    return `Alasan penolakan maksimal ${KOPERASI_MAX_NOTE_LENGTH} karakter.`;
+  }
+  return null;
+}
+
 export interface KoperasiLoanApplicationInput {
   amount: number;
   tenor: number;

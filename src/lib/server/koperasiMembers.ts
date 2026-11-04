@@ -22,11 +22,11 @@ export function memberCommandBody(value: unknown): Data {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new HttpError(400, 'Payload tidak valid.');
   return value as Data;
 }
-function documentId(value: unknown, label: string): string {
+export function documentId(value: unknown, label: string): string {
   if (typeof value !== 'string' || !/^[A-Za-z0-9_. -]{1,128}$/.test(value)) throw new HttpError(400, `${label} tidak valid.`);
   return value;
 }
-function requestId(body: Data): string {
+export function requestId(body: Data): string {
   const id = body.requestId ?? randomUUID();
   if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(id)) throw new HttpError(400, 'requestId tidak valid.');
   return id;
@@ -41,14 +41,14 @@ function employeeCollection(value: unknown): KoperasiEmployeeCollection {
   if (!(COLLECTIONS as readonly unknown[]).includes(value)) throw new HttpError(400, 'Koleksi pegawai tidak valid.');
   return value as KoperasiEmployeeCollection;
 }
-function operation(actor: AuthenticatedProfile, id: string, command: Data) {
+export function operation(actor: AuthenticatedProfile, id: string, command: Data) {
   return {
     ref: adminDb.collection('FinancialIdempotencyKeys').doc(`${actor.uid}__${id}`),
     hash: createHash('sha256').update(JSON.stringify(command)).digest('hex'),
   };
 }
-type Operation = ReturnType<typeof operation>;
-function previousResult(snapshot: FirebaseFirestore.DocumentSnapshot, op: Operation): Data | null {
+export type Operation = ReturnType<typeof operation>;
+export function previousResult(snapshot: FirebaseFirestore.DocumentSnapshot, op: Operation): Data | null {
   if (!snapshot.exists) return null;
   const data = snapshot.data()!;
   if (data.requestHash !== op.hash) throw new HttpError(409, 'requestId sudah digunakan untuk perintah berbeda.');
@@ -59,7 +59,7 @@ function previousResult(snapshot: FirebaseFirestore.DocumentSnapshot, op: Operat
 /** Reserve the command before crossing projects. A pending receipt is resumed,
  * never returned as success; it also preserves bank before-values after a lost
  * commit response and blocks concurrent reuse of an id for a different command. */
-async function prepareOperation<T extends Data>(op: Operation, intent: T): Promise<{ intent: T; completed: Data | null }> {
+export async function prepareOperation<T extends Data>(op: Operation, intent: T): Promise<{ intent: T; completed: Data | null }> {
   return adminDb.runTransaction(async transaction => {
     const snapshot = await transaction.get(op.ref);
     const completed = previousResult(snapshot, op);
@@ -70,7 +70,7 @@ async function prepareOperation<T extends Data>(op: Operation, intent: T): Promi
     return { intent, completed: null };
   });
 }
-async function finishOperation(actor: AuthenticatedProfile, op: Operation, audit: FinancialAuditInput, result: Data) {
+export async function finishOperation(actor: AuthenticatedProfile, op: Operation, audit: FinancialAuditInput, result: Data) {
   return adminDb.runTransaction(async transaction => {
     const previous = previousResult(await transaction.get(op.ref), op);
     if (previous) return previous;

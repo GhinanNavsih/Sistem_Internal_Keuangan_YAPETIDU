@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  canAdminDeclineKoperasiLoan,
   canApplyForKoperasiLoan,
   canCancelKoperasiLoan,
   canRespondToKoperasiRevision,
@@ -11,7 +12,9 @@ import {
   koperasiOutstandingBalance,
   koperasiRemainingTenor,
   quoteKoperasiRestructuring,
+  validateKoperasiDeclineReason,
   validateKoperasiLoanApplication,
+  KOPERASI_ADMIN_DECLINE_STATUS,
 } from './koperasiLoanApplication';
 
 const validApplication = {
@@ -126,6 +129,51 @@ test('member actions are gated on the resolved status', () => {
 
   assert.equal(canRespondToKoperasiRevision({ status: 'Direvisi BAK' }), true);
   assert.equal(canRespondToKoperasiRevision({ status: 'Menunggu Persetujuan BAK' }), false);
+});
+
+test('Super Admin can decline only before any money has moved', () => {
+  for (const status of [
+    'Menunggu Persetujuan BAK',
+    'Menunggu Persetujuan Wakil Rektor 2',
+    'Menunggu Transfer BAK',
+  ]) {
+    assert.equal(canAdminDeclineKoperasiLoan({ status }), true, status);
+  }
+  for (const status of [
+    'Direvisi BAK',
+    'Disetujui dan Aktif',
+    'Menunggu Persetujuan Restrukturisasi',
+    'Lunas',
+    'Ditolak BAK',
+    'Ditolak Wakil Rektor 2',
+    'Dibatalkan',
+    'Revisi Ditolak Anggota',
+    'Direstrukturisasi',
+    '',
+  ]) {
+    assert.equal(canAdminDeclineKoperasiLoan({ status }), false, status);
+  }
+  // The latest history entry wins over a stale top-level status.
+  assert.equal(
+    canAdminDeclineKoperasiLoan({
+      status: 'Menunggu Persetujuan BAK',
+      history: [{ status: 'Menunggu Persetujuan BAK' }, { status: 'Menunggu Transfer BAK' }],
+    }),
+    true,
+  );
+});
+
+test('a declined loan frees the member to apply again', () => {
+  assert.equal(canApplyForKoperasiLoan([{ status: KOPERASI_ADMIN_DECLINE_STATUS }]), true);
+});
+
+test('a decline needs a reason of at most 500 characters', () => {
+  assert.equal(validateKoperasiDeclineReason('Dokumen tidak lengkap'), null);
+  assert.ok(validateKoperasiDeclineReason(''));
+  assert.ok(validateKoperasiDeclineReason('   '));
+  assert.ok(validateKoperasiDeclineReason(undefined));
+  assert.equal(validateKoperasiDeclineReason('a'.repeat(500)), null);
+  assert.ok(validateKoperasiDeclineReason('a'.repeat(501)));
 });
 
 test('restructuring rolls the outstanding balance and remaining tenor forward', () => {

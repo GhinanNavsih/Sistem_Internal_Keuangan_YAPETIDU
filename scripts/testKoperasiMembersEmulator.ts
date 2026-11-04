@@ -232,7 +232,74 @@ async function main() {
   assert.equal(destination.searchParams.get('view'), 'simpan-pinjam');
   assert.deepEqual(destination.searchParams.getAll('filter'), ['a', 'b']);
   assert.equal(destination.searchParams.get('period'), '2026-09');
-  console.log('Koperasi member integration passed: auth, validation, optimistic edits, status mirroring, audit, replay recovery, missing uid, concurrent unique linking, replacement/unlink, converted exclusion, bank sync, empty-bank skip, rules and 308 redirect.');
+
+  // Super Admin declines a loan that has not been paid out yet.
+  const { POST: decline } = await import('../src/app/api/admin/koperasi-loans/decline/route');
+  const { KOPERASI_LOANS_COLLECTION } = await import('../src/lib/koperasi-admin');
+  const loans = koperasi.collection(KOPERASI_LOANS_COLLECTION);
+  const declineAudits = (loanId: string) => adminDb.collection('FinancialAuditLogs')
+    .where('action', '==', 'KOPERASI_LOAN_DECLINED').where('entityId', '==', loanId).get();
+  for (const [index, status] of ['Menunggu Persetujuan BAK', 'Menunggu Persetujuan Wakil Rektor 2', 'Menunggu Transfer BAK'].entries()) {
+    const loanId = `decline-${index}`;
+    await loans.doc(loanId).set({ userId: 'uid-1', status, jumlahPinjaman: 2000000, tenor: 6, history: [{ status, notes: 'Pengajuan pinjaman baru' }] });
+    const body = { loanId, expectedStatus: status, reason: 'Dokumen tidak lengkap', requestId: key() };
+    for (const actor of [worker, finance, loyalisAdmin]) {
+      assert.equal((await invoke(decline, body, actor.authorization)).status, 403);
+    }
+    assert.equal((await invoke(decline, { ...body, reason: '  ' })).status, 400, 'reason is required');
+    const declined = await succeeds(await invoke(decline, body));
+    assert.equal(declined.status, 'Ditolak BAK');
+    assert.equal(declined.idempotent, false);
+    const loan = (await loans.doc(loanId).get()).data()!;
+    assert.equal(loan.status, 'Ditolak BAK');
+    assert.equal(loan.alasanPenolakan, 'Dokumen tidak lengkap');
+    const lastEntry = loan.history[loan.history.length - 1];
+    assert.equal(lastEntry.status, 'Ditolak BAK');
+    assert.equal(lastEntry.notes, 'Ditolak dengan alasan: Dokumen tidak lengkap');
+    assert.equal(lastEntry.updatedBy, `internal-bak:${superAdmin.uid}`);
+    assert.equal((await succeeds(await invoke(decline, body))).idempotent, true, 'replay of the same request');
+    assert.equal((await declineAudits(loanId)).size, 1, 'one audit per decline');
+    assert.equal((await invoke(decline, { ...body, requestId: key() })).status, 409, 'already declined');
+  }
+
+  await loans.doc('decline-active').set({ userId: 'uid-1', status: 'Disetujui dan Aktif', jumlahPinjaman: 2000000, tenor: 6 });
+  assert.equal((await invoke(decline, { loanId: 'decline-active', expectedStatus: 'Disetujui dan Aktif', reason: 'x', requestId: key() })).status, 400, 'active is not declinable');
+  assert.equal((await invoke(decline, { loanId: 'decline-active', expectedStatus: 'Menunggu Transfer BAK', reason: 'x', requestId: key() })).status, 409, 'stale expected status');
+  assert.equal((await loans.doc('decline-active').get()).data()!.status, 'Disetujui dan Aktif');
+  assert.equal((await invoke(decline, { loanId: 'decline-missing', expectedStatus: 'Menunggu Transfer BAK', reason: 'x', requestId: key() })).status, 404);
+
+  // Declining a restructuring hands the old loan back its active status.
+  await loans.doc('restructure-parent').set({ userId: 'uid-1', status: 'Menunggu Persetujuan Restrukturisasi', restructuredToLoanId: 'restructure-child', jumlahPinjaman: 3000000, tenor: 6, jumlahMenyicil: 2, history: [] });
+  await loans.doc('restructure-child').set({ userId: 'uid-1', status: 'Menunggu Persetujuan Wakil Rektor 2', restructuredFromLoanId: 'restructure-parent', jumlahPinjaman: 4000000, tenor: 8, history: [] });
+  const restructured = await succeeds(await invoke(decline, { loanId: 'restructure-child', expectedStatus: 'Menunggu Persetujuan Wakil Rektor 2', reason: 'Plafon penuh', requestId: key() }));
+  assert.equal(restructured.parentReverted, true);
+  const parentAfter = (await loans.doc('restructure-parent').get()).data()!;
+  assert.equal(parentAfter.status, 'Disetujui dan Aktif');
+  assert.equal(parentAfter.restructuredToLoanId, null);
+  assert.equal(parentAfter.history[parentAfter.history.length - 1].status, 'Disetujui dan Aktif');
+  assert.equal((await loans.doc('restructure-child').get()).data()!.status, 'Ditolak BAK');
+
+  // Lost cross-project response: Koperasi applied, SAKU receipt still pending.
+  await loans.doc('decline-lost').set({ userId: 'uid-1', status: 'Menunggu Transfer BAK', jumlahPinjaman: 2000000, tenor: 6, history: [] });
+  const lostBody = { loanId: 'decline-lost', expectedStatus: 'Menunggu Transfer BAK', reason: 'Rekening salah', requestId: key() };
+  const originalRunTransaction = adminDb.runTransaction.bind(adminDb);
+  let declineTransactions = 0; // prepareOperation is call 1, finishOperation is call 2
+  Object.defineProperty(adminDb, 'runTransaction', { configurable: true, writable: true, value: (...args: Parameters<typeof adminDb.runTransaction>) => {
+    declineTransactions += 1;
+    if (declineTransactions === 2) throw new Error('Injected SAKU audit outage after Koperasi decline');
+    return originalRunTransaction(...args);
+  } });
+  try { assert.equal((await invoke(decline, lostBody)).status, 500); }
+  finally { Object.defineProperty(adminDb, 'runTransaction', { configurable: true, writable: true, value: originalRunTransaction }); }
+  assert.equal((await loans.doc('decline-lost').get()).data()!.status, 'Ditolak BAK');
+  assert.equal((await declineAudits('decline-lost')).size, 0);
+  const resumed = await succeeds(await invoke(decline, lostBody));
+  assert.equal(resumed.idempotent, false);
+  assert.equal((await declineAudits('decline-lost')).size, 1, 'resumed request finishes its audit once');
+  const lostHistory = (await loans.doc('decline-lost').get()).data()!.history;
+  assert.equal(lostHistory.filter((entry: { status: string }) => entry.status === 'Ditolak BAK').length, 1, 'no second history entry');
+
+  console.log('Koperasi member integration passed: auth, validation, optimistic edits, status mirroring, audit, replay recovery, missing uid, concurrent unique linking, replacement/unlink, converted exclusion, bank sync, empty-bank skip, rules, 308 redirect and loan decline.');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });
