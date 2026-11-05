@@ -123,6 +123,7 @@ import {
   readConversionToLink,
 } from '@/lib/employeeConversion';
 import { MONTHS_ID } from '@/utils/rekapConfig';
+import { deriveGenderFromNik, formatGenderLabel } from '@/lib/payroll/gender';
 
 const JOB_CATEGORIES = ['SATPAM', 'SOPIR', 'KEBERSIHAN', 'TEKNISI', 'KEBERSIHAN_PONTI'];
 
@@ -980,7 +981,7 @@ export default function EmployeesPage() {
     if (tab === 'loyalis') {
       return {
         nipy: '',
-        personal_info: { name: '', employee_id_niy: '', nik: '', tax_id_npwp: '', status: 'AKTIF', phone: '', email: '' },
+        personal_info: { name: '', employee_id_niy: '', nik: '', gender: '', tax_id_npwp: '', status: 'AKTIF', phone: '', email: '' },
         banking_info: { bank_name: 'BSI', account_number: '' },
         employment_profile: { job_role: '', department_unit: '', date_of_hire: '', date_recognized: '', date_exit: '', structural_positions: [] },
         academic_and_tier: { education_level: '', education_code: '', functional_tier: '', level_code: '', base_salary_tier: '' },
@@ -1001,6 +1002,7 @@ export default function EmployeesPage() {
       nipy: '',
       name: '',
       nik: '',
+      gender: '',
       phoneNumber: '',
       email: '',
       collarType: 'blue_collar',
@@ -1398,11 +1400,13 @@ export default function EmployeesPage() {
             name: formData.personal_info?.name || '',
             ...(hasEmployeeIdNiy ? { employee_id_niy: employeeIdNiy ?? null } : {}),
             nik: formData.personal_info?.nik || null,
+            gender: formData.personal_info?.gender || deriveGenderFromNik(formData.personal_info?.nik) || null,
             tax_id_npwp: formData.personal_info?.tax_id_npwp || null,
             status: formData.personal_info?.status || 'AKTIF',
             phone: formData.personal_info?.phone || '',
             email: formData.personal_info?.email || '',
           },
+          gender: formData.personal_info?.gender || deriveGenderFromNik(formData.personal_info?.nik) || null,
           banking_info: {
             ...(formData.banking_info || {}),
             bank_name: formData.banking_info?.bank_name || null,
@@ -1489,6 +1493,7 @@ export default function EmployeesPage() {
         // (below) had nothing to compare their real value against.
         final = {
           ...formData,
+          gender: formData.gender || deriveGenderFromNik(formData.nik) || null,
           employeeId,
           collarType: 'blue_collar',
           employment: {
@@ -3199,10 +3204,32 @@ export default function EmployeesPage() {
                       <Label>NIK (Nomor Induk Kependudukan)</Label>
                       <Input
                         value={formData.personal_info?.nik || ''}
-                        onChange={e => updateNestedField('personal_info', 'nik', e.target.value)}
+                        onChange={e => {
+                          const val = e.target.value;
+                          updateNestedField('personal_info', 'nik', val);
+                          const autoGen = deriveGenderFromNik(val);
+                          if (autoGen) {
+                            updateNestedField('personal_info', 'gender', autoGen);
+                          }
+                        }}
                         className="rounded-sm border-slate-200"
                         placeholder="Contoh: 351710..."
                       />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Jenis Kelamin</Label>
+                      <Select
+                        value={formData.personal_info?.gender || ''}
+                        onValueChange={val => updateNestedField('personal_info', 'gender', val)}
+                      >
+                        <SelectTrigger className="rounded-sm border-slate-200">
+                          <SelectValue placeholder="Pilih Jenis Kelamin" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="male">Laki-laki</SelectItem>
+                          <SelectItem value="female">Perempuan</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-2"><Label>NPWP</Label><Input value={formData.personal_info?.tax_id_npwp || ''} onChange={e => updateNestedField('personal_info', 'tax_id_npwp', e.target.value)} className="rounded-sm border-slate-200" /></div>
                     <div className="space-y-2"><Label>Nomor WhatsApp/HP</Label><Input value={formData.personal_info?.phone || ''} onChange={e => updateNestedField('personal_info', 'phone', e.target.value)} className="rounded-sm border-slate-200" placeholder="Contoh: 08123456789" /></div>
@@ -3876,7 +3903,38 @@ export default function EmployeesPage() {
                           </Button>
                         )}
                     </div>
-                    <div className="space-y-2"><Label htmlFor="nik">NIK (Nomor Induk Kependudukan)</Label><Input id="nik" value={formData.nik || ''} onChange={e => setFormData({ ...formData, nik: e.target.value })} className="rounded-sm border-slate-200" /></div>
+                    <div className="space-y-2">
+                      <Label htmlFor="nik">NIK (Nomor Induk Kependudukan)</Label>
+                      <Input
+                        id="nik"
+                        value={formData.nik || ''}
+                        onChange={e => {
+                          const val = e.target.value;
+                          const autoGen = deriveGenderFromNik(val);
+                          setFormData((prev: any) => ({
+                            ...prev,
+                            nik: val,
+                            gender: autoGen || prev.gender || '',
+                          }));
+                        }}
+                        className="rounded-sm border-slate-200"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="gender">Jenis Kelamin</Label>
+                      <Select
+                        value={formData.gender || ''}
+                        onValueChange={val => setFormData((prev: any) => ({ ...prev, gender: val }))}
+                      >
+                        <SelectTrigger id="gender" className="rounded-sm border-slate-200">
+                          <SelectValue placeholder="Pilih Jenis Kelamin" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="male">Laki-laki</SelectItem>
+                          <SelectItem value="female">Perempuan</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <div className="space-y-2"><Label htmlFor="phoneNumber">Nomor WhatsApp/HP</Label><Input id="phoneNumber" value={formData.phoneNumber || ''} onChange={e => setFormData({ ...formData, phoneNumber: e.target.value })} className="rounded-sm border-slate-200" placeholder="Contoh: 08123456789" /></div>
                     <div className="space-y-2"><Label htmlFor="email">Alamat Email</Label><Input id="email" type="email" value={formData.email || ''} onChange={e => setFormData({ ...formData, email: e.target.value })} className="rounded-sm border-slate-200" placeholder="Contoh: nama@domain.com" /></div>
                   </div>

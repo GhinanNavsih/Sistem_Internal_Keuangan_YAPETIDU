@@ -46,6 +46,7 @@
     "audit:pekarya-spj": "tsx scripts/auditPekaryaSpjReadOnly.ts",
     "audit:tanggungan-lama": "tsx scripts/auditOldTanggunganKeluargaReadOnly.ts",
     "fix:tanggungan-lama": "tsx scripts/removeOldTanggunganKeluargaEntries.ts",
+    "backfill:employee-gender": "tsx scripts/backfillEmployeeGender.ts",
     "migrate:satpam-bonus": "tsx scripts/migrateSatpamBonusMutlakToTunjanganJabatan.ts",
     "migrate:salary-matrix": "tsx scripts/migrateSalaryMatrix.ts",
     "migrate:employees": "tsx scripts/migrateEmployees.ts",
@@ -66,11 +67,11 @@
     "test:loyalis-auto-leave:integration": "firebase emulators:exec --only firestore,auth --project demo-loyalis-auto-leave --config firebase.kjm-test.json 'NEXT_PUBLIC_FIREBASE_PROJECT_ID=demo-loyalis-auto-leave npx tsx scripts/testLoyalisAutoLeaveEmulator.ts'",
     "test:loyalis-submission-type:integration": "firebase emulators:exec --only firestore,auth --project demo-loyalis-submission-type --config firebase.kjm-test.json 'NEXT_PUBLIC_FIREBASE_PROJECT_ID=demo-loyalis-submission-type npx tsx scripts/testLoyalisSubmissionTypeEmulator.ts'",
     "test:venue-inspection:integration": "firebase emulators:exec --only firestore --project demo-venue-inspection --config firebase.kjm-test.json 'NEXT_PUBLIC_FIREBASE_PROJECT_ID=demo-venue-inspection npx tsx scripts/testVenueInspectionEmulator.ts'",
+    "test:satker-finance:page": "node --test scripts/testSatkerFinancePage.cjs",
     "test:satker-finance:integration": "firebase emulators:exec --only firestore,auth,storage --project demo-satker-finance --config firebase.satker-finance-test.json 'NEXT_PUBLIC_FIREBASE_PROJECT_ID=demo-satker-finance NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=demo-satker-finance.appspot.com npx tsx scripts/testSatkerFinanceEmulator.ts'",
     "backfill:proposal-metadata": "tsx scripts/backfillProposalMetadata.ts",
     "test:pekarya-auto-leave:integration": "firebase emulators:exec --only firestore,auth --project demo-pekarya-auto-leave --config firebase.kjm-test.json 'NEXT_PUBLIC_FIREBASE_PROJECT_ID=demo-pekarya-auto-leave npx tsx scripts/testPekaryaAutoLeaveEmulator.ts'",
-    "preview:pekarya-auto-leave": "tsx scripts/previewPekaryaAutoLeave.ts",
-    "test:satker-finance:page": "node --test scripts/testSatkerFinancePage.cjs"
+    "preview:pekarya-auto-leave": "tsx scripts/previewPekaryaAutoLeave.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

@@ -13,6 +13,7 @@ export interface BlueCollarEmployee {
     source: 'formula';
   } | null;
   nik: string | null;        // National ID (NIK)
+  gender?: 'male' | 'female' | null;
   name: string;
   phoneNumber?: string;
   email?: string;
@@ -95,6 +96,7 @@ export interface Employee {
   gradeLevel: string;
   joinDate: Date;
   isActive: boolean;
+  gender?: 'male' | 'female';
   phoneNumber?: string;
   email?: string;
   dateRecognized?: Date;
