@@ -1,66 +1,24 @@
-# SatKer financial reporting setup
+# SatKer financial books setup
 
-The implementation for `SATKER_FINANCIAL_REPORTING_SYSTEM.md` is available at
-`/dashboard/satker-finance`. Its accounts catalog is derived from
-`5. PUSKOMNET 26 - 27.xlsx`: all 129 codes are present, while only the 36
-codes with a usable name and accounting metadata can initially be posted.
-The Super Administrator can complete inactive codes in **Pengaturan** before
-they are used.
+The books are available at `/dashboard/satker-finance`. The shared catalog derives from `5. PUSKOMNET 26 - 27.xlsx`; Super Admin can complete inactive accounts in **Pengaturan**. Assigned editors can customize their own unit's catalog in **Akun**.
 
-## Production activation
+## Activation
 
-1. Deploy the application together with `Current_Firestore_Rules.md` and
-   `storage.rules`. Financial records and receipt photos are server managed;
-   direct client access is denied by these rules.
-2. In **Manajemen Pengguna**, create the `rector_finance` account and, where
-   needed, `satker_finance_admin` accounts. Existing
-   `satker_head_loyalis` accounts can also prepare unit reports.
-3. As Super Administrator, create each unit in **Keuangan SatKer →
-   Pengaturan** and assign its actual head and secretary accounts. Existing
-   Loyalis employee fields do not identify a unique financial SatKer, so the
-   assignment must be made by a human who knows the organization.
-4. In **Akun**, the unit's assigned head, finance secretary, or Super
-   Administrator can enter balanced September 1 opening balances for each
-   balance-sheet account in the book's first year. They can correct these
-   balances even after journals have been posted, until the first monthly
-   report is created. Closed years remain locked; later years receive their
-   opening balances automatically from the previous year's closing. Review
-   the balances against approved prior year records.
-5. Enable scheduled Firestore backups in the production Google Cloud project
-   and periodically verify a restore in a separate environment. A backup
-   schedule is infrastructure configuration and is not created by this code.
+1. Deploy the application with `Current_Firestore_Rules.md` and `storage.rules`. Financial records and receipts are server managed; direct client access remains denied.
+2. Assign each book's real head and finance secretary as editors. `satker_head_loyalis` and `satker_finance_admin` can edit their assigned books; Super Admin can manage every book. BAK and Rektorat retain their authorized read access and consolidation.
+3. In **Akun**, enter balanced September 1 opening balances for the selected academic year. Review them against the prior year's records. Openings are managed separately for each year and can be corrected after journals have been posted.
+4. Configure scheduled Firestore backups and verify restores separately. Application code does not configure infrastructure backups.
 
-The supplied PUSKOMNET workbook reports an unmatched debit/credit difference
-of **Rp 7,074,450**. It is deliberately not imported. Reconcile that source
-before entering any historical balances or transactions.
+The supplied PUSKOMNET workbook has an unmatched debit/credit difference of **Rp 7,074,450** and is not automatically imported. Reconcile the source before entering its balances or transactions.
 
-## Workflow and checks
+## Daily work and paper reporting
 
-- SatKer editors post balanced vouchers and submit a month after the previous
-  month has been approved. Submission locks that month and later submissions
-  prevent backdated changes.
-- A posted journal can be edited or deleted from the journal history while its
-  month, and every month after it, is still open (no report yet, a draft, or a
-  revision BAK asked for). Edits and deletions keep the journal as it was in the
-  audit trail, a deletion needs a reason, and receipt photos are never removed
-  from Storage. Once a month is sent to BAK its journals are sealed, together
-  with the months before it, and are corrected with a reversing journal in an
-  open month instead. A journal and its reversal are only changed as a pair:
-  neither can be edited alone, and the reversal can be deleted to undo it.
-- In a journal's editor, saved receipts can be previewed, marked for removal,
-  or replaced with new uploads. **Urungkan** restores a marked receipt;
-  **Batal** discards the edit. **Simpan perubahan** applies the removal to the
-  transaction and records the before/after attachments in its audit history.
-  Archived files remain in Storage, and the same journal-edit locks apply.
-- Super Administrator checks the submitted report as BAK, then Rektorat
-  approves it. Either reviewer can request a documented revision; prior
-  submitted snapshots and audit entries remain available.
-- The approved PDF includes the preparer and approver names, a QR code, and a
-  public verification page. Receipt photos remain private to authorized unit
-  editors and financial reviewers.
-- `npm test` checks the accounting engine; `npm run
-  test:satker-finance:integration` checks authentication, Firestore rules,
-  Storage, unit access, posting, approvals, revisions, and consolidation on
-  Firebase emulators.
+- Editors post balanced journals, attach receipts, and correct any month or academic year without a submission or closing step.
+- Edit or delete a journal from its history. Deletion requires a reason; changes retain their before/after audit records. Remove a reversal before changing its source journal. Rebuild generated depreciation from **Aset Tetap**.
+- Saved journal receipts can be previewed, removed, or replaced. **Urungkan** restores a staged removal, **Batal** discards changes, and **Simpan perubahan** persists them. Archived files remain in Storage for the audit trail.
+- Use **Rekonsiliasi Bank** to compare books with cash counts or bank statements. Repost depreciation in affected months after changing an asset.
+- In **Arus Kas**, configure the two printed signature places: **Ketua SatKer** and **WarKu**. Choose active Loyalis or edit their names and titles. The PDF uses the current choices; **Simpan konfigurasi tanda tangan** stores them for this SatKer, independently of the report editor and unit profile head.
+- Select a month in **Arus Kas**, download **PDF Arus Kas + bukti**, print it, and hand the hard copy to BAK's office. There is no digital submission, draft status, approval, revision request, or official signed PDF/QR workflow.
+- Existing historical reporting records stay archived in Firestore and have no effect on editing. No production financial data needs to be changed for this release.
 
-No production collections are seeded or changed by the implementation.
+Run `npx tsx --test src/lib/satker-finance/*.test.ts`, `npm run test:satker-finance:page`, and `npm run test:satker-finance:integration` for accounting, page interaction, and protected API/database coverage.

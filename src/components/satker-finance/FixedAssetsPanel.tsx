@@ -73,7 +73,7 @@ export default function FixedAssetsPanel({ accounts, assets, entries, rows, acad
     if (saved) closeForm();
   };
   const remove = async (asset: FixedAsset) => {
-    if (!window.confirm(`Hapus aset "${asset.name}" dari daftar? Jurnal penyusutan bulan yang masih terbuka perlu diposting ulang sesudahnya.`)) return;
+    if (!window.confirm(`Hapus aset "${asset.name}" dari daftar? Jurnal penyusutan pada bulan terkait perlu diposting ulang sesudahnya.`)) return;
     if (await post('DELETE_FIXED_ASSET', { assetId: asset.id, expectedRevision: asset.revision || 0 }) && editingId === asset.id) closeForm();
   };
 

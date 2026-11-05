@@ -77,13 +77,6 @@ export function academicYearFor(date: Date) {
   return `${start}-${start + 1}`;
 }
 
-/** The academic year before (-1) or after (+1) this one. */
-export function adjacentAcademicYear(academicYear: string, offset: 1 | -1) {
-  fiscalMonths(academicYear);
-  const start = Number(academicYear.slice(0, 4)) + offset;
-  return `${start}-${start + 1}`;
-}
-
 /** The calendar year a month of the academic year falls in (September–December in the first, the rest in the second). */
 export function calendarYearOf(academicYear: string, monthIndex: number) {
   const month = fiscalMonths(academicYear).find((item) => item.monthIndex === monthIndex);
@@ -96,15 +89,6 @@ export function lastDateOfMonth(academicYear: string, monthIndex: number) {
   const year = calendarYearOf(academicYear, monthIndex);
   const day = new Date(Date.UTC(year, monthIndex, 0)).getUTCDate();
   return `${year}-${String(monthIndex).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-}
-
-/**
- * A book counts as in use once it has a journal or has been closed. The year
- * after a book in use takes its opening balance from that book's closing,
- * instead of having it typed in.
- */
-export function yearInUse(year: { status?: unknown; entryCount?: unknown } | null | undefined) {
-  return !!year && (year.status === 'CLOSED' || Number(year.entryCount || 0) > 0);
 }
 
 /** The normal side of a new account in a group; a contra account (akun pengurang, such as accumulated depreciation) takes the other side. */
@@ -179,16 +163,6 @@ export function hasAbnormalBalance(account: Pick<FinancialAccount, 'normalBalanc
   if (account.normalBalance === 'DEBIT') return endingCredit > 0;
   if (account.normalBalance === 'CREDIT') return endingDebit > 0;
   return false;
-}
-
-/** Whether two sets of balances agree account by account (zero balances and the debit/credit split aside). */
-export function sameBalances(a: OpeningBalances, b: OpeningBalances) {
-  const net = (balances: OpeningBalances) => new Map(Object.entries(balances)
-    .map(([id, balance]) => [id, (balance?.debit || 0) - (balance?.credit || 0)] as const)
-    .filter(([, value]) => value !== 0));
-  const left = net(a);
-  const right = net(b);
-  return left.size === right.size && [...left].every(([id, value]) => right.get(id) === value);
 }
 
 export function validateEntryDate(date: string, academicYear: string, monthIndex: number) {
@@ -274,63 +248,6 @@ export function buildVoucher(
   // The cash-flow section follows the counter accounts' classification; it is not chosen per journal.
   const cashFlows = cashFlowAllocation(lines, byCode);
   return { kind: kind as JournalEntry['kind'], description, date, lines, totalAmount: totalDebit, cashFlowSection: mainCashFlowSection(cashFlows), cashFlows };
-}
-
-export type YearClosing = {
-  equityAccountId: string;
-  /** Penerimaan minus Pengeluaran for the year; negative for a deficit. */
-  surplus: number;
-  /** The closing journal (jurnal penutup): every income-statement account brought to zero, the difference into equity. */
-  lines: JournalLine[];
-  /** Balance-sheet balances after closing: the next year's opening balance. */
-  balances: OpeningBalances;
-};
-
-/** The equity account a year's surplus is closed into unless another is chosen: the lowest-numbered active Modal account. */
-export function defaultSurplusAccountId(accounts: FinancialAccount[]) {
-  const equity = accounts.filter((account) => account.postable && account.type === 'MODAL' && account.reportTarget === 'BALANCE_SHEET')
-    .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
-  return equity[0] ? accountId(equity[0]) : '';
-}
-
-/**
- * Closes a year: every Penerimaan and Pengeluaran account is brought to zero
- * and the year's surplus (or deficit) moves into the chosen Modal account.
- * What remains, the balance-sheet accounts, is the next year's opening
- * balance, so nobody types it in again.
- */
-export function buildYearClosing(args: {
-  accounts: FinancialAccount[];
-  opening: OpeningBalances;
-  entries: JournalEntry[];
-  academicYear: string;
-  equityAccountId: string;
-}): YearClosing {
-  const statements = buildFinancialStatements({ ...args, monthIndex: 'ANNUAL' });
-  if (statements.trialBalance.difference !== 0) throw new Error('Neraca saldo tahunan belum seimbang.');
-  const equity = args.accounts.find((account) => accountId(account) === args.equityAccountId);
-  if (!equity?.postable || equity.type !== 'MODAL' || equity.reportTarget !== 'BALANCE_SHEET') {
-    throw new Error('Akun penampung surplus harus akun Modal yang aktif.');
-  }
-  const line = (account: FinancialAccount, debit: number, credit: number, description: string): JournalLine =>
-    ({ accountCode: accountId(account), accountNumber: account.code, accountName: account.name, debit, credit, description });
-  const lines: JournalLine[] = [];
-  for (const row of statements.rows) {
-    if (row.account.reportTarget !== 'INCOME_STATEMENT') continue;
-    if (row.endingCredit) lines.push(line(row.account, row.endingCredit, 0, 'Penutupan saldo akhir tahun'));
-    if (row.endingDebit) lines.push(line(row.account, 0, row.endingDebit, 'Penutupan saldo akhir tahun'));
-  }
-  const surplus = statements.annualWorksheet.allocatedSurplus;
-  if (surplus > 0) lines.push(line(equity, 0, surplus, 'Surplus tahun berjalan'));
-  if (surplus < 0) lines.push(line(equity, -surplus, 0, 'Defisit tahun berjalan'));
-  const balances: OpeningBalances = {};
-  for (const row of statements.rows) {
-    if (row.account.reportTarget !== 'BALANCE_SHEET') continue;
-    const signed = row.endingDebit - row.endingCredit - (accountId(row.account) === args.equityAccountId ? surplus : 0);
-    if (signed) balances[accountId(row.account)] = { debit: Math.max(signed, 0), credit: Math.max(-signed, 0) };
-  }
-  validateOpeningBalances(balances, args.accounts);
-  return { equityAccountId: args.equityAccountId, surplus, lines, balances };
 }
 
 export function buildFinancialStatements(args: {

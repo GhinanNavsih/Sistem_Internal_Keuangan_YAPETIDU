@@ -1,5 +1,6 @@
 import type { jsPDF } from 'jspdf';
 import autoTable, { type RowInput, type Styles } from 'jspdf-autotable';
+import type { CashFlowSignatures } from '@/lib/satker-finance/signatures';
 import type { CashFlowSection } from '@/lib/satker-finance/core';
 import { movedCashFlowSections, type CashFlowSectionLines } from '@/lib/satker-finance/cashFlowStatement';
 import type { ReceiptPageImage } from '@/utils/satkerReceiptImages';
@@ -12,12 +13,11 @@ export type CashFlowPageInput = {
   sections: Record<CashFlowSection, CashFlowSectionLines>;
   openingCash: number;
   cashAccounts: { code: string; name: string; balance: number }[];
-  bakHeadName: string;
-  unitHeadName: string;
+  signatures: CashFlowSignatures;
 };
 
 /**
- * Adds the Laporan Arus Kas page of an approved report, laid out like the SatKer's printed form:
+ * Adds the Laporan Arus Kas page, laid out like the SatKer's printed form:
  * the three activity sections, the cash balance and the signature block.
  */
 export function addCashFlowPage(pdf: jsPDF, input: CashFlowPageInput) {
@@ -68,25 +68,27 @@ export function addCashFlowPage(pdf: jsPDF, input: CashFlowPageInput) {
   autoTable(pdf, { startY: ruleY + 5, body: rows, theme: 'grid', margin: { left: 14, right: 14 }, styles: { fontSize: 9, textColor: [40, 40, 40], lineColor: [190, 190, 190], lineWidth: 0.1 },
     columnStyles: { 0: { cellWidth: 22 }, 1: { cellWidth: 'auto' }, 2: { cellWidth: 35, halign: 'right' }, 3: { cellWidth: 35, halign: 'right' } } });
 
-  // Ka BAK and the SatKer head sign the first row; the Rektor and the Wakil Rektor sign below, as on the printed form.
+  // Exactly two signature places: the selected Ketua SatKer and WarKu.
   const tableEnd = (pdf as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
-  const left = 14;
-  const right = pageWidth / 2 + 10;
+  const columnWidth = (pageWidth - 38) / 2;
+  const signers = [input.signatures.warku, input.signatures.ketuaSatker].map((signer, index) => {
+    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10);
+    const titles: string[] = pdf.splitTextToSize(signer.title, columnWidth);
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9.5);
+    const names: string[] = pdf.splitTextToSize(signer.name || '________________________', columnWidth);
+    return { center: 14 + columnWidth / 2 + index * (columnWidth + 10), titles, names };
+  });
+  const titleHeight = Math.max(...signers.map((signer) => signer.titles.length)) * 4.5;
+  const signatureHeight = 6 + titleHeight + 24 + Math.max(...signers.map((signer) => signer.names.length)) * 4.5;
   let y = tableEnd + 14;
-  if (y + 85 > pageHeight - 15) { pdf.addPage(); y = 20; }
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text('Mengetahui,', left, y);
-  pdf.text(`Jombang, ${input.period}`, right, y);
-  pdf.text('Ka BAK,', left, y + 6);
-  pdf.text(`Ka, ${input.unitName}`, right, y + 6);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text(input.bakHeadName, left, y + 30);
-  pdf.text(input.unitHeadName, right, y + 30);
-  pdf.text('REKTOR,', left, y + 48);
-  pdf.text('WAKIL REKTOR BIDANG KEUANGAN, SDM DAN UMUM', right, y + 48, { maxWidth: pageWidth / 2 - 24 });
-  pdf.text("Dr. dr. H. M. Zulfikar As'ad, MMR", left, y + 74);
-  pdf.text('Dr. Hj. Uswatun Qoyyimah, SS., M. Ed., Ph.D', right, y + 74);
+  if (y + signatureHeight > pageHeight - 15) { pdf.addPage(); y = 20; }
+  signers.forEach((signer, index) => {
+    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10);
+    pdf.text(index === 0 ? 'Mengetahui,' : `Jombang, ${input.period}`, signer.center, y, { align: 'center' });
+    pdf.text(signer.titles, signer.center, y + 6, { align: 'center', lineHeightFactor: 1.25 });
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9.5);
+    pdf.text(signer.names, signer.center, y + 6 + titleHeight + 24, { align: 'center', lineHeightFactor: 1.25 });
+  });
 }
 
 export type CashFlowReceiptSource = {

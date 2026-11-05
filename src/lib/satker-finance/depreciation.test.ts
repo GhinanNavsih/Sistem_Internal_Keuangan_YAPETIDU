@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DEFAULT_ACCOUNTS } from './core';
 import {
-  accumulatedDepreciation, assetChangeBlocker, assetFiguresChanged, buildDepreciationJournal, depreciationEntryId, depreciationForMonth,
+  accumulatedDepreciation, buildDepreciationJournal, depreciationEntryId, depreciationForMonth,
   depreciationStatus, scheduledAccumulatedByAccount, suggestedAccumulatedAccountId, validateFixedAsset, type FixedAsset,
 } from './depreciation';
 
@@ -72,19 +72,8 @@ test('an asset needs a debit asset account, a contra account, an expense account
   assert.throws(() => validateFixedAsset({ ...raw, cost: 1.5 }, DEFAULT_ACCOUNTS), /Harga/);
   assert.throws(() => validateFixedAsset({ ...raw, usefulLifeYears: 0 }, DEFAULT_ACCOUNTS), /Umur/);
   assert.throws(() => validateFixedAsset({ ...raw, acquisitionDate: '2026-02-30' }, DEFAULT_ACCOUNTS), /Tanggal/);
-  assert.equal(assetFiguresChanged(car, { ...car, name: 'Mobil dinas' }), false);
-  assert.equal(assetFiguresChanged(car, { ...car, cost: car.cost + 1 }), true);
   // The catalog pairs each asset account with its accumulated-depreciation account (+9); land has none.
   assert.equal(suggestedAccumulatedAccountId('13002', DEFAULT_ACCOUNTS), '13011');
   assert.equal(suggestedAccumulatedAccountId('13005', DEFAULT_ACCOUNTS), '13014');
   assert.equal(suggestedAccumulatedAccountId('13001', DEFAULT_ACCOUNTS), '');
-});
-
-test('an asset\'s figures are frozen once its depreciation is in a sealed month or a closed year', () => {
-  const posted = [{ monthIndex: 9, depreciation: { assets: [{ assetId: car.id, name: car.name, amount: 2_500_000 }] } }];
-  const year = (status: string, reportStatus: string) => ({ academicYear, status, reports: [{ monthIndex: 9, status: reportStatus }], depreciationEntries: posted });
-  assert.match(assetChangeBlocker(car.id, [year('ACTIVE', 'SUBMITTED')])!, /sudah masuk laporan/);
-  assert.equal(assetChangeBlocker(car.id, [year('ACTIVE', 'DRAFT')]), null, 'an open month is simply re-posted');
-  assert.equal(assetChangeBlocker(laptop.id, [year('ACTIVE', 'APPROVED')]), null, 'an asset in no journal');
-  assert.match(assetChangeBlocker(car.id, [{ ...year('CLOSED', 'DRAFT') }])!, /sudah masuk laporan/);
 });

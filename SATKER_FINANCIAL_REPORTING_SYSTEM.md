@@ -6,7 +6,7 @@
 ## 1. Executive Summary & System Context
 
 ### 1.1 Background
-Every month, the Heads of Loyalis Work Units (*Satuan Kerja* / SatKer) across **Universitas Pesantren Tinggi Darul Ulum (UNIPDU) Jombang** (e.g., PUSKOMNET, Academic Faculties, Technical Support Units / UPT, and Administrative Bureaus) are obligated to submit monthly financial accountability reports to the university's central monetary authority: the **Bureau of Financial Administration (Biro Administrasi Keuangan / BAK)**.
+Every month, the Heads of Loyalis Work Units (*Satuan Kerja* / SatKer) across **Universitas Pesantren Tinggi Darul Ulum (UNIPDU) Jombang** (e.g., PUSKOMNET, Academic Faculties, Technical Support Units / UPT, and Administrative Bureaus) prepare and print their monthly Arus Kas reports and deliver the hard copies to the **Bureau of Financial Administration (Biro Administrasi Keuangan / BAK)** office. The application maintains editable books for every month and academic year; it does not track digital submissions, report drafts, approvals, revision requests, or closed periods.
 
 Historically, this reporting process has been conducted offline using local Microsoft Excel workbooks maintained on individual SatKer computers. At the close of each month, these spreadsheets are printed onto paper, manually signed, and physically delivered to the BAK office for manual auditing and verification.
 
@@ -15,7 +15,7 @@ The goal of this initiative is to incorporate the complete bookkeeping logic, Ch
 1. Complete elimination of local Excel files and physical paper submissions.
 2. Prevention of data entry mistakes and unbalanced transactions (*human error*).
 3. Real-time cash position and operational visibility for Superadmins / BAK across all SatKers.
-4. Digitalization of the multi-tier sign-off and approval workflow: **SatKer Head / Secretary $\rightarrow$ Head of BAK $\rightarrow$ University Rectorate**.
+4. Printable Arus Kas reports and receipts for delivery to BAK, with every period remaining available for bookkeeping corrections.
 
 ---
 
@@ -244,10 +244,9 @@ The formal financial statement generated, printed, signed, and filed with BAK ea
 * `F214`: Physical Cash & Bank Account Total (Cash `10000` + Bank Mandiri `11001` + other bank accounts)
 * `F215`: Reconciliation Delta (`=F207 - F214`). **Must strictly equal 0.00**.
 
-#### Governance Hierarchy & Signature Block (Rows 216–220 & 690)
-1. **Report Preparer**: SatKer Secretary / Head of SatKer (Right column).
-2. **Monetary Auditor**: Head of BAK (*Hj. Anna Qomariana, SE, M.PdI*) (Left column).
-3. **Executive University Approval**: University Rector (*Dr. dr. H M. Zulfikar As'ad, MMR*).
+#### Monthly Arus Kas signature places
+
+The web application's printed monthly report has exactly two signature places: **Ketua SatKer** and **WarKu (Wakil Rektor Bid. Keuangan, SDM dan Umum)**. Both can be selected from active Loyalis and have editable printed names and titles. Choices can be saved per SatKer for reuse; the person preparing the report does not determine who signs it. BAK and the Rektor have no signature places in this monthly printout.
 
 ---
 
@@ -265,125 +264,28 @@ An audit drill-down tool allowing users to inspect transaction history for any s
 
 ## 4. Web Application Digitalization Blueprint (Internal-BAK)
 
-### 4.1 Data Model (Proposed Firestore Collections)
+### 4.1 Data Model
 
-```mermaid
-erDiagram
-    FISCAL_PERIOD ||--o{ SATKER_MONTHLY_REPORT : contains
-    SATKER ||--o{ SATKER_MONTHLY_REPORT : submits
-    SATKER ||--o{ JOURNAL_ENTRY : creates
-    CHART_OF_ACCOUNTS ||--o{ JOURNAL_LINE : categorizes
-    JOURNAL_ENTRY ||--|{ JOURNAL_LINE : details
-    SATKER_MONTHLY_REPORT ||--o{ APPROVAL_LOG : tracks
+`SatkerFinancialUnits` identifies each unit and its assigned editors, with per-unit `accountCatalog` and `fixedAssets`. `SatkerFinancialYears/{unitId}_{academicYear}` stores opening balances and optimistic revisions; its `entries`, `bankReconciliations`, and `audit` subcollections store the books and their change history. `SatkerFinancialAccounts` is the shared catalog. Fiscal years run September–August, and all months remain editable.
 
-    FISCAL_PERIOD {
-        string id "academicYear (e.g. 2026-2027)"
-        string startDate "2026-09-01"
-        string endDate "2027-08-31"
-        string status "ACTIVE | CLOSED"
-    }
-
-    SATKER {
-        string id "e.g. puskomnet"
-        string name "Pusat Komputer dan Jaringan"
-        string headName "Head of SatKer"
-        string adminName "Secretary / Treasurer"
-    }
-
-    CHART_OF_ACCOUNTS {
-        string code "e.g. 52101"
-        string name "Maintenance UPT dan Penunjang"
-        string accountType "AKTIVA | HUTANG | MODAL | TERIMA | KELUAR"
-        string normalBalance "DEBIT | CREDIT"
-        string reportTarget "BALANCE_SHEET | INCOME_STATEMENT"
-        number defaultOpeningBalance
-    }
-
-    JOURNAL_ENTRY {
-        string id
-        string satkerId
-        string academicYear
-        int monthIndex "9, 10, 11, 12, 1..8"
-        date date
-        string description
-        number totalAmount
-        boolean isBalanced
-        string receiptUrl
-        string createdBy
-        timestamp createdAt
-    }
-
-    JOURNAL_LINE {
-        string accountCode
-        string accountName
-        number debit
-        number credit
-    }
-
-    SATKER_MONTHLY_REPORT {
-        string id "puskomnet_2026_09"
-        string satkerId
-        string academicYear
-        int monthIndex
-        string status "DRAFT | SUBMITTED | APPROVED | REVISION_REQUESTED"
-        number totalIncome
-        number totalExpense
-        number netSurplusDeficit
-        number endingCashBalance
-        string submittedBy
-        timestamp submittedAt
-        string approvedBy
-        timestamp approvedAt
-        string rejectionNotes
-    }
-
-    APPROVAL_LOG {
-        string role "SATKER_ADMIN | KA_BAK | REKTOR"
-        string action "SUBMIT | APPROVE | REJECT"
-        string note
-        timestamp timestamp
-    }
-```
-
----
+Journal lines use stable account IDs with debit and credit amounts. Server validation enforces balanced entries, valid fiscal dates, unit authorization, concurrency revisions, private attachments, and audit history. Report snapshots and approval statuses are not part of the active model. Legacy reporting records remain archived without restricting the books.
 
 ### 4.2 End-to-End User Journey
 
 ```mermaid
 sequenceDiagram
-    autonumber
-    actor SatKer as SatKer Admin / Treasurer
-    participant WebApp as Web App (Internal-BAK)
-    participant Engine as Calculation Engine
-    actor BAK as Superadmin / Head of BAK
-    actor Rector as University Rectorate
-
-    Note over SatKer, WebApp: Daily Transaction Entry
-    SatKer->>WebApp: Record Transaction (Droping / Expense / Cash Transfer)
-    WebApp->>WebApp: Atomic auto-balancing voucher (prevents one-sided entries)
-    WebApp->>Engine: Store JournalEntry with Debit and Credit lines
-    Engine->>Engine: Update General Ledger & Trial Balance in real time
-
-    Note over SatKer, WebApp: End-of-Month Reporting Cycle
-    SatKer->>WebApp: Navigate to "Monthly Report (Month 9 - September)"
-    WebApp->>Engine: Generate Income Statement, Cash Flow, and Balance Sheet
-    Engine-->>WebApp: Display report preview with zero-variance check
-    SatKer->>WebApp: Click "Submit Report to BAK"
-    WebApp->>WebApp: Lock Month 9 period (Status: SUBMITTED)
-
-    Note over BAK, WebApp: Verification & Monetary Audit by BAK
-    BAK->>WebApp: Notification of incoming report from PUSKOMNET
-    BAK->>WebApp: Review ledger lines, attached receipt proofs, and reconciliations
-    alt Discrepancy Found
-        BAK->>WebApp: Click "Request Revision" with audit comments
-        WebApp-->>SatKer: Revision alert, period unlocked (Status: DRAFT)
-    else Report Validated & Balanced
-        BAK->>WebApp: Click "Approve Report" (Digital Signature)
-        WebApp->>Rector: Notification for Executive Rectorate Sign-off
-        Rector->>WebApp: Sign off university-level endorsement
-        WebApp->>WebApp: Status: APPROVED
-        WebApp-->>SatKer: Download official signed PDF with verification QR code
-    end
+    actor SatKer as SatKer Head / Treasurer
+    participant WebApp as Internal-BAK
+    participant Books as Financial Books
+    actor BAK as BAK Office
+    SatKer->>WebApp: Select any academic year and month
+    SatKer->>WebApp: Record or correct balanced journals
+    WebApp->>Books: Save authorized changes and audit history
+    Books-->>WebApp: Recalculate financial statements
+    SatKer->>WebApp: Download current Arus Kas PDF and receipts
+    WebApp-->>SatKer: Printable report
+    SatKer->>BAK: Deliver printed Arus Kas report
+    SatKer->>WebApp: Continue corrections in any period
 ```
 
 ---
@@ -405,7 +307,7 @@ To prevent the manual balancing errors observed in the Excel file, the applicati
      * Debit 11001 (Bank Mandiri) / 10000 (Cash): Rp 5,000,000
      * Credit 41000 (University Droping): Rp 5,000,000
 3. **Advanced Multi-Line Double-Entry Mode**:
-   * Available for complex composite transactions, with the "Submit" action strictly disabled until `Total Debits === Total Credits`.
+   * Available for complex composite transactions, with the "Posting jurnal" action strictly disabled until `Total Debits === Total Credits`.
 
 ---
 
@@ -413,8 +315,8 @@ To prevent the manual balancing errors observed in the Excel file, the applicati
 | Capability | Current Excel Paper Process | Digital Web Application (Internal-BAK) |
 | :--- | :--- | :--- |
 | **Data Storage** | Isolated on local computers; vulnerable to loss | Centralized Firestore cloud storage with automated backups |
-| **Balance Integrity** | Prone to human error (entries can remain unbalanced) | Enforced zero-difference validation on submission |
-| **Filing & Submission** | Printed on paper and hand-delivered physically | 1-click digital submission from the SatKer dashboard |
+| **Balance Integrity** | Prone to human error (entries can remain unbalanced) | Enforced zero-difference validation when posting journals |
+| **Filing & Submission** | Printed on paper and hand-delivered physically | Download and print Arus Kas; hand-deliver the hard copy to BAK |
 | **BAK Monitoring** | Must wait for month-end paper deliveries | Real-time monitoring of all SatKer cash positions and ledgers |
 | **University Consolidation**| Manual, error-prone copying across multiple Excel files | Instant university-wide consolidated financial reporting |
 | **Audit Trail** | None (modifications cannot be tracked) | Comprehensive change logs, timestamps, and revision histories |

@@ -1,8 +1,8 @@
 import admin, { adminDb } from '@/lib/firebase-admin';
 import type { DocumentReference, Transaction } from 'firebase-admin/firestore';
 import { AuthenticatedProfile, HttpError } from '@/lib/server/auth';
-import { adjacentAcademicYear, DEFAULT_ACCOUNTS, defaultCashFlowSection, FinancialAccount, groupNormalBalance, OpeningBalances, type YearClosing } from '@/lib/satker-finance/core';
-import type { PreviousYearState } from '@/lib/satker-finance/monthControls';
+import { DEFAULT_ACCOUNTS, defaultCashFlowSection, FinancialAccount, groupNormalBalance, OpeningBalances } from '@/lib/satker-finance/core';
+import type { CashFlowSignatures, SignatureEmployee } from '@/lib/satker-finance/signatures';
 import type { FixedAsset } from '@/lib/satker-finance/depreciation';
 import biroUmumAkunData from '@/lib/satker-finance/biro-umum-26-27-akun.json';
 
@@ -24,6 +24,7 @@ export type FinancialUnit = {
   adminName: string;
   editorUids: string[];
   revision: number;
+  cashFlowSignatures?: CashFlowSignatures;
 };
 
 export function canReadAll(actor: AuthenticatedProfile) {
@@ -286,14 +287,9 @@ export function openingFrom(value: unknown): OpeningBalances {
 
 export function publicYear(data: Record<string, unknown> | undefined) {
   return {
-    status: data?.status === 'CLOSED' ? 'CLOSED' : 'ACTIVE',
     revision: typeof data?.revision === 'number' ? data.revision : 0,
     entryCount: typeof data?.entryCount === 'number' ? data.entryCount : 0,
     openingBalances: openingFrom(data?.openingBalances),
-    /** 'CARRIED_FORWARD' once the previous year's closing has written the opening balance. */
-    openingSource: data?.openingSource === 'CARRIED_FORWARD' ? 'CARRIED_FORWARD' as const : 'MANUAL' as const,
-    openingCarriedFrom: typeof data?.openingCarriedFrom === 'string' ? data.openingCarriedFrom : null,
-    closing: (data?.closing && typeof data.closing === 'object' ? data.closing : null) as (YearClosing & { equityAccountCode?: string; equityAccountName?: string }) | null,
   };
 }
 
@@ -304,15 +300,10 @@ export function audit(tx: Transaction, year: DocumentReference, actor: Authentic
   });
 }
 
-export function reportId(monthIndex: number) { return String(monthIndex).padStart(2, '0'); }
-
-/** The previous year's book as the opening-balance and submission rules see it. */
-export async function previousYearState(unitId: string, academicYear: string, tx?: Transaction): Promise<PreviousYearState> {
-  const previous = adjacentAcademicYear(academicYear, -1);
-  const ref = yearRef(unitId, previous);
-  const data = (tx ? await tx.get(ref) : await ref.get()).data();
-  return {
-    academicYear: previous, status: data?.status === 'CLOSED' ? 'CLOSED' : data ? 'ACTIVE' : null,
-    entryCount: Number(data?.entryCount || 0), closingBalances: data?.closing?.balances ?? null,
-  };
+/** Only the public signer fields, never payroll or personal contact data. */
+export async function loadSignatureEmployees(): Promise<SignatureEmployee[]> {
+  const snapshot = await adminDb.collection('Employees_Loyalis').where('personal_info.status', '==', 'AKTIF')
+    .select('personal_info.name', 'employment_profile.job_role').get();
+  return snapshot.docs.map((doc) => ({ id: doc.id, name: String(doc.data().personal_info?.name || ''), role: String(doc.data().employment_profile?.job_role || '') }))
+    .filter((employee) => employee.name.trim()).sort((a, b) => a.name.localeCompare(b.name, 'id'));
 }

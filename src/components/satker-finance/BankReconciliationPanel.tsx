@@ -35,7 +35,7 @@ export default function BankReconciliationPanel({ rows, reconciliations, academi
   return <div className="space-y-5">
     <Section title={`Rekonsiliasi bank dan hitung fisik kas, akhir ${monthNames[month - 1]} ${year}`}>
       <p className="max-w-3xl text-sm text-slate-600">Buku yang seimbang belum tentu sama dengan uang yang sebenarnya ada. Setiap akhir bulan, cocokkan saldo setiap rekening dengan saldo akhir di rekening koran, dan saldo kas tunai dengan hasil hitung uang di brankas. Selisih boleh dijelaskan hanya oleh waktu: setoran yang sudah dicatat tetapi belum masuk rekening koran, atau pembayaran yang sudah dicatat tetapi belum didebet bank. Biaya admin, bunga, atau potongan bank yang belum ada di buku harus dijurnal lebih dahulu.</p>
-      <p className="mt-2 text-sm text-slate-600">Laporan bulan ini baru dapat dikirim ke BAK setelah semua akun di bawah cocok.</p>
+      <p className="mt-2 text-sm text-slate-600">Cocokkan setiap saldo dengan rekening koran atau hasil hitung fisik kas.</p>
     </Section>
     {!states.length && <Section title="Tidak ada yang perlu dicocokkan"><p className="text-sm text-slate-600">Tidak ada akun kas atau bank yang bersaldo atau bergerak bulan ini.</p></Section>}
     {states.map((state) => <ReconciliationCard key={`${month}_${state.account.code}_${state.reconciliation?.revision ?? 0}`} state={state} monthIndex={month}
@@ -110,6 +110,6 @@ function ReconciliationCard({ state, monthIndex, canPost, busy, post, viewStatem
     {fileError && <p role="alert" className="mt-2 text-sm text-red-700">{fileError}</p>}
     {canPost && <div className="mt-4 flex items-center gap-3"><button type="button" className={button} disabled={busy || !itemsValid} onClick={() => void save()}>Simpan rekonsiliasi</button>
       {!itemsValid && <span className="text-xs text-amber-700">Isi uraian dan nominal setiap penyesuaian.</span>}
-      {itemsValid && difference !== 0 && <span className="text-xs text-amber-700">Masih ada selisih {money(difference)}. Tetap dapat disimpan, tetapi laporan belum dapat dikirim.</span>}</div>}
+      {itemsValid && difference !== 0 && <span className="text-xs text-amber-700">Masih ada selisih {money(difference)}. Periksa kembali rekening koran, hitung fisik, dan jurnal terkait.</span>}</div>}
   </Section>;
 }

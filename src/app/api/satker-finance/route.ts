@@ -1,25 +1,24 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { NextRequest } from 'next/server';
-import type { DocumentReference, Transaction } from 'firebase-admin/firestore';
 import admin, { adminDb, adminStorage } from '@/lib/firebase-admin';
 import { errorResponse, HttpError, requireAuthenticatedProfile, requireRole } from '@/lib/server/auth';
 import {
   ACCOUNT_COLLECTION, CATALOG_META_REF, assertUnitEdit, audit, canReadAll, ensureOwnUnit, ensureUnassignedHeadUnits, fixedAssetCollection, fixedAssetFrom, getUnit,
-  inactiveHeadUids, isInactiveHeadBook, listUnits, loadAccounts, loadFixedAssets, unitAccountCatalogSource, openingFrom, previousYearState, publicYear, reportId, UNIT_COLLECTION, unitAccountCatalogMetaRef,
-  unitAccountCollection, YEAR_COLLECTION, yearRef,
+  inactiveHeadUids, isInactiveHeadBook, listUnits, loadAccounts, loadFixedAssets, loadSignatureEmployees, unitAccountCatalogSource, openingFrom, publicYear, UNIT_COLLECTION, unitAccountCatalogMetaRef,
+  unitAccountCollection, yearRef,
 } from '@/lib/server/satkerFinance';
 import {
-  accountId as financialAccountId, academicYearFor, adjacentAcademicYear, buildFinancialStatements, buildVoucher, buildYearClosing, CASH_FLOW_SECTIONS,
-  calendarYearOf, DEFAULT_ACCOUNTS, defaultCashFlowSection, entryReceiptPaths, MAX_ENTRY_RECEIPTS, MAX_ENTRY_RECEIPT_BYTES, defaultSurplusAccountId, emptyCashFlows, groupNormalBalance, entryCashFlows, fiscalMonths, FinancialAccount, JournalEntry, lastDateOfMonth,
-  OpeningBalances, sameBalances, type AccountType, type CashFlowAmounts, validateEntryDate, validateOpeningBalances,
+  accountId as financialAccountId, academicYearFor, buildFinancialStatements, buildVoucher, CASH_FLOW_SECTIONS,
+  calendarYearOf, DEFAULT_ACCOUNTS, defaultCashFlowSection, entryReceiptPaths, MAX_ENTRY_RECEIPTS, MAX_ENTRY_RECEIPT_BYTES, emptyCashFlows, groupNormalBalance, entryCashFlows, fiscalMonths, FinancialAccount, JournalEntry, lastDateOfMonth,
+  OpeningBalances, type AccountType, type CashFlowAmounts, validateEntryDate, validateOpeningBalances,
 } from '@/lib/satker-finance/core';
-import { entryChangeBlocker, isReportOpen } from '@/lib/satker-finance/entryEditing';
+import { entryChangeBlocker } from '@/lib/satker-finance/entryEditing';
+import { cashFlowSignaturesFrom, defaultCashFlowSignatures, validateCashFlowSignatures } from '@/lib/satker-finance/signatures';
 import { importUnitBook } from '@/lib/server/satkerBookImport';
 import {
-  assetChangeBlocker, assetFiguresChanged, buildDepreciationJournal, depreciationEntryId, sameJournalLines, validateFixedAsset,
+  buildDepreciationJournal, depreciationEntryId, sameJournalLines, validateFixedAsset,
 } from '@/lib/satker-finance/depreciation';
 import { reconciliationDocId, validateReconciliationInput, type BankReconciliation } from '@/lib/satker-finance/bankReconciliation';
-import { monthChecks, openingComesFromPreviousYear } from '@/lib/satker-finance/monthControls';
 import { MAX_UPLOAD_BYTES, UPLOAD_TYPES_TEXT, detectUploadFileType, parseBase64DataUrl } from '@/lib/uploadFileTypes';
 
 export const dynamic = 'force-dynamic';
@@ -34,17 +33,6 @@ function string(value: unknown, name: string, max = 150) {
 function inputError(error: unknown): never {
   if (error instanceof HttpError) throw error;
   throw new HttpError(400, error instanceof Error ? error.message : 'Data tidak valid.');
-}
-function notify(tx: Transaction, recipientUids: string[], data: { unitId: string; academicYear: string; monthIndex: number; title: string; message: string }) {
-  for (const uid of [...new Set(recipientUids)]) {
-    tx.create(adminDb.collection('users').doc(uid).collection('satkerFinancialNotifications').doc(), {
-      ...data, readAt: null, at: admin.firestore.FieldValue.serverTimestamp(),
-    });
-  }
-}
-async function usersWithRole(role: string) {
-  const snapshot = await adminDb.collection('users').where('role', '==', role).get();
-  return snapshot.docs.filter((doc) => doc.data().disabled !== true).map((doc) => doc.id);
 }
 /** The receipts a request carries: `receiptDataUrls`, or the single `receiptDataUrl` older clients send. */
 function receiptInputs(raw: Record<string, unknown>): unknown[] {
@@ -97,9 +85,6 @@ function validateMonth(raw: unknown) {
   if (!Number.isInteger(month) || month < 1 || month > 12) throw new HttpError(400, 'Bulan tidak valid.');
   return month;
 }
-function reportStatus(snapshot: FirebaseFirestore.DocumentSnapshot) {
-  return String(snapshot.data()?.status || 'DRAFT');
-}
 function reconciliationFrom(data: FirebaseFirestore.DocumentData): BankReconciliation {
   return {
     monthIndex: Number(data.monthIndex), accountId: String(data.accountId), statementBalance: Number(data.statementBalance || 0),
@@ -107,57 +92,18 @@ function reconciliationFrom(data: FirebaseFirestore.DocumentData): BankReconcili
     revision: Number(data.revision || 0), hasStatement: typeof data.statementPath === 'string',
   };
 }
-/** Refuses a change to a month that is sealed (its report, or a later one, is with BAK or Rektorat) or to a closed year. */
-function assertMonthOpen(academicYear: string, monthIndex: number, yearStatus: unknown, reports: FirebaseFirestore.DocumentSnapshot[]) {
-  if (yearStatus === 'CLOSED') throw new HttpError(409, 'Tahun buku sudah ditutup.');
-  const period = fiscalMonths(academicYear).find((month) => month.monthIndex === monthIndex)!.period;
-  for (let index = period - 1; index < reports.length; index++) {
-    if (!isReportOpen(reportStatus(reports[index]))) throw new HttpError(409, 'Bulan ini atau bulan sesudahnya sudah dikunci dalam pelaporan.');
-  }
-}
-const reportRefs = (year: DocumentReference, academicYear: string) => fiscalMonths(academicYear).map((month) => year.collection('reports').doc(reportId(month.monthIndex)));
-/** Why an asset's figures can no longer change (see assetChangeBlocker), read inside the transaction that would change them. */
-async function assetChangeBlockerInTransaction(tx: Transaction, unitId: string, assetId: string) {
-  const yearDocs = await tx.get(adminDb.collection(YEAR_COLLECTION).where('satkerId', '==', unitId));
-  const years = await Promise.all(yearDocs.docs.map(async (doc) => {
-    const academicYear = String(doc.data().academicYear || '');
-    if (!/^\d{4}-\d{4}$/.test(academicYear)) return null;
-    const [entries, ...reports] = await Promise.all([
-      tx.get(doc.ref.collection('entries').where('kind', '==', 'DEPRECIATION')), ...reportRefs(doc.ref, academicYear).map((ref) => tx.get(ref)),
-    ]);
-    return {
-      academicYear, status: doc.data().status as string | undefined,
-      reports: fiscalMonths(academicYear).map((month, index) => ({ monthIndex: month.monthIndex, status: reportStatus(reports[index]) })),
-      depreciationEntries: entries.docs.map((entry) => entry.data() as JournalEntry),
-    };
-  }));
-  return assetChangeBlocker(assetId, years.filter((year) => year !== null));
-}
 const negateFlows = (flows: CashFlowAmounts): CashFlowAmounts => ({ OPERATING: -flows.OPERATING, INVESTING: -flows.INVESTING, FINANCING: -flows.FINANCING });
 
 async function loadYear(unitId: string, academicYear: string, includeHistory = false) {
   const ref = yearRef(unitId, academicYear);
-  const [yearDoc, entryDocs, reportDocs, reconciliationDocs] = await Promise.all([
-    ref.get(), ref.collection('entries').orderBy('date', 'asc').get(),
-    ref.collection('reports').get(), ref.collection('bankReconciliations').get(),
+  const [yearDoc, entryDocs, reconciliationDocs, auditDocs] = await Promise.all([
+    ref.get(), ref.collection('entries').orderBy('date', 'asc').get(), ref.collection('bankReconciliations').get(),
+    includeHistory ? ref.collection('audit').orderBy('at', 'desc').limit(200).get() : null,
   ]);
-  const [auditDocs, revisionDocs] = includeHistory ? await Promise.all([
-    ref.collection('audit').orderBy('at', 'desc').limit(200).get(),
-    ref.collection('reportRevisions').orderBy('submittedAt', 'desc').limit(100).get(),
-  ]) : [null, null];
   const entries = entryDocs.docs.map((doc) => ({ id: doc.id, ...doc.data() } as JournalEntry));
-  const reports = reportDocs.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
   const events = auditDocs?.docs.map((doc) => ({ id: doc.id, ...doc.data() })) || [];
-  const revisions = revisionDocs?.docs.map((doc) => ({
-    id: doc.id,
-    monthIndex: Number(doc.data().monthIndex),
-    revision: Number(doc.data().revision),
-    submittedName: String(doc.data().submittedName || ''),
-    submittedAt: doc.data().submittedAt,
-    snapshot: doc.data().snapshot as ReturnType<typeof buildFinancialStatements>,
-  })) || [];
   const reconciliations = reconciliationDocs.docs.map((doc) => reconciliationFrom(doc.data()));
-  return { ref, year: publicYear(yearDoc.data()), entries, reports, events, revisions, reconciliations };
+  return { ref, year: publicYear(yearDoc.data()), entries, events, reconciliations };
 }
 
 function monthlyTrial(accounts: FinancialAccount[], opening: OpeningBalances, entries: JournalEntry[], academicYear: string) {
@@ -186,11 +132,9 @@ export async function GET(request: NextRequest) {
     const unitId = request.nextUrl.searchParams.get('unitId');
     const globalAccounts = await loadAccounts();
     let accounts = globalAccounts;
-    const notifications = await adminDb.collection('users').doc(actor.uid).collection('satkerFinancialNotifications').orderBy('at', 'desc').limit(30).get();
     // Books of disabled Kepala SatKer Loyalis are left out of the lists; consolidated totals still count them.
     const inactiveHeads = canReadAll(actor) ? await inactiveHeadUids() : new Set<string>();
-    const base: Record<string, unknown> = { units: units.filter((unit) => !isInactiveHeadBook(unit, inactiveHeads)), accounts, academicYear, monthIndex,
-      notifications: notifications.docs.map((doc) => ({ id: doc.id, ...doc.data() })) };
+    const base: Record<string, unknown> = { units: units.filter((unit) => !isInactiveHeadBook(unit, inactiveHeads)), accounts, academicYear, monthIndex };
     if (actor.role === 'super_admin') {
       const users = await adminDb.collection('users').get();
       base.editorUsers = users.docs.filter((doc) => doc.data().disabled !== true && ['satker_head_loyalis', 'satker_finance_admin'].includes(doc.data().role))
@@ -220,19 +164,18 @@ export async function GET(request: NextRequest) {
       const entries = years.flatMap((year) => year.entries);
       const statements = buildFinancialStatements({ accounts: consolidatedAccounts, opening, entries, academicYear, monthIndex });
       const annualStatements = monthIndex === 'ANNUAL' ? statements : buildFinancialStatements({ accounts: consolidatedAccounts, opening, entries, academicYear, monthIndex: 'ANNUAL' });
-      return Response.json({ ...base, accounts: consolidatedAccounts, unit: { id: 'ALL', name: 'Konsolidasi Seluruh SatKer' }, statements, annualStatements, monthlyTrial: monthlyTrial(consolidatedAccounts, opening, entries, academicYear), year: { status: 'ACTIVE', openingBalances: opening }, entries: [], reports: [], events: [], reportRevisions: [],
+      return Response.json({ ...base, accounts: consolidatedAccounts, unit: { id: 'ALL', name: 'Konsolidasi Seluruh SatKer' }, statements, annualStatements, monthlyTrial: monthlyTrial(consolidatedAccounts, opening, entries, academicYear), year: { openingBalances: opening }, entries: [], events: [],
         unitSummaries: years.filter((year) => !isInactiveHeadBook(year.unit, inactiveHeads)).map((year) => ({
-          unit: year.unit, year: year.year,
+          unit: year.unit,
           statements: buildFinancialStatements({ accounts: year.unitAccounts, opening: year.year.openingBalances, entries: year.entries, academicYear, monthIndex }),
-          report: monthIndex === 'ANNUAL' ? null : year.reports.find((report) => report.id === reportId(monthIndex)) || null,
         })) }, { headers: noStore });
     }
     const unit = await getUnit(actor, unitId);
     accounts = await loadAccounts(unitId);
     base.accounts = accounts;
     base.accountCatalogSource = unitAccountCatalogSource(unitId);
-    const [unitCatalog, state, fixedAssets, previousYear] = await Promise.all([
-      unitAccountCatalogMetaRef(unitId).get(), loadYear(unitId, academicYear, true), loadFixedAssets(unitId), previousYearState(unitId, academicYear),
+    const [unitCatalog, state, fixedAssets, signatureEmployees] = await Promise.all([
+      unitAccountCatalogMetaRef(unitId).get(), loadYear(unitId, academicYear, true), loadFixedAssets(unitId), loadSignatureEmployees(),
     ]);
     const statements = buildFinancialStatements({ accounts, opening: state.year.openingBalances, entries: state.entries, academicYear, monthIndex });
     const annualStatements = monthIndex === 'ANNUAL' ? statements : buildFinancialStatements({ accounts, opening: state.year.openingBalances, entries: state.entries, academicYear, monthIndex: 'ANNUAL' });
@@ -245,9 +188,8 @@ export async function GET(request: NextRequest) {
         delete result.requestFingerprint;
         return result;
       }),
-      reports: state.reports, events: state.events, fixedAssets, reconciliations: state.reconciliations, previousYear,
-      reportRevisions: state.revisions.map((revision) => ({ id: revision.id, monthIndex: revision.monthIndex, revision: revision.revision, submittedName: revision.submittedName, submittedAt: revision.submittedAt,
-        income: revision.snapshot?.incomeStatement?.income ?? 0, expense: revision.snapshot?.incomeStatement?.expense ?? 0, endingCash: revision.snapshot?.cashFlow?.endingCash ?? 0 })),
+      events: state.events, fixedAssets, reconciliations: state.reconciliations, signatureEmployees,
+      cashFlowSignatures: cashFlowSignaturesFrom(unit.cashFlowSignatures, defaultCashFlowSignatures(unit.headName, signatureEmployees)),
     }, { headers: noStore });
   } catch (error) { return errorResponse(error); }
 }
@@ -258,15 +200,6 @@ export async function POST(request: NextRequest) {
     const raw = await request.json() as Record<string, unknown>;
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new HttpError(400, 'Payload pelaporan tidak valid.');
     const action = string(raw.action, 'Tindakan', 50);
-    if (action === 'READ_NOTIFICATION') {
-      const id = string(raw.notificationId, 'ID notifikasi', 100);
-      if (!/^[a-zA-Z0-9_-]{8,100}$/.test(id)) throw new HttpError(400, 'ID notifikasi tidak valid.');
-      const ref = adminDb.collection('users').doc(actor.uid).collection('satkerFinancialNotifications').doc(id);
-      const notification = await ref.get();
-      if (!notification.exists) throw new HttpError(404, 'Notifikasi tidak ditemukan.');
-      await ref.update({ readAt: admin.firestore.FieldValue.serverTimestamp() });
-      return Response.json({ ok: true }, { headers: noStore });
-    }
     if (action === 'SAVE_UNIT') {
       requireRole(actor, ['super_admin']);
       const id = string(raw.id, 'ID SatKer', 50).toLowerCase();
@@ -289,6 +222,33 @@ export async function POST(request: NextRequest) {
         const after = { name, headName, adminName, editorUids, revision: revision + 1, updatedAt: admin.firestore.FieldValue.serverTimestamp(), updatedBy: actor.uid };
         tx.set(ref, after, { merge: true });
         tx.create(adminDb.collection('SatkerFinancialConfigAudit').doc(), { action: current.exists ? 'UNIT_UPDATED' : 'UNIT_CREATED', target: id, before: current.data() || null, after, actorUid: actor.uid, actorRole: actor.role, at: admin.firestore.FieldValue.serverTimestamp() });
+      });
+      return Response.json({ ok: true }, { headers: noStore });
+    }
+    if (action === 'SAVE_CASH_FLOW_SIGNATURES') {
+      const unitId = string(raw.unitId, 'SatKer', 50);
+      const unit = await getUnit(actor, unitId);
+      assertUnitEdit(actor, unit);
+      let signatures: ReturnType<typeof validateCashFlowSignatures>;
+      try { signatures = validateCashFlowSignatures(raw.signatures); } catch (error) { inputError(error); }
+      const ref = adminDb.collection(UNIT_COLLECTION).doc(unitId);
+      await adminDb.runTransaction(async (tx) => {
+        const current = await tx.get(ref);
+        if (!current.exists) throw new HttpError(404, 'SatKer tidak ditemukan.');
+        assertUnitEdit(actor, { ...unit, ...current.data() });
+        const revision = Number(current.data()?.revision || 0);
+        if (raw.expectedRevision !== revision) throw new HttpError(409, 'Konfigurasi SatKer berubah. Muat ulang sebelum menyimpan.');
+        const ids = [...new Set(Object.values(signatures).flatMap((slot) => slot.employeeId ? [slot.employeeId] : []))];
+        const employees = await Promise.all(ids.map((id) => tx.get(adminDb.collection('Employees_Loyalis').doc(id))));
+        if (employees.some((employee) => !employee.exists || employee.data()?.personal_info?.status !== 'AKTIF')) {
+          throw new HttpError(400, 'Pilih penandatangan dari Loyalis aktif atau isi namanya secara manual.');
+        }
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        tx.update(ref, { cashFlowSignatures: signatures, revision: revision + 1, updatedAt: now, updatedBy: actor.uid });
+        tx.create(adminDb.collection('SatkerFinancialConfigAudit').doc(), {
+          action: 'CASH_FLOW_SIGNATURES_UPDATED', target: unitId, before: current.data()?.cashFlowSignatures || null, after: signatures,
+          actorUid: actor.uid, actorRole: actor.role, at: now,
+        });
       });
       return Response.json({ ok: true }, { headers: noStore });
     }
@@ -424,11 +384,6 @@ export async function POST(request: NextRequest) {
         if (!requestedId && before.exists) throw new HttpError(409, 'ID aset sudah dipakai.');
         const revision = Number(before.data()?.revision || 0);
         if (raw.expectedRevision !== revision) throw new HttpError(409, 'Aset berubah. Muat ulang sebelum menyimpan.');
-        // Deleting, or changing any figure, would rewrite depreciation that may already be in a sealed report.
-        if (before.exists && (deleting || assetFiguresChanged(fixedAssetFrom(assetId, before.data()!), asset!))) {
-          const blocker = await assetChangeBlockerInTransaction(tx, unitId, assetId);
-          if (blocker) throw new HttpError(409, blocker);
-        }
         const now = admin.firestore.FieldValue.serverTimestamp();
         const after = deleting ? null : { ...asset!, revision: revision + 1, updatedAt: now, updatedBy: actor.uid };
         if (deleting) tx.delete(ref);
@@ -451,21 +406,14 @@ export async function POST(request: NextRequest) {
       const opening = openingFrom(raw.openingBalances);
       try { validateOpeningBalances(opening, accounts); } catch (error) { inputError(error); }
       await adminDb.runTransaction(async (tx) => {
-        const [current, meta, unitMeta, previous] = await Promise.all([
-          tx.get(year), tx.get(CATALOG_META_REF), tx.get(unitAccountCatalogMetaRef(unitId)), previousYearState(unitId, academicYear, tx),
+        const [current, meta, unitMeta] = await Promise.all([
+          tx.get(year), tx.get(CATALOG_META_REF), tx.get(unitAccountCatalogMetaRef(unitId)),
         ]);
         if (Number(meta.data()?.revision || 0) !== Number(catalogMeta.data()?.revision || 0)) throw new HttpError(409, 'Katalog akun berubah. Muat ulang sebelum menyimpan saldo awal.');
         if (Number(unitMeta.data()?.revision || 0) !== Number(unitCatalogMeta.data()?.revision || 0)) throw new HttpError(409, 'Daftar akun SatKer berubah. Muat ulang sebelum menyimpan saldo awal.');
         const data = current.data();
-        // Only a book's first year in the app is typed in; after that the opening comes from the previous year's closing.
-        if (data?.openingSource === 'CARRIED_FORWARD' || openingComesFromPreviousYear(previous)) {
-          throw new HttpError(409, `Saldo awal tahun ${academicYear} dibawa otomatis dari penutupan tahun buku ${previous.academicYear}, tidak diketik ulang.`);
-        }
-        if (data?.status === 'CLOSED') throw new HttpError(409, 'Tahun buku sudah ditutup.');
         if (Number(data?.revision || 0) !== raw.expectedRevision) throw new HttpError(409, 'Tahun buku berubah. Muat ulang sebelum menyimpan.');
-        const reportDocs = await Promise.all(fiscalMonths(academicYear).map((month) => tx.get(year.collection('reports').doc(reportId(month.monthIndex)))));
-        if (reportDocs.some((report) => report.exists)) throw new HttpError(409, 'Saldo awal terkunci setelah laporan pertama dibuat.');
-        const after = { satkerId: unitId, academicYear, startDate: `${academicYear.slice(0, 4)}-09-01`, endDate: `${academicYear.slice(5)}-08-31`, status: 'ACTIVE', openingBalances: opening, revision: Number(data?.revision || 0) + 1, entryCount: Number(data?.entryCount || 0), updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+        const after = { satkerId: unitId, academicYear, startDate: `${academicYear.slice(0, 4)}-09-01`, endDate: `${academicYear.slice(5)}-08-31`, openingBalances: opening, revision: Number(data?.revision || 0) + 1, entryCount: Number(data?.entryCount || 0), updatedAt: admin.firestore.FieldValue.serverTimestamp() };
         // Replace the entire map so clearing an account removes its previous opening balance.
         if (current.exists) tx.update(year, after);
         else tx.create(year, after);
@@ -522,20 +470,14 @@ export async function POST(request: NextRequest) {
         createdBy: actor.uid, requestFingerprint, ...(receiptPaths.length ? { receiptPaths } : {}), ...(reversesEntryId ? { reversesEntryId } : {}) };
       try {
         await adminDb.runTransaction(async (tx) => {
-          const [yearDoc, entryDoc, meta, unitMeta, ...reports] = await Promise.all([
-            tx.get(year), tx.get(entryRef), tx.get(CATALOG_META_REF), tx.get(unitAccountCatalogMetaRef(unitId)), ...fiscalMonths(academicYear).map((month) => tx.get(year.collection('reports').doc(reportId(month.monthIndex)))),
+          const [entryDoc, meta, unitMeta] = await Promise.all([
+            tx.get(entryRef), tx.get(CATALOG_META_REF), tx.get(unitAccountCatalogMetaRef(unitId)),
           ]);
           if (Number(meta.data()?.revision || 0) !== Number(catalogMeta.data()?.revision || 0)) throw new HttpError(409, 'Katalog akun berubah. Muat ulang dan posting kembali.');
           if (Number(unitMeta.data()?.revision || 0) !== Number(unitCatalogMeta.data()?.revision || 0)) throw new HttpError(409, 'Daftar akun SatKer berubah. Muat ulang dan posting kembali.');
           if (entryDoc.exists) throw new HttpError(409, 'Voucher ini sudah diposting.');
-          if (yearDoc.data()?.status === 'CLOSED') throw new HttpError(409, 'Tahun buku sudah ditutup.');
-          const fiscalPeriod = fiscalMonths(academicYear).find((month) => month.monthIndex === monthIndex)!.period;
-          for (let index = fiscalPeriod - 1; index < reports.length; index++) {
-            const status = reportStatus(reports[index]);
-            if (!['DRAFT', 'REVISION_REQUESTED'].includes(status)) throw new HttpError(409, 'Bulan ini atau bulan sesudahnya sudah dikunci dalam pelaporan.');
-          }
           tx.create(entryRef, { ...entry, createdAt: admin.firestore.FieldValue.serverTimestamp() });
-          tx.set(year, { satkerId: unitId, academicYear, startDate: `${academicYear.slice(0, 4)}-09-01`, endDate: `${academicYear.slice(5)}-08-31`, status: 'ACTIVE', revision: admin.firestore.FieldValue.increment(1), entryCount: admin.firestore.FieldValue.increment(1), updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+          tx.set(year, { satkerId: unitId, academicYear, startDate: `${academicYear.slice(0, 4)}-09-01`, endDate: `${academicYear.slice(5)}-08-31`, revision: admin.firestore.FieldValue.increment(1), entryCount: admin.firestore.FieldValue.increment(1), updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
           tx.set(CATALOG_META_REF, { usedCodes: admin.firestore.FieldValue.arrayUnion(...entry.lines.map((line) => line.accountCode)) }, { merge: true });
           audit(tx, year, actor, action === 'REVERSE_ENTRY' ? 'ENTRY_REVERSED' : 'ENTRY_POSTED', { entryId, date, lines: entry.lines, description: entry.description, reversesEntryId: reversesEntryId || null });
         });
@@ -578,13 +520,11 @@ export async function POST(request: NextRequest) {
       // New receipts join the retained ones. Removed files stay in Storage for the audit trail.
       const newReceiptPaths = deleting ? [] : await storeReceipts(receiptInputs(raw), unitId, academicYear, entryId, MAX_ENTRY_RECEIPT_BYTES);
       const entryRef = year.collection('entries').doc(entryId);
-      const months = fiscalMonths(academicYear);
       try {
         await adminDb.runTransaction(async (tx) => {
-          const [yearDoc, entryDoc, reversal, meta, unitMeta, ...reports] = await Promise.all([
+          const [yearDoc, entryDoc, reversal, meta, unitMeta] = await Promise.all([
             tx.get(year), tx.get(entryRef), tx.get(year.collection('entries').where('reversesEntryId', '==', entryId).limit(1)),
             tx.get(CATALOG_META_REF), tx.get(unitAccountCatalogMetaRef(unitId)),
-            ...months.map((month) => tx.get(year.collection('reports').doc(reportId(month.monthIndex)))),
           ]);
           if (!entryDoc.exists) throw new HttpError(404, 'Jurnal tidak ditemukan. Muat ulang daftar jurnal.');
           const current = entryDoc.data() as JournalEntry & { revision?: number };
@@ -594,8 +534,7 @@ export async function POST(request: NextRequest) {
             if (Number(unitMeta.data()?.revision || 0) !== Number(unitCatalogMeta.data()?.revision || 0)) throw new HttpError(409, 'Daftar akun SatKer berubah. Muat ulang dan simpan kembali.');
           }
           const blocker = entryChangeBlocker({
-            change: deleting ? 'delete' : 'edit', entry: current, reversed: !reversal.empty, academicYear, yearStatus: yearDoc.data()?.status,
-            reports: months.map((month, index) => ({ monthIndex: month.monthIndex, status: reportStatus(reports[index]) })),
+            change: deleting ? 'delete' : 'edit', entry: current, reversed: !reversal.empty, academicYear,
             ...(deleting ? {} : { newMonthIndex: monthIndex }),
           });
           if (blocker) throw new HttpError(409, blocker);
@@ -640,14 +579,12 @@ export async function POST(request: NextRequest) {
       const entryRef = year.collection('entries').doc(entryId);
       const assetKey = (assets: { assetId: string; name: string; amount: number }[] | undefined) => (assets || []).map((item) => `${item.assetId}|${item.name}|${item.amount}`).join(';');
       const outcome = await adminDb.runTransaction(async (tx) => {
-        const [yearDoc, entryDoc, reversal, meta, unitMeta, assetDocs, ...reports] = await Promise.all([
+        const [yearDoc, entryDoc, reversal, meta, unitMeta, assetDocs] = await Promise.all([
           tx.get(year), tx.get(entryRef), tx.get(year.collection('entries').where('reversesEntryId', '==', entryId).limit(1)),
           tx.get(CATALOG_META_REF), tx.get(unitAccountCatalogMetaRef(unitId)), tx.get(fixedAssetCollection(unitId)),
-          ...reportRefs(year, academicYear).map((ref) => tx.get(ref)),
         ]);
         if (Number(meta.data()?.revision || 0) !== Number(catalogMeta.data()?.revision || 0)) throw new HttpError(409, 'Katalog akun berubah. Muat ulang dan posting kembali.');
         if (Number(unitMeta.data()?.revision || 0) !== Number(unitCatalogMeta.data()?.revision || 0)) throw new HttpError(409, 'Daftar akun SatKer berubah. Muat ulang dan posting kembali.');
-        assertMonthOpen(academicYear, monthIndex, yearDoc.data()?.status, reports);
         const current = entryDoc.exists ? entryDoc.data() as JournalEntry & { revision?: number } : undefined;
         if (current && current.kind !== 'DEPRECIATION') throw new HttpError(409, 'Nomor jurnal penyusutan bulan ini sudah dipakai jurnal lain.');
         if (current && !reversal.empty) throw new HttpError(409, 'Jurnal penyusutan bulan ini sudah dibalik. Hapus jurnal pembaliknya lebih dahulu.');
@@ -672,7 +609,7 @@ export async function POST(request: NextRequest) {
         };
         if (current) tx.update(entryRef, { ...fields, revision: Number(current.revision || 0) + 1, updatedBy: actor.uid, updatedAt: now });
         else tx.create(entryRef, { ...fields, id: entryId, satkerId: unitId, academicYear, createdBy: actor.uid, createdAt: now });
-        tx.set(year, { satkerId: unitId, academicYear, startDate: `${academicYear.slice(0, 4)}-09-01`, endDate: `${academicYear.slice(5)}-08-31`, status: 'ACTIVE',
+        tx.set(year, { satkerId: unitId, academicYear, startDate: `${academicYear.slice(0, 4)}-09-01`, endDate: `${academicYear.slice(5)}-08-31`,
           revision: admin.firestore.FieldValue.increment(1), ...(current ? {} : { entryCount: admin.firestore.FieldValue.increment(1) }), updatedAt: now }, { merge: true });
         tx.set(CATALOG_META_REF, { usedCodes: admin.firestore.FieldValue.arrayUnion(...journal.lines.map((line) => line.accountCode)) }, { merge: true });
         audit(tx, year, actor, 'DEPRECIATION_POSTED', { monthIndex, total: journal.total, assets: journal.assets, lines: journal.lines, before: current ? entrySnapshot(current) : null });
@@ -695,8 +632,7 @@ export async function POST(request: NextRequest) {
       const ref = year.collection('bankReconciliations').doc(docId);
       try {
         await adminDb.runTransaction(async (tx) => {
-          const [yearDoc, before, ...reports] = await Promise.all([tx.get(year), tx.get(ref), ...reportRefs(year, academicYear).map((report) => tx.get(report))]);
-          assertMonthOpen(academicYear, monthIndex, yearDoc.data()?.status, reports);
+          const before = await tx.get(ref);
           const revision = Number(before.data()?.revision || 0);
           if (raw.expectedRevision !== revision) throw new HttpError(409, 'Rekonsiliasi berubah. Muat ulang sebelum menyimpan.');
           const now = admin.firestore.FieldValue.serverTimestamp();
@@ -704,7 +640,7 @@ export async function POST(request: NextRequest) {
             monthIndex, accountId: accountKey, accountCode: account.code, accountName: account.name, statementBalance: input.statementBalance, items: input.items,
             note: input.note ?? null, statementPath: statementPath ?? before.data()?.statementPath ?? null, revision: revision + 1, updatedBy: actor.uid, updatedAt: now,
           });
-          // Moves the year's revision, so a report computed meanwhile is refused.
+          // Keep balance editors aware that the book changed.
           tx.set(year, { satkerId: unitId, academicYear, revision: admin.firestore.FieldValue.increment(1), updatedAt: now }, { merge: true });
           audit(tx, year, actor, 'BANK_RECONCILIATION_SAVED', {
             monthIndex, accountId: accountKey, accountCode: account.code, statementBalance: input.statementBalance, items: input.items,
@@ -715,126 +651,6 @@ export async function POST(request: NextRequest) {
         if (statementPath) await adminStorage.bucket().file(statementPath).delete({ ignoreNotFound: true }).catch((cleanupError) => console.error('Statement cleanup failed', cleanupError));
         throw error;
       }
-      return Response.json({ ok: true }, { headers: noStore });
-    }
-    if (action === 'SUBMIT_REPORT') {
-      assertUnitEdit(actor, unit);
-      const bakUids = await usersWithRole('super_admin');
-      const monthIndex = validateMonth(raw.monthIndex);
-      const [accounts, unitCatalogMeta] = await Promise.all([loadAccounts(unitId), unitAccountCatalogMetaRef(unitId).get()]);
-      const state = await loadYear(unitId, academicYear);
-      if (state.year.status === 'CLOSED') throw new HttpError(409, 'Tahun buku sudah ditutup.');
-      const statements = buildFinancialStatements({ accounts, opening: state.year.openingBalances, entries: state.entries, academicYear, monthIndex });
-      const months = fiscalMonths(academicYear);
-      const period = months.find((month) => month.monthIndex === monthIndex)!.period;
-      const ref = year.collection('reports').doc(reportId(monthIndex));
-      await adminDb.runTransaction(async (tx) => {
-        const [currentYear, currentReport, ...allReports] = await Promise.all([
-          tx.get(year), tx.get(ref), ...months.map((month) => tx.get(year.collection('reports').doc(reportId(month.monthIndex)))),
-        ]);
-        const [currentUnitCatalog, assetDocs, previousYear] = await Promise.all([
-          tx.get(unitAccountCatalogMetaRef(unitId)), tx.get(fixedAssetCollection(unitId)), previousYearState(unitId, academicYear, tx),
-        ]);
-        if (Number(currentUnitCatalog.data()?.revision || 0) !== Number(unitCatalogMeta.data()?.revision || 0)) throw new HttpError(409, 'Daftar akun SatKer berubah saat laporan dihitung. Muat ulang lalu kirim kembali.');
-        // The same checklist the page shows; reconciliations and journals are covered by the year revision below.
-        const failed = monthChecks({
-          academicYear, monthIndex, accounts, statements, entries: state.entries, openingBalances: state.year.openingBalances, previousYear,
-          assets: assetDocs.docs.map((doc) => fixedAssetFrom(doc.id, doc.data())), reconciliations: state.reconciliations,
-        }).filter((check) => !check.ok);
-        if (failed.length) throw new HttpError(409, `Laporan belum dapat dikirim. ${failed.map((check) => `${check.label}: ${check.detail}`).join(' ')}`);
-        if (Number(currentYear.data()?.revision || 0) !== state.year.revision) throw new HttpError(409, 'Jurnal berubah saat laporan dihitung. Muat ulang lalu kirim kembali.');
-        if (currentYear.data()?.status === 'CLOSED') throw new HttpError(409, 'Tahun buku sudah ditutup.');
-        if (period > 1 && reportStatus(allReports[period - 2]) !== 'APPROVED') throw new HttpError(409, 'Laporan bulan sebelumnya harus disahkan Rektorat lebih dahulu.');
-        if (!['DRAFT', 'REVISION_REQUESTED'].includes(reportStatus(currentReport))) throw new HttpError(409, 'Laporan bulan ini sudah dikirim.');
-        if (allReports.slice(period).some((item) => !['DRAFT', 'REVISION_REQUESTED'].includes(reportStatus(item)))) throw new HttpError(409, 'Laporan bulan berikutnya sudah dikirim.');
-        const revision = Number(currentReport.data()?.revision || 0) + 1;
-        tx.set(ref, { satkerId: unitId, unitName: unit.name, academicYear, monthIndex, status: 'SUBMITTED', revision,
-          totalIncome: statements.incomeStatement.income, totalExpense: statements.incomeStatement.expense,
-          netSurplusDeficit: statements.incomeStatement.surplus, endingCashBalance: statements.cashFlow.endingCash,
-          snapshot: statements, sourceRevision: state.year.revision,
-          submittedBy: actor.uid, submittedName: actor.displayName || actor.email || actor.uid, submittedAt: admin.firestore.FieldValue.serverTimestamp(),
-          bakApprovedBy: null, bakApprovedAt: null, rectorApprovedBy: null, rectorApprovedAt: null,
-          revisionNotes: null, verificationCode: null,
-        }, { merge: true });
-        tx.create(year.collection('reportRevisions').doc(`${reportId(monthIndex)}_${revision}`), {
-          satkerId: unitId, unitName: unit.name, academicYear, monthIndex, revision, sourceRevision: state.year.revision,
-          snapshot: statements, submittedBy: actor.uid, submittedName: actor.displayName || actor.email || actor.uid,
-          submittedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        tx.set(year, { revision: admin.firestore.FieldValue.increment(1), updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
-        audit(tx, year, actor, 'REPORT_SUBMITTED', { monthIndex, reportRevision: revision, sourceRevision: state.year.revision });
-        notify(tx, bakUids, { unitId, academicYear, monthIndex, title: 'Laporan SatKer menunggu pemeriksaan BAK', message: `${unit.name} mengirim laporan ${monthName(monthIndex)} ${academicYear}.` });
-      });
-      return Response.json({ ok: true }, { headers: noStore });
-    }
-    if (action === 'BAK_APPROVE' || action === 'BAK_REVISE' || action === 'RECTOR_APPROVE' || action === 'RECTOR_REVISE') {
-      if (action.startsWith('BAK_')) requireRole(actor, ['super_admin']);
-      else requireRole(actor, ['rector_finance']);
-      const monthIndex = validateMonth(raw.monthIndex);
-      const note = action.endsWith('REVISE') ? string(raw.note, 'Catatan revisi', 1000) : typeof raw.note === 'string' ? raw.note.trim().slice(0, 1000) : '';
-      const recipients = action === 'BAK_APPROVE' ? await usersWithRole('rector_finance') : action === 'RECTOR_APPROVE' ? unit.editorUids : [...unit.editorUids, ...(action === 'RECTOR_REVISE' ? await usersWithRole('super_admin') : [])];
-      const ref = year.collection('reports').doc(reportId(monthIndex));
-      await adminDb.runTransaction(async (tx) => {
-        const [yearDoc, report] = await Promise.all([tx.get(year), tx.get(ref)]);
-        const expected = action.startsWith('BAK_') ? 'SUBMITTED' : 'BAK_APPROVED';
-        if (reportStatus(report) !== expected) throw new HttpError(409, 'Status laporan telah berubah atau belum siap diputuskan.');
-        if (report.data()?.revision !== raw.expectedRevision) throw new HttpError(409, 'Laporan berubah. Muat ulang sebelum memutuskan.');
-        if (yearDoc.data()?.status === 'CLOSED') throw new HttpError(409, 'Tahun buku sudah ditutup.');
-        const next = action.endsWith('REVISE') ? 'REVISION_REQUESTED' : action === 'BAK_APPROVE' ? 'BAK_APPROVED' : 'APPROVED';
-        const update: Record<string, unknown> = { status: next, revision: admin.firestore.FieldValue.increment(1), updatedAt: admin.firestore.FieldValue.serverTimestamp() };
-        if (action === 'BAK_APPROVE') { update.bakApprovedBy = actor.uid; update.bakApprovedName = actor.displayName || actor.email || actor.uid; update.bakApprovedAt = admin.firestore.FieldValue.serverTimestamp(); }
-        if (action === 'RECTOR_APPROVE') { update.rectorApprovedBy = actor.uid; update.rectorApprovedName = actor.displayName || actor.email || actor.uid; update.rectorApprovedAt = admin.firestore.FieldValue.serverTimestamp(); update.verificationCode = randomBytes(18).toString('hex'); }
-        if (action.endsWith('REVISE')) { update.revisionNotes = note; update.bakApprovedBy = null; update.bakApprovedAt = null; update.rectorApprovedBy = null; update.rectorApprovedAt = null; }
-        tx.update(ref, update);
-        tx.set(year, { revision: admin.firestore.FieldValue.increment(1), updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
-        audit(tx, year, actor, action, { monthIndex, note, fromRevision: report.data()?.revision, toStatus: next });
-        notify(tx, recipients, { unitId, academicYear, monthIndex,
-          title: action === 'BAK_APPROVE' ? 'Laporan SatKer menunggu pengesahan Rektorat' : action === 'RECTOR_APPROVE' ? 'Laporan SatKer telah disahkan' : 'Revisi laporan SatKer diminta',
-          message: action.endsWith('REVISE') ? `${unit.name}: ${note}` : `${unit.name} · ${monthName(monthIndex)} ${academicYear}`,
-        });
-      });
-      return Response.json({ ok: true }, { headers: noStore });
-    }
-    if (action === 'CLOSE_YEAR') {
-      requireRole(actor, ['super_admin']);
-      const reports = await Promise.all(fiscalMonths(academicYear).map((month) => year.collection('reports').doc(reportId(month.monthIndex)).get()));
-      if (reports.some((report) => reportStatus(report) !== 'APPROVED')) throw new HttpError(409, 'Semua 12 laporan bulan harus disahkan sebelum tahun buku ditutup.');
-      const [accounts, unitCatalogMeta] = await Promise.all([loadAccounts(unitId), unitAccountCatalogMetaRef(unitId).get()]);
-      const state = await loadYear(unitId, academicYear);
-      const statements = buildFinancialStatements({ accounts, opening: state.year.openingBalances, entries: state.entries, academicYear, monthIndex: 'ANNUAL' });
-      if (statements.trialBalance.difference !== 0 || statements.cashFlow.reconciliationDelta !== 0) throw new HttpError(409, 'Neraca tahunan atau kas belum rekonsiliasi.');
-      // The closing journal moves the year's surplus into Modal; the balances left become next year's opening.
-      const equityAccountId = typeof raw.equityAccountId === 'string' && raw.equityAccountId ? raw.equityAccountId : defaultSurplusAccountId(accounts);
-      let closing: ReturnType<typeof buildYearClosing>;
-      try { closing = buildYearClosing({ accounts, opening: state.year.openingBalances, entries: state.entries, academicYear, equityAccountId }); } catch (error) { inputError(error); }
-      const equity = accounts.find((account) => financialAccountId(account) === equityAccountId)!;
-      const nextYear = adjacentAcademicYear(academicYear, 1);
-      const nextRef = yearRef(unitId, nextYear);
-      await adminDb.runTransaction(async (tx) => {
-        const [current, currentUnitCatalog, next, ...nextReports] = await Promise.all([
-          tx.get(year), tx.get(unitAccountCatalogMetaRef(unitId)), tx.get(nextRef), ...reportRefs(nextRef, nextYear).map((ref) => tx.get(ref)),
-        ]);
-        if (current.data()?.status === 'CLOSED') throw new HttpError(409, 'Tahun buku sudah ditutup.');
-        if (Number(currentUnitCatalog.data()?.revision || 0) !== Number(unitCatalogMeta.data()?.revision || 0)) throw new HttpError(409, 'Daftar akun SatKer berubah saat penutupan dihitung. Muat ulang lalu ulangi.');
-        if (Number(current.data()?.revision || 0) !== state.year.revision) throw new HttpError(409, 'Tahun buku berubah. Muat ulang sebelum menutup.');
-        const nextOpening = openingFrom(next.data()?.openingBalances);
-        if (nextReports.some((report) => !isReportOpen(reportStatus(report))) && !sameBalances(nextOpening, closing.balances)) {
-          throw new HttpError(409, `Laporan tahun ${nextYear} sudah dikirim dengan saldo awal yang berbeda dari hasil penutupan ini.`);
-        }
-        const now = admin.firestore.FieldValue.serverTimestamp();
-        tx.update(year, {
-          status: 'CLOSED', annualSnapshot: statements, closedBy: actor.uid, closedAt: now, revision: admin.firestore.FieldValue.increment(1),
-          closing: { ...closing, equityAccountCode: equity.code, equityAccountName: equity.name },
-        });
-        const carried = { openingBalances: closing.balances, openingSource: 'CARRIED_FORWARD', openingCarriedFrom: academicYear, revision: admin.firestore.FieldValue.increment(1), updatedAt: now };
-        // update() replaces the whole opening map; a merging set() would keep accounts the closing no longer has.
-        if (next.exists) tx.update(nextRef, carried);
-        else tx.set(nextRef, { satkerId: unitId, academicYear: nextYear, startDate: `${nextYear.slice(0, 4)}-09-01`, endDate: `${nextYear.slice(5)}-08-31`, status: 'ACTIVE', entryCount: 0, ...carried });
-        const usedIds = Object.keys(closing.balances);
-        if (usedIds.length) tx.set(CATALOG_META_REF, { usedCodes: admin.firestore.FieldValue.arrayUnion(...usedIds) }, { merge: true });
-        audit(tx, year, actor, 'YEAR_CLOSED', { academicYear, surplus: closing.surplus, equityAccountId, lines: closing.lines, carriedTo: nextYear });
-        audit(tx, nextRef, actor, 'OPENING_CARRIED_FORWARD', { from: academicYear, before: nextOpening, after: closing.balances });
-      });
       return Response.json({ ok: true }, { headers: noStore });
     }
     throw new HttpError(400, 'Tindakan tidak dikenal.');

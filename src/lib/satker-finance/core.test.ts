@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  academicYearFor, adjacentAcademicYear, buildFinancialStatements, buildVoucher, buildYearClosing, cashFlowAllocation, DEFAULT_ACCOUNTS, defaultCashFlowSection,
-  defaultSurplusAccountId, entryCashFlows, entryReceiptPaths, fiscalMonths, groupNormalBalance, hasAbnormalBalance, JournalEntry, lastDateOfMonth, sameBalances,
-  validateEntryDate, validateOpeningBalances, yearInUse, type FinancialAccount,
+  academicYearFor, buildFinancialStatements, buildVoucher, cashFlowAllocation, DEFAULT_ACCOUNTS, defaultCashFlowSection,
+  entryCashFlows, entryReceiptPaths, fiscalMonths, groupNormalBalance, hasAbnormalBalance, JournalEntry, lastDateOfMonth,
+  validateEntryDate, validateOpeningBalances, type FinancialAccount,
 } from './core';
 
 const academicYear = '2026-2027';
@@ -166,45 +166,9 @@ test('the normal balance flags balances on the wrong side, contra accounts inclu
   assert.deepEqual([row.periodDebit, row.periodCredit], [0, 50_000]);
 });
 
-test('closing a year moves the surplus into Modal and leaves next year\'s opening balance', () => {
-  const entries = [
-    entry('droping', '2026-09-01', { kind: 'INFLOW', accountCode: '41000', paymentAccountCode: '11001', amount: 10_000_000 }),
-    entry('konsumsi', '2027-03-10', { kind: 'EXPENSE', accountCode: '52104', paymentAccountCode: '11001', amount: 1_700_000 }),
-    entry('laptop', '2027-05-02', { kind: 'ADVANCED', lines: [{ accountCode: '13004', debit: 12_000_000, credit: 0 }, { accountCode: '20001', debit: 0, credit: 12_000_000 }] }),
-  ];
-  assert.equal(defaultSurplusAccountId(DEFAULT_ACCOUNTS), '30000');
-  const closing = buildYearClosing({ accounts: DEFAULT_ACCOUNTS, opening, entries, academicYear, equityAccountId: '30000' });
-  assert.equal(closing.surplus, 8_300_000);
-  assert.deepEqual(closing.lines.map((line) => [line.accountCode, line.debit, line.credit]), [['41000', 10_000_000, 0], ['52104', 0, 1_700_000], ['30000', 0, 8_300_000]]);
-  assert.deepEqual(closing.balances, {
-    '11001': { debit: 13_300_000, credit: 0 }, '13004': { debit: 12_000_000, credit: 0 },
-    '20001': { debit: 0, credit: 12_000_000 }, '30000': { debit: 0, credit: 13_300_000 },
-  });
-  // The carried balance is a valid opening for the next year, and its statements start where this year ended.
-  const next = buildFinancialStatements({ accounts: DEFAULT_ACCOUNTS, opening: closing.balances, entries: [], academicYear: adjacentAcademicYear(academicYear, 1), monthIndex: 9 });
-  assert.equal(next.trialBalance.difference, 0);
-  assert.equal(next.balanceSheet.equity, 13_300_000);
-  assert.equal(next.incomeStatement.income, 0);
-  // A deficit is debited to Modal.
-  const deficit = buildYearClosing({ accounts: DEFAULT_ACCOUNTS, opening, entries: [entries[1]], academicYear, equityAccountId: '30000' });
-  assert.equal(deficit.surplus, -1_700_000);
-  assert.deepEqual(deficit.lines.at(-1), { accountCode: '30000', accountNumber: '30000', accountName: 'MODAL', debit: 1_700_000, credit: 0, description: 'Defisit tahun berjalan' });
-  assert.deepEqual(deficit.balances['30000'], { debit: 0, credit: 3_300_000 });
-  assert.throws(() => buildYearClosing({ accounts: DEFAULT_ACCOUNTS, opening, entries, academicYear, equityAccountId: '20001' }), /Modal/);
-  // Zero balances and the debit/credit split do not make two balances different.
-  assert.equal(sameBalances(closing.balances, { ...closing.balances, '12001': { debit: 0, credit: 0 } }), true);
-  assert.equal(sameBalances(closing.balances, { ...closing.balances, '30000': { debit: 0, credit: 13_300_001 } }), false);
-});
-
 test('year and month helpers', () => {
-  assert.equal(adjacentAcademicYear('2026-2027', 1), '2027-2028');
-  assert.equal(adjacentAcademicYear('2026-2027', -1), '2025-2026');
   assert.equal(lastDateOfMonth('2026-2027', 9), '2026-09-30');
   assert.equal(lastDateOfMonth('2026-2027', 2), '2027-02-28');
-  assert.equal(yearInUse(null), false);
-  assert.equal(yearInUse({ status: 'ACTIVE', entryCount: 0 }), false);
-  assert.equal(yearInUse({ status: 'ACTIVE', entryCount: 3 }), true);
-  assert.equal(yearInUse({ status: 'CLOSED', entryCount: 0 }), true);
 });
 
 test('a journal\'s receipts come from receiptPaths, or from the single receiptPath of older journals', () => {

@@ -6,13 +6,11 @@
  * debits each asset's expense account and credits its accumulated-depreciation
  * account (a contra-asset), so the balance sheet shows the asset at book value.
  * The schedule, not the journal, is the source of truth: a month's journal is
- * rebuilt from the register, and a month cannot be reported while its journal
- * differs from what the register says.
+ * rebuilt from the register whenever the asset schedule changes.
  *
  * Firebase-free, so the server enforces exactly what the page shows.
  */
-import { accountId, calendarYearOf, fiscalMonths, type FinancialAccount, type JournalEntry, type JournalLine } from './core';
-import { fiscalPeriod, lockedThroughPeriod, type ReportStatus } from './entryEditing';
+import { accountId, calendarYearOf, type FinancialAccount, type JournalEntry, type JournalLine } from './core';
 
 export type FixedAsset = {
   id: string;
@@ -96,12 +94,6 @@ export function validateFixedAsset(raw: Record<string, unknown>, accounts: Finan
   };
 }
 
-/** Whether an edit changes anything the depreciation schedule or its journals depend on (the name does not). */
-export function assetFiguresChanged(before: Partial<FixedAssetInput>, after: FixedAssetInput) {
-  return (['assetAccountId', 'accumulatedAccountId', 'expenseAccountId', 'acquisitionDate', 'cost', 'residualValue', 'usefulLifeMonths'] as const)
-    .some((key) => before[key] !== after[key]);
-}
-
 /**
  * The accumulated-depreciation account that goes with an asset account: by
  * the catalog's numbering (13002 Gedung → 13011 Akum Dep Gedung, i.e. +9),
@@ -170,26 +162,4 @@ export function scheduledAccumulatedByAccount(assets: FixedAsset[], academicYear
     totals.set(asset.accumulatedAccountId, (totals.get(asset.accumulatedAccountId) || 0) + accumulatedDepreciation(asset, year, monthIndex));
   }
   return totals;
-}
-
-/**
- * Why an asset's figures can no longer change, or null when they can: once a
- * depreciation journal that includes the asset sits in a sealed month or a
- * closed year, changing the schedule would leave reported figures wrong.
- */
-export function assetChangeBlocker(assetId: string, years: {
-  academicYear: string;
-  status?: string | null;
-  reports: readonly ReportStatus[];
-  depreciationEntries: Pick<JournalEntry, 'monthIndex' | 'depreciation'>[];
-}[]): string | null {
-  for (const year of years) {
-    const including = year.depreciationEntries.filter((entry) => entry.depreciation?.assets.some((item) => item.assetId === assetId));
-    if (!including.length) continue;
-    const locked = year.status === 'CLOSED' ? fiscalMonths(year.academicYear).length : lockedThroughPeriod(year.academicYear, year.reports);
-    if (including.some((entry) => (fiscalPeriod(year.academicYear, entry.monthIndex) ?? 0) <= locked)) {
-      return 'Penyusutan aset ini sudah masuk laporan yang dikirim ke BAK, sehingga akun, tanggal, harga, nilai sisa, dan umurnya tidak dapat diubah lagi. Koreksi dengan jurnal di bulan yang masih terbuka.';
-    }
-  }
-  return null;
 }
