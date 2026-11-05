@@ -27,8 +27,12 @@ export const BONUS_TRIWULAN_SOURCE_KIND = 'bonus_triwulan';
 export const BONUS_TRIWULAN_LABEL = 'Bonus Triwulan';
 export const BONUS_TRIWULAN_AMOUNT = 500_000;
 export const BONUS_TRIWULAN_STREAK_MONTHS = 3;
-/** The first month SAKU works the bonus out itself. */
-export const BONUS_TRIWULAN_START_PERIOD = '2026-10';
+/**
+ * The first month SAKU works the bonus out itself. October 2026 was paid by
+ * hand through an ordinary Vakasi Karyawan event, so the automation (and the
+ * close check that depends on it) begins in November.
+ */
+export const BONUS_TRIWULAN_START_PERIOD = '2026-11';
 /** The months before it, taken from the paper records by the seed script. */
 export const BONUS_TRIWULAN_SEED_PERIODS = ['2026-08', '2026-09'] as const;
 export const SENAM_PAGI_MAX_MISSES = 1;
