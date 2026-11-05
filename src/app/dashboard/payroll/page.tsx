@@ -57,6 +57,7 @@ import {
   Play,
   CheckCheck,
   RotateCcw,
+  FileCode,
 } from 'lucide-react';
 import { collection, getDocs, getDocsFromServer, doc, getDoc, getDocFromServer, setDoc, query, where, writeBatch } from 'firebase/firestore';
 import { db, secondaryDb } from '@/lib/firebase';
@@ -72,6 +73,7 @@ import { Employee, SalaryMatrix, BlueCollarEmployee, UraianGajiDocument, UraianE
 import PaySlipDialog, { SlipState, buildInitialEarnings, buildInitialDeductions } from '@/components/PaySlipDialog';
 import { eligibleFamilyMetrics, familyAllowancePeriodDate, synchronizeFamilyAllowanceEarnings } from '@/lib/payroll/familyAllowance';
 import { normalizeTaxFields, recalculateSlipTaxes } from '@/lib/payroll/payrollTax';
+import { buildInitialTaxes } from '@/lib/payroll/slipBuilders';
 import { PekaryaSlipPreview } from '@/lib/payroll/pekaryaSlipPreview';
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import * as XLSX from 'xlsx';
@@ -91,6 +93,7 @@ import { generateKebutuhanDanaGajiXlsx } from '@/utils/generateKebutuhanDanaGaji
 import { generateKebutuhanDanaGajiPdf } from '@/utils/generateKebutuhanDanaGajiPdf';
 import CetakRekapDialog from '@/components/CetakRekapDialog';
 import CetakKebutuhanDanaGajiDialog from '@/components/CetakKebutuhanDanaGajiDialog';
+import CetakCoretaxDialog from '@/components/CetakCoretaxDialog';
 import { generatePayrollStatementPdf, PayrollStatementData, PayrollStatementEmployee } from '@/utils/generatePayrollStatementPdf';
 import {
   authenticatedJson,
@@ -846,6 +849,7 @@ export default function PayrollValidationDashboard() {
   const [potonganGajiDialogOpen, setPotonganGajiDialogOpen] = useState(false);
   const [gabunganDialogOpen, setGabunganDialogOpen] = useState(false);
   const [cetakKebutuhanDanaGajiDialogOpen, setCetakKebutuhanDanaGajiDialogOpen] = useState(false);
+  const [coretaxDialogOpen, setCoretaxDialogOpen] = useState(false);
   const [printSelectorOpen, setPrintSelectorOpen] = useState(false);
 
   // New States for Email & Cetak/Kirim Fallbacks
@@ -1516,9 +1520,9 @@ export default function PayrollValidationDashboard() {
           koperasiSavings[emp.id] || 0,
         );
 
-    // An unsaved slip has no tax: the selection is a deliberate super-admin
-    // action recorded on the saved draft, never inferred from a preview.
-    return { earnings, deductions, taxes: [] as PaySlipField[] };
+    // Automated TER income tax derived from employee profile and preview gross earnings
+    const taxes = buildInitialTaxes(emp.raw, earnings, period);
+    return { earnings, deductions, taxes };
   };
 
   /**
@@ -1543,6 +1547,7 @@ export default function PayrollValidationDashboard() {
     const creditVal = Number(emp.raw.kepangkatan?.cummulativeCredit) || 0;
     const recognitionDate = emp.dateRecognized || emp.joinDate;
     const presenceEntry = loyalisPresenceData?.entries?.[emp.id];
+    const slip = slipStates[emp.id];
 
     return {
       employeeName: isLoyalis ? (emp.raw.personal_info?.name || emp.name) : emp.name,
@@ -1554,6 +1559,10 @@ export default function PayrollValidationDashboard() {
       earnings: fields.earnings,
       deductions: fields.deductions,
       taxes: fields.taxes || [],
+      taxMethod: slip?.taxMethod === 'legacy_5pct' ? 'legacy_flat_5_percent' : slip?.taxMethod,
+      ptkpStatus: slip?.ptkpStatus,
+      terCategory: slip?.terCategory,
+      terRate: slip?.terRate,
       isLoyalis,
       niy: isLoyalis ? emp.raw.personal_info?.employee_id_niy || '' : '',
       npwp: isLoyalis ? emp.raw.personal_info?.tax_id_npwp || '' : '',
@@ -2306,7 +2315,11 @@ export default function PayrollValidationDashboard() {
     earnings: PaySlipField[],
     deductions: PaySlipField[],
     taxApplied: boolean,
-    options?: { expectedRevision?: number | null },
+    options?: {
+      expectedRevision?: number | null;
+      taxMethod?: 'ter' | 'legacy_5pct';
+      ptkpStatus?: string;
+    },
   ) => {
     if (attendancePeriodStatus === 'closed') {
       throw new Error('Periode payroll sudah ditutup; draf tidak dapat diubah.');
@@ -2337,6 +2350,10 @@ export default function PayrollValidationDashboard() {
         koperasiPlan?: { loanCount: number; expectedDeduction: number; matchType: string };
         taxes?: PaySlipField[];
         taxApplied?: boolean;
+        taxMethod?: 'ter' | 'legacy_5pct';
+        ptkpStatus?: string;
+        terCategory?: string;
+        terRate?: number;
         warnings?: string[];
         earnings?: PaySlipField[];
         deductions?: PaySlipField[];
@@ -2348,13 +2365,15 @@ export default function PayrollValidationDashboard() {
           action: 'save_draft',
           employeeId,
           period,
-          requestId: options?.expectedRevision !== undefined
+          requestId: options?.expectedRevision !== undefined && options?.expectedRevision !== null
             ? refreshRequestId({ employeeId, period, earnings, deductions, taxApplied, expectedRevision: options.expectedRevision })
             : createFinancialRequestId('save_draft'),
           earnings,
           deductions,
           taxApplied,
-          ...(options?.expectedRevision !== undefined ? { expectedRevision: options.expectedRevision } : {}),
+          ...(options?.taxMethod ? { taxMethod: options.taxMethod } : {}),
+          ...(options?.ptkpStatus ? { ptkpStatus: options.ptkpStatus } : {}),
+          ...(options?.expectedRevision !== undefined && options?.expectedRevision !== null ? { expectedRevision: options.expectedRevision } : {}),
         }),
       });
       const newState: SlipState = {
@@ -2366,6 +2385,10 @@ export default function PayrollValidationDashboard() {
         // selection — are what the dashboard shows from here on.
         taxes: normalizeTaxFields(result.taxes),
         taxApplied: result.taxApplied,
+        taxMethod: result.taxMethod,
+        ptkpStatus: result.ptkpStatus,
+        terCategory: result.terCategory,
+        terRate: result.terRate,
         generatedAt: new Date().toISOString(),
       };
       setSlipStates(prev => ({ ...prev, [employeeId]: newState }));
@@ -3777,6 +3800,15 @@ export default function PayrollValidationDashboard() {
                   {exportingExcel ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 text-emerald-500" />}
                   {exportingExcel ? 'Mengekspor...' : 'Ekspor Excel'}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setCoretaxDialogOpen(true)}
+                  disabled={loading}
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-blue-200 text-blue-700 bg-blue-50/50 hover:bg-blue-100/60 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <FileCode className="w-4 h-4 text-blue-600" />
+                  Ekspor Coretax PPh 21
+                </button>
               </div>
             </div>
             {displayedPekaryaPreviewsRequired &&
@@ -4161,6 +4193,16 @@ export default function PayrollValidationDashboard() {
         onExportXlsx={handleExportKebutuhanDanaGaji}
       />
 
+      <CetakCoretaxDialog
+        open={coretaxDialogOpen}
+        onOpenChange={setCoretaxDialogOpen}
+        periodName={payrollPeriod}
+        targetDate={targetDate}
+        payrollCollar={payrollCollar}
+        employees={employees}
+        getFreshSlipData={buildFreshSlipData}
+      />
+
       {/* ─── Print Selection Dialog ─────────────────────────────────── */}
       <Dialog open={printSelectorOpen} onOpenChange={setPrintSelectorOpen}>
         <DialogContent className="sm:max-w-[760px] p-6 rounded-md bg-white border border-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.1)]">
@@ -4433,6 +4475,30 @@ export default function PayrollValidationDashboard() {
                 </div>
               </button>
             )}
+
+            {/* Card 11: Ekspor Coretax PPh 21 (BPMP) */}
+            <button
+              onClick={() => {
+                setPrintSelectorOpen(false);
+                setCoretaxDialogOpen(true);
+              }}
+              className="group flex items-start gap-4 p-4 rounded-md border border-blue-100 bg-blue-50/30 hover:bg-blue-50/60 hover:border-blue-200 transition-all duration-200 text-left outline-none cursor-pointer"
+            >
+              <div className="flex-shrink-0 p-3 rounded-sm bg-blue-100/70 text-blue-700 group-hover:bg-blue-200/70 transition-colors">
+                <FileCode className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-bold text-slate-800 text-[15px] group-hover:text-blue-900 transition-colors">
+                  Ekspor Coretax PPh 21
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                  Ekspor bukti pemotongan bulanan (BPMP) format XML &amp; Excel untuk Coretax DJP.
+                </p>
+              </div>
+              <div className="flex-shrink-0 self-center pl-2">
+                <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-blue-500 group-hover:translate-x-1 transition-all duration-200" />
+              </div>
+            </button>
           </div>
         </DialogContent>
       </Dialog>

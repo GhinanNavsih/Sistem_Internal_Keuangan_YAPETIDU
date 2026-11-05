@@ -8,6 +8,7 @@ import {
   calculatePayrollTotals,
   isImmutablePayrollStatus,
   validateMoneyFields,
+  type MoneyField,
 } from '@/lib/payroll/domain';
 import {
   allowsHistoricalPaperSpjEntry,
@@ -23,8 +24,17 @@ import { ATTENDANCE_HOLD_MESSAGE, isAttendanceHeld } from '@/lib/payroll/pekarya
 import {
   calculateTaxBase,
   describeTaxIneligibility,
+  getTerRate,
+  hasTerTax,
+  isPtkpStatus,
+  resolveEmployeePtkpStatus,
   resolveSlipTaxes,
   resolveTaxSelection,
+  resolveTerCategory,
+  resolveTerSlipTaxes,
+  sumMoneyFields,
+  type PtkpStatus,
+  type TerCategory,
 } from '@/lib/payroll/payrollTax';
 import {
   resolveGapokFromMatrix,
@@ -97,6 +107,8 @@ interface PayrollCommand {
    * never sent — it is derived server-side from the rows being saved.
    */
   taxApplied?: boolean;
+  taxMethod?: 'ter' | 'legacy_5pct';
+  ptkpStatus?: PtkpStatus;
   paymentBatchId?: string;
   bankReference?: string;
 }
@@ -129,6 +141,12 @@ function parseCommand(raw: unknown): PayrollCommand {
   }
   if (command.taxApplied !== undefined && typeof command.taxApplied !== 'boolean') {
     throw new HttpError(400, 'taxApplied tidak valid.');
+  }
+  if (command.taxMethod !== undefined && command.taxMethod !== 'ter' && command.taxMethod !== 'legacy_5pct') {
+    throw new HttpError(400, 'taxMethod tidak valid.');
+  }
+  if (command.ptkpStatus !== undefined && !isPtkpStatus(command.ptkpStatus)) {
+    throw new HttpError(400, 'ptkpStatus tidak valid.');
   }
   if (command.expectedRevision !== undefined && command.expectedRevision !== null &&
     (typeof command.expectedRevision !== 'number' || !Number.isSafeInteger(command.expectedRevision) || command.expectedRevision < 0)) {
@@ -324,6 +342,10 @@ export async function POST(request: NextRequest) {
             deductions: before.deductions,
             taxes: before.taxes || [],
             taxApplied: before.taxApplied,
+            taxMethod: before.taxMethod,
+            ptkpStatus: before.ptkpStatus,
+            terCategory: before.terCategory,
+            terRate: before.terRate,
             revision: Number(before.revision || 0),
           } : {}),
         };
@@ -787,29 +809,52 @@ export async function POST(request: NextRequest) {
               );
             }
           }
-          // Tax is its own category: the client sends only the selection,
-          // never an amount, so a tax row can only ever be exactly 5% of the
-          // Gaji Bersih implied by the very rows being written here. Omitting
-          // the flag preserves whatever selection the slip already had.
-          const previousTaxApplied = resolveTaxSelection(before);
-          const taxApplied = effectiveCommand.taxApplied ?? previousTaxApplied;
-          if (taxApplied !== previousTaxApplied && actor.role !== 'super_admin') {
-            throw new HttpError(
-              403,
-              'Hanya Super Admin yang dapat menerapkan atau menghapus pajak penghasilan.',
-            );
-          }
-          const taxes = resolveSlipTaxes(earnings, deductions, taxApplied);
-          // Only *newly* selecting an ineligible slip is an error. A selection
-          // that was already there simply produces no row while the base sits
-          // under the threshold, and gets it back when the base recovers —
-          // a bulk refresh or a propagation must never fail over that.
-          if (taxApplied && !previousTaxApplied && taxes.length === 0) {
-            throw new HttpError(
-              409,
-              describeTaxIneligibility(calculateTaxBase(earnings, deductions)) ||
-                'Slip ini tidak memenuhi syarat pajak penghasilan.',
-            );
+          // Tax calculation: Supports both the automated government TER system
+          // (PP 58/2023) and the legacy flat 5% selection for backward compatibility.
+          let taxes: MoneyField[];
+          let taxApplied: boolean;
+          let taxMethod: 'ter' | 'legacy_5pct' | undefined;
+          let ptkpStatus: PtkpStatus | undefined;
+          let terCategory: TerCategory | undefined;
+          let terRate: number | undefined;
+
+          const isTerTax =
+            effectiveCommand.taxMethod === 'ter' ||
+            before?.taxMethod === 'ter' ||
+            hasTerTax(before?.taxes);
+
+          if (isTerTax) {
+            taxMethod = 'ter';
+            const employeeData = blueEmployeeSnapshot.exists
+              ? blueEmployeeSnapshot.data()!
+              : loyalisEmployeeSnapshot.data()!;
+            ptkpStatus =
+              (isPtkpStatus(effectiveCommand.ptkpStatus) ? effectiveCommand.ptkpStatus : undefined) ||
+              (isPtkpStatus(before?.ptkpStatus) ? before.ptkpStatus : undefined) ||
+              resolveEmployeePtkpStatus(employeeData, command.period);
+            terCategory = resolveTerCategory(ptkpStatus);
+            const gross = sumMoneyFields(earnings);
+            terRate = getTerRate(terCategory, gross);
+            taxes = resolveTerSlipTaxes(earnings, terCategory);
+            taxApplied = taxes.length > 0;
+          } else {
+            const previousTaxApplied = resolveTaxSelection(before);
+            taxApplied = effectiveCommand.taxApplied ?? previousTaxApplied;
+            if (taxApplied !== previousTaxApplied && actor.role !== 'super_admin') {
+              throw new HttpError(
+                403,
+                'Hanya Super Admin yang dapat menerapkan atau menghapus pajak penghasilan.',
+              );
+            }
+            taxes = resolveSlipTaxes(earnings, deductions, taxApplied);
+            if (taxApplied && !previousTaxApplied && taxes.length === 0) {
+              throw new HttpError(
+                409,
+                describeTaxIneligibility(calculateTaxBase(earnings, deductions)) ||
+                  'Slip ini tidak memenuhi syarat pajak penghasilan.',
+              );
+            }
+            if (taxApplied) taxMethod = 'legacy_5pct';
           }
           const totals = calculatePayrollTotals(earnings, deductions, taxes);
           after = {
@@ -820,6 +865,10 @@ export async function POST(request: NextRequest) {
             deductions,
             taxes,
             taxApplied,
+            ...(taxMethod ? { taxMethod } : {}),
+            ...(ptkpStatus ? { ptkpStatus } : {}),
+            ...(terCategory ? { terCategory } : {}),
+            ...(terRate !== undefined ? { terRate } : {}),
             ...totals,
             revision: Number(before?.revision || 0) + 1,
             generatedAt: before?.generatedAt || now,
@@ -1037,6 +1086,10 @@ export async function POST(request: NextRequest) {
               taxApplied: after.taxApplied,
               totalTax: after.totalTax,
               netSalary: after.netSalary,
+              taxMethod: after.taxMethod,
+              ptkpStatus: after.ptkpStatus,
+              terCategory: after.terCategory,
+              terRate: after.terRate,
             }
           : {}),
         ...(isDraftWriteAction(command.action) && koperasiInstallmentPlan

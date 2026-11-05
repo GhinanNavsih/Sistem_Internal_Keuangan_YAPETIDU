@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -38,7 +38,10 @@ import {
   PAYROLL_TAX_THRESHOLD,
   calculateTaxBase,
   describeTaxIneligibility,
+  formatTerRatePercent,
+  hasTerTax,
   isTaxableBase,
+  resolveSlipTaxDetails,
   resolveSlipTaxes,
   resolveTaxSelection,
 } from '@/lib/payroll/payrollTax';
@@ -61,6 +64,10 @@ export interface SlipState {
   taxes?: PaySlipField[];
   /** The stored selection, which survives a period spent under the threshold. */
   taxApplied?: boolean;
+  taxMethod?: 'ter' | 'legacy_5pct';
+  ptkpStatus?: string;
+  terCategory?: string;
+  terRate?: number;
   generatedAt?: string;
   lockedAt?: string;
   verifiedAt?: string;
@@ -88,7 +95,11 @@ interface PaySlipDialogProps {
     earnings: PaySlipField[],
     deductions: PaySlipField[],
     taxApplied: boolean,
-    options?: { expectedRevision?: number | null },
+    options?: {
+      expectedRevision?: number | null;
+      taxMethod?: 'ter' | 'legacy_5pct';
+      ptkpStatus?: string;
+    },
   ) => Promise<SlipState | void>;
   onVerifyAndLock: (employeeId: string, reason: string) => Promise<void>;
   onCreatePayment: (employeeId: string, paymentBatchId: string, reason: string) => Promise<void>;
@@ -390,19 +401,33 @@ export default function PaySlipDialog({
 
   const totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);
   const totalDeductions = deductions.reduce((sum, d) => sum + d.amount, 0);
-  // Gaji Bersih before tax — both the figure the tax is charged on and the
-  // figure that decides whether the employee is taxable at all.
+
+  // Government TER evaluation (PP 58/2023 & PMK 168/2023)
+  const isTerTax = Boolean(
+    slipState?.taxMethod === 'ter' ||
+    hasTerTax(slipState?.taxes) ||
+    (!slipState && employee)
+  );
+
+  const terDetails = useMemo(() => {
+    return resolveSlipTaxDetails(employee, earnings, periodToken);
+  }, [employee, earnings, periodToken]);
+
+  // Gaji Bersih before tax — both the figure the tax is charged on (legacy) and base display
   const taxBase = calculateTaxBase(earnings, deductions);
-  const taxes = resolveSlipTaxes(earnings, deductions, taxApplied);
+  const taxes = isTerTax
+    ? terDetails.taxes
+    : resolveSlipTaxes(earnings, deductions, taxApplied);
   const totalTax = taxes.reduce((sum, t) => sum + t.amount, 0);
   const netSalary = totalEarnings - totalDeductions - totalTax;
-  const taxEligible = isTaxableBase(taxBase);
-  const taxIneligibilityReason = describeTaxIneligibility(taxBase);
+  const effectiveTaxApplied = isTerTax ? terDetails.taxApplied : taxApplied;
+  const taxEligible = isTerTax ? terDetails.taxAmount > 0 : isTaxableBase(taxBase);
+  const taxIneligibilityReason = isTerTax ? null : describeTaxIneligibility(taxBase);
   const canManageTax = actorRole === 'super_admin';
   // Locking reads the tax off the *saved* slip, so an un-saved toggle would be
   // silently discarded at the moment it matters most.
   const savedTaxApplied = resolveTaxSelection(slipState);
-  const taxSelectionUnsaved = taxApplied !== savedTaxApplied;
+  const taxSelectionUnsaved = isTerTax ? false : taxApplied !== savedTaxApplied;
 
   // ─── Actions ──────────────────────────────────────────────────
 
@@ -454,7 +479,10 @@ export default function PaySlipDialog({
         employee.employeeId || employee.id,
         earnings,
         deductions,
-        taxApplied,
+        effectiveTaxApplied,
+        isTerTax
+          ? { taxMethod: 'ter', ptkpStatus: terDetails.ptkpStatus }
+          : undefined,
       );
       onOpenChange(false);
     } catch (err) {
@@ -474,8 +502,16 @@ export default function PaySlipDialog({
     const session = sessionKey;
     const next = applySlipRefresh({ earnings, deductions }, refreshDiff);
     try {
-      const saved = await onSave(employee.employeeId || employee.id, next.earnings, next.deductions, taxApplied,
-        { expectedRevision: freshRecalculated.expectedRevision });
+      const saved = await onSave(
+        employee.employeeId || employee.id,
+        next.earnings,
+        next.deductions,
+        effectiveTaxApplied,
+        {
+          expectedRevision: freshRecalculated.expectedRevision,
+          ...(isTerTax ? { taxMethod: 'ter', ptkpStatus: terDetails.ptkpStatus } : {}),
+        },
+      );
       if (activeSession.current !== session) return;
       const savedEarnings = saved?.earnings || next.earnings;
       const savedDeductions = saved?.deductions || next.deductions;
@@ -753,6 +789,11 @@ export default function PaySlipDialog({
                       <div className="w-2 h-2 rounded-full bg-amber-500"></div>
                       Pajak
                     </h3>
+                    {isTerTax && (
+                      <span className="text-[11px] font-semibold text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-md">
+                        TER {terDetails.terCategory} ({terDetails.ptkpStatus})
+                      </span>
+                    )}
                   </div>
 
                   {taxes.length > 0 ? (
@@ -771,17 +812,20 @@ export default function PaySlipDialog({
                         </div>
                       ))}
                       <p className="text-[11px] text-amber-700/80 leading-relaxed">
-                        5% dari gaji bersih {formatIDR(taxBase)} sebelum pajak. Nominal
-                        mengikuti perubahan uraian dan potongan secara otomatis.
+                        {isTerTax
+                          ? `Dihitung otomatis berdasarkan PP No. 58/2023 (TER ${terDetails.terCategory} • tarif ${formatTerRatePercent(terDetails.terRate)}) dari penghasilan bruto ${formatIDR(totalEarnings)}.`
+                          : `5% dari gaji bersih ${formatIDR(taxBase)} sebelum pajak. Nominal mengikuti perubahan uraian dan potongan secara otomatis.`}
                       </p>
                     </div>
                   ) : (
                     <p className="text-[11px] text-slate-400 italic">
-                      {taxApplied
-                        ? `Ditandai kena pajak, tetapi gaji bersih ${formatIDR(taxBase)} masih di bawah ${formatIDR(PAYROLL_TAX_THRESHOLD)}. Penandaan tetap tersimpan dan pajak kembali dihitung bila gaji bersih mencapai batas.`
-                        : taxEligible
-                          ? 'Belum dikenakan pajak penghasilan.'
-                          : `Tidak dikenakan pajak — gaji bersih di bawah ${formatIDR(PAYROLL_TAX_THRESHOLD)}.`}
+                      {isTerTax
+                        ? `Tidak ada pemotongan pajak — penghasilan bruto ${formatIDR(totalEarnings)} masih di bawah batas kena pajak TER Kategori ${terDetails.terCategory} (tarif 0%).`
+                        : taxApplied
+                          ? `Ditandai kena pajak, tetapi gaji bersih ${formatIDR(taxBase)} masih di bawah ${formatIDR(PAYROLL_TAX_THRESHOLD)}. Penandaan tetap tersimpan dan pajak kembali dihitung bila gaji bersih mencapai batas.`
+                          : taxEligible
+                            ? 'Belum dikenakan pajak penghasilan.'
+                            : `Tidak dikenakan pajak — gaji bersih di bawah ${formatIDR(PAYROLL_TAX_THRESHOLD)}.`}
                     </p>
                   )}
 
@@ -902,9 +946,16 @@ export default function PaySlipDialog({
                 </Button>
               )}
 
-              {/* Manual, per-employee tax selection. The amount is derived, so
-                  this only ever toggles whether the rule applies. */}
-              {canManageTax && !localIsLocked && (
+              {/* Tax indicator or manual legacy tax selection */}
+              {isTerTax ? (
+                <div
+                  className="rounded-xl h-10 px-3.5 border border-amber-300 bg-amber-50/80 text-amber-800 flex items-center text-xs font-semibold select-none shadow-sm"
+                  title={`Dipotong otomatis sesuai PP 58/2023. PTKP: ${terDetails.ptkpStatus}, Kategori: ${terDetails.terCategory}, Tarif: ${formatTerRatePercent(terDetails.terRate)}`}
+                >
+                  <Landmark className="w-4 h-4 mr-2 text-amber-600 shrink-0" />
+                  <span>PPh 21: TER {terDetails.terCategory} ({formatTerRatePercent(terDetails.terRate)})</span>
+                </div>
+              ) : canManageTax && !localIsLocked ? (
                 <Button
                   type="button"
                   variant="outline"
@@ -925,7 +976,7 @@ export default function PaySlipDialog({
                   <Landmark className="w-4 h-4 mr-2" />
                   {taxApplied ? 'Hapus Pajak 5%' : 'Kenakan Pajak 5%'}
                 </Button>
-              )}
+              ) : null}
             </div>
 
             <div>

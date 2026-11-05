@@ -20,6 +20,10 @@ export interface PaySlipData {
    * which case the block is omitted entirely and the document is unchanged.
    */
   taxes?: PaySlipField[];
+  taxMethod?: 'ter' | 'legacy_flat_5_percent';
+  ptkpStatus?: string;
+  terCategory?: string;
+  terRate?: number;
   isLoyalis?: boolean;
   niy?: string;
   npwp?: string;
@@ -1043,6 +1047,10 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
     };
   };
 
+  const totalDeductionsVal = data.deductions.reduce((sum, d) => sum + d.amount, 0);
+  const totalEarningsVal = data.earnings.reduce((sum, e) => sum + e.amount, 0);
+  const taxBaseVal = totalEarningsVal - totalDeductionsVal;
+
   /**
    * The tax appendix. It is grouped with the Potongan pages because both
    * reduce the take-home figure, but it is labelled as its own category so a
@@ -1051,24 +1059,40 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
   const buildTaxSections = (startIndex: number) =>
     (data.taxes || [])
       .filter((tax) => tax.amount > 0)
-      .map((tax, idx) => ({
-        title: `${startIndex + idx}. ${tax.label.toUpperCase()}`,
-        bullets: [
-          'Pajak penghasilan dikenakan saat gaji bersih (penerimaan dikurangi potongan) mencapai Rp 6.000.000.',
-          'Tarif 5% dihitung dari gaji bersih sebelum pajak, bukan dari salah satu komponen penerimaan.',
-          'Pajak dicatat sebagai kategori tersendiri, terpisah dari Potongan.',
-        ],
-        params: [
-          { label: 'Dasar Pengenaan (Gaji Bersih Sebelum Pajak)', val: formatIDR(taxBaseVal) },
-          { label: 'Tarif', val: '5%' },
-          { label: 'Nominal Pajak', val: formatIDR(tax.amount), highlight: true },
-        ],
-        isTaxSection: true,
-      }));
+      .map((tax, idx) => {
+        const isTer = tax.label.toUpperCase().includes('TER') || data.taxMethod === 'ter';
+        const rateMatch = tax.label.match(/\(([0-9.]+)%\)/);
+        const rateDisplay = rateMatch
+          ? `${rateMatch[1]}%`
+          : (data.terRate != null ? `${(data.terRate * 100).toFixed(2).replace(/\.00$/, '')}%` : '-');
+        const categoryMatch = tax.label.match(/TER\s+([A-C])/i);
+        const categoryDisplay = data.terCategory || (categoryMatch ? categoryMatch[1].toUpperCase() : 'A');
 
-  const totalDeductionsVal = data.deductions.reduce((sum, d) => sum + d.amount, 0);
-  const totalEarningsVal = data.earnings.reduce((sum, e) => sum + e.amount, 0);
-  const taxBaseVal = totalEarningsVal - totalDeductionsVal;
+        return {
+          title: `${startIndex + idx}. ${tax.label.toUpperCase()}`,
+          bullets: isTer ? [
+            'Pajak Penghasilan (PPh 21) dihitung menggunakan mekanisme Tarif Efektif Rata-Rata (TER) Bulanan berdasarkan PP No. 58 Tahun 2023 dan PMK No. 168 Tahun 2023.',
+            `Kategori TER (${categoryDisplay}) ditentukan oleh status PTKP pegawai${data.ptkpStatus ? ` (${data.ptkpStatus})` : ''}.`,
+            'Dasar pengenaan pajak adalah Penghasilan Bruto (seluruh penerimaan bulan berjalan sebelum potongan).',
+            'Pajak dicatat sebagai kategori tersendiri, terpisah dari Potongan rutin.',
+          ] : [
+            'Pajak penghasilan dikenakan saat gaji bersih (penerimaan dikurangi potongan) mencapai Rp 6.000.000.',
+            'Tarif 5% dihitung dari gaji bersih sebelum pajak, bukan dari salah satu komponen penerimaan.',
+            'Pajak dicatat sebagai kategori tersendiri, terpisah dari Potongan.',
+          ],
+          params: isTer ? [
+            { label: 'Dasar Pengenaan (Penghasilan Bruto)', val: formatIDR(totalEarningsVal) },
+            { label: 'Kategori TER', val: `Kategori ${categoryDisplay}${data.ptkpStatus ? ` (PTKP: ${data.ptkpStatus})` : ''}` },
+            { label: 'Tarif Efektif (TER)', val: rateDisplay },
+            { label: 'Nominal Pajak', val: formatIDR(tax.amount), highlight: true },
+          ] : [
+            { label: 'Dasar Pengenaan (Gaji Bersih Sebelum Pajak)', val: formatIDR(taxBaseVal) },
+            { label: 'Tarif', val: '5%' },
+            { label: 'Nominal Pajak', val: formatIDR(tax.amount), highlight: true },
+          ],
+          isTaxSection: true,
+        };
+      });
 
   let sections: any[] = [];
 

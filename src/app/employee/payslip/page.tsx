@@ -52,6 +52,8 @@ import {
   PAYROLL_TAX_THRESHOLD,
   normalizeTaxFields,
   recalculateSlipTaxes,
+  extractTerCategoryFromTaxes,
+  formatTerRatePercent,
 } from '@/lib/payroll/payrollTax';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import { authenticatedJson } from '@/lib/payroll/client';
@@ -1683,6 +1685,10 @@ export default function EmployeePayslipPage() {
       earnings: earnings,
       deductions: deductions,
       taxes: taxes,
+      taxMethod: confirmedSlip?.taxMethod,
+      ptkpStatus: confirmedSlip?.ptkpStatus,
+      terCategory: confirmedSlip?.terCategory,
+      terRate: confirmedSlip?.terRate,
       isLoyalis: isLoyalis,
       niy: employeeData.personal_info?.employee_id_niy || '',
       npwp: employeeData.personal_info?.tax_id_npwp || '',
@@ -2360,42 +2366,74 @@ export default function EmployeePayslipPage() {
                             <Landmark className="w-3.5 h-3.5 text-amber-600" />
                             <span className="text-xs font-bold text-amber-700 uppercase tracking-widest">Pajak</span>
                           </div>
-                          {taxes.map((item: PaySlipField, idx: number) => (
-                            <div key={`tax-doc-${idx}`}>
-                              <div className="mb-2">
-                                <h4 className="text-sm font-bold text-black tracking-wide">
-                                  {idx + 1}. {item.label.toUpperCase()}
-                                </h4>
+                          {taxes.map((item: PaySlipField, idx: number) => {
+                            const isTer = item.label.toUpperCase().includes('TER') || confirmedSlip?.taxMethod === 'ter';
+                            const terCategory = confirmedSlip?.terCategory || extractTerCategoryFromTaxes([item]);
+                            const ptkpStatus = confirmedSlip?.ptkpStatus;
+                            const rateMatch = item.label.match(/\(([0-9.]+)%\)/);
+                            const rateDisplay = rateMatch
+                              ? `${rateMatch[1]}%`
+                              : (confirmedSlip?.terRate != null ? formatTerRatePercent(confirmedSlip.terRate) : '-');
+
+                            return (
+                              <div key={`tax-doc-${idx}`}>
+                                <div className="mb-2">
+                                  <h4 className="text-sm font-bold text-black tracking-wide">
+                                    {idx + 1}. {item.label.toUpperCase()}
+                                  </h4>
+                                </div>
+                                <ul className="space-y-1 ml-4 pl-0">
+                                  {isTer ? [
+                                    'Pajak Penghasilan (PPh 21) dihitung otomatis menggunakan mekanisme Tarif Efektif Rata-Rata (TER) Bulanan berdasarkan PP No. 58 Tahun 2023 dan PMK No. 168 Tahun 2023.',
+                                    ptkpStatus ? `Status PTKP Anda adalah ${ptkpStatus}, yang masuk ke dalam TER Kategori ${terCategory || 'A'}.` : `Kategori TER ditentukan berdasarkan status PTKP pegawai (Kategori ${terCategory || 'A'}).`,
+                                    'Dasar pengenaan pajak adalah Penghasilan Bruto (seluruh penerimaan bulan berjalan sebelum potongan).',
+                                    'Pajak dicatat sebagai kategori tersendiri dan tidak termasuk dalam daftar Potongan rutin.',
+                                  ].map((bullet: string, bIdx: number) => (
+                                    <li key={bIdx} className="flex items-start gap-2 text-xs sm:text-sm text-black leading-relaxed">
+                                      <span className="mt-2 w-1.5 h-1.5 rounded-full bg-black shrink-0" />
+                                      <span>{bullet}</span>
+                                    </li>
+                                  )) : [
+                                    `Pajak penghasilan dikenakan ketika gaji bersih (penerimaan dikurangi potongan) mencapai ${formatIDR(PAYROLL_TAX_THRESHOLD)}.`,
+                                    'Tarif 5% dihitung dari gaji bersih sebelum pajak, bukan dari salah satu komponen penerimaan.',
+                                    'Pajak dicatat sebagai kategori tersendiri dan tidak termasuk dalam daftar Potongan.',
+                                  ].map((bullet: string, bIdx: number) => (
+                                    <li key={bIdx} className="flex items-start gap-2 text-xs sm:text-sm text-black leading-relaxed">
+                                      <span className="mt-2 w-1.5 h-1.5 rounded-full bg-black shrink-0" />
+                                      <span>{bullet}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                                <div className="mt-3 ml-4 rounded-md border border-amber-100 bg-amber-50/50 p-4 space-y-2">
+                                  <div className="flex justify-between items-center text-xs">
+                                    <span className="text-black font-medium">
+                                      {isTer ? 'Dasar Pengenaan (Penghasilan Bruto)' : 'Dasar Pengenaan (Gaji Bersih Sebelum Pajak)'}
+                                    </span>
+                                    <span className="text-black font-semibold tabular-nums">
+                                      {formatIDR(isTer ? totalEarnings : taxBase)}
+                                    </span>
+                                  </div>
+                                  {isTer && terCategory && (
+                                    <div className="flex justify-between items-center text-xs">
+                                      <span className="text-black font-medium">
+                                        Kategori TER {ptkpStatus ? `(PTKP: ${ptkpStatus})` : ''}
+                                      </span>
+                                      <span className="text-black font-semibold tabular-nums">Kategori {terCategory}</span>
+                                    </div>
+                                  )}
+                                  <div className="flex justify-between items-center text-xs">
+                                    <span className="text-black font-medium">Tarif Efektif</span>
+                                    <span className="text-black font-semibold tabular-nums">{isTer ? rateDisplay : '5%'}</span>
+                                  </div>
+                                  <div className="flex justify-between items-center text-xs pt-2 border-t border-amber-100">
+                                    <span className="text-amber-800 font-bold uppercase">Nominal Pajak</span>
+                                    <span className="text-amber-800 font-bold tabular-nums">{formatIDR(item.amount)}</span>
+                                  </div>
+                                </div>
+                                {idx < taxes.length - 1 && <div className="h-px bg-slate-100/80 mt-5" />}
                               </div>
-                              <ul className="space-y-1 ml-4 pl-0">
-                                {[
-                                  `Pajak penghasilan dikenakan ketika gaji bersih (penerimaan dikurangi potongan) mencapai ${formatIDR(PAYROLL_TAX_THRESHOLD)}.`,
-                                  'Tarif 5% dihitung dari gaji bersih sebelum pajak, bukan dari salah satu komponen penerimaan.',
-                                  'Pajak dicatat sebagai kategori tersendiri dan tidak termasuk dalam daftar Potongan.',
-                                ].map((bullet: string, bIdx: number) => (
-                                  <li key={bIdx} className="flex items-start gap-2 text-xs sm:text-sm text-black leading-relaxed">
-                                    <span className="mt-2 w-1.5 h-1.5 rounded-full bg-black shrink-0" />
-                                    <span>{bullet}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                              <div className="mt-3 ml-4 rounded-md border border-amber-100 bg-amber-50/50 p-4 space-y-2">
-                                <div className="flex justify-between items-center text-xs">
-                                  <span className="text-black font-medium">Dasar Pengenaan (Gaji Bersih Sebelum Pajak)</span>
-                                  <span className="text-black font-semibold tabular-nums">{formatIDR(taxBase)}</span>
-                                </div>
-                                <div className="flex justify-between items-center text-xs">
-                                  <span className="text-black font-medium">Tarif</span>
-                                  <span className="text-black font-semibold tabular-nums">5%</span>
-                                </div>
-                                <div className="flex justify-between items-center text-xs pt-2 border-t border-amber-100">
-                                  <span className="text-amber-800 font-bold uppercase">Nominal Pajak</span>
-                                  <span className="text-amber-800 font-bold tabular-nums">{formatIDR(item.amount)}</span>
-                                </div>
-                              </div>
-                              {idx < taxes.length - 1 && <div className="h-px bg-slate-100/80 mt-5" />}
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
 

@@ -116,6 +116,14 @@ export interface PayrollSlipStateDocument {
    * "not selected" from "selected but currently under the threshold".
    */
   taxApplied?: boolean;
+  /** Tax calculation method applied: government TER (PP 58/2023) or legacy flat 5%. */
+  taxMethod?: 'ter' | 'legacy_5pct';
+  /** Employee PTKP status at slip calculation time (e.g., 'K/1', 'TK/0'). */
+  ptkpStatus?: string;
+  /** Effective TER category ('A' | 'B' | 'C') under PP 58/2023. */
+  terCategory?: string;
+  /** Effective TER rate applied (e.g. 0.015 for 1.5%). */
+  terRate?: number;
   totalEarnings?: number;
   totalDeductions?: number;
   totalTax?: number;

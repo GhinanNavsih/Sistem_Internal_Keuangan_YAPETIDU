@@ -3,7 +3,9 @@ import test from 'node:test';
 import {
   buildInitialEarnings,
   buildInitialDeductions,
+  buildInitialTaxes,
   resolveGapokFromSlip,
+  resolveSlipTaxDetails,
 } from './slipBuilders';
 import { getRekapColumns } from '@/utils/rekapConfig';
 
@@ -179,3 +181,54 @@ test('post-upload Pekarya rekap columns are direct monetary fields', () => {
   assert.equal(jumatLibur?.type, 'currency');
   assert.equal(jumatLibur?.multiplier, undefined);
 });
+
+test('buildInitialTaxes derives TER tax automatically from employee profile', () => {
+  // Loyalis with spouse=1, 1 child -> PTKP K/1 -> Category B
+  const employee = {
+    family_allowance_metrics: {
+      spouse_count: 1,
+      children_sd: 1,
+    },
+  };
+  const earnings = [{ label: 'Gaji Pokok', amount: 10_000_000 }];
+  const taxes = buildInitialTaxes(employee, earnings, '2026-08');
+
+  // Gross 10M in Category B -> 1.5% rate -> Rp 150.000 tax
+  assert.deepEqual(taxes, [
+    { label: 'Pajak Penghasilan PPh 21 (TER B 1,5%)', amount: 150_000 },
+  ]);
+});
+
+test('buildInitialTaxes emits empty array when gross is below the 0% threshold', () => {
+  // Loyalis with TK/0 -> Category A, gross 5.000.000 (<= 5.4M threshold)
+  const employee = {
+    family_allowance_metrics: {
+      spouse_count: 0,
+    },
+  };
+  const earnings = [{ label: 'Gaji Pokok', amount: 5_000_000 }];
+  assert.deepEqual(buildInitialTaxes(employee, earnings), []);
+});
+
+test('resolveSlipTaxDetails provides full breakdown of tax derivation', () => {
+  const employee = {
+    family_allowance_metrics: {
+      spouse_count: 1,
+      children_sd: 2,
+      children_sltp: 1,
+    },
+  }; // spouse=1, 3 children -> K/3 -> Category C
+  const earnings = [{ label: 'Gaji Pokok', amount: 12_000_000 }];
+  const details = resolveSlipTaxDetails(employee, earnings, '2026-08');
+
+  assert.equal(details.ptkpStatus, 'K/3');
+  assert.equal(details.terCategory, 'C');
+  assert.equal(details.terRate, 0.02); // 11.2M - 12.05M -> 2%
+  assert.equal(details.gross, 12_000_000);
+  assert.equal(details.taxAmount, 240_000);
+  assert.equal(details.taxApplied, true);
+  assert.deepEqual(details.taxes, [
+    { label: 'Pajak Penghasilan PPh 21 (TER C 2%)', amount: 240_000 },
+  ]);
+});
+

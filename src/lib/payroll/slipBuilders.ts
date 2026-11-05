@@ -6,6 +6,11 @@ import {
   isSatpamLegacyBonusColumn,
   normalizeSatpamUraianEntry,
 } from '@/lib/payroll/satpamCompensation';
+import {
+  resolveEmployeePtkpStatus,
+  resolveTerSlipTaxes,
+  resolveSlipTaxDetails,
+} from './payrollTax';
 
 /**
  * The canonical earnings/deductions builders for a payslip.
@@ -303,3 +308,20 @@ export function buildInitialDeductions(
 
   return deductions;
 }
+
+/**
+ * Build initial tax rows for an employee slip using government TER rules.
+ * Automatically derives PTKP from the employee profile and evaluates
+ * the effective rate on the given gross earnings.
+ */
+export function buildInitialTaxes(
+  emp: any,
+  earnings: readonly MoneyField[] | undefined | null,
+  period?: string,
+): SlipField[] {
+  const ptkp = resolveEmployeePtkpStatus(emp, period);
+  return resolveTerSlipTaxes(earnings, ptkp);
+}
+
+export { resolveSlipTaxDetails };
+
