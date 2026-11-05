@@ -32,10 +32,10 @@ export function createFinancialRequestId(prefix: string): string {
   return `${normalizedPrefix}_${Date.now()}_${Math.random().toString(36).slice(2, 14)}`;
 }
 
-export async function authenticatedJson<T>(
+async function authorizedFetch(
   input: string,
-  init: Omit<RequestInit, 'headers'> & { headers?: Record<string, string> } = {},
-): Promise<T> {
+  init: Omit<RequestInit, 'headers'> & { headers?: Record<string, string> },
+): Promise<Response> {
   const user = auth.currentUser;
   if (!user) {
     if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
@@ -70,6 +70,14 @@ export async function authenticatedJson<T>(
       console.warn('Failed to force refresh Firebase Auth token on 401:', refreshErr);
     }
   }
+  return response;
+}
+
+export async function authenticatedJson<T>(
+  input: string,
+  init: Omit<RequestInit, 'headers'> & { headers?: Record<string, string> } = {},
+): Promise<T> {
+  const response = await authorizedFetch(input, init);
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -93,6 +101,85 @@ export async function authenticatedJson<T>(
     );
   }
   return payload as T;
+}
+
+/** One step report from a route that streams its progress. */
+export interface StreamedProgress {
+  /** Steps the server has finished. */
+  completed: number;
+  /** Steps it will take in all. */
+  total: number;
+  /** The step now running. */
+  label: string;
+}
+
+/**
+ * Calls a route that streams newline-delimited JSON events (`x-progress-stream`)
+ * and reports each step as the server finishes it. Resolves with the route's
+ * final result, or throws the same {@link ApiError} a plain call would.
+ */
+export async function authenticatedProgressJson<T>(
+  input: string,
+  init: Omit<RequestInit, 'headers'> & { headers?: Record<string, string> },
+  onProgress: (progress: StreamedProgress) => void,
+): Promise<T> {
+  const response = await authorizedFetch(input, {
+    ...init,
+    headers: { ...(init.headers || {}), 'x-progress-stream': '1' },
+  });
+  const contentType = response.headers.get('content-type') || '';
+  if (!response.ok || !contentType.includes('application/x-ndjson') || !response.body) {
+    // Refused before the stream began, or a server that does not stream.
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new ApiError(payload.error || `Permintaan gagal (${response.status}).`, response.status);
+    }
+    return payload as T;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let result: { value: T } | null = null;
+  let failure: ApiError | null = null;
+
+  const handleLine = (line: string) => {
+    if (!line.trim()) return;
+    let event: Record<string, unknown>;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      return;
+    }
+    if (event.type === 'progress') {
+      onProgress({
+        completed: Number(event.completed) || 0,
+        total: Number(event.total) || 0,
+        label: String(event.label || ''),
+      });
+    } else if (event.type === 'done') {
+      result = { value: event.result as T };
+    } else if (event.type === 'error') {
+      failure = new ApiError(
+        String(event.message || 'Permintaan gagal.'),
+        Number(event.status) || 500,
+      );
+    }
+  };
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    lines.forEach(handleLine);
+    if (done) break;
+  }
+  handleLine(buffer);
+
+  if (failure) throw failure;
+  if (!result) throw new ApiError('Koneksi terputus sebelum proses selesai. Muat ulang halaman untuk memeriksa status periode.', 502);
+  return (result as { value: T }).value;
 }
 
 export interface UraianPropagationSummary {

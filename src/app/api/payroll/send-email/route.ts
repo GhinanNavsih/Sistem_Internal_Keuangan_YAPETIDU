@@ -15,6 +15,7 @@ import {
   requireAuthenticatedProfile,
   requireRole,
 } from '@/lib/server/auth';
+import { buildEmailHistory } from '@/lib/payroll/emailHistory';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,6 +57,83 @@ function assertPdfBase64(value: unknown): string | undefined {
   return value;
 }
 
+function millis(value: unknown): number | null {
+  if (value && typeof value === 'object' && 'toMillis' in value &&
+    typeof (value as { toMillis: unknown }).toMillis === 'function') {
+    return (value as { toMillis: () => number }).toMillis();
+  }
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+/**
+ * Who has received their payslip email for a period (`?dbPeriod=YYYY_MM`),
+ * read from the slips and the delivery log, so it holds even when the browser
+ * that ran a bulk send crashed or was closed.
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const actor = await requireAuthenticatedProfile(request);
+    requireRole(actor, FINANCE_ROLES);
+    const dbPeriod = request.nextUrl.searchParams.get('dbPeriod') || '';
+    if (!/^\d{4}_\d{2}$/.test(dbPeriod)) {
+      throw new HttpError(400, 'dbPeriod tidak valid.');
+    }
+    const [slipSnapshot, deliverySnapshot] = await Promise.all([
+      adminDb.collection('PayrollSlipStates').where('period', '==', dbPeriod).get(),
+      adminDb.collection('PayrollDeliveryEvents').where('dbPeriod', '==', dbPeriod).get(),
+    ]);
+    const prefix = `${dbPeriod}_`;
+    const slips = slipSnapshot.docs.map((document) => {
+      const data = document.data();
+      return {
+        employeeId: String(data.employeeId || document.id.slice(prefix.length)),
+        status: data.status,
+        emailSent: data.emailSent === true,
+        emailSentAt: millis(data.emailSentAt),
+      };
+    });
+    const deliveries = deliverySnapshot.docs
+      .map((document) => document.data())
+      .filter((data) => data.channel === 'email' && typeof data.employeeId === 'string')
+      .map((data) => ({
+        employeeId: data.employeeId as string,
+        status: String(data.status || ''),
+        recipient: String(data.recipient || ''),
+        requestedAt: millis(data.requestedAt),
+        sentAt: millis(data.sentAt),
+        error: String(data.error || ''),
+      }));
+
+    const ids = Array.from(new Set(slips.map((slip) => slip.employeeId)))
+      .filter((id) => /^[A-Za-z0-9_-]{1,128}$/.test(id));
+    const refs = ids.flatMap((id) => [
+      adminDb.collection('Employees_BlueCollar').doc(id),
+      adminDb.collection('Employees_Loyalis').doc(id),
+    ]);
+    const employees = new Map<string, { name: string; email: string }>();
+    for (let index = 0; index < refs.length; index += 300) {
+      const snapshots = await adminDb.getAll(...refs.slice(index, index + 300));
+      for (const snapshot of snapshots) {
+        if (!snapshot.exists) continue;
+        const data = snapshot.data()!;
+        employees.set(snapshot.id, {
+          name: String(data.name || data.personal_info?.name || ''),
+          email: String(data.email || data.personal_info?.email || ''),
+        });
+      }
+    }
+
+    const rows = buildEmailHistory({ slips, deliveries, employees, now: Date.now() });
+    return NextResponse.json({ dbPeriod, rows }, { headers: { 'Cache-Control': 'no-store' } });
+  } catch (error: unknown) {
+    return errorResponse(error);
+  }
+}
+
 export async function POST(request: NextRequest) {
   let deliveryRef: FirebaseFirestore.DocumentReference | null = null;
   try {
@@ -65,6 +143,10 @@ export async function POST(request: NextRequest) {
     const employeeId = typeof body.employeeId === 'string' ? body.employeeId : '';
     const dbPeriod = typeof body.dbPeriod === 'string' ? body.dbPeriod : '';
     const requestId = typeof body.requestId === 'string' ? body.requestId : '';
+    // Bulk sends never mail a slip twice: one already marked sent is skipped,
+    // even when the browser's queue is stale (a reload, another tab). A single
+    // send from the slip dialog leaves this off so a resend stays possible.
+    const skipIfSent = body.skipIfSent === true;
     if (
       !/^[A-Za-z0-9_-]{1,128}$/.test(employeeId) ||
       !/^\d{4}_\d{2}$/.test(dbPeriod) ||
@@ -133,9 +215,14 @@ export async function POST(request: NextRequest) {
     deliveryRef = adminDb
       .collection('PayrollDeliveryEvents')
       .doc(`${slipId}__email__${requestId}`);
+    const slipRef = adminDb.collection('PayrollSlipStates').doc(slipId);
     const claimed = await adminDb.runTransaction(async (transaction) => {
-      const deliverySnapshot = await transaction.get(deliveryRef!);
-      if (deliverySnapshot.data()?.status === 'sent') return false;
+      const [deliverySnapshot, latestSlip] = await Promise.all([
+        transaction.get(deliveryRef!),
+        transaction.get(slipRef),
+      ]);
+      if (deliverySnapshot.data()?.status === 'sent') return 'idempotent' as const;
+      if (skipIfSent && latestSlip.data()?.emailSent === true) return 'already_sent' as const;
       if (deliverySnapshot.data()?.status === 'sending') {
         throw new HttpError(409, 'Permintaan pengiriman yang sama sedang diproses.');
       }
@@ -149,10 +236,15 @@ export async function POST(request: NextRequest) {
         requestedBy: actor.uid,
         requestedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
-      return true;
+      return 'claimed' as const;
     });
-    if (!claimed) {
+    if (claimed === 'idempotent') {
       return NextResponse.json({ success: true, idempotent: true });
+    }
+    if (claimed === 'already_sent') {
+      // Nothing was claimed, so the failure handler below must not touch it.
+      deliveryRef = null;
+      return NextResponse.json({ success: true, alreadySent: true });
     }
 
     // Try to extract net salary from textBreakdown and spell it out

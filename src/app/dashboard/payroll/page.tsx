@@ -64,6 +64,9 @@ import { useAuth } from '@/lib/AuthContext';
 import { useDashboardData } from '@/lib/DashboardDataContext';
 import { usePayrollCacheInvalidation } from '@/lib/queries/hooks';
 import { useBulkEmail, ESTIMATED_SECONDS_PER_EMAIL, type QueueItem } from '@/lib/BulkEmailContext';
+import { usePayrollLockJob } from '@/lib/PayrollLockJobContext';
+import { useLongPress } from '@/hooks/useLongPress';
+import { lockJobPercent } from '@/lib/payroll/lockJob';
 import { Employee, SalaryMatrix, BlueCollarEmployee, UraianGajiDocument, UraianEntry } from '@/types';
 import PaySlipDialog, { SlipState, buildInitialEarnings, buildInitialDeductions } from '@/components/PaySlipDialog';
 import { eligibleFamilyMetrics, familyAllowancePeriodDate, synchronizeFamilyAllowanceEarnings } from '@/lib/payroll/familyAllowance';
@@ -88,7 +91,12 @@ import { generateKebutuhanDanaGajiPdf } from '@/utils/generateKebutuhanDanaGajiP
 import CetakRekapDialog from '@/components/CetakRekapDialog';
 import CetakKebutuhanDanaGajiDialog from '@/components/CetakKebutuhanDanaGajiDialog';
 import { generatePayrollStatementPdf, PayrollStatementData, PayrollStatementEmployee } from '@/utils/generatePayrollStatementPdf';
-import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
+import {
+  authenticatedJson,
+  authenticatedProgressJson,
+  createFinancialRequestId,
+  type StreamedProgress,
+} from '@/lib/payroll/client';
 import type { LoyalisPresenceDocument } from '@/lib/payroll/uraianPropagation';
 import {
   defaultPayrollPeriodToken,
@@ -152,7 +160,7 @@ interface PayrollTarget {
 }
 
 interface BulkPayrollProgress {
-  phase: 'preparing' | 'sealing' | 'locking';
+  phase: 'preparing';
   completed: number;
   total: number;
 }
@@ -163,6 +171,8 @@ interface ClosePeriodDialogState {
   status: ClosePeriodDialogStatus;
   period: string;
   message: string;
+  /** What the server has finished so far while the status is `loading`. */
+  progress?: StreamedProgress;
 }
 
 interface BulkChange {
@@ -267,7 +277,12 @@ export default function PayrollValidationDashboard() {
     emailTargetCount,
     bulkEmailResults,
     setShowBulkDetailModal,
+    openEmailHistory,
+    dbPeriod: bulkEmailDbPeriod,
   } = useBulkEmail();
+  // The verify-and-lock run lives in the dashboard layout, so it keeps going
+  // when this page is left; this page only starts it and shows its state.
+  const { job: lockJob, isPayrollLockRunning, startPayrollLockJob } = usePayrollLockJob();
   const {
     employeesLoyalis,
     employeesBlueCollar,
@@ -365,11 +380,40 @@ export default function PayrollValidationDashboard() {
   // NOTE: slipStates is used ONLY for status tracking (confirmed/draft/printed,
   // emailSent, etc). Earnings/deductions are always recalculated from current
   // employee data to ensure they stay in sync with profile changes.
-  const [slipStates, setSlipStates] = useState<Record<string, SlipState>>({});
+  const [storedSlipStates, setSlipStates] = useState<Record<string, SlipState>>({});
   // The preview request must wait until the period's saved slip states have
   // landed. Without this marker, the first render sees an empty slip map and
   // starts a full preview request even when every slip in the period is locked.
   const [periodDataLoadedFor, setPeriodDataLoadedFor] = useState<string | null>(null);
+  // Slips the background Verifikasi & Kunci run has locked read as locked here
+  // too, whether the run started on this visit or this page opened mid-run.
+  const slipStates = useMemo(() => {
+    const viewedPeriod = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+    if (
+      !lockJob ||
+      lockJob.progress.lockedIds.length === 0 ||
+      lockJob.periodToken !== viewedPeriod ||
+      periodDataLoadedFor !== viewedPeriod
+    ) {
+      return storedSlipStates;
+    }
+    const lockedAt = new Date().toISOString();
+    let merged: Record<string, SlipState> | null = null;
+    for (const employeeId of lockJob.progress.lockedIds) {
+      const slip = storedSlipStates[employeeId];
+      if (slip?.status !== 'draft') continue;
+      merged ??= { ...storedSlipStates };
+      merged[employeeId] = {
+        ...slip,
+        status: 'locked',
+        verifiedAt: lockedAt,
+        verifiedBy: user?.uid,
+        lockedAt,
+        lockedBy: user?.uid,
+      };
+    }
+    return merged ?? storedSlipStates;
+  }, [lockJob, storedSlipStates, targetDate, periodDataLoadedFor, user?.uid]);
 
   // Ketua Shift Satpam roster, keyed by employeeId. SatpamShiftTeams is a
   // stable roster (not period-scoped), so this is fetched once rather than
@@ -626,14 +670,21 @@ export default function PayrollValidationDashboard() {
       message: `Sedang memvalidasi draf dan menyegel periode ${period}.`,
     });
     try {
-      const result = await authenticatedJson<{
+      const result = await authenticatedProgressJson<{
         idempotent?: boolean;
         rosterSealRepaired?: boolean;
         warnings?: string[];
-      }>('/api/payroll/periods', {
-        method: 'POST',
-        body: JSON.stringify({ period, attendanceStatus: 'closed' }),
-      });
+      }>(
+        '/api/payroll/periods',
+        {
+          method: 'POST',
+          body: JSON.stringify({ period, attendanceStatus: 'closed' }),
+        },
+        (progress) =>
+          setClosePeriodDialog((current) =>
+            current?.status === 'loading' ? { ...current, progress } : current,
+          ),
+      );
       setAttendancePeriodStatus('closed');
       // Proposal Kegiatan reads this period doc from cache to decide whether
       // edits are still allowed, so a close has to drop it immediately.
@@ -804,7 +855,9 @@ export default function PayrollValidationDashboard() {
   const [bulkEmailPlan, setBulkEmailPlan] = useState<{
     items: QueueItem[];
     skipped: string[];
-  }>({ items: [], skipped: [] });
+    /** Already emailed this period: left out so nobody gets a second copy. */
+    alreadySent: string[];
+  }>({ items: [], skipped: [], alreadySent: [] });
 
   // Bulk-operation failure report (replaces the native alert() popup)
   const [failuresDialog, setFailuresDialog] = useState<{
@@ -2113,7 +2166,21 @@ export default function PayrollValidationDashboard() {
     }
   };
 
+  const viewedDbPeriod = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+  // Sent per the loaded slip, or by the bulk run going on for this period.
+  const isSlipEmailSent = (employeeId: string) =>
+    Boolean(slipStates[employeeId]?.emailSent) ||
+    (bulkEmailDbPeriod === viewedDbPeriod &&
+      bulkEmailResults.some(r => r.employeeId === employeeId && r.status === 'success'));
+
+  // Holding "Kirim Email ke Semua" (or right clicking it) opens the period's
+  // email history, with or without a run going.
+  const bulkEmailLongPress = useLongPress(() => {
+    openEmailHistory({ dbPeriod: viewedDbPeriod, label: getPayrollPeriod(targetDate) });
+  });
+
   const handleBulkEmail = () => {
+    if (bulkEmailLongPress.consumeLongPress()) return;
     if (!requirePekaryaPreviews()) return;
     if (isBulkEmailActive) {
       // A job is still running (or paused) — surface it instead of queueing a
@@ -2131,16 +2198,22 @@ export default function PayrollValidationDashboard() {
       const slip = slipStates[emp.id];
       return slip && isTransferEligibleStatus(slip.status);
     });
-    const skipped = lockedEmployees.filter(emp => !resolveEmail(emp)).map(emp => emp.name);
-    const recipients = lockedEmployees.filter(emp => resolveEmail(emp));
+    // Slips already emailed this period are left out; the server also refuses
+    // to mail them again, in case this list is stale.
+    const alreadySent = lockedEmployees.filter(emp => isSlipEmailSent(emp.id));
+    const unsent = lockedEmployees.filter(emp => !isSlipEmailSent(emp.id));
+    const skipped = unsent.filter(emp => !resolveEmail(emp)).map(emp => emp.name);
+    const recipients = unsent.filter(emp => resolveEmail(emp));
 
     if (recipients.length === 0) {
       setNotification({
         show: true,
-        type: 'error',
-        message: skipped.length > 0
-          ? `${skipped.length} karyawan terkunci belum memiliki email terdaftar, tidak ada slip yang dapat dikirim.`
-          : 'Tidak ada karyawan terkunci dengan email terdaftar untuk dikirimi slip gaji.',
+        type: alreadySent.length > 0 && skipped.length === 0 ? 'success' : 'error',
+        message: alreadySent.length > 0 && skipped.length === 0
+          ? `Seluruh ${alreadySent.length} slip terkunci sudah terkirim. Tahan tombol Kirim Email untuk melihat riwayat.`
+          : skipped.length > 0
+            ? `${skipped.length} karyawan terkunci belum memiliki email terdaftar, tidak ada slip yang dapat dikirim.`
+            : 'Tidak ada karyawan terkunci dengan email terdaftar untuk dikirimi slip gaji.',
       });
       setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 5000);
       return;
@@ -2157,7 +2230,7 @@ export default function PayrollValidationDashboard() {
       };
     });
 
-    setBulkEmailPlan({ items, skipped });
+    setBulkEmailPlan({ items, skipped, alreadySent: alreadySent.map(emp => emp.name) });
     setBulkConfirmDialogOpen(true);
   };
 
@@ -3341,6 +3414,10 @@ export default function PayrollValidationDashboard() {
   };
 
   const handleBulkVerifyAndLock = async () => {
+    if (isPayrollLockRunning) {
+      alert('Verifikasi & Kunci masih berjalan. Lihat kemajuannya di bagian bawah layar.');
+      return;
+    }
     if (attendancePeriodStatus !== 'closed') {
       alert('Tutup periode payroll sebelum memverifikasi dan mengunci slip.');
       return;
@@ -3394,84 +3471,17 @@ export default function PayrollValidationDashboard() {
         }
       }
 
-      setBulkPayrollProgress({ phase: 'sealing', completed: 0, total: 1 });
-      await authenticatedJson('/api/payroll/periods', {
-        method: 'POST',
-        body: JSON.stringify({
-          period: period.replace('_', '-'),
-          attendanceStatus: 'closed',
-          reason: 'Penyegelan roster lengkap sebelum Verifikasi & Kunci massal',
-        }),
+      // Sealing and locking continue in the dashboard layout, so leaving this
+      // page does not interrupt them. The floating bar reports the progress.
+      const started = startPayrollLockJob({
+        periodToken: period.replace('_', '-'),
+        periodLabel: getPayrollPeriod(targetDate),
+        targets: allPayrollTargets
+          .filter((target) => workingStates[target.id]?.status === 'draft')
+          .map((target) => ({ id: target.id, name: target.name })),
       });
-      setBulkPayrollProgress({ phase: 'sealing', completed: 1, total: 1 });
-
-      const unlockableTargets = allPayrollTargets.filter(
-        (target) => workingStates[target.id]?.status === 'draft',
-      );
-      const updatedSlips: Record<string, SlipState> = {};
-      const failures: Array<{ name: string; message: string }> = [];
-      let progressedLoans = 0;
-      let paidOffLoans = 0;
-      const nowStr = new Date().toISOString();
-      let completed = 0;
-      setBulkPayrollProgress({
-        phase: 'locking',
-        completed,
-        total: unlockableTargets.length,
-      });
-
-      // Koperasi application is deliberately sequential. Each employee is a
-      // resumable saga and a failure must leave only that employee as draft.
-      for (const target of unlockableTargets) {
-        const prevSlip = workingStates[target.id];
-        try {
-          const result = await authenticatedJson<VerifyAndLockResponse>('/api/payroll/slips', {
-            method: 'POST',
-            body: JSON.stringify({
-              action: 'verify_and_lock',
-              employeeId: target.id,
-              period,
-              requestId: createFinancialRequestId('bulk_verify_lock'),
-              reason: 'Verifikasi angka dan penguncian final seluruh roster oleh Badan Keuangan',
-            }),
-          });
-          progressedLoans += result.koperasi.loans.filter(
-            (loan) => loan.outcome !== 'already_applied',
-          ).length;
-          paidOffLoans += result.koperasi.loans.filter(
-            (loan) => loan.outcome === 'paid_off',
-          ).length;
-          updatedSlips[target.id] = {
-            ...prevSlip,
-            status: 'locked',
-            verifiedAt: nowStr,
-            verifiedBy: user?.uid,
-            lockedAt: nowStr,
-            lockedBy: user?.uid,
-          };
-        } catch (error) {
-          failures.push({
-            name: target.name,
-            message: error instanceof Error ? error.message : 'Operasi gagal',
-          });
-        } finally {
-          completed += 1;
-          setBulkPayrollProgress({
-            phase: 'locking',
-            completed,
-            total: unlockableTargets.length,
-          });
-        }
-      }
-
-      setSlipStates((previous) => ({ ...previous, ...updatedSlips }));
-      setNotification({
-        show: true,
-        type: failures.length > 0 ? 'error' : 'success',
-        message: `${Object.keys(updatedSlips).length} slip dikunci; ${progressedLoans} cicilan Koperasi diproses${paidOffLoans > 0 ? `; ${paidOffLoans} pinjaman lunas` : ''}${failures.length > 0 ? `; ${failures.length} slip gagal dan tetap draf` : ''}.`,
-      });
-      if (failures.length > 0) {
-        showPayrollFailures('Sebagian Verifikasi & Kunci gagal:', failures);
+      if (!started) {
+        alert('Verifikasi & Kunci lain masih berjalan. Tunggu sampai selesai.');
       }
     } catch (err: unknown) {
       console.error('Error bulk verify-and-lock:', err);
@@ -3724,19 +3734,22 @@ export default function PayrollValidationDashboard() {
                 <button
                   type="button"
                   onClick={handleBulkVerifyAndLock}
-                  disabled={confirmingBulk || loading || attendancePeriodStatus !== 'closed'}
-                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${(confirmingBulk || loading || attendancePeriodStatus !== 'closed') ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  disabled={confirmingBulk || isPayrollLockRunning || loading || attendancePeriodStatus !== 'closed'}
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${(confirmingBulk || isPayrollLockRunning || loading || attendancePeriodStatus !== 'closed') ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                  {confirmingBulk ? (
+                  {isPayrollLockRunning && lockJob ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+                      {lockJob.progress.phase === 'sealing'
+                        ? 'Menyegel roster...'
+                        : `Mengunci ${lockJobPercent(lockJob.progress.completed, lockJob.progress.total)}%`}
+                    </>
+                  ) : confirmingBulk ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
                       {bulkPayrollProgress?.phase === 'preparing'
                         ? `Memperbaiki draf (${bulkPayrollProgress.completed}/${bulkPayrollProgress.total})`
-                        : bulkPayrollProgress?.phase === 'sealing'
-                          ? 'Menyegel roster...'
-                          : bulkPayrollProgress?.phase === 'locking'
-                            ? `Mengunci (${bulkPayrollProgress.completed}/${bulkPayrollProgress.total})`
-                            : 'Memproses seluruh roster...'}
+                        : 'Memproses seluruh roster...'}
                     </>
                   ) : (
                     <>
@@ -3766,9 +3779,12 @@ export default function PayrollValidationDashboard() {
                 <button
                   type="button"
                   onClick={handleBulkEmail}
+                  {...bulkEmailLongPress.handlers}
                   disabled={loading}
-                  title={isBulkEmailActive ? 'Pengiriman sedang berjalan — klik untuk melihat detail' : undefined}
-                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-indigo-200 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  title={isBulkEmailActive
+                    ? 'Pengiriman sedang berjalan — klik untuk melihat detail'
+                    : 'Tahan atau klik kanan untuk melihat riwayat pengiriman'}
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-indigo-200 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm select-none [-webkit-touch-callout:none] ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   {isBulkEmailPaused ? (
                     <>
@@ -3902,8 +3918,7 @@ export default function PayrollValidationDashboard() {
                       payrollCollar !== 'loyalis' &&
                       !slip &&
                       !effectivePekaryaPreviews[emp.id];
-                    const emailSentInQueue = bulkEmailResults.find(r => r.employeeId === emp.id)?.status === 'success';
-                    const isEmailSent = slip?.emailSent || emailSentInQueue;
+                    const isEmailSent = isSlipEmailSent(emp.id);
 
                     const freshData = buildFreshSlipData(emp);
                     const totalEarnings = freshData.earnings.reduce((sum, e) => sum + e.amount, 0);
@@ -4635,18 +4650,42 @@ export default function PayrollValidationDashboard() {
               aria-busy="true"
               className="space-y-3 rounded-md border border-indigo-100 bg-indigo-50/60 px-4 py-4"
             >
-              <div
-                role="progressbar"
-                aria-label="Kemajuan penutupan periode"
-                aria-valuetext="Sedang diproses"
-                className="h-2 w-full overflow-hidden rounded-sm bg-indigo-100"
-              >
-                <div className="h-full w-2/3 rounded-sm bg-indigo-600 animate-pulse" />
-              </div>
-              <div className="flex items-center gap-2 text-xs font-semibold text-indigo-700">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Memvalidasi draf, menyegel roster, dan menyimpan audit...
-              </div>
+              {(() => {
+                const progress = closePeriodDialog.progress;
+                const percent =
+                  progress && progress.total > 0
+                    ? Math.min(100, Math.round((progress.completed / progress.total) * 100))
+                    : 0;
+                return (
+                  <>
+                    <div className="flex items-center justify-between text-xs font-semibold text-indigo-700">
+                      <span>
+                        {progress
+                          ? `Langkah ${Math.min(progress.completed + 1, progress.total)} dari ${progress.total}`
+                          : 'Menghubungkan ke server'}
+                      </span>
+                      <span className="tabular-nums">{percent}%</span>
+                    </div>
+                    <div
+                      role="progressbar"
+                      aria-label="Kemajuan penutupan periode"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={percent}
+                      className="h-2 w-full overflow-hidden rounded-sm bg-indigo-100"
+                    >
+                      <div
+                        className="h-full rounded-sm bg-indigo-600 transition-[width] duration-500 ease-out"
+                        style={{ width: `${percent}%` }}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 text-xs font-semibold text-indigo-700">
+                      <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                      {progress?.label || 'Menghubungkan ke server...'}
+                    </div>
+                  </>
+                );
+              })()}
               <p className="text-[11px] leading-relaxed text-indigo-600/80">
                 Jangan tutup halaman sampai proses selesai.
               </p>
@@ -4715,6 +4754,15 @@ export default function PayrollValidationDashboard() {
             </div>
           </div>
 
+          {bulkEmailPlan.alreadySent.length > 0 && (
+            <div className="flex items-start gap-2 rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2.5">
+              <CheckCheck className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+              <p className="text-xs font-semibold text-emerald-800">
+                {bulkEmailPlan.alreadySent.length} karyawan sudah menerima slip periode ini dan tidak dikirim ulang
+              </p>
+            </div>
+          )}
+
           {bulkEmailPlan.skipped.length > 0 && (
             <div className="flex items-start gap-2 rounded-md border border-amber-100 bg-amber-50 px-3 py-2.5">
               <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
@@ -4731,7 +4779,7 @@ export default function PayrollValidationDashboard() {
           )}
 
           <p className="text-[11px] text-slate-400 leading-relaxed">
-            Biarkan tab ini tetap terbuka selama pengiriman berlangsung. Email yang sudah terkirim tidak dapat ditarik kembali.
+            Pengiriman berlanjut bila halaman dimuat ulang, tetapi berhenti bila tab ditutup. Email yang sudah terkirim tidak dapat ditarik kembali dan tidak akan dikirim dua kali.
           </p>
 
           <div className="flex justify-end gap-3 pt-2">

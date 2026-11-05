@@ -105,7 +105,79 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/**
+ * Progress the close reports as it goes. `plan` says how many steps this
+ * request will take; `step` marks the previous one finished and names the one
+ * starting. Percent done is finished steps over planned steps, so the bar only
+ * moves when the server has actually completed something.
+ */
+interface PeriodProgress {
+  plan(total: number): void;
+  step(label: string): void;
+}
+
+const NO_PROGRESS: PeriodProgress = { plan() {}, step() {} };
+
 export async function POST(request: NextRequest) {
+  // A client that wants progress asks for one JSON event per line; everyone
+  // else keeps the plain JSON answer.
+  if (request.headers.get('x-progress-stream') !== '1') {
+    return handlePeriodPost(request, NO_PROGRESS);
+  }
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: Record<string, unknown>) => {
+        controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+      };
+      let total = 0;
+      let finished = 0;
+      const progress: PeriodProgress = {
+        plan(count) {
+          total = count;
+        },
+        step(label) {
+          send({ type: 'progress', completed: finished, total, label });
+          finished += 1;
+        },
+      };
+      try {
+        const response = await handlePeriodPost(request, progress);
+        const payload = await response.json().catch(() => ({}));
+        if (response.ok) {
+          send({ type: 'done', status: response.status, result: payload });
+        } else {
+          send({
+            type: 'error',
+            status: response.status,
+            message: payload?.error || `Permintaan gagal (${response.status}).`,
+          });
+        }
+      } catch (error) {
+        send({
+          type: 'error',
+          status: 500,
+          message: error instanceof Error ? error.message : 'Terjadi kesalahan internal.',
+        });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'no-store, no-transform',
+      'X-Accel-Buffering': 'no',
+    },
+  });
+}
+
+async function handlePeriodPost(
+  request: NextRequest,
+  progress: PeriodProgress,
+): Promise<Response> {
   try {
     const actor = await requireAuthenticatedProfile(request);
     requireRole(actor, ['super_admin', 'finance_verifier']);
@@ -155,12 +227,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (
-      attendanceStatus === 'closed' &&
-      period >= ATTENDANCE_PAYROLL_START_PERIOD
-    ) {
+    const closesWithAttendanceChecks =
+      attendanceStatus === 'closed' && period >= ATTENDANCE_PAYROLL_START_PERIOD;
+    progress.plan(
+      attendanceStatus === 'closed' ? (closesWithAttendanceChecks ? 5 : 2) : 1,
+    );
+
+    if (closesWithAttendanceChecks) {
+      progress.step('Menyinkronkan cuti otomatis Pekarya');
       await ensurePekaryaAutoLeave(period, actor);
       autoCloseStates = await assertAutoLeaveReady(period, ['SATPAM', 'SOPIR', 'PEKARYA', 'TEKNISI', 'KEBERSIHAN', 'KEBERSIHAN_PONTI', 'PONTI']);
+      progress.step('Memeriksa presensi, kalender, dan Bonus Triwulan');
       const [
         periodBeforeClose,
         attendanceImport,
@@ -218,6 +295,7 @@ export async function POST(request: NextRequest) {
       if (bonusTriwulanBlocker) {
         throw new HttpError(409, bonusTriwulanBlocker);
       }
+      progress.step('Memeriksa identitas pegawai dan publikasi presensi');
       const missingNipy = identityData.identities.filter(
         (identity) =>
           identity.active &&
@@ -300,6 +378,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (attendanceStatus === 'closed') {
+      progress.step('Merekonsiliasi rencana dinas Satpam');
       const satpamPeriodSnapshot = await adminDb
         .collection('PayrollPeriods')
         .doc(period)
@@ -338,6 +417,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    progress.step(
+      attendanceStatus === 'closed'
+        ? 'Memvalidasi draf, menyegel roster, dan menyimpan audit'
+        : 'Membuka periode',
+    );
     const result = await adminDb.runTransaction(async (transaction) => {
       const latestAutoStates = await Promise.all(autoCloseStates.map((state) => transaction.get(state.ref)));
       if (latestAutoStates.some((state, index) => state.data()?.dirty === true ||

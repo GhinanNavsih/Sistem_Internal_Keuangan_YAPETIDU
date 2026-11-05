@@ -171,6 +171,20 @@ async function main() {
   await db.doc('LoyalisPresence/2026_09').set({ sourceImportRevision: 1, sourceCalendarRevision: 1 });
   await db.doc(`PayrollPeriods/${period}`).update({ calendarReconciliationStatus: 'complete' });
   assert.match((await post(closePeriod, { period, attendanceStatus: 'closed' }, 409)).error, /aturan scan/);
+  // The same refusal as a progress stream: finished steps count up, then the error.
+  const streamed = await closePeriod(new NextRequest('http://localhost/test', {
+    method: 'POST',
+    headers: { ...headers, 'x-progress-stream': '1' },
+    body: JSON.stringify({ period, attendanceStatus: 'closed' }),
+  }));
+  assert.match(streamed.headers.get('content-type') || '', /application\/x-ndjson/);
+  const events = (await streamed.text()).trim().split('\n').map((line) => JSON.parse(line));
+  const steps = events.filter((event) => event.type === 'progress');
+  assert.deepEqual(steps.map((event) => event.completed), [0, 1, 2], 'one step finished per event');
+  assert.ok(steps.every((event) => event.total === 5 && event.label));
+  assert.equal(events.at(-1).type, 'error');
+  assert.equal(events.at(-1).status, 409);
+  assert.match(events.at(-1).message, /aturan scan/);
   await post(publish, { period, category: 'TEKNISI', requestId: 'republish-new-scan-policy',
     acknowledgedWarnings: ['INCOMPLETE_PUNCH', 'CORRECTED_ATTENDANCE'] }, 200);
   assert.equal((await getView('TEKNISI')).publication.stale, false);

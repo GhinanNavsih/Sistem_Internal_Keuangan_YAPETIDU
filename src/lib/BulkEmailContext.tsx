@@ -3,6 +3,13 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { generatePaySlipPdf, type PaySlipData } from '@/utils/generatePaySlipPdf';
 import { ApiError, authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
+import { auth } from '@/lib/firebase';
+import {
+  BULK_EMAIL_STORAGE_KEY,
+  restoreBulkEmailJob,
+  serializeBulkEmailJob,
+  type RestoredBulkEmailJob,
+} from '@/lib/payroll/bulkEmailStorage';
 
 /** Per-item attempts before an item is parked as failed (retryable errors only). */
 const MAX_ATTEMPTS = 3;
@@ -26,6 +33,15 @@ export interface QueueItem {
   error?: string;
   requestId?: string;
   attempts?: number;
+  /** The server skipped it because the slip had already been emailed. */
+  alreadySent?: boolean;
+}
+
+export interface EmailDetailPeriod {
+  /** YYYY_MM. */
+  dbPeriod: string;
+  /** For display, e.g. "Oktober 2026". */
+  label: string;
 }
 
 export interface StartBulkEmailOptions {
@@ -53,6 +69,14 @@ interface BulkEmailContextType {
   setShowBulkSnackbar: (show: boolean) => void;
   showBulkDetailModal: boolean;
   setShowBulkDetailModal: (show: boolean) => void;
+  /**
+   * The period the detail modal shows the history of; null means the running
+   * job's period.
+   */
+  detailPeriod: EmailDetailPeriod | null;
+  /** Opens "Detail Pengiriman Email" for a period, with or without a job. */
+  openEmailHistory: (period: EmailDetailPeriod) => void;
+  closeEmailDetail: () => void;
   bulkEmailDone: boolean;
   isBulkEmailPaused: boolean;
   startBulkEmailJob: (
@@ -100,11 +124,30 @@ function isRetryable(error: unknown): boolean {
   return true;
 }
 
+/** The run saved before a reload, if it belongs to the signed-in user. */
+function readStoredJob(): RestoredBulkEmailJob<QueueItem> | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return restoreBulkEmailJob<QueueItem>(
+      window.sessionStorage.getItem(BULK_EMAIL_STORAGE_KEY),
+      auth.currentUser?.uid || '',
+      Date.now(),
+    );
+  } catch {
+    return null;
+  }
+}
+
 export function BulkEmailProvider({ children }: { children: React.ReactNode }) {
-  const [period, setPeriod] = useState('');
-  const [dbPeriod, setDbPeriod] = useState('');
-  const [queue, setQueue] = useState<QueueItem[]>([]);
-  const [jobStatus, setJobStatus] = useState<'idle' | 'sending' | 'paused' | 'done'>('idle');
+  // The provider mounts only after sign-in (inside ProtectedRoute), so the
+  // saved run can be matched to the user on the first render.
+  const [initialJob] = useState(readStoredJob);
+  const [period, setPeriod] = useState(initialJob?.period ?? '');
+  const [dbPeriod, setDbPeriod] = useState(initialJob?.dbPeriod ?? '');
+  const [queue, setQueue] = useState<QueueItem[]>(initialJob?.queue ?? []);
+  const [jobStatus, setJobStatus] = useState<'idle' | 'sending' | 'paused' | 'done'>(
+    initialJob?.status ?? 'idle',
+  );
   const [fatalError, setFatalError] = useState<string | null>(null);
   /** Rolling average of a real send, used for the live ETA. */
   const [averageSendMs, setAverageSendMs] = useState(ESTIMATED_SECONDS_PER_EMAIL * 1000);
@@ -112,10 +155,11 @@ export function BulkEmailProvider({ children }: { children: React.ReactNode }) {
   const [currentBulkEmailName, setCurrentBulkEmailName] = useState('');
   const [currentBulkEmailAddress, setCurrentBulkEmailAddress] = useState('');
 
-  const [showBulkSnackbar, setShowBulkSnackbar] = useState(false);
+  const [showBulkSnackbar, setShowBulkSnackbar] = useState(Boolean(initialJob));
   const [showBulkDetailModal, setShowBulkDetailModal] = useState(false);
+  const [detailPeriod, setDetailPeriod] = useState<EmailDetailPeriod | null>(null);
 
-  const pausedRef = useRef(false);
+  const pausedRef = useRef(initialJob?.status === 'paused');
   const activeLoopRef = useRef(false);
   /**
    * Bumped by every start/cancel/dismiss. The running loop compares it against
@@ -124,8 +168,8 @@ export function BulkEmailProvider({ children }: { children: React.ReactNode }) {
    */
   const generationRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
-  const queueRef = useRef<QueueItem[]>([]);
-  const dbPeriodRef = useRef('');
+  const queueRef = useRef<QueueItem[]>(initialJob?.queue ?? []);
+  const dbPeriodRef = useRef(initialJob?.dbPeriod ?? '');
   const onSentRef = useRef<((employeeId: string) => void) | undefined>(undefined);
   const durationsRef = useRef<number[]>([]);
   // Re-arms the launcher effect when a loop exits without a state change.
@@ -152,7 +196,11 @@ export function BulkEmailProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const sendOne = useCallback(
-    async (item: QueueItem, index: number, generation: number): Promise<{ ok: boolean; error?: string }> => {
+    async (
+      item: QueueItem,
+      index: number,
+      generation: number,
+    ): Promise<{ ok: boolean; alreadySent?: boolean; error?: string }> => {
       let lastError = 'Gagal mengirim.';
 
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
@@ -169,7 +217,7 @@ export function BulkEmailProvider({ children }: { children: React.ReactNode }) {
           const pdfBase64 = pdfDoc.output('datauristring').split(',')[1];
           if (!pdfBase64) throw new Error('Gagal membuat lampiran PDF slip.');
 
-          await authenticatedJson('/api/payroll/send-email', {
+          const response = await authenticatedJson<{ alreadySent?: boolean }>('/api/payroll/send-email', {
             method: 'POST',
             signal: controller.signal,
             body: JSON.stringify({
@@ -178,10 +226,13 @@ export function BulkEmailProvider({ children }: { children: React.ReactNode }) {
               // Stable across attempts: the server dedupes on it, so a retry
               // after a client timeout can never send a second email.
               requestId: item.requestId,
+              // A slip the server already marked as emailed is skipped, so a
+              // run resumed after a crash or reload never mails anyone twice.
+              skipIfSent: true,
               pdfBase64,
             }),
           });
-          return { ok: true };
+          return { ok: true, alreadySent: response.alreadySent === true };
         } catch (err: unknown) {
           if (generation !== generationRef.current) return { ok: false, error: 'Dibatalkan.' };
           lastError = describeError(err);
@@ -234,7 +285,7 @@ export function BulkEmailProvider({ children }: { children: React.ReactNode }) {
           );
 
           if (result.ok) {
-            patchItem(index, { status: 'success', error: undefined });
+            patchItem(index, { status: 'success', error: undefined, alreadySent: result.alreadySent });
             consecutiveFailures = 0;
             try {
               onSentRef.current?.(item.employeeId);
@@ -295,6 +346,34 @@ export function BulkEmailProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('beforeunload', handler);
   }, [jobStatus]);
 
+  // Save the run so a reload picks it up again (see bulkEmailStorage.ts).
+  useEffect(() => {
+    try {
+      const uid = auth.currentUser?.uid;
+      if (jobStatus === 'idle' || queue.length === 0 || !uid) {
+        window.sessionStorage.removeItem(BULK_EMAIL_STORAGE_KEY);
+        return;
+      }
+      window.sessionStorage.setItem(
+        BULK_EMAIL_STORAGE_KEY,
+        serializeBulkEmailJob({ uid, period, dbPeriod, status: jobStatus, savedAt: Date.now(), queue }),
+      );
+    } catch (storageError) {
+      // Storage full or blocked: the run still works, it just won't survive a reload.
+      console.warn('Antrean email tidak dapat disimpan untuk dimuat ulang:', storageError);
+    }
+  }, [jobStatus, queue, period, dbPeriod]);
+
+  const openEmailHistory = useCallback((target: EmailDetailPeriod) => {
+    setDetailPeriod(target);
+    setShowBulkDetailModal(true);
+  }, []);
+
+  const closeEmailDetail = useCallback(() => {
+    setShowBulkDetailModal(false);
+    setDetailPeriod(null);
+  }, []);
+
   const startBulkEmailJob = useCallback(
     (newQueue: QueueItem[], jobPeriod: string, jobDbPeriod: string, options?: StartBulkEmailOptions) => {
       // Orphan any loop still running from a previous job before replacing state.
@@ -318,12 +397,14 @@ export function BulkEmailProvider({ children }: { children: React.ReactNode }) {
           status: 'pending' as const,
           error: undefined,
           attempts: 0,
+          alreadySent: undefined,
           requestId: item.requestId || createFinancialRequestId('bulk_email'),
         })),
       );
       setJobStatus('sending');
       setShowBulkSnackbar(true);
       setShowBulkDetailModal(false);
+      setDetailPeriod(null);
     },
     [writeQueue],
   );
@@ -392,6 +473,7 @@ export function BulkEmailProvider({ children }: { children: React.ReactNode }) {
     setCurrentBulkEmailAddress('');
     setShowBulkSnackbar(false);
     setShowBulkDetailModal(false);
+    setDetailPeriod(null);
   }, [writeQueue]);
 
   const successCount = queue.filter((entry) => entry.status === 'success').length;
@@ -428,6 +510,9 @@ export function BulkEmailProvider({ children }: { children: React.ReactNode }) {
         setShowBulkSnackbar,
         showBulkDetailModal,
         setShowBulkDetailModal,
+        detailPeriod,
+        openEmailHistory,
+        closeEmailDetail,
         bulkEmailDone,
         isBulkEmailPaused,
         startBulkEmailJob,

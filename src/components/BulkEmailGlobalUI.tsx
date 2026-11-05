@@ -1,7 +1,13 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
-import { useBulkEmail, type QueueItem } from '@/lib/BulkEmailContext';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useBulkEmail } from '@/lib/BulkEmailContext';
+import { authenticatedJson } from '@/lib/payroll/client';
+import {
+  mergeEmailDetail,
+  type EmailDetailRow,
+  type EmailHistoryRow,
+} from '@/lib/payroll/emailHistory';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -24,7 +30,8 @@ import {
   Copy,
   Check,
   ChevronUp,
-  Ban
+  Ban,
+  Circle,
 } from 'lucide-react';
 
 function formatEta(seconds: number | null): string {
@@ -36,12 +43,10 @@ function formatEta(seconds: number | null): string {
 
 export default function BulkEmailGlobalUI() {
   const {
-    sendingBulkEmail,
     bulkEmailProgress,
     emailTargetCount,
     currentBulkEmailName,
     currentBulkEmailAddress,
-    bulkEmailResults,
     successCount,
     failedCount,
     remainingCount,
@@ -50,6 +55,7 @@ export default function BulkEmailGlobalUI() {
     showBulkSnackbar,
     showBulkDetailModal,
     setShowBulkDetailModal,
+    detailPeriod,
     bulkEmailDone,
     isBulkEmailPaused,
     pauseBulkEmailJob,
@@ -58,48 +64,13 @@ export default function BulkEmailGlobalUI() {
     cancelBulkEmailJob,
     dismissJob,
     period,
+    dbPeriod,
   } = useBulkEmail();
 
   const [confirmingCancel, setConfirmingCancel] = useState(false);
-  const [search, setSearch] = useState('');
-  const [copied, setCopied] = useState(false);
 
   const percent = emailTargetCount > 0 ? Math.round((bulkEmailProgress / emailTargetCount) * 100) : 0;
   const hasFailures = failedCount > 0;
-
-  const filtered = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    if (!needle) return bulkEmailResults;
-    return bulkEmailResults.filter(
-      (item) =>
-        item.employeeName.toLowerCase().includes(needle) ||
-        item.email.toLowerCase().includes(needle),
-    );
-  }, [bulkEmailResults, search]);
-
-  const groups = useMemo(
-    () => ({
-      failed: filtered.filter((item) => item.status === 'failed'),
-      sending: filtered.filter((item) => item.status === 'sending'),
-      success: filtered.filter((item) => item.status === 'success'),
-      pending: filtered.filter((item) => item.status === 'pending'),
-    }),
-    [filtered],
-  );
-
-  const handleCopyFailed = async () => {
-    const text = bulkEmailResults
-      .filter((item) => item.status === 'failed')
-      .map((item) => `${item.employeeName}\t${item.email}\t${item.error || ''}`)
-      .join('\n');
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Gagal menyalin daftar gagal:', err);
-    }
-  };
 
   const handleClose = () => {
     if (!bulkEmailDone) {
@@ -110,11 +81,12 @@ export default function BulkEmailGlobalUI() {
     dismissJob();
   };
 
-  if (!showBulkSnackbar) return null;
+  const viewDbPeriod = detailPeriod?.dbPeriod || dbPeriod;
 
   return (
     <>
       {/* ─── Bulk Email Floating Snackbar ───────────────────── */}
+      {showBulkSnackbar && (
       <div className={`fixed inset-x-0 top-0 flex justify-center px-4 pt-[max(1rem,env(safe-area-inset-top))] ${fatalError || hasFailures ? 'z-[2147483647]' : 'z-[9998]'}`}>
         <div
           className={`relative overflow-hidden rounded-2xl border shadow-xl transition-all duration-300 ${
@@ -257,6 +229,7 @@ export default function BulkEmailGlobalUI() {
           )}
         </div>
       </div>
+      )}
 
       {/* ─── Cancel Confirmation ────────────────────────────── */}
       <Dialog open={confirmingCancel} onOpenChange={setConfirmingCancel}>
@@ -293,8 +266,155 @@ export default function BulkEmailGlobalUI() {
         </DialogContent>
       </Dialog>
 
-      {/* ─── Bulk Email Detail Modal ────────────────────────── */}
-      <Dialog open={showBulkDetailModal} onOpenChange={setShowBulkDetailModal}>
+      {/* ─── Detail Pengiriman Email ───────────────────────── */}
+      {/* Mounted only while open, so each opening reads the history afresh. */}
+      {showBulkDetailModal && viewDbPeriod && (
+        <EmailDetailDialog
+          key={viewDbPeriod}
+          dbPeriod={viewDbPeriod}
+          periodLabel={detailPeriod?.label || period}
+        />
+      )}
+    </>
+  );
+}
+
+const DATE_TIME = new Intl.DateTimeFormat('id-ID', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+function formatSentAt(iso: string | null): string {
+  if (!iso) return '';
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? '' : DATE_TIME.format(date);
+}
+
+/**
+ * Who received their payslip email for one period: the server's record, with
+ * the running bulk send (when it is for this period) laid over it. It also
+ * opens with no job at all, so the history survives a crashed or closed run.
+ */
+function EmailDetailDialog({ dbPeriod, periodLabel }: { dbPeriod: string; periodLabel: string }) {
+  const {
+    bulkEmailResults,
+    bulkEmailProgress,
+    emailTargetCount,
+    etaSeconds,
+    fatalError,
+    bulkEmailDone,
+    isBulkEmailActive,
+    isBulkEmailPaused,
+    sendingBulkEmail,
+    pauseBulkEmailJob,
+    resumeBulkEmailJob,
+    retryFailedEmails,
+    cancelBulkEmailJob,
+    dismissJob,
+    closeEmailDetail,
+    dbPeriod: jobDbPeriod,
+  } = useBulkEmail();
+
+  const [history, setHistory] = useState<EmailHistoryRow[] | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [search, setSearch] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    authenticatedJson<{ rows: EmailHistoryRow[] }>(
+      `/api/payroll/send-email?dbPeriod=${encodeURIComponent(dbPeriod)}`,
+    )
+      .then((result) => {
+        if (cancelled) return;
+        setHistory(Array.isArray(result.rows) ? result.rows : []);
+        setHistoryError(null);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setHistoryError(error instanceof Error ? error.message : 'Riwayat pengiriman gagal dimuat.');
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dbPeriod, reloadKey]);
+
+  const reloadHistory = () => {
+    setHistoryLoading(true);
+    setReloadKey((key) => key + 1);
+  };
+
+  // The job's controls belong here only when it is sending this period.
+  const jobHere = jobDbPeriod === dbPeriod && bulkEmailResults.length > 0;
+  const rows = useMemo(
+    () => mergeEmailDetail(history, jobHere ? bulkEmailResults : null),
+    [history, jobHere, bulkEmailResults],
+  );
+  const jobFailedCount = jobHere
+    ? bulkEmailResults.filter((item) => item.status === 'failed').length
+    : 0;
+
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return rows;
+    return rows.filter(
+      (row) =>
+        row.employeeName.toLowerCase().includes(needle) ||
+        row.email.toLowerCase().includes(needle),
+    );
+  }, [rows, search]);
+
+  const groups = useMemo(
+    () => ({
+      failed: filtered.filter((row) => row.status === 'failed'),
+      sending: filtered.filter((row) => row.status === 'sending'),
+      pending: filtered.filter((row) => row.status === 'pending'),
+      sent: filtered.filter((row) => row.status === 'sent'),
+      notSent: filtered.filter((row) => row.status === 'not_sent'),
+    }),
+    [filtered],
+  );
+  const counts = {
+    sent: rows.filter((row) => row.status === 'sent').length,
+    failed: rows.filter((row) => row.status === 'failed').length,
+    waiting: rows.filter((row) => row.status !== 'sent' && row.status !== 'failed').length,
+  };
+
+  const handleCopyFailed = async () => {
+    const text = rows
+      .filter((row) => row.status === 'failed')
+      .map((row) => `${row.employeeName}\t${row.email}\t${row.note || ''}`)
+      .join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Gagal menyalin daftar gagal:', err);
+    }
+  };
+
+  let description: string;
+  if (jobHere && isBulkEmailActive) {
+    description = isBulkEmailPaused
+      ? `Dijeda pada ${bulkEmailProgress} dari ${emailTargetCount} email.`
+      : `Mengirim ${bulkEmailProgress} dari ${emailTargetCount}${etaSeconds ? ` · ${formatEta(etaSeconds)}` : ''}.`;
+  } else {
+    description = `Riwayat pengiriman slip gaji${periodLabel ? ` periode ${periodLabel}` : ''}.`;
+  }
+
+  return (
+    <>
+      <Dialog open onOpenChange={(open) => { if (!open) closeEmailDetail(); }}>
         <DialogContent className="sm:max-w-lg max-h-[85vh] rounded-2xl flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg">
@@ -302,39 +422,49 @@ export default function BulkEmailGlobalUI() {
               Detail Pengiriman Email
             </DialogTitle>
             <DialogDescription className="text-slate-500 text-sm">
-              {bulkEmailDone
-                ? `${successCount} berhasil, ${failedCount} gagal dari ${emailTargetCount} total`
-                : isBulkEmailPaused
-                  ? `Dijeda pada ${bulkEmailProgress} dari ${emailTargetCount} email.`
-                  : `Mengirim ${bulkEmailProgress} dari ${emailTargetCount}${etaSeconds ? ` · ${formatEta(etaSeconds)}` : ''}`}
-              {period ? ` · Periode ${period}` : ''}
+              {description}
             </DialogDescription>
           </DialogHeader>
 
-          {fatalError && (
+          {jobHere && fatalError && (
             <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-rose-50 border border-rose-100">
               <AlertTriangle className="w-4 h-4 text-rose-500 flex-shrink-0 mt-0.5" />
               <p className="text-xs text-rose-700 leading-relaxed">{fatalError}</p>
             </div>
           )}
 
-          {/* Summary chips */}
+          {historyError && (
+            <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-100">
+              <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-800 leading-relaxed flex-1">
+                Riwayat dari server gagal dimuat: {historyError}
+              </p>
+              <button
+                type="button"
+                onClick={reloadHistory}
+                className="text-xs font-semibold text-amber-800 underline underline-offset-2 cursor-pointer"
+              >
+                Coba lagi
+              </button>
+            </div>
+          )}
+
           <div className="grid grid-cols-3 gap-2">
             <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2">
-              <p className="text-[11px] font-semibold text-emerald-700">Berhasil</p>
-              <p className="text-lg font-bold text-emerald-800 tabular-nums leading-tight">{successCount}</p>
+              <p className="text-[11px] font-semibold text-emerald-700">Terkirim</p>
+              <p className="text-lg font-bold text-emerald-800 tabular-nums leading-tight">{counts.sent}</p>
             </div>
             <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2">
               <p className="text-[11px] font-semibold text-rose-700">Gagal</p>
-              <p className="text-lg font-bold text-rose-800 tabular-nums leading-tight">{failedCount}</p>
+              <p className="text-lg font-bold text-rose-800 tabular-nums leading-tight">{counts.failed}</p>
             </div>
             <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-              <p className="text-[11px] font-semibold text-slate-500">Menunggu</p>
-              <p className="text-lg font-bold text-slate-700 tabular-nums leading-tight">{remainingCount}</p>
+              <p className="text-[11px] font-semibold text-slate-500">Belum terkirim</p>
+              <p className="text-lg font-bold text-slate-700 tabular-nums leading-tight">{counts.waiting}</p>
             </div>
           </div>
 
-          {emailTargetCount > 8 && (
+          {rows.length > 8 && (
             <div className="relative">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
@@ -348,90 +478,102 @@ export default function BulkEmailGlobalUI() {
           )}
 
           <div className="flex-1 overflow-y-auto space-y-4 pr-1 min-h-[120px]">
-            {filtered.length === 0 && (
+            {historyLoading && rows.length === 0 && (
+              <p className="text-sm text-slate-400 text-center py-8 flex items-center justify-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Memuat riwayat...
+              </p>
+            )}
+            {!historyLoading && rows.length === 0 && !historyError && (
+              <p className="text-sm text-slate-400 text-center py-8">Belum ada slip terkunci pada periode ini.</p>
+            )}
+            {rows.length > 0 && filtered.length === 0 && (
               <p className="text-sm text-slate-400 text-center py-8">Tidak ada hasil untuk “{search}”.</p>
             )}
 
-            <Section
-              title="Gagal"
-              count={groups.failed.length}
-              dotClass="bg-rose-500"
-              labelClass="text-rose-700"
-              items={groups.failed}
-              renderItem={(item) => (
+            <Section title="Gagal" count={groups.failed.length} dotClass="bg-rose-500" labelClass="text-rose-700">
+              {groups.failed.map((row) => (
                 <Row
-                  key={`fail-${item.employeeId}`}
-                  item={item}
+                  key={`fail-${row.employeeId}`}
+                  row={row}
                   wrapperClass="bg-rose-50 border-rose-100"
                   icon={<AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0" />}
-                  errorClass="text-rose-600"
+                  noteClass="text-rose-600"
                 />
-              )}
-            />
+              ))}
+            </Section>
 
-            <Section
-              title="Sedang dikirim"
-              count={groups.sending.length}
-              dotClass="bg-indigo-500"
-              labelClass="text-indigo-700"
-              items={groups.sending}
-              renderItem={(item) => (
+            <Section title="Sedang dikirim" count={groups.sending.length} dotClass="bg-indigo-500" labelClass="text-indigo-700">
+              {groups.sending.map((row) => (
                 <Row
-                  key={`sending-${item.employeeId}`}
-                  item={item}
+                  key={`sending-${row.employeeId}`}
+                  row={row}
                   wrapperClass="bg-indigo-50 border-indigo-100"
                   icon={<Loader2 className="w-4 h-4 text-indigo-500 animate-spin flex-shrink-0" />}
                 />
-              )}
-            />
+              ))}
+            </Section>
 
-            <Section
-              title="Berhasil"
-              count={groups.success.length}
-              dotClass="bg-emerald-500"
-              labelClass="text-emerald-700"
-              items={groups.success}
-              renderItem={(item) => (
+            <Section title="Menunggu" count={groups.pending.length} dotClass="bg-slate-400" labelClass="text-slate-600">
+              {groups.pending.map((row) => (
                 <Row
-                  key={`success-${item.employeeId}`}
-                  item={item}
-                  wrapperClass="bg-emerald-50 border-emerald-100"
-                  icon={<CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />}
-                />
-              )}
-            />
-
-            <Section
-              title="Menunggu"
-              count={groups.pending.length}
-              dotClass="bg-slate-300"
-              labelClass="text-slate-500"
-              items={groups.pending}
-              renderItem={(item) => (
-                <Row
-                  key={`pending-${item.employeeId}`}
-                  item={item}
+                  key={`pending-${row.employeeId}`}
+                  row={row}
                   wrapperClass="bg-slate-50 border-slate-100"
                   muted
                   icon={<div className="w-4 h-4 rounded-full border-2 border-slate-300 flex-shrink-0" />}
                 />
-              )}
-            />
+              ))}
+            </Section>
+
+            <Section title="Terkirim" count={groups.sent.length} dotClass="bg-emerald-500" labelClass="text-emerald-700">
+              {groups.sent.map((row) => (
+                <Row
+                  key={`sent-${row.employeeId}`}
+                  row={row}
+                  wrapperClass="bg-emerald-50 border-emerald-100"
+                  icon={<CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />}
+                />
+              ))}
+            </Section>
+
+            <Section title="Belum dikirim" count={groups.notSent.length} dotClass="bg-slate-300" labelClass="text-slate-500">
+              {groups.notSent.map((row) => (
+                <Row
+                  key={`not-sent-${row.employeeId}`}
+                  row={row}
+                  wrapperClass="bg-white border-slate-100"
+                  muted
+                  icon={<Circle className="w-4 h-4 text-slate-300 flex-shrink-0" />}
+                />
+              ))}
+            </Section>
           </div>
 
           <div className="flex flex-wrap justify-end items-center gap-2 pt-4 border-t border-slate-100">
-            {hasFailures && (
+            <div className="flex items-center gap-1 mr-auto">
               <Button
-                variant="outline"
-                onClick={handleCopyFailed}
-                className="rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50 mr-auto"
+                variant="ghost"
+                onClick={reloadHistory}
+                disabled={historyLoading}
+                title="Muat ulang riwayat dari server"
+                className="rounded-xl text-slate-500 hover:bg-slate-50"
               >
-                {copied ? <Check className="w-4 h-4 mr-2 text-emerald-600" /> : <Copy className="w-4 h-4 mr-2" />}
-                {copied ? 'Tersalin' : 'Salin daftar gagal'}
+                <RefreshCw className={`w-4 h-4 ${historyLoading ? 'animate-spin' : ''}`} />
               </Button>
-            )}
+              {counts.failed > 0 && (
+                <Button
+                  variant="outline"
+                  onClick={handleCopyFailed}
+                  className="rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50"
+                >
+                  {copied ? <Check className="w-4 h-4 mr-2 text-emerald-600" /> : <Copy className="w-4 h-4 mr-2" />}
+                  {copied ? 'Tersalin' : 'Salin daftar gagal'}
+                </Button>
+              )}
+            </div>
 
-            {!bulkEmailDone && (
+            {jobHere && isBulkEmailActive && (
               <>
                 <Button
                   variant="outline"
@@ -461,34 +603,67 @@ export default function BulkEmailGlobalUI() {
               </>
             )}
 
-            {bulkEmailDone && (
-              <>
-                {hasFailures && (
-                  <Button
-                    onClick={retryFailedEmails}
-                    className="rounded-xl bg-amber-500 hover:bg-amber-600 text-white"
-                  >
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    Kirim Ulang yang Gagal ({failedCount})
-                  </Button>
-                )}
-                <Button
-                  variant="outline"
-                  onClick={dismissJob}
-                  className="rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50"
-                >
-                  Tutup
-                </Button>
-              </>
+            {jobHere && bulkEmailDone && jobFailedCount > 0 && (
+              <Button
+                onClick={retryFailedEmails}
+                className="rounded-xl bg-amber-500 hover:bg-amber-600 text-white"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Kirim Ulang yang Gagal ({jobFailedCount})
+              </Button>
+            )}
+
+            {(!jobHere || !isBulkEmailActive) && (
+              <Button
+                variant="outline"
+                onClick={jobHere && bulkEmailDone ? dismissJob : closeEmailDetail}
+                className="rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50"
+              >
+                Tutup
+              </Button>
             )}
           </div>
 
-          {sendingBulkEmail && (
+          {jobHere && sendingBulkEmail && (
             <p className="text-[11px] text-slate-400 text-center flex items-center justify-center gap-1">
               <ChevronUp className="w-3 h-3" />
-              Anda dapat menutup jendela ini — pengiriman tetap berjalan selama tab tidak ditutup.
+              Anda dapat menutup jendela ini — pengiriman tetap berjalan, juga setelah halaman dimuat ulang.
             </p>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmingCancel} onOpenChange={setConfirmingCancel}>
+        <DialogContent className="sm:max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <Ban className="w-5 h-5 text-rose-600" />
+              Batalkan Pengiriman?
+            </DialogTitle>
+            <DialogDescription className="text-slate-500 text-sm pt-2">
+              Email yang belum terkirim akan dilewati. Email yang sudah terkirim tidak dapat ditarik
+              kembali. Anda bisa mengirim sisanya nanti lewat tombol <em>Kirim Email ke Semua</em>;
+              slip yang sudah terkirim tidak akan dikirim ulang.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-3 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setConfirmingCancel(false)}
+              className="rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50"
+            >
+              Lanjutkan Mengirim
+            </Button>
+            <Button
+              onClick={() => {
+                cancelBulkEmailJob();
+                setConfirmingCancel(false);
+              }}
+              className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white"
+            >
+              Ya, Batalkan
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </>
@@ -500,15 +675,13 @@ function Section({
   count,
   dotClass,
   labelClass,
-  items,
-  renderItem,
+  children,
 }: {
   title: string;
   count: number;
   dotClass: string;
   labelClass: string;
-  items: QueueItem[];
-  renderItem: (item: QueueItem) => React.ReactNode;
+  children: React.ReactNode;
 }) {
   if (count === 0) return null;
   return (
@@ -519,33 +692,37 @@ function Section({
           {title} ({count})
         </span>
       </div>
-      <div className="space-y-1.5">{items.map(renderItem)}</div>
+      <div className="space-y-1.5">{children}</div>
     </div>
   );
 }
 
 function Row({
-  item,
+  row,
   icon,
   wrapperClass,
-  errorClass,
+  noteClass,
   muted,
 }: {
-  item: QueueItem;
+  row: EmailDetailRow;
   icon: React.ReactNode;
   wrapperClass: string;
-  errorClass?: string;
+  noteClass?: string;
   muted?: boolean;
 }) {
+  const sentAt = row.status === 'sent' ? formatSentAt(row.sentAt) : '';
   return (
     <div className={`flex items-center gap-3 px-3 py-2 border rounded-xl ${wrapperClass}`}>
       {icon}
       <div className="min-w-0 flex-1">
         <p className={`text-sm font-medium truncate ${muted ? 'text-slate-500' : 'text-slate-800'}`}>
-          {item.employeeName}
+          {row.employeeName}
         </p>
-        <p className={`text-xs truncate ${muted ? 'text-slate-400' : 'text-slate-500'}`}>{item.email}</p>
-        {item.error && <p className={`text-[11px] mt-0.5 ${errorClass || 'text-slate-500'}`}>{item.error}</p>}
+        <p className={`text-xs truncate ${muted ? 'text-slate-400' : 'text-slate-500'}`}>
+          {row.email || 'Email belum terdaftar'}
+          {sentAt ? ` · ${sentAt}` : ''}
+        </p>
+        {row.note && <p className={`text-[11px] mt-0.5 ${noteClass || 'text-slate-500'}`}>{row.note}</p>}
       </div>
     </div>
   );
