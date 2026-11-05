@@ -87,6 +87,8 @@ interface PayrollCommand {
   reason?: string;
   earnings?: unknown;
   deductions?: unknown;
+  /** Refresh may only save the draft revision the person actually reviewed. */
+  expectedRevision?: number | null;
   /**
    * Whether this employee is selected for income tax. Omitted by every caller
    * that is not changing the selection (bulk refresh, draft repair), in which
@@ -126,6 +128,10 @@ function parseCommand(raw: unknown): PayrollCommand {
   }
   if (command.taxApplied !== undefined && typeof command.taxApplied !== 'boolean') {
     throw new HttpError(400, 'taxApplied tidak valid.');
+  }
+  if (command.expectedRevision !== undefined && command.expectedRevision !== null &&
+    (typeof command.expectedRevision !== 'number' || !Number.isSafeInteger(command.expectedRevision) || command.expectedRevision < 0)) {
+    throw new HttpError(400, 'Revisi draf tidak valid.');
   }
   return command as PayrollCommand;
 }
@@ -310,8 +316,15 @@ export async function POST(request: NextRequest) {
         }
         return {
           slipId,
-          status: previous.resultingStatus,
+          status: isDraftWriteAction(command.action) && before ? before.status : previous.resultingStatus,
           idempotent: true,
+          ...(isDraftWriteAction(command.action) && before ? {
+            earnings: before.earnings,
+            deductions: before.deductions,
+            taxes: before.taxes || [],
+            taxApplied: before.taxApplied,
+            revision: Number(before.revision || 0),
+          } : {}),
         };
       }
       if (!blueEmployeeSnapshot.exists && !loyalisEmployeeSnapshot.exists) {
@@ -601,6 +614,11 @@ export async function POST(request: NextRequest) {
         case 'save_draft':
         case 'repair_missing_draft': {
           const isLegacyRepair = command.action === 'repair_missing_draft';
+          if (command.expectedRevision !== undefined &&
+            (command.expectedRevision === null ? Boolean(before) :
+              !before || Number(before.revision || 0) !== command.expectedRevision)) {
+            throw new HttpError(409, 'Draf slip telah berubah sejak perbandingan dibuka. Klik Refresh dan tinjau ulang sebelum menyimpan.');
+          }
           if (before && before.status !== 'draft') {
             throw new HttpError(
               409,
@@ -1008,6 +1026,9 @@ export async function POST(request: NextRequest) {
         // slip state matches Firestore without a re-read.
         ...(isDraftWriteAction(command.action)
           ? {
+              earnings: after.earnings,
+              deductions: after.deductions,
+              revision: after.revision,
               taxes: after.taxes,
               taxApplied: after.taxApplied,
               totalTax: after.totalTax,

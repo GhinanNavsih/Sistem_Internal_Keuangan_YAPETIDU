@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -46,12 +46,14 @@ import { UserRole } from '@/lib/payroll/roles';
 import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { synchronizeFamilyAllowanceEarnings } from '@/lib/payroll/familyAllowance';
+import { applySlipRefresh, diffSlipRefresh, type SlipRefreshPreview } from '@/lib/payroll/slipRefresh';
 
 // ─── Types ─────────────────────────────────────────────────────
 
 export type SlipStatus = PayrollStatus;
 
 export interface SlipState {
+  revision?: number;
   status: SlipStatus;
   earnings: PaySlipField[];
   deductions: PaySlipField[];
@@ -86,12 +88,13 @@ interface PaySlipDialogProps {
     earnings: PaySlipField[],
     deductions: PaySlipField[],
     taxApplied: boolean,
-  ) => Promise<void>;
+    options?: { expectedRevision?: number | null },
+  ) => Promise<SlipState | void>;
   onVerifyAndLock: (employeeId: string, reason: string) => Promise<void>;
   onCreatePayment: (employeeId: string, paymentBatchId: string, reason: string) => Promise<void>;
   onMarkPaid: (employeeId: string, bankReference: string, reason: string) => Promise<void>;
   onRequestCorrection: (employeeId: string, reason: string) => Promise<void>;
-  onRefresh: (employeeId: string) => Promise<{ earnings: PaySlipField[]; deductions: PaySlipField[] }>;
+  onRefresh: (employeeId: string) => Promise<SlipRefreshPreview>;
   actorRole?: UserRole;
   uraianEntry?: UraianEntry; // from UraianGaji collection
   activeTab?: string;
@@ -238,12 +241,27 @@ export default function PaySlipDialog({
   // Refresh & diff comparison states
   const [compareOpen, setCompareOpen] = useState(false);
   const [refreshDiff, setRefreshDiff] = useState<DiffItem[] | null>(null);
-  const [freshRecalculated, setFreshRecalculated] = useState<{ earnings: PaySlipField[]; deductions: PaySlipField[] } | null>(null);
+  const [freshRecalculated, setFreshRecalculated] = useState<SlipRefreshPreview | null>(null);
   const [refreshLoading, setRefreshLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const savingRef = useRef(false);
+  const refreshingRef = useRef(false);
+  const initializedSession = useRef<string | null>(null);
+  const sessionKey = open && employee ? `${periodToken}:${employee.employeeId || employee.id}` : null;
+  const activeSession = useRef(sessionKey);
+  useLayoutEffect(() => { activeSession.current = sessionKey; }, [sessionKey]);
 
   // Initialize fields and snapshots when dialog opens
   useEffect(() => {
-    if (!open || !employee) return;
+    if (!open || !employee) { initializedSession.current = null; return; }
+    if (initializedSession.current === sessionKey) return;
+    // Source refreshes may replace object identities while this form is open.
+    // They must not reset reviewed edits or close the comparison dialog.
+    if (activeTab === 'loyalis' || slipState || pekaryaPreview) initializedSession.current = sessionKey;
+    setSaveMessage('');
+    setSaveError('');
 
     let initEarnings: PaySlipField[] = [];
     let initDeductions: PaySlipField[] = [];
@@ -313,6 +331,7 @@ export default function PaySlipDialog({
     setFreshRecalculated(null);
   }, [
     open,
+    sessionKey,
     periodToken,
     employee,
     gapok,
@@ -333,54 +352,12 @@ export default function PaySlipDialog({
     pekaryaPreview
   ]);
 
-  // Helper function to calculate diffs
-  const getDiff = (
-    currentEarn: PaySlipField[],
-    freshEarn: PaySlipField[],
-    currentDed: PaySlipField[],
-    freshDed: PaySlipField[]
-  ): DiffItem[] => {
-    const diffs: DiffItem[] = [];
-
-    // Earnings diff
-    freshEarn.forEach(f => {
-      const cur = currentEarn.find(c => c.label === f.label);
-      if (!cur) {
-        diffs.push({ type: 'earnings', label: f.label, oldValue: null, newValue: f.amount });
-      } else if (cur.amount !== f.amount) {
-        diffs.push({ type: 'earnings', label: f.label, oldValue: cur.amount, newValue: f.amount });
-      }
-    });
-    currentEarn.forEach(c => {
-      const f = freshEarn.find(fresh => fresh.label === c.label);
-      if (!f) {
-        diffs.push({ type: 'earnings', label: c.label, oldValue: c.amount, newValue: null });
-      }
-    });
-
-    // Deductions diff
-    freshDed.forEach(f => {
-      const cur = currentDed.find(c => c.label === f.label);
-      if (!cur) {
-        diffs.push({ type: 'deductions', label: f.label, oldValue: null, newValue: f.amount });
-      } else if (cur.amount !== f.amount) {
-        diffs.push({ type: 'deductions', label: f.label, oldValue: cur.amount, newValue: f.amount });
-      }
-    });
-    currentDed.forEach(c => {
-      const f = freshDed.find(fresh => fresh.label === c.label);
-      if (!f) {
-        diffs.push({ type: 'deductions', label: c.label, oldValue: c.amount, newValue: null });
-      }
-    });
-
-    return diffs;
-  };
-
   // ─── Field Mutators ───────────────────────────────────────────
 
   const updateField = useCallback(
     (type: 'earnings' | 'deductions', index: number, field: 'label' | 'amount', value: string) => {
+      if (savingRef.current || refreshingRef.current) return;
+      setSaveMessage('');
       const setter = type === 'earnings' ? setEarnings : setDeductions;
       setter((prev) => {
         const copy = [...prev];
@@ -396,11 +373,15 @@ export default function PaySlipDialog({
   );
 
   const addRow = useCallback((type: 'earnings' | 'deductions') => {
+    if (savingRef.current || refreshingRef.current) return;
+    setSaveMessage('');
     const setter = type === 'earnings' ? setEarnings : setDeductions;
     setter((prev) => [...prev, { label: '', amount: 0 }]);
   }, []);
 
   const removeRow = useCallback((type: 'earnings' | 'deductions', index: number) => {
+    if (savingRef.current || refreshingRef.current) return;
+    setSaveMessage('');
     const setter = type === 'earnings' ? setEarnings : setDeductions;
     setter((prev) => prev.filter((_, i) => i !== index));
   }, []);
@@ -433,11 +414,16 @@ export default function PaySlipDialog({
   };
 
   const handleRefresh = async () => {
-    if (!employee) return;
+    if (!employee || localIsLocked || refreshingRef.current || savingRef.current) return;
+    refreshingRef.current = true;
+    const session = sessionKey;
     setRefreshLoading(true);
+    setSaveError('');
+    setSaveMessage('');
     try {
       const fresh = await onRefresh(employee.employeeId || employee.id);
-      const diffs = getDiff(earnings, fresh.earnings, deductions, fresh.deductions);
+      if (activeSession.current !== session) return;
+      const diffs = diffSlipRefresh({ earnings, deductions }, fresh);
       if (diffs.length === 0) {
         alert("Data slip gaji saat ini sudah sesuai dengan data terbaru di database.");
       } else {
@@ -447,14 +433,18 @@ export default function PaySlipDialog({
       }
     } catch (err) {
       console.error("Gagal merefresh data:", err);
-      alert("Gagal memuat data terbaru dari database.");
+      setSaveError(err instanceof Error ? err.message : 'Gagal memuat data terbaru dari database.');
     } finally {
+      refreshingRef.current = false;
       setRefreshLoading(false);
     }
   };
 
   const handleSimpan = async () => {
-    if (!employee || newSlipBlocked) return;
+    if (!employee || localIsLocked || newSlipBlocked || savingRef.current || refreshingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setSaveError('');
     try {
       // The raw selection is sent, not `taxApplied && taxEligible`: a slip
       // that is selected but currently under the threshold must keep its
@@ -469,6 +459,41 @@ export default function PaySlipDialog({
       onOpenChange(false);
     } catch (err) {
       console.error("Gagal menyimpan slip:", err);
+      setSaveError(err instanceof Error ? err.message : 'Gagal menyimpan slip.');
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
+
+  const handleApplyRefresh = async () => {
+    if (!employee || localIsLocked || !freshRecalculated || !refreshDiff || savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setSaveError('');
+    const session = sessionKey;
+    const next = applySlipRefresh({ earnings, deductions }, refreshDiff);
+    try {
+      const saved = await onSave(employee.employeeId || employee.id, next.earnings, next.deductions, taxApplied,
+        { expectedRevision: freshRecalculated.expectedRevision });
+      if (activeSession.current !== session) return;
+      const savedEarnings = saved?.earnings || next.earnings;
+      const savedDeductions = saved?.deductions || next.deductions;
+      const savedTax = saved ? resolveTaxSelection(saved) : taxApplied;
+      setEarnings(savedEarnings);
+      setDeductions(savedDeductions);
+      setTaxApplied(savedTax);
+      setSnapshotEarnings(savedEarnings);
+      setSnapshotDeductions(savedDeductions);
+      setSnapshotTaxApplied(savedTax);
+      setLocalStatus(saved?.status || 'draft');
+      setCompareOpen(false);
+      setSaveMessage('Perubahan refresh telah disimpan.');
+    } catch (error) {
+      if (activeSession.current === session) setSaveError(error instanceof Error ? error.message : 'Perubahan belum tersimpan. Coba lagi.');
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   };
 
@@ -531,7 +556,7 @@ export default function PaySlipDialog({
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open} onOpenChange={(nextOpen) => { if (!savingRef.current && !refreshingRef.current) onOpenChange(nextOpen); }}>
         <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto rounded-[28px] border-none shadow-2xl p-0 bg-white">
           {/* ─── Dialog Header ────────────────────────────────────── */}
           <DialogHeader className="p-6 pb-4 bg-gradient-to-r from-indigo-50/80 to-purple-50/60 border-b border-slate-100">
@@ -605,6 +630,7 @@ export default function PaySlipDialog({
                       variant="ghost"
                       size="sm"
                       onClick={() => addRow('earnings')}
+                      disabled={saving || refreshLoading}
                       className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg h-7 text-xs px-2"
                     >
                       <Plus className="w-3 h-3 mr-1" /> Tambah
@@ -619,7 +645,7 @@ export default function PaySlipDialog({
                         value={item.label}
                         onChange={(e) => updateField('earnings', idx, 'label', (e.target as HTMLInputElement).value)}
                         placeholder="Nama"
-                        disabled={localIsLocked}
+                        disabled={localIsLocked || saving || refreshLoading}
                         className="flex-1 text-sm h-8 rounded-lg bg-slate-50 border-slate-200 focus-visible:border-emerald-400 focus-visible:ring-emerald-200 disabled:opacity-80"
                       />
                       <div className="flex items-center w-32 h-8 rounded-lg bg-slate-50 border border-slate-200 px-2 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-200 transition-all shrink-0">
@@ -627,7 +653,7 @@ export default function PaySlipDialog({
                         <input
                           type="text"
                           value={item.amount ? formatNumberWithDots(item.amount) : ''}
-                          disabled={localIsLocked}
+                          disabled={localIsLocked || saving || refreshLoading}
                           onChange={(e) => updateField('earnings', idx, 'amount', String(parseDotsToNumber(e.target.value)))}
                           placeholder="0"
                           className="w-full bg-transparent border-none p-0 h-full text-right text-sm outline-none focus:outline-none focus:ring-0 focus:border-none tabular-nums disabled:cursor-not-allowed"
@@ -639,6 +665,7 @@ export default function PaySlipDialog({
                           variant="ghost"
                           size="icon"
                           onClick={() => removeRow('earnings', idx)}
+                          disabled={saving || refreshLoading}
                           className="h-7 w-7 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -668,6 +695,7 @@ export default function PaySlipDialog({
                       variant="ghost"
                       size="sm"
                       onClick={() => addRow('deductions')}
+                      disabled={saving || refreshLoading}
                       className="text-red-500 hover:text-red-600 hover:bg-red-50 rounded-lg h-7 text-xs px-2"
                     >
                       <Plus className="w-3 h-3 mr-1" /> Tambah
@@ -682,7 +710,7 @@ export default function PaySlipDialog({
                         value={item.label}
                         onChange={(e) => updateField('deductions', idx, 'label', (e.target as HTMLInputElement).value)}
                         placeholder="Nama"
-                        disabled={localIsLocked}
+                        disabled={localIsLocked || saving || refreshLoading}
                         className="flex-1 text-sm h-8 rounded-lg bg-slate-50 border-slate-200 focus-visible:border-red-400 focus-visible:ring-red-200 disabled:opacity-80"
                       />
                       <div className="flex items-center w-32 h-8 rounded-lg bg-slate-50 border border-slate-200 px-2 focus-within:border-red-400 focus-within:ring-1 focus-within:ring-red-200 transition-all shrink-0">
@@ -690,7 +718,7 @@ export default function PaySlipDialog({
                         <input
                           type="text"
                           value={item.amount ? formatNumberWithDots(item.amount) : ''}
-                          disabled={localIsLocked}
+                          disabled={localIsLocked || saving || refreshLoading}
                           onChange={(e) => updateField('deductions', idx, 'amount', String(parseDotsToNumber(e.target.value)))}
                           placeholder="0"
                           className="w-full bg-transparent border-none p-0 h-full text-right text-sm outline-none focus:outline-none focus:ring-0 focus:border-none tabular-nums disabled:cursor-not-allowed"
@@ -702,6 +730,7 @@ export default function PaySlipDialog({
                           variant="ghost"
                           size="icon"
                           onClick={() => removeRow('deductions', idx)}
+                          disabled={saving || refreshLoading}
                           className="h-7 w-7 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -839,6 +868,9 @@ export default function PaySlipDialog({
             )}
           </div>
 
+          {saveMessage && <p role="status" className="px-6 py-2 text-sm text-emerald-700">{saveMessage}</p>}
+          {saveError && !compareOpen && <p role="alert" className="px-6 py-2 text-sm text-rose-700">{saveError}</p>}
+
           {/* ─── Footer ───────────────────────────────────────────── */}
           <DialogFooter className="p-6 pt-4 bg-slate-50/50 border-t border-slate-100 flex flex-row justify-between items-center gap-3">
             <div className="flex items-center gap-2">
@@ -846,6 +878,7 @@ export default function PaySlipDialog({
                 type="button"
                 variant="ghost"
                 onClick={handleBatal}
+                disabled={saving || refreshLoading}
                 className="rounded-xl text-slate-500"
               >
                 Batal
@@ -856,7 +889,7 @@ export default function PaySlipDialog({
                   type="button"
                   variant="outline"
                   onClick={handleRefresh}
-                  disabled={refreshLoading}
+                  disabled={refreshLoading || saving}
                   className="rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-indigo-600 hover:border-indigo-200 transition-all cursor-pointer flex items-center h-10 font-bold"
                   title="Periksa perubahan data terbaru di database"
                 >
@@ -875,8 +908,8 @@ export default function PaySlipDialog({
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setTaxApplied((previous) => !previous)}
-                  disabled={!taxApplied && !taxEligible}
+                  onClick={() => { setSaveMessage(''); setTaxApplied((previous) => !previous); }}
+                  disabled={saving || refreshLoading || (!taxApplied && !taxEligible)}
                   title={
                     taxApplied
                       ? 'Hapus pajak penghasilan dari slip ini.'
@@ -902,11 +935,11 @@ export default function PaySlipDialog({
                     <Button
                       type="button"
                       onClick={handleSimpan}
-                      disabled={newSlipBlocked}
+                      disabled={newSlipBlocked || saving || refreshLoading}
                       title={newSlipBlocked ? newSlipBlockedReason : undefined}
                       className="rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 shadow-sm px-6 cursor-pointer font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Simpan Perubahan
+                      {saving ? 'Menyimpan...' : 'Simpan Perubahan'}
                     </Button>
                   )}
                   {(actorRole === 'finance_verifier' || actorRole === 'super_admin') && (
@@ -914,6 +947,7 @@ export default function PaySlipDialog({
                       type="button"
                       onClick={handleVerifyAndLock}
                       disabled={
+                        saving || refreshLoading ||
                         !periodClosed ||
                         !slipState ||
                         newSlipBlocked ||
@@ -1065,7 +1099,7 @@ export default function PaySlipDialog({
       </Dialog>
 
       {/* ─── Comparison Dialog for Refresh ───────────────────── */}
-      <Dialog open={compareOpen} onOpenChange={setCompareOpen}>
+      <Dialog open={compareOpen} onOpenChange={(nextOpen) => { if (!savingRef.current) setCompareOpen(nextOpen); }}>
         <DialogContent className="sm:max-w-md rounded-2xl p-6 bg-white border border-slate-100 shadow-xl">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
@@ -1073,7 +1107,7 @@ export default function PaySlipDialog({
               Perbandingan Data Terbaru
             </DialogTitle>
             <DialogDescription className="text-sm text-slate-500">
-              Berikut adalah perbedaan antara draf slip saat ini dengan data terbaru di database:
+              Tinjau perubahan berikut. Terapkan Perubahan akan langsung menyimpan draf slip gaji.
             </DialogDescription>
           </DialogHeader>
           <div className="my-4 space-y-3 max-h-[40vh] overflow-y-auto pr-1">
@@ -1100,27 +1134,24 @@ export default function PaySlipDialog({
               <p className="text-xs text-slate-500 text-center py-6">Tidak ada perbedaan data.</p>
             )}
           </div>
+          {saveError && <p role="alert" className="text-sm text-rose-700">{saveError}</p>}
           <DialogFooter className="flex justify-end gap-2">
             <Button
               type="button"
               variant="ghost"
               onClick={() => setCompareOpen(false)}
+              disabled={saving}
               className="rounded-xl"
             >
               Batal
             </Button>
             <Button
               type="button"
-              onClick={() => {
-                if (freshRecalculated) {
-                  setEarnings(freshRecalculated.earnings);
-                  setDeductions(freshRecalculated.deductions);
-                }
-                setCompareOpen(false);
-              }}
+              onClick={handleApplyRefresh}
+              disabled={saving}
               className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
             >
-              Terapkan Perubahan
+              {saving ? 'Menyimpan...' : 'Terapkan Perubahan'}
             </Button>
           </DialogFooter>
         </DialogContent>

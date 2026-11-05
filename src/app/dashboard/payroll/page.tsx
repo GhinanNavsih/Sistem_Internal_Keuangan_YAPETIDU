@@ -58,7 +58,7 @@ import {
   CheckCheck,
   RotateCcw,
 } from 'lucide-react';
-import { collection, getDocs, getDocsFromServer, doc, getDoc, setDoc, query, where, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, getDocsFromServer, doc, getDoc, getDocFromServer, setDoc, query, where, writeBatch } from 'firebase/firestore';
 import { db, secondaryDb } from '@/lib/firebase';
 import { useAuth } from '@/lib/AuthContext';
 import { useDashboardData } from '@/lib/DashboardDataContext';
@@ -67,6 +67,7 @@ import { useBulkEmail, ESTIMATED_SECONDS_PER_EMAIL, type QueueItem } from '@/lib
 import { usePayrollLockJob } from '@/lib/PayrollLockJobContext';
 import { useLongPress } from '@/hooks/useLongPress';
 import { lockJobPercent } from '@/lib/payroll/lockJob';
+import { applySlipRefresh, diffSlipRefresh, refreshFieldKey, type SlipRefreshPreview } from '@/lib/payroll/slipRefresh';
 import { Employee, SalaryMatrix, BlueCollarEmployee, UraianGajiDocument, UraianEntry } from '@/types';
 import PaySlipDialog, { SlipState, buildInitialEarnings, buildInitialDeductions } from '@/components/PaySlipDialog';
 import { eligibleFamilyMetrics, familyAllowancePeriodDate, synchronizeFamilyAllowanceEarnings } from '@/lib/payroll/familyAllowance';
@@ -176,6 +177,7 @@ interface ClosePeriodDialogState {
 }
 
 interface BulkChange {
+  expectedRevision: number | null;
   employeeId: string;
   employeeName: string;
   isLocked: boolean;
@@ -878,6 +880,20 @@ export default function PayrollValidationDashboard() {
   const [refreshingBulk, setRefreshingBulk] = useState(false);
   const [selectedBulkRefreshEmployeeIds, setSelectedBulkRefreshEmployeeIds] = useState<Set<string>>(new Set());
   const [selectedBulkRefreshFields, setSelectedBulkRefreshFields] = useState<Record<string, Set<string>>>({});
+  const [bulkRefreshErrors, setBulkRefreshErrors] = useState<Record<string, string>>({});
+  const bulkRefreshInFlight = useRef(false);
+  const bulkRefreshPeriod = useRef('');
+  // Reuse the same request after an uncertain response; changing the reviewed
+  // fields or draft revision produces a different command and request id.
+  const refreshRequestIds = useRef(new Map<string, string>());
+  const refreshRequestId = (command: unknown): string => {
+    const key = JSON.stringify(command);
+    const previous = refreshRequestIds.current.get(key);
+    if (previous) return previous;
+    const id = createFinancialRequestId('bulk_refresh');
+    refreshRequestIds.current.set(key, id);
+    return id;
+  };
 
   const [exportingExcel, setExportingExcel] = useState(false);
   const excelExportInFlight = useRef(false);
@@ -1834,6 +1850,7 @@ export default function PayrollValidationDashboard() {
             
             persistedStates[empId] = {
               status: status,
+              revision: Number(data.revision || 0),
               earnings: data.earnings || [],
               deductions: data.deductions || [],
               taxes: normalizeTaxFields(data.taxes),
@@ -2289,11 +2306,12 @@ export default function PayrollValidationDashboard() {
     earnings: PaySlipField[],
     deductions: PaySlipField[],
     taxApplied: boolean,
+    options?: { expectedRevision?: number | null },
   ) => {
     if (attendancePeriodStatus === 'closed') {
       throw new Error('Periode payroll sudah ditutup; draf tidak dapat diubah.');
     }
-    if (isSavingRef.current) return;
+    if (isSavingRef.current) throw new Error('Penyimpanan slip lain masih berjalan. Tunggu hingga selesai.');
     isSavingRef.current = true;
     try {
       if (payrollCollar !== 'loyalis' && !slipStates[employeeId]) {
@@ -2320,22 +2338,30 @@ export default function PayrollValidationDashboard() {
         taxes?: PaySlipField[];
         taxApplied?: boolean;
         warnings?: string[];
+        earnings?: PaySlipField[];
+        deductions?: PaySlipField[];
+        revision?: number;
+        status?: SlipState['status'];
       }>('/api/payroll/slips', {
         method: 'POST',
         body: JSON.stringify({
           action: 'save_draft',
           employeeId,
           period,
-          requestId: createFinancialRequestId('save_draft'),
+          requestId: options?.expectedRevision !== undefined
+            ? refreshRequestId({ employeeId, period, earnings, deductions, taxApplied, expectedRevision: options.expectedRevision })
+            : createFinancialRequestId('save_draft'),
           earnings,
           deductions,
           taxApplied,
+          ...(options?.expectedRevision !== undefined ? { expectedRevision: options.expectedRevision } : {}),
         }),
       });
       const newState: SlipState = {
-        status: 'draft',
-        earnings: [...earnings],
-        deductions: [...deductions],
+        status: result.status || 'draft',
+        revision: result.revision,
+        earnings: result.earnings || [...earnings],
+        deductions: result.deductions || [...deductions],
         // The server derives the tax amount, so its rows — not the client's
         // selection — are what the dashboard shows from here on.
         taxes: normalizeTaxFields(result.taxes),
@@ -2360,6 +2386,7 @@ export default function PayrollValidationDashboard() {
       setTimeout(() => {
         setNotification(prev => ({ ...prev, show: false }));
       }, gapokWarning ? 8000 : 3000);
+      return newState;
     } catch (err: any) {
       console.error('Error saving draft payslip state to Firestore:', err);
       setNotification({
@@ -2499,7 +2526,7 @@ export default function PayrollValidationDashboard() {
   };
 
   const handleBulkRefresh = async () => {
-    if (!requirePekaryaPreviews()) return;
+    if (bulkRefreshInFlight.current) return;
     if (attendancePeriodStatus === 'closed') {
       alert('Periode payroll sudah ditutup. Data draf telah dibekukan.');
       return;
@@ -2508,11 +2535,14 @@ export default function PayrollValidationDashboard() {
       alert("Tidak ada karyawan untuk direfresh.");
       return;
     }
+    bulkRefreshInFlight.current = true;
     setRefreshingBulk(true);
+    setBulkRefreshErrors({});
     try {
       const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
       const periodToken = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
       const isLoyalisTab = payrollCollar === 'loyalis';
+      bulkRefreshPeriod.current = period;
 
       // 1. Fetch configs and matrices in parallel
       const matrixCollection = isLoyalisTab ? 'SalaryMatrix_WhiteCollar' : 'SalaryMatrix';
@@ -2526,17 +2556,19 @@ export default function PayrollValidationDashboard() {
         loanSnapshot,
         userSnapshot,
         uraianSnap,
-        slipStatesSnapshot
+        slipStatesSnapshot,
+        employeeSnapshot
       ] = await Promise.all([
-        getDoc(doc(db, matrixCollection, '_config')),
-        getDoc(doc(db, 'SalaryMatrix_Functional', '_config')),
-        getDoc(doc(db, 'SalaryMatrix_Kepangkatan', '_config')),
+        getDocFromServer(doc(db, matrixCollection, '_config')),
+        getDocFromServer(doc(db, 'SalaryMatrix_Functional', '_config')),
+        getDocFromServer(doc(db, 'SalaryMatrix_Kepangkatan', '_config')),
         isLoyalisTab ? fetchLoyalisPresence(period, true) : Promise.resolve(null),
-        getDocs(collection(db, 'VakasiTambahan')),
-        getDocs(collection(secondaryDb, 'simpanPinjam')),
-        getDocs(collection(secondaryDb, 'users')),
-        getDocs(collection(db, 'UraianGaji')),
-        getDocs(collection(db, 'PayrollSlipStates'))
+        getDocsFromServer(collection(db, 'VakasiTambahan')),
+        getDocsFromServer(collection(secondaryDb, 'simpanPinjam')),
+        getDocsFromServer(collection(secondaryDb, 'users')),
+        getDocsFromServer(collection(db, 'UraianGaji')),
+        getDocsFromServer(collection(db, 'PayrollSlipStates')),
+        getDocsFromServer(collection(db, isLoyalisTab ? 'Employees_Loyalis' : 'Employees_BlueCollar'))
       ]);
 
       const activeMatrixVersion = matrixConfigSnap.exists() ? (matrixConfigSnap.data()?.activeVersion || '2026_v1') : '2026_v1';
@@ -2544,9 +2576,9 @@ export default function PayrollValidationDashboard() {
       const activeKepVersion = kepConfigSnap.exists() ? (kepConfigSnap.data()?.activeVersion || '2026_v1') : '2026_v1';
 
       const [matrixSnap, fSnap, kepSnap] = await Promise.all([
-        getDocs(collection(db, matrixCollection, activeMatrixVersion, 'rows')),
-        getDocs(collection(db, 'SalaryMatrix_Functional', activeFunctionalVersion, 'rows')),
-        getDocs(collection(db, 'SalaryMatrix_Kepangkatan', activeKepVersion, 'rows'))
+        getDocsFromServer(collection(db, matrixCollection, activeMatrixVersion, 'rows')),
+        getDocsFromServer(collection(db, 'SalaryMatrix_Functional', activeFunctionalVersion, 'rows')),
+        getDocsFromServer(collection(db, 'SalaryMatrix_Kepangkatan', activeKepVersion, 'rows'))
       ]);
 
       // Parse matrices
@@ -2600,6 +2632,9 @@ export default function PayrollValidationDashboard() {
           const status = data.status === 'confirmed' ? 'locked' : (data.status || 'draft');
           freshSlipStates[empId] = {
             status,
+            revision: Number(data.revision || 0),
+            taxes: normalizeTaxFields(data.taxes),
+            taxApplied: data.taxApplied,
             earnings: data.earnings || [],
             deductions: data.deductions || [],
             generatedAt: data.generatedAt,
@@ -2609,6 +2644,10 @@ export default function PayrollValidationDashboard() {
           };
         }
       });
+
+      // Reading a refresh also reconciles a stale screen with already-saved
+      // values, including the case where there is nothing left to apply.
+      setSlipStates(freshSlipStates);
 
       // Pekarya earnings for every employee in the period, calculated once by
       // the shared endpoint, so Refresh Massal proposes the same rows the
@@ -2621,10 +2660,12 @@ export default function PayrollValidationDashboard() {
       }
 
       const changes: BulkChange[] = [];
+      const freshEmployees = new Map(employeeSnapshot.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
 
       // Loop through all displayEmployees
       for (const emp of displayEmployees) {
-        const freshRaw = emp.raw;
+        const freshRaw = freshEmployees.get(emp.id) as typeof emp.raw | undefined;
+        if (!freshRaw || (freshSlipStates[emp.id] && freshSlipStates[emp.id].status !== 'draft')) continue;
         
         // Parse dates and gradeLevel
         let freshJoinDate = isLoyalisTab
@@ -2776,43 +2817,15 @@ export default function PayrollValidationDashboard() {
           currentDeductions = defaultFresh.deductions;
         }
 
-        const diffs: any[] = [];
-        
-        // Earnings comparison
-        freshEarnings.forEach(f => {
-          const cur = currentEarnings.find(c => c.label === f.label);
-          if (!cur) {
-            diffs.push({ type: 'earnings', label: f.label, oldValue: null, newValue: f.amount });
-          } else if (cur.amount !== f.amount) {
-            diffs.push({ type: 'earnings', label: f.label, oldValue: cur.amount, newValue: f.amount });
-          }
-        });
-        currentEarnings.forEach(c => {
-          const f = freshEarnings.find(fresh => fresh.label === c.label);
-          if (!f) {
-            diffs.push({ type: 'earnings', label: c.label, oldValue: c.amount, newValue: null });
-          }
-        });
-
-        // Deductions comparison
-        freshDeductions.forEach(f => {
-          const cur = currentDeductions.find(c => c.label === f.label);
-          if (!cur) {
-            diffs.push({ type: 'deductions', label: f.label, oldValue: null, newValue: f.amount });
-          } else if (cur.amount !== f.amount) {
-            diffs.push({ type: 'deductions', label: f.label, oldValue: cur.amount, newValue: f.amount });
-          }
-        });
-        currentDeductions.forEach(c => {
-          const f = freshDeductions.find(fresh => fresh.label === c.label);
-          if (!f) {
-            diffs.push({ type: 'deductions', label: c.label, oldValue: c.amount, newValue: null });
-          }
-        });
+        const diffs = diffSlipRefresh(
+          { earnings: currentEarnings, deductions: currentDeductions },
+          { earnings: freshEarnings, deductions: freshDeductions },
+        );
 
         if (diffs.length > 0) {
           changes.push({
             employeeId: emp.id,
+            expectedRevision: currentSlip ? Number(currentSlip.revision || 0) : null,
             employeeName: freshEmployee.name,
             isLocked: currentSlip?.status === 'locked',
             diffs,
@@ -2833,7 +2846,7 @@ export default function PayrollValidationDashboard() {
         // Initialize fields selection state
         const initialFields: Record<string, Set<string>> = {};
         changes.forEach(change => {
-          initialFields[change.employeeId] = new Set(change.diffs.map(d => `${d.type}::${d.label}`));
+          initialFields[change.employeeId] = new Set(change.diffs.map(refreshFieldKey));
         });
         setSelectedBulkRefreshFields(initialFields);
 
@@ -2843,185 +2856,122 @@ export default function PayrollValidationDashboard() {
       console.error("Gagal memproses bulk refresh:", err);
       alert("Terjadi kesalahan saat memproses bulk refresh.");
     } finally {
+      bulkRefreshInFlight.current = false;
       setRefreshingBulk(false);
     }
   };
 
   const handleToggleSelectEmployee = (employeeId: string) => {
-    setSelectedBulkRefreshEmployeeIds(prev => {
-      const next = new Set(prev);
-      if (next.has(employeeId)) {
-        next.delete(employeeId);
-        setSelectedBulkRefreshFields(prevFields => ({
-          ...prevFields,
-          [employeeId]: new Set()
-        }));
-      } else {
-        next.add(employeeId);
-        const change = bulkChanges.find(c => c.employeeId === employeeId);
-        const allFields = change ? new Set(change.diffs.map((d: any) => `${d.type}::${d.label}`)) : new Set<string>();
-        setSelectedBulkRefreshFields(prevFields => ({
-          ...prevFields,
-          [employeeId]: allFields
-        }));
-      }
-      return next;
-    });
+    if (bulkRefreshInFlight.current) return;
+    const next = new Set(selectedBulkRefreshEmployeeIds);
+    const fields = new Set<string>();
+    if (next.has(employeeId)) next.delete(employeeId);
+    else {
+      next.add(employeeId);
+      bulkChanges.find(change => change.employeeId === employeeId)?.diffs.forEach(diff => fields.add(refreshFieldKey(diff)));
+    }
+    setSelectedBulkRefreshEmployeeIds(next);
+    setSelectedBulkRefreshFields(previous => ({ ...previous, [employeeId]: fields }));
   };
 
   const handleToggleSelectAll = () => {
-    setSelectedBulkRefreshEmployeeIds(prev => {
-      if (prev.size === bulkChanges.length) {
-        setSelectedBulkRefreshFields({});
-        return new Set();
-      } else {
-        const allIds = new Set(bulkChanges.map(c => c.employeeId));
-        const allFields: Record<string, Set<string>> = {};
-        bulkChanges.forEach(change => {
-          allFields[change.employeeId] = new Set(change.diffs.map((d: any) => `${d.type}::${d.label}`));
-        });
-        setSelectedBulkRefreshFields(allFields);
-        return allIds;
-      }
-    });
+    if (bulkRefreshInFlight.current) return;
+    const allSelected = selectedBulkRefreshEmployeeIds.size === bulkChanges.length;
+    setSelectedBulkRefreshEmployeeIds(allSelected ? new Set() : new Set(bulkChanges.map(change => change.employeeId)));
+    setSelectedBulkRefreshFields(allSelected ? {} : Object.fromEntries(
+      bulkChanges.map(change => [change.employeeId, new Set(change.diffs.map(refreshFieldKey))]),
+    ));
   };
 
   const handleToggleSelectField = (employeeId: string, fieldKey: string) => {
-    setSelectedBulkRefreshFields(prev => {
-      const currentFields = new Set(prev[employeeId] || []);
-      if (currentFields.has(fieldKey)) {
-        currentFields.delete(fieldKey);
-      } else {
-        currentFields.add(fieldKey);
-      }
-
-      setSelectedBulkRefreshEmployeeIds(prevIds => {
-        const nextIds = new Set(prevIds);
-        if (currentFields.size > 0) {
-          nextIds.add(employeeId);
-        } else {
-          nextIds.delete(employeeId);
-        }
-        return nextIds;
-      });
-
-      return {
-        ...prev,
-        [employeeId]: currentFields
-      };
-    });
+    if (bulkRefreshInFlight.current) return;
+    const fields = new Set(selectedBulkRefreshFields[employeeId] || []);
+    if (fields.has(fieldKey)) fields.delete(fieldKey); else fields.add(fieldKey);
+    const ids = new Set(selectedBulkRefreshEmployeeIds);
+    if (fields.size) ids.add(employeeId); else ids.delete(employeeId);
+    setSelectedBulkRefreshFields(previous => ({ ...previous, [employeeId]: fields }));
+    setSelectedBulkRefreshEmployeeIds(ids);
   };
 
   const handleApplyBulkRefresh = async () => {
-    if (attendancePeriodStatus === 'closed') {
-      alert('Periode payroll sudah ditutup. Draf tidak dapat diubah.');
+    if (bulkRefreshInFlight.current) return;
+    const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+    if (attendancePeriodStatus === 'closed' || bulkRefreshPeriod.current !== period) {
+      setBulkRefreshErrors({ _global: 'Periode telah berubah atau ditutup. Buka kembali Refresh Semua untuk meninjau data terbaru.' });
       return;
     }
-    const selectedChanges = bulkChanges.filter(c =>
-      selectedBulkRefreshEmployeeIds.has(c.employeeId) &&
-      slipStates[c.employeeId]?.status === 'draft',
-    );
-    if (selectedChanges.length === 0) {
-      alert("Tidak ada draf terpilih. Slip yang sudah diverifikasi/final tidak dapat direfresh.");
-      return;
-    }
+    const selectedChanges = bulkChanges.filter(change => selectedBulkRefreshEmployeeIds.has(change.employeeId) &&
+      !change.isLocked && selectedBulkRefreshFields[change.employeeId]?.size);
+    if (!selectedChanges.length) return;
+    bulkRefreshInFlight.current = true;
     setRefreshingBulk(true);
+    setBulkRefreshErrors({});
+    const succeeded = new Set<string>();
+    const failures: Record<string, string> = {};
+    const warnings: string[] = [];
     try {
-      const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
-      const newSlipStates = { ...slipStates };
-
       for (const change of selectedChanges) {
-        const checkedFields = selectedBulkRefreshFields[change.employeeId] || new Set();
-        const mergedEarnings = [...change.currentEarnings];
-        const mergedDeductions = [...change.currentDeductions];
-
-        change.diffs.forEach((diff: any) => {
-          const fieldKey = `${diff.type}::${diff.label}`;
-          if (!checkedFields.has(fieldKey)) return;
-
-          if (diff.type === 'earnings') {
-            const idx = mergedEarnings.findIndex(e => e.label === diff.label);
-            if (diff.newValue === null) {
-              if (idx > -1) mergedEarnings.splice(idx, 1);
-            } else {
-              if (idx > -1) {
-                mergedEarnings[idx] = { ...mergedEarnings[idx], amount: diff.newValue };
-              } else {
-                mergedEarnings.push({ label: diff.label, amount: diff.newValue });
-              }
-            }
-          } else {
-            const idx = mergedDeductions.findIndex(d => d.label === diff.label);
-            if (diff.newValue === null) {
-              if (idx > -1) mergedDeductions.splice(idx, 1);
-            } else {
-              if (idx > -1) {
-                mergedDeductions[idx] = { ...mergedDeductions[idx], amount: diff.newValue };
-              } else {
-                mergedDeductions.push({ label: diff.label, amount: diff.newValue });
-              }
-            }
-          }
-        });
-
-        // No taxApplied is sent: a bulk refresh must not change who is
-        // taxed. The server keeps the slip's existing selection and re-derives
-        // the amount against the rows written here.
-        const result = await authenticatedJson<{
-          taxes?: PaySlipField[];
-          taxApplied?: boolean;
-        }>(
-          '/api/payroll/slips',
-          {
-            method: 'POST',
-            body: JSON.stringify({
-              action: 'save_draft',
-              employeeId: change.employeeId,
-              period,
-              requestId: createFinancialRequestId('bulk_refresh'),
-              earnings: mergedEarnings,
-              deductions: mergedDeductions,
-            }),
-          },
-        );
-        newSlipStates[change.employeeId] = {
-          status: 'draft',
-          earnings: mergedEarnings,
-          deductions: mergedDeductions,
-          taxes: normalizeTaxFields(result.taxes),
-          taxApplied: result.taxApplied,
-          generatedAt: new Date().toISOString(),
-          emailSent: slipStates[change.employeeId]?.emailSent || false,
-          emailSentAt: slipStates[change.employeeId]?.emailSentAt || undefined,
-        };
+        try {
+          const merged = applySlipRefresh({ earnings: change.currentEarnings, deductions: change.currentDeductions },
+            change.diffs, selectedBulkRefreshFields[change.employeeId]);
+          const command = {
+            action: 'save_draft', employeeId: change.employeeId, period,
+            expectedRevision: change.expectedRevision, ...merged,
+          };
+          // Tax selection is preserved by the server; only reviewed rows move.
+          const result = await authenticatedJson<Partial<SlipState> & { warnings?: string[] }>(
+            '/api/payroll/slips', { method: 'POST', body: JSON.stringify({ ...command, requestId: refreshRequestId(command) }) },
+          );
+          const saved: SlipState = {
+            status: result.status || 'draft', earnings: result.earnings || merged.earnings,
+            deductions: result.deductions || merged.deductions, revision: result.revision,
+            taxes: normalizeTaxFields(result.taxes), taxApplied: result.taxApplied,
+          };
+          // Publish each completed save immediately, even if the next fails.
+          setSlipStates(previous => ({ ...previous, [change.employeeId]: { ...previous[change.employeeId], ...saved } }));
+          succeeded.add(change.employeeId);
+          result.warnings?.forEach(warning => warnings.push(`${change.employeeName}: ${warning}`));
+        } catch (error) {
+          failures[change.employeeId] = error instanceof Error ? error.message : 'Perubahan belum tersimpan.';
+        }
       }
-
-      setSlipStates(newSlipStates);
-      setBulkRefreshDialogOpen(false);
-      setNotification({
-        show: true,
-        type: 'success',
-        message: `Berhasil memperbarui ${selectedChanges.length} slip gaji dari database.`
-      });
-      setTimeout(() => {
-        setNotification(prev => ({ ...prev, show: false }));
-      }, 3000);
-    } catch (err: any) {
-      console.error("Gagal menerapkan bulk refresh:", err);
-      alert("Gagal menyimpan perubahan bulk refresh ke database.");
+      setBulkRefreshErrors(failures);
+      setBulkChanges(previous => previous.filter(change => !succeeded.has(change.employeeId)));
+      setSelectedBulkRefreshEmployeeIds(previous => new Set([...previous].filter(id => !succeeded.has(id))));
+      if (!Object.keys(failures).length) setBulkRefreshDialogOpen(false);
+      setNotification({ show: true, type: Object.keys(failures).length ? 'error' : warnings.length ? 'warning' : 'success',
+        message: `${succeeded.size} slip tersimpan${Object.keys(failures).length ? `; ${Object.keys(failures).length} gagal. Rincian ada di dialog; perubahan yang berhasil tetap tersimpan.` : '.'}${warnings.length ? ` ${warnings.join(' ')}` : ''}` });
     } finally {
+      bulkRefreshInFlight.current = false;
       setRefreshingBulk(false);
     }
   };
 
-  const handleSlipRefresh = async (employeeId: string): Promise<{ earnings: PaySlipField[]; deductions: PaySlipField[] }> => {
+  const handleSlipRefresh = async (employeeId: string): Promise<SlipRefreshPreview> => {
     const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
     const periodToken = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
     const isLoyalis = payrollCollar === 'loyalis';
+    const savedSnapshot = await getDocFromServer(doc(db, 'PayrollSlipStates', `${period}_${employeeId}`));
+    const expectedRevision = savedSnapshot.exists() ? Number(savedSnapshot.data().revision || 0) : null;
+    const visibleSlip = slipStates[employeeId];
+    if ((visibleSlip ? Number(visibleSlip.revision || 0) : null) !== expectedRevision) {
+      if (savedSnapshot.exists()) {
+        const latest = savedSnapshot.data();
+        setSlipStates(previous => ({ ...previous, [employeeId]: {
+          ...latest,
+          status: latest.status === 'confirmed' ? 'locked' : latest.status || 'draft',
+          revision: Number(latest.revision || 0),
+          earnings: latest.earnings || [], deductions: latest.deductions || [], taxes: normalizeTaxFields(latest.taxes),
+        } }));
+      } else {
+        setSlipStates(previous => { const next = { ...previous }; delete next[employeeId]; return next; });
+      }
+      throw new Error('Draf telah berubah di perangkat lain. Tutup dan buka kembali slip untuk meninjau versi terbaru.');
+    }
     
     // 1. Fetch fresh employee data
     const empCol = isLoyalis ? 'Employees_Loyalis' : 'Employees_BlueCollar';
-    const empSnap = await getDoc(doc(db, empCol, employeeId));
+    const empSnap = await getDocFromServer(doc(db, empCol, employeeId));
     if (!empSnap.exists()) {
       throw new Error("Data karyawan tidak ditemukan di Firestore.");
     }
@@ -3056,9 +3006,9 @@ export default function PayrollValidationDashboard() {
 
     // 2. Fetch active Salary Matrix configs
     const matrixCollection = isLoyalis ? 'SalaryMatrix_WhiteCollar' : 'SalaryMatrix';
-    let matrixConfigSnap = await getDoc(doc(db, matrixCollection, '_config'));
-    let fConfigSnap = await getDoc(doc(db, 'SalaryMatrix_Functional', '_config'));
-    let kepConfigSnap = await getDoc(doc(db, 'SalaryMatrix_Kepangkatan', '_config'));
+    let matrixConfigSnap = await getDocFromServer(doc(db, matrixCollection, '_config'));
+    let fConfigSnap = await getDocFromServer(doc(db, 'SalaryMatrix_Functional', '_config'));
+    let kepConfigSnap = await getDocFromServer(doc(db, 'SalaryMatrix_Kepangkatan', '_config'));
 
     const activeMatrixVersion = matrixConfigSnap.exists() ? (matrixConfigSnap.data()?.activeVersion || '2026_v1') : '2026_v1';
     const activeFunctionalVersion = fConfigSnap.exists() ? (fConfigSnap.data()?.activeVersion || '2026_v1') : '2026_v1';
@@ -3066,9 +3016,9 @@ export default function PayrollValidationDashboard() {
 
     // 3. Load matrix rows
     const [matrixSnap, fSnap, kepSnap] = await Promise.all([
-      getDocs(collection(db, matrixCollection, activeMatrixVersion, 'rows')),
-      getDocs(collection(db, 'SalaryMatrix_Functional', activeFunctionalVersion, 'rows')),
-      getDocs(collection(db, 'SalaryMatrix_Kepangkatan', activeKepVersion, 'rows'))
+      getDocsFromServer(collection(db, matrixCollection, activeMatrixVersion, 'rows')),
+      getDocsFromServer(collection(db, 'SalaryMatrix_Functional', activeFunctionalVersion, 'rows')),
+      getDocsFromServer(collection(db, 'SalaryMatrix_Kepangkatan', activeKepVersion, 'rows'))
     ]);
 
     // Process matrices
@@ -3149,7 +3099,7 @@ export default function PayrollValidationDashboard() {
     };
 
     // 5. Fetch VakasiTambahan
-    const vakasiSnap = await getDocs(collection(db, 'VakasiTambahan'));
+    const vakasiSnap = await getDocsFromServer(collection(db, 'VakasiTambahan'));
     let freshVakasiSum = 0;
     const freshVakasiList: { eventName: string; payGiven: number }[] = [];
     vakasiSnap.docs.forEach(d => {
@@ -3170,8 +3120,8 @@ export default function PayrollValidationDashboard() {
 
     // 6. Fetch Cooperative Pinjam and Simpanan Wajib
     const [loanSnapshot, userSnapshot] = await Promise.all([
-      getDocs(collection(secondaryDb, 'simpanPinjam')),
-      getDocs(collection(secondaryDb, 'users'))
+      getDocsFromServer(collection(secondaryDb, 'simpanPinjam')),
+      getDocsFromServer(collection(secondaryDb, 'users'))
     ]);
 
     const freshKoperasiAmounts = buildKoperasiPayrollAmountMaps(
@@ -3196,7 +3146,7 @@ export default function PayrollValidationDashboard() {
     // Fetch UraianEntry
     const cat = freshEmployee.role;
     const uraianDocId = `${period}_${cat}`;
-    const uraianDocSnap = await getDoc(doc(db, 'UraianGaji', uraianDocId));
+    const uraianDocSnap = await getDocFromServer(doc(db, 'UraianGaji', uraianDocId));
     const freshUraianEntry = uraianDocSnap.exists() ? (uraianDocSnap.data() as UraianGajiDocument)?.entries?.[employeeId] : undefined;
 
     // 8. Rebuild earnings and deductions lists.
@@ -3244,7 +3194,8 @@ export default function PayrollValidationDashboard() {
 
     return {
       earnings: freshEarnings,
-      deductions: freshDeductions
+      deductions: freshDeductions,
+      expectedRevision
     };
   };
 
@@ -3306,6 +3257,9 @@ export default function PayrollValidationDashboard() {
           taxes?: PaySlipField[];
           taxApplied?: boolean;
           warnings?: string[];
+          revision?: number;
+          earnings?: PaySlipField[];
+          deductions?: PaySlipField[];
         }>('/api/payroll/slips', {
           method: 'POST',
           body: JSON.stringify({
@@ -3330,8 +3284,9 @@ export default function PayrollValidationDashboard() {
           : draftData.deductions;
         nextStates[target.id] = {
           status: 'draft',
-          earnings: draftData.earnings,
-          deductions,
+          revision: result.revision,
+          earnings: result.earnings || draftData.earnings,
+          deductions: result.deductions || deductions,
           taxes: normalizeTaxFields(result.taxes),
           taxApplied: result.taxApplied,
           generatedAt: new Date().toISOString(),
@@ -3597,6 +3552,7 @@ export default function PayrollValidationDashboard() {
                     <input
                       type="month"
                       value={`${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`}
+                      disabled={refreshingBulk}
                       onChange={(e) => {
                         if (e.target.value) {
                           const [y, m] = e.target.value.split('-');
@@ -4803,7 +4759,7 @@ export default function PayrollValidationDashboard() {
       </Dialog>
 
       {/* ─── Bulk Refresh Dialog ─────────────────── */}
-      <Dialog open={bulkRefreshDialogOpen} onOpenChange={setBulkRefreshDialogOpen}>
+      <Dialog open={bulkRefreshDialogOpen} onOpenChange={(nextOpen) => { if (!bulkRefreshInFlight.current) setBulkRefreshDialogOpen(nextOpen); }}>
         <DialogContent className="sm:max-w-2xl rounded-md max-h-[85vh] flex flex-col p-0 overflow-hidden">
           <DialogHeader className="p-6 pb-2">
             <DialogTitle className="flex items-center gap-2 text-lg text-slate-800">
@@ -4815,6 +4771,7 @@ export default function PayrollValidationDashboard() {
             </DialogDescription>
           </DialogHeader>
 
+          {bulkRefreshErrors._global && <p role="alert" className="px-6 text-sm text-rose-700">{bulkRefreshErrors._global}</p>}
           {/* Change list */}
           <div className="flex justify-between items-center px-6 pb-3 border-b border-slate-100 mx-6 mb-2">
             <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors">
@@ -4822,6 +4779,7 @@ export default function PayrollValidationDashboard() {
                 type="checkbox"
                 checked={selectedBulkRefreshEmployeeIds.size === bulkChanges.length}
                 onChange={handleToggleSelectAll}
+                disabled={refreshingBulk}
                 className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
               />
               <span>Pilih Semua ({bulkChanges.length})</span>
@@ -4837,6 +4795,7 @@ export default function PayrollValidationDashboard() {
                       type="checkbox"
                       checked={selectedBulkRefreshEmployeeIds.has(change.employeeId)}
                       onChange={() => handleToggleSelectEmployee(change.employeeId)}
+                      disabled={refreshingBulk}
                       className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                     />
                     <span className="font-semibold text-sm text-slate-700">{change.employeeName}</span>
@@ -4852,13 +4811,14 @@ export default function PayrollValidationDashboard() {
                   )}
                 </div>
 
+                {bulkRefreshErrors[change.employeeId] && <p role="alert" className="mb-3 text-xs text-rose-700">{bulkRefreshErrors[change.employeeId]}</p>}
                 <div className="space-y-1.5 pl-2 border-l-2 border-indigo-100">
                   {change.diffs.map((diff: any, idx: number) => {
                     const isEarning = diff.type === 'earnings';
                     const diffLabel = diff.label;
                     const oldVal = diff.oldValue;
                     const newVal = diff.newValue;
-                    const fieldKey = `${diff.type}::${diff.label}`;
+                    const fieldKey = refreshFieldKey(diff);
                     const isChecked = selectedBulkRefreshFields[change.employeeId]?.has(fieldKey) ?? false;
 
                     return (
@@ -4868,6 +4828,7 @@ export default function PayrollValidationDashboard() {
                             type="checkbox"
                             checked={isChecked}
                             onChange={() => handleToggleSelectField(change.employeeId, fieldKey)}
+                            disabled={refreshingBulk}
                             className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                           />
                           <span className={`w-1.5 h-1.5 rounded-full ${isEarning ? 'bg-emerald-400' : 'bg-rose-400'}`} />
