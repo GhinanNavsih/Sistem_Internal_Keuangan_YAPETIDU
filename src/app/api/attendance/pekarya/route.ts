@@ -21,6 +21,7 @@ import {
   requireRole,
 } from '@/lib/server/auth';
 import { PEKARYA_OFFICIAL_LEAVE_REQUESTS_COLLECTION } from '@/lib/server/pekaryaOfficialLeave';
+import { PEKARYA_ATTENDANCE_SYNC_STATES_COLLECTION } from '@/lib/server/pekaryaAttendanceSync';
 
 export const dynamic = 'force-dynamic';
 
@@ -162,9 +163,13 @@ export async function GET(request: NextRequest) {
       .collection('PekaryaAutoLeaveStates')
       .where('period', '==', period)
       .get();
+    const syncStatesPromise = adminDb
+      .collection(PEKARYA_ATTENDANCE_SYNC_STATES_COLLECTION)
+      .where('period', '==', period)
+      .get();
     const satpamSourcesPromise =
       identityIndex && canViewSatpam ? loadSatpamDetailSources(period) : null;
-    for (const early of [officialLeavePromise, autoLeaveStatesPromise, satpamSourcesPromise]) {
+    for (const early of [officialLeavePromise, autoLeaveStatesPromise, syncStatesPromise, satpamSourcesPromise]) {
       early?.catch(() => undefined);
     }
     // "Semua Pekarya" shows several categories, plus Satpam, of one month. They
@@ -201,10 +206,26 @@ export async function GET(request: NextRequest) {
           })
         : Promise.resolve(null),
     ]);
-    const [officialLeaveSnapshot, autoLeaveStates] = await Promise.all([
+    const [officialLeaveSnapshot, autoLeaveStates, syncStates] = await Promise.all([
       officialLeavePromise,
       autoLeaveStatesPromise,
+      syncStatesPromise,
     ]);
+    // Where the automatic attendance-to-slip sync stands for each category on
+    // screen; a failed one shows its error and a retry button.
+    const syncCategories = new Set(visibleCategories || []);
+    const attendanceSync = syncStates.docs
+      .map((doc) => doc.data())
+      .filter((item) => syncCategories.has(String(item.category)))
+      .map((item) => ({
+        category: String(item.category),
+        status: item.status === 'failed' ? 'failed' : 'ok',
+        error: typeof item.error === 'string' ? item.error : null,
+        heldEmployees: Array.isArray(item.heldEmployees) ? item.heldEmployees : [],
+        slipSummary: item.slipSummary || null,
+        syncedAt: item.syncedAt?.toDate?.().toISOString?.() || null,
+        failedAt: item.failedAt?.toDate?.().toISOString?.() || null,
+      }));
     const autoLeaveResults = autoLeaveStates.docs.filter((doc) => {
       const itemCategory = String(doc.data().category);
       return (category === ALL_BLUE_COLLAR_CATEGORY || category === itemCategory) &&
@@ -213,6 +234,7 @@ export async function GET(request: NextRequest) {
     return Response.json({
       autoLeave: { period, applicable: period >= '2026-09', results: autoLeaveResults },
       ...restrictUnrouted(result, actor),
+      attendanceSync,
       ...(satpamAttendance ? { satpamAttendance } : {}),
       officialLeaves:
         officialLeaveSnapshot?.docs

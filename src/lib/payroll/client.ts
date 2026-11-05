@@ -204,6 +204,18 @@ export async function propagateUraianToSlips(command: {
   period: string;
   jobCategory?: string;
 }): Promise<string> {
+  return (await pushUraianToSlips(command)).note;
+}
+
+/**
+ * propagateUraianToSlips with the outcome spelled out, for a caller (the
+ * Loyalis autosave) that reports success and failure differently. Never throws.
+ */
+export async function pushUraianToSlips(command: {
+  scope: 'pekarya' | 'loyalis';
+  period: string;
+  jobCategory?: string;
+}): Promise<{ ok: boolean; note: string }> {
   try {
     const result = await authenticatedJson<{ summary: UraianPropagationSummary }>(
       '/api/payroll/uraian-propagation',
@@ -231,10 +243,10 @@ export async function propagateUraianToSlips(command: {
     if (summary.period_closed) {
       sentences.push('Periode sudah ditutup, slip tidak diubah.');
     }
-    return sentences.length > 0 ? ` ${sentences.join(' ')}` : '';
+    return { ok: true, note: sentences.length > 0 ? ` ${sentences.join(' ')}` : '' };
   } catch (err) {
     console.error('Gagal menerapkan rekap uraian ke slip gaji:', err);
-    return ' Namun slip gaji belum diperbarui — buka Payroll › Refresh Massal.';
+    return { ok: false, note: ' Namun slip gaji belum diperbarui — buka Payroll › Refresh Massal.' };
   }
 }
 

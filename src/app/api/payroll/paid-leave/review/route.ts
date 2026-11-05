@@ -1,4 +1,5 @@
 import { refreshEmployeeAutoLeaveHistory } from '@/lib/server/pekaryaAutoLeave';
+import { syncPekaryaAttendance } from '@/lib/server/pekaryaAttendanceSync';
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
@@ -658,7 +659,7 @@ export async function POST(request: NextRequest) {
             publicationSnapshot.data()?.stale !== true
           ) {
             if (!uraianSnapshot.exists) {
-              throw new HttpError(409, 'Rekap Uraian publikasi tidak ditemukan. Publikasikan ulang kategori.');
+              throw new HttpError(409, 'Rekap Uraian presensi tidak ditemukan. Buka Presensi Pekarya lalu tekan Sinkronkan Ulang.');
             }
             let nextHarian = employeeView.harianCount;
             let nextPremium = employeeView.jumatLiburCount;
@@ -781,8 +782,15 @@ export async function POST(request: NextRequest) {
           'Cuti sudah disetujui, tetapi rekonsiliasi Satpam perlu dijalankan ulang.';
       }
     }
+    // A paid cuti day is pay: it reaches the employee's draft slip now.
+    const attendanceSync = isRegularBlue
+      ? await syncPekaryaAttendance(period, [employee.category], actor, 'paid_leave', {
+          autoLeaveReconciled: true,
+          employeeIds: [employee.id],
+        })
+      : [];
     return Response.json(
-      { ...result, reconciliationWarning },
+      { ...result, reconciliationWarning, attendanceSync },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {

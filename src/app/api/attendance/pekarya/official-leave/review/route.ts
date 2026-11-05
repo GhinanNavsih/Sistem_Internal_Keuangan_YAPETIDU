@@ -1,4 +1,5 @@
 import { refreshEmployeeAutoLeaveHistory } from '@/lib/server/pekaryaAutoLeave';
+import { syncPekaryaAttendance } from '@/lib/server/pekaryaAttendanceSync';
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
@@ -634,7 +635,7 @@ export async function POST(request: NextRequest) {
           if (!uraianSnapshot.exists) {
             throw new HttpError(
               409,
-              'Rekap Uraian publikasi tidak ditemukan. Publikasikan ulang kategori.',
+              'Rekap Uraian presensi tidak ditemukan. Buka Presensi Pekarya lalu tekan Sinkronkan Ulang.',
             );
           }
           const oldPayType = currentDay?.present ? currentDay.payType : null;
@@ -784,7 +785,12 @@ export async function POST(request: NextRequest) {
       };
     });
     await refreshEmployeeAutoLeaveHistory(employeeId, actor);
-    return Response.json(result, { headers: { 'Cache-Control': 'no-store' } });
+    // The decided day reaches the employee's draft slip now, not on Publish.
+    const attendanceSync = await syncPekaryaAttendance(period, [category], actor, 'official_leave', {
+      autoLeaveReconciled: true,
+      employeeIds: [employeeId],
+    });
+    return Response.json({ ...result, attendanceSync }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return errorResponse(error);
   }

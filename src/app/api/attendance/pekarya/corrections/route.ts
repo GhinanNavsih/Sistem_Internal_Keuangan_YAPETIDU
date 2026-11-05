@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { markAutoLeaveDirty, prepareAutomaticLeaveRefund, writeAutomaticLeaveRefund } from '@/lib/server/automaticLeavePosting';
 import { ensurePekaryaAutoLeave } from '@/lib/server/pekaryaAutoLeave';
+import { syncPekaryaAttendance } from '@/lib/server/pekaryaAttendanceSync';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
   ATTENDANCE_PAYROLL_START_PERIOD,
@@ -365,7 +366,7 @@ export async function POST(request: NextRequest) {
         if (!uraianSnapshot.exists) {
           throw new HttpError(
             409,
-            'Rekap Uraian publikasi tidak ditemukan. Publikasikan ulang kategori.',
+            'Rekap Uraian presensi tidak ditemukan. Buka Presensi Pekarya lalu tekan Sinkronkan Ulang.',
           );
         }
         const oldPayType = rawDay?.present ? rawDay.payType : null;
@@ -515,7 +516,12 @@ export async function POST(request: NextRequest) {
       };
     });
     await ensurePekaryaAutoLeave(period, actor, [category], [employeeId]);
-    return Response.json(result);
+    // The corrected day reaches the employee's draft slip now, not on Publish.
+    const attendanceSync = await syncPekaryaAttendance(period, [category], actor, 'attendance_correction', {
+      autoLeaveReconciled: true,
+      employeeIds: [employeeId],
+    });
+    return Response.json({ ...result, attendanceSync });
   } catch (error) {
     return errorResponse(error);
   }

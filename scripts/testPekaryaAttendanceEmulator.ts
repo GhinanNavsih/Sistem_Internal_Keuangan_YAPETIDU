@@ -1,4 +1,4 @@
-/** Existing blank-status imports must reach review, publication and payslips. Emulator only. */
+/** Existing blank-status imports must reach review, the automatic rekap sync and payslips. Emulator only. */
 import assert from 'node:assert/strict';
 import { NextRequest } from 'next/server';
 import { PEKARYA_JOB_CATEGORIES } from '../src/lib/payroll/pekaryaSpj';
@@ -16,7 +16,7 @@ async function main() {
   }
   const { adminDb: db, default: admin } = await import('../src/lib/firebase-admin');
   const { GET } = await import('../src/app/api/attendance/pekarya/route');
-  const { POST: publish } = await import('../src/app/api/attendance/pekarya/publish/route');
+  const { POST: publish } = await import('../src/app/api/attendance/pekarya/sync/route');
   const { POST: correct } = await import('../src/app/api/attendance/pekarya/corrections/route');
   const { POST: reviewReport } = await import('../src/app/api/attendance/pekarya/official-leave/review/route');
   const { POST: saveSlip } = await import('../src/app/api/payroll/slips/route');
@@ -114,13 +114,11 @@ async function main() {
     assert.equal(provisional.attendanceLogs![fixture.employeeId].reduce((sum, day) => sum + day.amount, 0), ['KEBERSIHAN', 'TEKNISI'].includes(fixture.category) ? 62_501 : 54_809);
   }
 
-  // Publication must persist those same exact amounts and keep source scans intact.
-  const publication = await publish(new NextRequest('http://localhost/api/attendance/pekarya/publish', {
+  // The sync must persist those same exact amounts and keep source scans
+  // intact, without any warning being acknowledged first.
+  const publication = await publish(new NextRequest('http://localhost/api/attendance/pekarya/sync', {
     method: 'POST', headers,
-    body: JSON.stringify({
-      requestId: 'pekarya-attendance-blank-status-test', period, category: 'ALL',
-      acknowledgedWarnings: ['INCOMPLETE_PUNCH', 'CORRECTED_ATTENDANCE'],
-    }),
+    body: JSON.stringify({ period, category: 'ALL' }),
   }));
   const published = await publication.json();
   assert.equal(publication.status, 200, JSON.stringify(published));
@@ -185,8 +183,7 @@ async function main() {
   assert.equal(events.at(-1).type, 'error');
   assert.equal(events.at(-1).status, 409);
   assert.match(events.at(-1).message, /aturan scan/);
-  await post(publish, { period, category: 'TEKNISI', requestId: 'republish-new-scan-policy',
-    acknowledgedWarnings: ['INCOMPLETE_PUNCH', 'CORRECTED_ATTENDANCE'] }, 200);
+  await post(publish, { period, category: 'TEKNISI' }, 200);
   assert.equal((await getView('TEKNISI')).publication.stale, false);
 
   // A one-sided correction and a correction that leaves the imported side in
@@ -224,8 +221,8 @@ async function main() {
   await post(correct, { ...correction, category: 'KEBERSIHAN', employeeId: cleaner.employeeId,
     expectedRevision: 1, requestId: 'immutable-scan-correction' }, 409);
   assert.deepEqual((await db.doc(`PayrollSlipStates/2026_09_${cleaner.employeeId}`).get()).data(), frozen);
-  const satpam = await publish(new NextRequest('http://localhost/api/attendance/pekarya/publish', {
-    method: 'POST', headers, body: JSON.stringify({ requestId: 'satpam-attendance-test', period, category: 'SATPAM' }),
+  const satpam = await publish(new NextRequest('http://localhost/api/attendance/pekarya/sync', {
+    method: 'POST', headers, body: JSON.stringify({ period, category: 'SATPAM' }),
   }));
   assert.equal(satpam.status, 403);
   await db.doc(`PayrollPeriods/${period}`).update({ attendanceStatus: 'closed' });
@@ -249,9 +246,9 @@ async function main() {
   assert.equal(legacyResponse.status, 200, JSON.stringify(legacy));
   assert.equal(legacy.singleScanPolicy, 'offset_150_minutes');
   assert.deepEqual([legacy.employees[0].days[0].scanOut, legacy.employees[0].days[0].amount], ['10:00:00', 4_808]);
-  const closed = await publish(new NextRequest('http://localhost/api/attendance/pekarya/publish', {
+  const closed = await publish(new NextRequest('http://localhost/api/attendance/pekarya/sync', {
     method: 'POST', headers,
-    body: JSON.stringify({ requestId: 'closed-attendance-test', period, category: 'ALL', acknowledgedWarnings: ['INCOMPLETE_PUNCH', 'CORRECTED_ATTENDANCE'] }),
+    body: JSON.stringify({ period, category: 'ALL' }),
   }));
   assert.equal(closed.status, 409);
 
@@ -289,8 +286,7 @@ async function main() {
   for (const fixture of [cleaner, technician]) {
     assert.equal(inferredPreviews.attendanceLogs![fixture.employeeId].reduce((sum, day) => sum + day.amount, 0), 37_500);
   }
-  await post(publish, { period: inferredPeriod, category: 'ALL', requestId: 'publish-inferred-punches',
-    acknowledgedWarnings: ['INCOMPLETE_PUNCH'] }, 200);
+  await post(publish, { period: inferredPeriod, category: 'ALL' }, 200);
   for (const fixture of [cleaner, technician]) {
     assert.equal((await db.doc(`UraianGaji/2026_10_${fixture.category}`).get()).data()!.entries[fixture.employeeId].values.harian, 37_500);
   }
@@ -306,7 +302,160 @@ async function main() {
   assert.deepEqual([rawInference.scanIn, rawInference.scanOut], ['15:01:40', null]);
   await db.doc(`PayrollPeriods/${inferredPeriod}`).update({ attendanceStatus: 'closed' });
   assert.deepEqual((await getView('TEKNISI', inferredPeriod)).employees[0].days, correctedInference.employees[0].days);
-  console.log(`PASS: ${categories.length} categories agree across review/publication/payslips; category history, partial corrections, stale-policy save/propagation/closure guards, immutable slips and closed-policy retention passed.`);
+
+  // ── No Publish step: every attendance change reaches the rekap and the
+  // draft slips by itself. ──────────────────────────────────────────────
+  const autoPeriod = '2026-12';
+  const autoRevision = '2026_12__r0001';
+  await db.doc(`PayrollPeriods/${autoPeriod}`).set({ attendanceStatus: 'open', workCalendar: { revision: 1 } });
+  await db.doc(`AttendanceImports/${autoPeriod}`).set({ activeRevisionId: autoRevision, activeRevision: 1 });
+  await db.doc(`AttendanceImportRevisions/${autoRevision}`).set({ revision: 1 });
+  const pekaryaWorker = fixtures.find((fixture) => fixture.category === 'PEKARYA')!;
+  const duplicateNipy = '14011999999';
+  for (const id of ['BC_DUP_A', 'BC_DUP_B']) {
+    await db.doc(`Employees_BlueCollar/${id}`).set({
+      name: `Worker ${id}`, nipy: duplicateNipy,
+      employment: { status: 'active', jobCategory: 'PEKARYA', startDate: '2025-01-01' },
+      flags: { isActive: true, isPayrollEligible: true },
+    });
+  }
+  // A category without Harian columns still needs a current publication,
+  // because closing the period checks every non-Satpam category.
+  await db.doc('Employees_BlueCollar/BC_PONTI').set({
+    name: 'Worker PONTI', nipy: '14011999997',
+    employment: { status: 'active', jobCategory: 'PONTI', startDate: '2025-01-01' },
+    flags: { isActive: true, isPayrollEligible: true },
+  });
+  const autoRows: Array<[string, string, string]> = [
+    [technician.employeeId, technician.nipy, '2026-12-01'],
+    [technician.employeeId, technician.nipy, '2026-12-02'],
+    [technician.employeeId, technician.nipy, '2026-12-03'],
+    [pekaryaWorker.employeeId, pekaryaWorker.nipy, '2026-12-01'],
+    ['BC_DUP', duplicateNipy, '2026-12-01'],
+  ];
+  for (const [index, [owner, nipy, date]] of autoRows.entries()) {
+    await db.doc(`AttendanceImportRows/auto-${owner}-${date}`).set({
+      period: autoPeriod, revisionId: autoRevision, rowNumber: index + 2,
+      nipy, name: owner, department: '', date, workStatus: 'MASUK', scanIn: '07:30:00', scanOut: '14:00:00', issues: [],
+    });
+  }
+  const technicianSlipRef = db.doc(`PayrollSlipStates/2026_12_${technician.employeeId}`);
+  await technicianSlipRef.set({
+    period: '2026_12', employeeId: technician.employeeId, status: 'draft', revision: 1,
+    earnings: [{ label: 'Presensi Harian', amount: 0 }], deductions: [],
+  });
+  const lockedPekarya = {
+    period: '2026_12', employeeId: pekaryaWorker.employeeId, status: 'locked', revision: 3,
+    earnings: [{ label: 'Presensi Harian', amount: 1 }], deductions: [],
+  };
+  const lockedPekaryaRef = db.doc(`PayrollSlipStates/2026_12_${pekaryaWorker.employeeId}`);
+  await lockedPekaryaRef.set(lockedPekarya);
+  assert.equal((await db.doc('PekaryaAttendancePublications/2026_12__TEKNISI').get()).exists, false);
+
+  const slipAmount = (slip: FirebaseFirestore.DocumentData | undefined, label: string) =>
+    (slip?.earnings || []).filter((row: { label: string }) => row.label === label)
+      .reduce((sum: number, row: { amount: number }) => sum + row.amount, 0);
+
+  // A scan correction alone writes the rekap and updates the draft slip.
+  await post(correct, { period: autoPeriod, category: 'TEKNISI', employeeId: technician.employeeId,
+    date: '2026-12-03', present: true, scanOut: '12:00', expectedRevision: 0,
+    requestId: 'auto-sync-correction', reason: 'Pulang lebih awal sudah diverifikasi' }, 200);
+  const autoPublication = (await db.doc('PekaryaAttendancePublications/2026_12__TEKNISI').get()).data()!;
+  assert.equal(autoPublication.state, 'published');
+  assert.equal(autoPublication.publishMode, 'automatic');
+  assert.equal(autoPublication.trigger, 'attendance_correction');
+  const technicianView = (await getView('TEKNISI', autoPeriod)).employees
+    .find((employee: { employeeId: string }) => employee.employeeId === technician.employeeId);
+  const technicianEntry = (await db.doc('UraianGaji/2026_12_TEKNISI').get()).data()!.entries[technician.employeeId];
+  assert.equal(technicianEntry.values.harian, technicianView.harianAmount);
+  assert.ok(technicianView.harianAmount > 0);
+  let technicianSlip = (await technicianSlipRef.get()).data();
+  assert.equal(technicianSlip?.status, 'draft');
+  assert.equal(slipAmount(technicianSlip, 'Presensi Harian'), technicianView.harianAmount);
+
+  // A run over every category holds only the employees sharing a NIPY; a
+  // locked slip keeps its figures and gets a drift notice instead.
+  const allSync = await post(publish, { period: autoPeriod, category: 'ALL' }, 200);
+  assert.ok(allSync.results.some((result: { category: string; status: string }) =>
+    result.category === 'PEKARYA' && result.status === 'synced'));
+  const pontiPublication = (await db.doc('PekaryaAttendancePublications/2026_12__PONTI').get()).data();
+  assert.equal(pontiPublication?.state, 'published');
+  assert.equal(pontiPublication?.importRevisionId, autoRevision);
+  const pekaryaUraian = (await db.doc('UraianGaji/2026_12_PEKARYA').get()).data()!;
+  for (const id of ['BC_DUP_A', 'BC_DUP_B']) {
+    assert.deepEqual(pekaryaUraian.entries[id].attendanceHold, { reason: 'NIPY_DUPLICATE' });
+    assert.equal(pekaryaUraian.entries[id].values.harian, undefined);
+  }
+  const pekaryaView = (await getView('PEKARYA', autoPeriod)).employees
+    .find((employee: { employeeId: string }) => employee.employeeId === pekaryaWorker.employeeId);
+  assert.equal(pekaryaUraian.entries[pekaryaWorker.employeeId].values.harian, pekaryaView.harianAmount);
+  assert.equal(pekaryaUraian.entries[pekaryaWorker.employeeId].attendanceHold, undefined);
+  assert.deepEqual(
+    [...(await db.doc('PekaryaAttendancePublications/2026_12__PEKARYA').get()).data()!.heldEmployeeIds].sort(),
+    ['BC_DUP_A', 'BC_DUP_B'],
+  );
+  assert.deepEqual((await lockedPekaryaRef.get()).data(), lockedPekarya);
+  const drift = (await db.doc(`PayrollProfileDriftNotices/2026_12_${pekaryaWorker.employeeId}`).get()).data();
+  assert.equal(drift?.status, 'pending');
+  assert.equal(drift?.source, 'uraian');
+  const heldPreviews = await loadPekaryaSlipPreviews(autoPeriod, ['BC_DUP_A', pekaryaWorker.employeeId]);
+  assert.ok(heldPreviews.previews.BC_DUP_A.meta.warnings.some((warning) =>
+    warning.code === 'attendance_unpublished' && /NIPY/.test(warning.message)));
+  assert.equal(heldPreviews.previews[pekaryaWorker.employeeId].meta.warnings
+    .some((warning) => warning.code === 'attendance_unpublished'), false);
+
+  // Nothing changed, so a second run writes nothing.
+  const repeat = await post(publish, { period: autoPeriod, category: 'ALL' }, 200);
+  assert.ok(repeat.results.every((result: { status: string }) => result.status === 'unchanged'), JSON.stringify(repeat.results));
+
+  // An older sync can never overwrite a newer one: a write prepared before a
+  // later change is refused and leaves the rekap alone.
+  const { writeAutomaticPublication, AttendanceSyncConflict, syncPekaryaAttendance } =
+    await import('../src/lib/server/pekaryaAttendanceSync');
+  const { buildPekaryaAttendanceView } = await import('../src/lib/server/pekaryaAttendance');
+  const stalePublication = await db.doc('PekaryaAttendancePublications/2026_12__TEKNISI').get();
+  const staleView = await buildPekaryaAttendanceView(autoPeriod, 'TEKNISI', { allowMissingActiveImport: true });
+  await post(correct, { period: autoPeriod, category: 'TEKNISI', employeeId: technician.employeeId,
+    date: '2026-12-02', present: true, scanOut: '13:00', expectedRevision: 0,
+    requestId: 'auto-sync-second-correction', reason: 'Pulang lebih awal sudah diverifikasi' }, 200);
+  const newerEntry = (await db.doc('UraianGaji/2026_12_TEKNISI').get()).data()!.entries[technician.employeeId];
+  assert.ok(newerEntry.values.harian < technicianEntry.values.harian);
+  technicianSlip = (await technicianSlipRef.get()).data();
+  assert.equal(slipAmount(technicianSlip, 'Presensi Harian'), newerEntry.values.harian);
+  const autoState = await db.doc('PekaryaAutoLeaveStates/2026_12__TEKNISI').get();
+  const actorProfile = { uid: identity.localId, email: null, role: 'super_admin' as const,
+    displayName: 'Attendance reviewer', permittedCategories: [] };
+  await assert.rejects(
+    writeAutomaticPublication({
+      period: autoPeriod, category: 'TEKNISI', view: staleView, publicationBefore: stalePublication,
+      expectedAutoRevision: Number(autoState.data()?.revision || 0), fingerprint: 'stale',
+      actor: actorProfile, trigger: 'manual_retry',
+    }),
+    (error) => error instanceof AttendanceSyncConflict,
+  );
+  assert.equal((await db.doc('UraianGaji/2026_12_TEKNISI').get()).data()!.entries[technician.employeeId].values.harian,
+    newerEntry.values.harian);
+
+  // A NIPY fixed outside the attendance commands reaches the rekap on the next
+  // Presensi Pekarya load, which runs the auto-leave route.
+  await db.doc('Employees_BlueCollar/BC_DUP_B').update({ nipy: '14011999998' });
+  const { POST: autoLeave } = await import('../src/app/api/attendance/pekarya/auto-leave/route');
+  const reconciled = await post(autoLeave, { period: autoPeriod, category: 'PEKARYA' }, 200);
+  assert.ok(reconciled.sync.some((result: { category: string; status: string }) =>
+    result.category === 'PEKARYA' && result.status === 'synced'));
+  const released = (await db.doc('UraianGaji/2026_12_PEKARYA').get()).data()!.entries;
+  assert.equal(released.BC_DUP_A.attendanceHold, undefined);
+  assert.equal(released.BC_DUP_B.attendanceHold, undefined);
+  const releasedView = (await getView('PEKARYA', autoPeriod)).employees
+    .find((employee: { employeeId: string }) => employee.employeeId === 'BC_DUP_A');
+  assert.equal(released.BC_DUP_A.values.harian, releasedView.harianAmount);
+  assert.ok(releasedView.harianAmount > 0);
+
+  // A closed period is never touched.
+  await db.doc(`PayrollPeriods/${autoPeriod}`).update({ attendanceStatus: 'closed' });
+  const closedSync = await syncPekaryaAttendance(autoPeriod, 'ALL', actorProfile, 'manual_retry');
+  assert.ok(closedSync.length > 0 && closedSync.every((result) => result.status === 'skipped'));
+  console.log(`PASS: ${categories.length} categories agree across review/automatic sync/payslips; category history, partial corrections, stale-policy save/propagation/closure guards, immutable slips, closed-policy retention, automatic slip updates, NIPY holds, race guard and fingerprint no-op passed.`);
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -422,10 +422,11 @@ export async function loadApprovedDriverJourneys(
 /**
  * A journey's approval or re-audit changes which driver days count, so the
  * SOPIR attendance already published for the months it touches no longer
- * matches what the page now shows. Flag those publications "perlu
- * dipublikasikan ulang", the same state a manual link leaves behind. Closed
- * months and months before the rule's start are never touched. Callers treat
- * this as best effort: the review it follows has already been saved.
+ * matches what the page now shows. Flag those publications stale, the same
+ * state a manual link leaves behind, and return every open month rechecked so
+ * the caller can sync SOPIR attendance for it. Closed months and months before
+ * the rule's start are never touched. Callers treat this as best effort: the
+ * review it follows has already been saved.
  */
 export async function markDriverAttendancePublicationsStale(
   ranges: ReadonlyArray<{ dateStart: string; dateEnd: string }>,
@@ -441,7 +442,7 @@ export async function markDriverAttendancePublicationsStale(
       period = shiftPeriodToken(period, 1);
     }
   }
-  const marked: string[] = [];
+  const rechecked: string[] = [];
   const { ensurePekaryaAutoLeave } = await import('./pekaryaAutoLeave');
   for (const period of periods) {
     if (period < DRIVER_JOURNEY_ATTENDANCE_START_PERIOD) continue;
@@ -455,6 +456,7 @@ export async function markDriverAttendancePublicationsStale(
     if (periodSnapshot.data()?.attendanceStatus === 'closed') continue;
     await ensurePekaryaAutoLeave(period, { uid: 'system:driver-attendance', role: 'super_admin', email: null,
       displayName: 'Rekonsiliasi presensi perjalanan', permittedCategories: [] }, ['SOPIR']);
+    rechecked.push(period);
     const publication = publicationSnapshot.data();
     if (!publication || publication.state !== 'published' || publication.stale === true) {
       continue;
@@ -465,9 +467,8 @@ export async function markDriverAttendancePublicationsStale(
       staleReason: 'driver_journey_reviewed',
       staleAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-    marked.push(period);
   }
-  return marked;
+  return rechecked;
 }
 
 export async function loadEffectiveAttendanceDays(

@@ -51,6 +51,7 @@ import {
 } from '@/lib/payroll/pekaryaSpj';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import { markDriverAttendancePublicationsStale } from '@/lib/server/attendanceStore';
+import { syncPekaryaAttendance } from '@/lib/server/pekaryaAttendanceSync';
 import {
   errorResponse,
   HttpError,
@@ -1122,11 +1123,17 @@ export async function POST(request: NextRequest) {
 
     if (reviewedDriverRanges.length > 0) {
       try {
-        await markDriverAttendancePublicationsStale(reviewedDriverRanges);
+        const periods = await markDriverAttendancePublicationsStale(reviewedDriverRanges);
+        // The reviewed journey days reach the SOPIR rekap and draft slips now.
+        for (const period of periods) {
+          await syncPekaryaAttendance(period, ['SOPIR'], actor, 'driver_journey', {
+            autoLeaveReconciled: true,
+          });
+        }
       } catch (cause) {
-        // The review is saved; a missed flag only means the page does not
-        // prompt a re-publish, which the admin can still do by hand.
-        console.error('Could not flag driver attendance as stale', cause);
+        // The review is saved; a missed sync shows on Presensi Pekarya, which
+        // syncs again on its next load or with Sinkronkan Ulang.
+        console.error('Could not sync driver attendance', cause);
       }
     }
 

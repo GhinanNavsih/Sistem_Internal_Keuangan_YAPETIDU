@@ -29,8 +29,10 @@ import {
   isPeriodMaterialized,
 } from '@/lib/server/payrollPeriod';
 import { ATTENDANCE_PAYROLL_START_PERIOD } from '@/lib/payroll/attendance';
+import { syncPekaryaAttendance } from '@/lib/server/pekaryaAttendanceSync';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 function assertPeriod(period: string) {
   if (!/^\d{4}-\d{2}$/.test(period)) {
@@ -573,8 +575,15 @@ export async function PATCH(
       }
     }
 
+    // A changed Jumat/Tanggal Merah moves Harian and Jumat & Libur pay; the new
+    // calendar reaches every Pekarya rekap and draft slip now, not on Publish.
+    const attendanceSync = period >= ATTENDANCE_PAYROLL_START_PERIOD
+      ? await syncPekaryaAttendance(period, 'ALL', actor, 'calendar')
+      : [];
+
     return Response.json({
       period,
+      attendanceSync,
       calendar: {
         revision: transactionResult.revision,
         annualVersion: current.calendar.annualVersion,

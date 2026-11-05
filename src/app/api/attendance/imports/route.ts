@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { markAutoLeaveDirty } from '@/lib/server/automaticLeavePosting';
 import { PEKARYA_JOB_CATEGORIES } from '@/lib/payroll/pekaryaSpj';
 import { reconcilePekaryaAutoLeave } from '@/lib/server/pekaryaAutoLeave';
+import { syncPekaryaAttendance } from '@/lib/server/pekaryaAttendanceSync';
 import admin, { adminDb, adminStorage } from '@/lib/firebase-admin';
 import {
   ATTENDANCE_PAYROLL_START_PERIOD,
@@ -30,6 +31,7 @@ import {
 import { assertPeriodAcceptsInput, isPeriodClosed } from '@/lib/server/payrollPeriod';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
@@ -620,11 +622,19 @@ export async function POST(request: NextRequest) {
     }
 
     const autoLeave = await reconcilePekaryaAutoLeave(period, actor);
+    const autoLeavePending = autoLeave.results.some((item) => item.failed);
+    // The new file goes straight into every Pekarya category's rekap and draft
+    // slips; there is no Publish step. A category still waiting on leave
+    // reconciliation is reconciled again (or retried from Presensi Pekarya).
+    const attendanceSync = await syncPekaryaAttendance(period, 'ALL', actor, 'attendance_import', {
+      autoLeaveReconciled: !autoLeavePending,
+    });
     return Response.json(
       {
         ...preview,
         autoLeave,
-        autoLeavePending: autoLeave.results.some((item) => item.failed),
+        autoLeavePending,
+        attendanceSync,
         activeRevision: claim.revision,
         activeRevisionId: claim.revisionId,
         idempotent: claim.idempotent,

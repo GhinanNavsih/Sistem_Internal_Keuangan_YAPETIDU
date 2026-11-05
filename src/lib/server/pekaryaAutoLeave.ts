@@ -230,8 +230,9 @@ async function reconcileEmployee(period: string, employeeId: string, source: Sou
   });
 }
 
-/** Refresh only previously published regular attendance. Never bypass warnings
- * or turn an unreviewed/stale import into a publication. */
+/** Refresh only regular attendance already written to the rekap. Writing a new
+ * or stale import into it is the automatic attendance sync's job
+ * (`pekaryaAttendanceSync.ts`), which runs after this reconciliation. */
 async function refreshDerived(period: string, category: string, actor: AutomaticLeaveActor, source: Sources) {
   const stateRef = autoLeaveStateRef(period, category);
   const state = await stateRef.get();

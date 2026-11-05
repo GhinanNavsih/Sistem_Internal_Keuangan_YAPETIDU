@@ -19,6 +19,7 @@ import {
 } from '@/lib/payroll/pekaryaSpj';
 import { isSatpamDutyPlanRequired } from '@/lib/payroll/satpamDutyPlan';
 import { categoryUsesAttendanceImport } from '@/utils/rekapConfig';
+import { ATTENDANCE_HOLD_MESSAGE, isAttendanceHeld } from '@/lib/payroll/pekaryaAttendanceSync';
 import {
   calculateTaxBase,
   describeTaxIneligibility,
@@ -192,7 +193,7 @@ export async function POST(request: NextRequest) {
       const policy = pekaryaSingleScanPolicy(autoCategory, periodSnapshot.data(), publication.data());
       if (periodSnapshot.data()?.attendanceStatus !== 'closed' && policy !== 'offset_150_minutes' &&
           !attendancePublicationMatchesPolicy(publication.data(), policy)) {
-        throw new HttpError(409, 'Publikasikan ulang presensi dengan aturan scan terbaru sebelum menyimpan slip.');
+        throw new HttpError(409, 'Presensi belum tersinkron dengan aturan scan terbaru. Buka Presensi Pekarya lalu tekan Sinkronkan Ulang sebelum menyimpan slip.');
       }
     }
 
@@ -425,7 +426,7 @@ export async function POST(request: NextRequest) {
           const publication = await transaction.get(adminDb.collection(PEKARYA_PUBLICATIONS_COLLECTION)
             .doc(pekaryaPublicationId(command.period.replace('_', '-'), category)));
           if (!attendancePublicationMatchesPolicy(publication.data(), policy)) {
-            throw new HttpError(409, 'Publikasikan ulang presensi dengan aturan scan terbaru sebelum menyimpan slip.');
+            throw new HttpError(409, 'Presensi belum tersinkron dengan aturan scan terbaru. Buka Presensi Pekarya lalu tekan Sinkronkan Ulang sebelum menyimpan slip.');
           }
         }
       }
@@ -540,7 +541,7 @@ export async function POST(request: NextRequest) {
           ) {
             throw new HttpError(
               409,
-              `Presensi ${jobCategory} belum dipublikasikan pada revisi import, kalender, dan aturan scan terbaru.`,
+              `Presensi ${jobCategory} belum tersinkron dengan revisi import, kalender, dan aturan scan terbaru. Buka Presensi Pekarya lalu tekan Sinkronkan Ulang.`,
             );
           }
           const entry = uraianSnapshot.data()?.entries?.[command.employeeId];
@@ -549,6 +550,9 @@ export async function POST(request: NextRequest) {
               409,
               'Hasil presensi resmi pegawai belum tersedia di Rekap Uraian.',
             );
+          }
+          if (isAttendanceHeld(entry)) {
+            throw new HttpError(409, ATTENDANCE_HOLD_MESSAGE);
           }
           canonicalAttendance = {
             harian: Number(entry.values?.harian || 0),

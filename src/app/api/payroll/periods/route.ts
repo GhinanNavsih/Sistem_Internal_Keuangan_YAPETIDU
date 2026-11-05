@@ -352,7 +352,7 @@ async function handlePeriodPost(
       if (staleCategory) {
         throw new HttpError(
           409,
-          'Semua kategori Pekarya non-Satpam harus dipublikasikan dari revisi presensi, kalender, dan aturan scan terbaru.',
+          'Semua kategori Pekarya non-Satpam harus tersinkron dengan revisi presensi, kalender, dan aturan scan terbaru. Buka Presensi Pekarya lalu tekan Sinkronkan Ulang.',
         );
       }
       const calendarReopened = reopenedShiftSnapshot.docs.find((snapshot) => {
@@ -454,7 +454,7 @@ async function handlePeriodPost(
       const latestPublications = await Promise.all(closePublications.map(({ ref }) => transaction.get(ref)));
       if (latestPublications.some((publication, index) => !attendancePublicationMatchesPolicy(publication.data(),
         pekaryaSingleScanPolicy(closePublications[index].category, before, publication.data())))) {
-        throw new HttpError(409, 'Aturan scan presensi berubah sebelum penutupan. Publikasikan ulang presensi.');
+        throw new HttpError(409, 'Aturan scan presensi berubah sebelum penutupan. Buka Presensi Pekarya lalu tekan Sinkronkan Ulang.');
       }
       let validatedPayrollRosterSeal: Record<string, unknown> | null = null;
       // Periods are open by default, so closing a month that nobody explicitly

@@ -334,7 +334,7 @@ export function buildPekaryaSlipPreview(
       code: 'attendance_unpublished',
       message:
         attendanceGate.reason ||
-        `Presensi ${jobCategory} belum dipublikasikan pada revisi import dan kalender terbaru.`,
+        `Presensi ${jobCategory} belum tersinkron dengan revisi import dan kalender terbaru.`,
       blocking: true,
     });
   }

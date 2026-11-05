@@ -17,7 +17,6 @@ import {
   FileText,
   Loader2,
   RefreshCw,
-  Save,
   UserRoundX,
   X,
   ZoomIn,
@@ -195,6 +194,22 @@ type AttendanceView = {
   /** Review-only Satpam cards, present on "Semua Pekarya" for accounts that may see Satpam. */
   satpamAttendance?: { employees: SatpamAttendanceDetailEmployee[] } | null;
   autoLeave?: AutoLeaveSummary;
+  /** Where the automatic attendance-to-slip sync stands, per category on screen. */
+  attendanceSync?: AttendanceSyncState[];
+};
+
+type AttendanceSyncState = {
+  category: string;
+  status: 'ok' | 'failed';
+  error: string | null;
+  heldEmployees: Array<{ employeeId: string; name: string; reason: string }>;
+};
+
+/** One category's result from a sync run (`syncPekaryaAttendance`). */
+type AttendanceSyncResult = {
+  category: string;
+  status: 'synced' | 'unchanged' | 'skipped' | 'failed';
+  reason?: string;
 };
 
 type SatpamAbsenceAdminView = {
@@ -392,18 +407,24 @@ function money(value: number) {
   }).format(value);
 }
 
-function statusText(view: AttendanceView) {
-  if (
-    view.category === ALL_BLUE_COLLAR_CATEGORY &&
-    view.publication?.state === 'partial'
-  ) {
-    return 'Sebagian kategori sudah dipublikasikan';
+/**
+ * Attendance reaches the rekap and the draft slips on its own (no Publish
+ * step), so the status says whether that has happened yet.
+ */
+function statusText(view: AttendanceView, syncing: boolean) {
+  const failed = (view.attendanceSync || []).filter((item) => item.status === 'failed');
+  if (failed.length > 0) {
+    return view.category === ALL_BLUE_COLLAR_CATEGORY
+      ? `Sinkronisasi ke slip gagal: ${failed.map((item) => categoryLabel(item.category)).join(', ')}`
+      : 'Sinkronisasi ke slip gagal';
   }
-  if (!view.publication) return 'Belum dipublikasikan';
-  if (view.publication.stale) return 'Perlu dipublikasikan ulang';
-  return view.publication.state === 'published'
-    ? `Dipublikasikan · revisi ${view.publication.publicationRevision || 1}`
-    : 'Belum dipublikasikan';
+  const current =
+    view.publication?.state === 'published' && !view.publication.stale;
+  if (current) {
+    return `Otomatis masuk slip · revisi ${view.publication?.publicationRevision || 1}`;
+  }
+  if (!view.importRevisionId) return 'Menunggu import presensi';
+  return syncing ? 'Sedang menyinkronkan ke slip…' : 'Belum tersinkron ke slip';
 }
 
 function decisionStatusLabel(status: string): string {
@@ -1538,7 +1559,7 @@ export default function PekaryaAttendancePage() {
   // opens it.
   const category = ALL_BLUE_COLLAR_CATEGORY;
   // The header's category picker only narrows the list of employees below. The
-  // page still loads, reviews and publishes every blue-collar category together.
+  // page still loads and reviews every blue-collar category together.
   const requestedCategory = (searchParams.get('category') || '').trim().toUpperCase();
   const categoryFilter =
     requestedCategory && requestedCategory !== ALL_BLUE_COLLAR_CATEGORY
@@ -1680,10 +1701,12 @@ export default function PekaryaAttendancePage() {
       try {
         do {
           run.queued = false;
-          let summary: AutoLeaveSummary | null = null;
+          let summary: (AutoLeaveSummary & { sync?: AttendanceSyncResult[] }) | null = null;
           let failure = '';
           try {
-            summary = await authenticatedJson<AutoLeaveSummary>(
+            // Reconciles automatic leave, then syncs attendance into the rekap
+            // and the draft slips (a no-op when nothing changed).
+            summary = await authenticatedJson<AutoLeaveSummary & { sync?: AttendanceSyncResult[] }>(
               '/api/attendance/pekarya/auto-leave',
               {
                 method: 'POST',
@@ -1716,6 +1739,11 @@ export default function PekaryaAttendancePage() {
                   item.covered.length > 0 ||
                   item.released.length > 0 ||
                   (item.updated?.length ?? 0) > 0,
+              ),
+            ) ||
+            Boolean(
+              summary?.sync?.some(
+                (item) => item.status === 'synced' || item.status === 'failed',
               ),
             );
           if (changed) await loadRef.current?.({ silent: true, reconcile: false });
@@ -1886,9 +1914,9 @@ export default function PekaryaAttendancePage() {
       setLinkResult({
         detail: `${linkTarget.sourceName || 'Baris presensi'} dihubungkan ke ${
           chosen?.name || 'pegawai terpilih'
-        }. ${linkTarget.dates.length} hari presensi kini dihitung untuk pegawai tersebut. Jika presensi periode ini sudah dipublikasikan, publikasikan ulang agar upahnya ikut diperbarui.${
+        }. ${linkTarget.dates.length} hari presensi kini dihitung untuk pegawai tersebut dan langsung masuk ke Rekap Uraian serta slip draf.${
           chosen && !chosen.nipy
-            ? ' Upah pegawai ini baru dapat dipublikasikan setelah NIPY-nya dilengkapi.'
+            ? ' Upah pegawai ini baru masuk slip setelah NIPY-nya dilengkapi.'
             : ''
         }`,
       });
@@ -2226,6 +2254,19 @@ export default function PekaryaAttendancePage() {
     );
   }, [data]);
 
+  // The automatic attendance-to-slip sync, as the server last recorded it.
+  const syncFailures = useMemo(
+    () => (data?.attendanceSync || []).filter((item) => item.status === 'failed'),
+    [data],
+  );
+  const syncCurrent =
+    data?.publication?.state === 'published' && !data.publication.stale;
+  // Employees without a unique NIPY stay out of payroll on their own.
+  const heldEmployees = useMemo(
+    () => (data?.employees || []).filter((employee) => employee.publishBlocked),
+    [data],
+  );
+
   const departmentUnmatched = useMemo(() => {
     if (!data) return [];
     return data.exceptions.departmentUnmatched || [];
@@ -2397,44 +2438,22 @@ export default function PekaryaAttendancePage() {
     }
   };
 
-  const publish = async () => {
+  // Attendance syncs into the rekap and draft slips on its own after every
+  // change; this is only the retry for a sync that failed.
+  const retrySync = async () => {
     if (!data) return;
-    const warnings = Array.from(
-      new Set(
-        data.employees.flatMap((employee) =>
-          employee.warnings.filter(
-            (warning) =>
-              warning !== 'NIPY_MISSING' && warning !== 'NIPY_DUPLICATE',
-          ),
-        ),
-      ),
-    );
-    if (
-      warnings.length > 0 &&
-      !window.confirm(
-        `Publikasikan dengan peringatan berikut?\n${warnings
-          .map((warning) => `• ${warningLabel[warning] || warning}`)
-          .join('\n')}`,
-      )
-    ) {
-      return;
-    }
     setWorking(true);
     setError('');
     try {
-      await authenticatedJson('/api/attendance/pekarya/publish', {
+      await authenticatedJson('/api/attendance/pekarya/sync', {
         method: 'POST',
-        body: JSON.stringify({
-          requestId: createFinancialRequestId('attendance-publish'),
-          period,
-          category,
-          acknowledgedWarnings: warnings,
-        }),
+        body: JSON.stringify({ period, category }),
       });
-      setMessage('Presensi berhasil dipublikasikan ke Rekap Uraian.');
+      setMessage('Presensi sudah tersinkron ke Rekap Uraian dan slip draf.');
       await refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Gagal mempublikasikan presensi.');
+      setError(cause instanceof Error ? cause.message : 'Sinkronisasi presensi gagal.');
+      await refresh();
     } finally {
       setWorking(false);
     }
@@ -2477,7 +2496,7 @@ export default function PekaryaAttendancePage() {
           <div className="flex flex-wrap items-center gap-2">
             {autoLeaveRunning && (
               <span className="text-xs text-slate-500" role="status">
-                Memeriksa cuti otomatis…
+                Memeriksa cuti otomatis & menyinkronkan slip…
               </span>
             )}
             <Button
@@ -2562,7 +2581,7 @@ export default function PekaryaAttendancePage() {
               <div>
                 <p className="flex items-center gap-2 font-bold text-slate-900">
                   <ClipboardCheck className="h-5 w-5 text-indigo-600" />
-                  {statusText(data)}
+                  {statusText(data, autoLeaveRunning)}
                 </p>
                 <p className="mt-1 text-sm text-slate-500">
                   {data.exceptions.incompletePunches} scan tidak lengkap ·{' '}
@@ -2570,32 +2589,40 @@ export default function PekaryaAttendancePage() {
                   {data.exceptions.duplicateEmployeeDays} hari duplikat ·{' '}
                   {data.exceptions.unmatchedNipys.length} NIPY file tidak dikenal
                 </p>
+                <p className="mt-1 text-sm text-slate-500">
+                  Setiap perubahan presensi langsung masuk ke Rekap Uraian dan
+                  slip gaji draf. Slip yang sudah dikunci atau dibayar tidak
+                  berubah; selisihnya ditandai untuk Badan Keuangan.
+                </p>
               </div>
-              {canEdit && (
-                <Button
-                  className="rounded-sm min-h-12 gap-2 bg-indigo-600 hover:bg-indigo-700"
-                  onClick={() => void publish()}
-                  disabled={
-                    working ||
-                    !data.importRevisionId ||
-                    data.employees.some((employee) => employee.publishBlocked)
-                  }
-                >
-                  <Save className="h-4 w-4" />
-                  {data.publication
-                    ? category === ALL_BLUE_COLLAR_CATEGORY
-                      ? 'Publikasikan Ulang Semua'
-                      : 'Publikasikan Ulang'
-                    : category === ALL_BLUE_COLLAR_CATEGORY
-                      ? 'Publikasikan Semua ke Rekap'
-                      : 'Publikasikan ke Rekap'}
-                </Button>
-              )}
+              {canEdit &&
+                data.importRevisionId &&
+                syncFailures.length + (syncCurrent || autoLeaveRunning ? 0 : 1) > 0 && (
+                  <Button
+                    variant="outline"
+                    className="rounded-sm min-h-12 gap-2"
+                    onClick={() => void retrySync()}
+                    disabled={working || autoLeaveRunning}
+                  >
+                    <RefreshCw className={`h-4 w-4 ${working ? 'animate-spin' : ''}`} />
+                    Sinkronkan Ulang
+                  </Button>
+                )}
             </div>
-            {data.employees.some((employee) => employee.publishBlocked) && (
+            {syncFailures.length > 0 && (
               <div className="mt-4 rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
-                Publikasi ditahan sampai semua pegawai aktif memiliki NIPY yang
-                unik. Peringatan scan satu sisi tidak menghalangi publikasi.
+                {syncFailures.map((item) => (
+                  <p key={item.category}>
+                    {categoryLabel(item.category)}: {item.error || 'Sinkronisasi gagal.'}
+                  </p>
+                ))}
+              </div>
+            )}
+            {heldEmployees.length > 0 && (
+              <div className="mt-4 rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+                {heldEmployees.length} pegawai ditahan dari slip sampai NIPY-nya
+                unik: {heldEmployees.map((employee) => employee.name).join(', ')}.
+                Pegawai lain tetap masuk slip seperti biasa.
               </div>
             )}
           </section>
@@ -3165,7 +3192,7 @@ export default function PekaryaAttendancePage() {
                       linkCandidates.map((candidate) => {
                         // A candidate without a NIPY can still be linked — the row
                         // joins on a stable per-employee token instead — but that
-                        // employee's pay stays unpublishable until a real NIPY
+                        // employee's pay stays out of payroll until a real NIPY
                         // exists, the same rule already applied elsewhere on this
                         // page. Surfaced here so the choice is informed, not blocked.
                         const missingNipy = !candidate.nipy;
@@ -3189,7 +3216,7 @@ export default function PekaryaAttendancePage() {
                               {categoryLabel(candidate.category)} · NIPY{' '}
                               {candidate.nipy || 'belum diisi'}
                               {missingNipy &&
-                                ' — publikasi upah tertunda hingga NIPY dilengkapi'}
+                                ' — upah baru masuk slip setelah NIPY dilengkapi'}
                             </span>
                           </button>
                         );

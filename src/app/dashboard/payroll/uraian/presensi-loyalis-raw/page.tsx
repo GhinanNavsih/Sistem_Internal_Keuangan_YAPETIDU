@@ -67,6 +67,7 @@ import {
   authenticatedJson,
   createFinancialRequestId,
   propagateUraianToSlips,
+  pushUraianToSlips,
 } from '@/lib/payroll/client';
 import { BONUS_TRIWULAN_START_PERIOD } from '@/lib/payroll/bonusTriwulan';
 
@@ -703,11 +704,12 @@ export default function PresensiLoyalisRawPage() {
   // ── Background Firestore Autosave (mirrors the KJM page's technique) ─────
   // Persists the working table to the LoyalisPresence document in the
   // background, debounced, so edits survive a crash/closed tab and are
-  // visible to other devices/tabs without waiting for an explicit save.
-  // Deliberately does NOT call propagateUraianToSlips or resolve pending
-  // correction requests — those stay behind the explicit "Simpan Data
-  // Presensi" click, same as KJM only propagates on explicit Approve.
+  // visible to other devices/tabs without waiting for an explicit save. Each
+  // autosave also pushes the new figures onto the draft payslips, so the pay
+  // follows the edit without a button. Resolving pending correction requests
+  // (and Bonus Triwulan) stays behind the explicit "Simpan Data Presensi".
   const [autosaveState, setAutosaveState] = useState<AutosaveState>('idle');
+  const [autosaveSlipsSynced, setAutosaveSlipsSynced] = useState(false);
   const uploadedDataRef = useRef(uploadedData);
   const workingDaysRef = useRef(workingDays);
   const expectedHoursRef = useRef(expectedHours);
@@ -1245,7 +1247,19 @@ export default function PresensiLoyalisRawPage() {
       });
       await setDoc(doc(db, 'LoyalisPresence', presenceDocId), payload);
       const autoLeaveNote = describeAutoLeaveSummary(await reconcileAutomaticLeave());
-      if (autoLeaveNote) setMessage({ type: 'success', text: `Draf presensi tersimpan.${autoLeaveNote}` });
+      // Every autosave also reaches the draft payslips, so no button is
+      // needed for the pay to follow the edit. Locked and paid slips keep
+      // their figures (the server records the drift for Badan Keuangan).
+      const slipSync = await pushUraianToSlips({ scope: 'loyalis', period: periodToken });
+      setAutosaveSlipsSynced(slipSync.ok);
+      if (!slipSync.ok) {
+        setMessage({
+          type: 'error',
+          text: `Draf presensi tersimpan, tetapi slip gaji belum diperbarui. Klik Simpan Data Presensi untuk mencoba lagi.${autoLeaveNote}`,
+        });
+      } else if (autoLeaveNote) {
+        setMessage({ type: 'success', text: `Draf presensi tersimpan.${autoLeaveNote}${slipSync.note}` });
+      }
       autosaveBaselineRef.current = serialized;
       failedAutosaveSerializedRef.current = '';
       if (serializeWorkingTable() === serialized) setAutosaveState('saved');
@@ -2309,9 +2323,11 @@ export default function PresensiLoyalisRawPage() {
           {autosaveState === 'scheduled'
             ? 'Perubahan dijadwalkan untuk disimpan…'
             : autosaveState === 'saving'
-              ? 'Menyimpan draf presensi di latar belakang…'
+              ? 'Menyimpan draf presensi dan memperbarui slip gaji di latar belakang…'
               : autosaveState === 'saved'
-                ? 'Draf presensi berhasil disimpan.'
+                ? autosaveSlipsSynced
+                  ? 'Draf presensi tersimpan dan slip gaji draf diperbarui.'
+                  : 'Draf presensi tersimpan; slip gaji belum diperbarui.'
                 : 'Draf belum tersimpan otomatis. Ubah data untuk mencoba lagi, atau klik Simpan Data Presensi.'}
         </div>
       )}

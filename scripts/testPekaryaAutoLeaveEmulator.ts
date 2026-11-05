@@ -180,6 +180,9 @@ async function main() {
   assert.equal((await requestRef(ids.SATPAM, '2026-10-31').get()).data()?.status, 'approved');
   assert.equal((await postRef(ids.SATPAM, '2026-10-31').get()).data()?.scheduledShift.endsAtIso, '2026-11-01T07:00:00+07:00');
   await db.doc('Employees_WhiteCollar/DUP').delete();
+  // The page-load reconciles above already synced PONTI into the rekap; remove
+  // it to recreate a publication whose rekap has gone missing.
+  await db.doc('UraianGaji/2026_10_PONTI').delete();
   await db.doc(`PekaryaAttendancePublications/${pekaryaPublicationId(period, 'PONTI')}`).set({
     period, category: 'PONTI', state: 'published', stale: false, importRevisionId: '2026_10__r0001', calendarRevision: 1, publicationRevision: 1,
   });

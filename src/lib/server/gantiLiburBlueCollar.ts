@@ -173,7 +173,7 @@ export function postBlueCollarGantiLibur(
   const publication = documentData(prepared.publicationRef.path);
   if (publication?.state === 'published' && publication.stale !== true) {
     const uraian = documentData(prepared.uraianRef.path);
-    if (!uraian) throw new HttpError(409, 'Rekap Uraian publikasi tidak ditemukan. Publikasikan ulang kategori.');
+    if (!uraian) throw new HttpError(409, 'Rekap Uraian presensi tidak ditemukan. Buka Presensi Pekarya lalu tekan Sinkronkan Ulang.');
     const entries = { ...(uraian.entries || {}) };
     const existing = entries[request.employeeId] || {};
     const publicationRevision = Number(publication.publicationRevision || 0) + 1;

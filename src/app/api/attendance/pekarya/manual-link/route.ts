@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { markAutoLeaveDirty } from '@/lib/server/automaticLeavePosting';
 import { ensurePekaryaAutoLeave, permittedAutoLeaveCategories } from '@/lib/server/pekaryaAutoLeave';
+import { syncPekaryaAttendance } from '@/lib/server/pekaryaAttendanceSync';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
   ATTENDANCE_PAYROLL_START_PERIOD,
@@ -256,8 +257,15 @@ export async function POST(request: NextRequest) {
       target.category,
       target.payrollCategory,
     ]);
+    // The linked days are pay: they reach the rekap and draft slips now.
+    const attendanceSync = await syncPekaryaAttendance(
+      period,
+      [target.category, target.payrollCategory].filter(Boolean),
+      actor,
+      'manual_link',
+    );
     return Response.json(
-      { linked: true, employeeId, sourceKey, dates: sourceRow.dates },
+      { linked: true, employeeId, sourceKey, dates: sourceRow.dates, attendanceSync },
       { status: 201 },
     );
   } catch (error) {
@@ -340,18 +348,25 @@ export async function DELETE(request: NextRequest) {
     const employeeSnapshot = removed.employeeId
       ? await adminDb.collection('Employees_BlueCollar').doc(removed.employeeId).get()
       : null;
+    const affectedCategories = [
+      removed.category,
+      ...(employeeSnapshot?.exists
+        ? [jobCategoryForPayrollPeriod(employeeSnapshot.data() || {}, period)]
+        : []),
+    ];
     await reconcileLinkedEmployee(
       period,
       actor,
       employeeSnapshot?.exists ? removed.employeeId : null,
-      [
-        removed.category,
-        ...(employeeSnapshot?.exists
-          ? [jobCategoryForPayrollPeriod(employeeSnapshot.data() || {}, period)]
-          : []),
-      ],
+      affectedCategories,
     );
-    return Response.json({ removed: true, sourceKey });
+    const attendanceSync = await syncPekaryaAttendance(
+      period,
+      affectedCategories.filter(Boolean),
+      actor,
+      'manual_link',
+    );
+    return Response.json({ removed: true, sourceKey, attendanceSync });
   } catch (error) {
     return errorResponse(error);
   }

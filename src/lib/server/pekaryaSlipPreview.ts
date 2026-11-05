@@ -3,6 +3,7 @@ import {
   presenceBonusColumnKey,
 } from '@/lib/payroll/pekaryaPresenceBonus';
 import { adminDb } from '@/lib/firebase-admin';
+import { ATTENDANCE_HOLD_MESSAGE, isAttendanceHeld } from '@/lib/payroll/pekaryaAttendanceSync';
 import { jobCategoryForPayrollPeriod, withPayrollJobCategory } from '@/lib/payroll/blueCollarCategory';
 import {
   type AttendanceSingleScanPolicy,
@@ -215,7 +216,7 @@ async function loadCategoryAttendanceState(
         satisfied,
         reason: autoLeaveState.data()?.dirty === true ? 'Rekonsiliasi cuti otomatis belum selesai.' : satisfied
           ? undefined
-          : `Presensi ${category} belum dipublikasikan pada revisi import, kalender, dan aturan scan terbaru.`,
+          : `Presensi ${category} belum tersinkron dengan revisi import, kalender, dan aturan scan terbaru. Buka Presensi Pekarya lalu tekan Sinkronkan Ulang.`,
       },
       entries,
       customColumns,
@@ -491,7 +492,11 @@ export async function loadPekaryaSlipPreviews(
       ),
       piketSchedules,
       premiumDates,
-      attendanceGate: state.gate,
+      // An employee held for a NIPY problem fails the gate on their own, the
+      // same refusal /api/payroll/slips gives when the slip is created.
+      attendanceGate: state.gate.required && isAttendanceHeld(state.entries[employee.id])
+        ? { required: true, satisfied: false, reason: ATTENDANCE_HOLD_MESSAGE }
+        : state.gate,
     });
   }
 

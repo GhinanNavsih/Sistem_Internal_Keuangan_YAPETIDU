@@ -1,4 +1,5 @@
 import { refreshEmployeeAutoLeaveHistory } from '@/lib/server/pekaryaAutoLeave';
+import { syncPekaryaAttendance } from '@/lib/server/pekaryaAttendanceSync';
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
@@ -453,7 +454,14 @@ export async function POST(request: NextRequest) {
       }
     }
     if (employeeKind === 'blue_collar') await refreshEmployeeAutoLeaveHistory(employeeId, actor);
-    return Response.json({ ...result, payrollWarning }, { headers: { 'Cache-Control': 'no-store' } });
+    // The paid day off reaches the employee's draft slip now, not on Publish.
+    const attendanceSync = employeeKind === 'blue_collar' && initial.category !== 'SATPAM'
+      ? await syncPekaryaAttendance(dayOffPeriod, [String(initial.category || '')], actor, 'ganti_libur', {
+          autoLeaveReconciled: true,
+          employeeIds: [employeeId],
+        })
+      : [];
+    return Response.json({ ...result, payrollWarning, attendanceSync }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     if (error instanceof AttendanceConfirmationRequired) {
       return Response.json({

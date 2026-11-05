@@ -115,6 +115,12 @@ export interface UraianEntry {
   name: string;
   values: Record<string, number>; // column key → monetary nominal (count cols are multiplied)
   counts?: Record<string, number>; // column key → raw count (e.g. harian: 18, jumatLibur: 10)
+  /**
+   * Set by the automatic attendance sync while the employee has no unique
+   * NIPY: their attendance money is not trusted, so no slip is created or
+   * updated from this entry until the hold is lifted.
+   */
+  attendanceHold?: import('@/lib/payroll/pekaryaAttendanceSync').AttendanceHold;
   satpamDutySource?: {
     planId?: string;
     planRevision?: number;
