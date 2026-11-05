@@ -16,10 +16,10 @@ import {
   type SlipFieldChange,
 } from '@/lib/payroll/slipPropagation';
 import {
-  loyalisPresenceAmounts,
   loyalisPresenceOwnedPredicate,
   uraianOwnedEarningPredicate,
 } from '@/lib/payroll/uraianPropagation';
+import { loyalisPresenceAmounts } from '@/lib/payroll/loyalisPresencePay';
 import {
   isSatpamLegacyBonusColumn,
   normalizeSatpamUraianEntry,
@@ -186,7 +186,7 @@ async function collectLoyalisTargets(
     if (!employeeInPayrollPeriod('Employees_Loyalis', employeeDoc.data(), command.periodToken)) {
       continue;
     }
-    const amounts = loyalisPresenceAmounts(presence, employeeId);
+    const amounts = loyalisPresenceAmounts(presence, employeeId, command.periodToken);
     targets.push({
       employeeId,
       earningsOwned,
@@ -214,6 +214,7 @@ async function collectLoyalisTargets(
         amounts.presenceDeduction,
         amounts.presensiDeduction,
         0,
+        command.periodToken,
       ),
     });
   }

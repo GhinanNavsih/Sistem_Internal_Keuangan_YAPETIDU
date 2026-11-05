@@ -74,6 +74,7 @@ import PaySlipDialog, { SlipState, buildInitialEarnings, buildInitialDeductions 
 import { eligibleFamilyMetrics, familyAllowancePeriodDate, synchronizeFamilyAllowanceEarnings } from '@/lib/payroll/familyAllowance';
 import { normalizeTaxFields, recalculateSlipTaxes } from '@/lib/payroll/payrollTax';
 import { buildInitialTaxes } from '@/lib/payroll/slipBuilders';
+import { loyalisNetPresenceApplies, loyalisPresenceAmounts } from '@/lib/payroll/loyalisPresencePay';
 import { PekaryaSlipPreview } from '@/lib/payroll/pekaryaSlipPreview';
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import * as XLSX from 'xlsx';
@@ -101,7 +102,7 @@ import {
   createFinancialRequestId,
   type StreamedProgress,
 } from '@/lib/payroll/client';
-import type { LoyalisPresenceDocument } from '@/lib/payroll/uraianPropagation';
+import type { LoyalisPresenceDocument } from '@/lib/payroll/loyalisPresencePay';
 import {
   defaultPayrollPeriodToken,
   isTransferEligibleStatus,
@@ -303,49 +304,19 @@ export default function PayrollValidationDashboard() {
   } = useDashboardData();
   const { invalidatePayrollPeriod } = usePayrollCacheInvalidation();
 
-  const getLoyalisPresenceBonus = (empId: string): number => {
-    if (loyalisPresenceData?.entries && Object.keys(loyalisPresenceData.entries).length > 0) {
-      const entry = loyalisPresenceData.entries[empId];
-      if (!entry) return 0;
-    }
-    return 250000;
-  };
-
-  const getLoyalisPresenceDeduction = (empId: string): number => {
-    if (loyalisPresenceData?.entries && Object.keys(loyalisPresenceData.entries).length > 0) {
-      const entry = loyalisPresenceData.entries[empId];
-      if (entry) {
-        return entry.deduction || 0;
-      }
-    }
-    return 0;
-  };
-
-  const getLoyalisPresensiEarning = (empId: string): number => {
-    const workingDays = loyalisPresenceData?.workingDays || 25;
-    const expectedHours = loyalisPresenceData?.expectedHours || 6.5;
-    if (loyalisPresenceData?.entries && Object.keys(loyalisPresenceData.entries).length > 0) {
-      const entry = loyalisPresenceData.entries[empId];
-      if (!entry) return 0;
-    }
-    return Math.round(workingDays * expectedHours * 1650);
-  };
-
-  const getLoyalisPresensiDeduction = (empId: string): number => {
-    if (loyalisPresenceData?.entries && Object.keys(loyalisPresenceData.entries).length > 0) {
-      const entry = loyalisPresenceData.entries[empId];
-      if (entry) {
-        const absenceMinutes = entry.absenceMinutes || 0;
-        return Math.round((absenceMinutes / 60) * 1650);
-      }
-    }
-    return 0;
-  };
-
   const [targetDate, setTargetDate] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
+  // Every Loyalis presence figure on this page comes from the shared rule, so
+  // the dashboard, the employee payslip and propagation always agree.
+  const presencePeriodToken = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+  const loyalisPresenceFor = (empId: string) =>
+    loyalisPresenceAmounts(loyalisPresenceData, empId, presencePeriodToken);
+  const getLoyalisPresenceBonus = (empId: string): number => loyalisPresenceFor(empId).presenceBonus;
+  const getLoyalisPresenceDeduction = (empId: string): number => loyalisPresenceFor(empId).presenceDeduction;
+  const getLoyalisPresensiEarning = (empId: string): number => loyalisPresenceFor(empId).presensiEarning;
+  const getLoyalisPresensiDeduction = (empId: string): number => loyalisPresenceFor(empId).presensiDeduction;
   const [attendancePeriodStatus, setAttendancePeriodStatus] =
     useState<'unconfigured' | 'open' | 'closed'>('unconfigured');
   // Runs once: the landing period is resolved from the previous period's
@@ -1209,8 +1180,11 @@ export default function PayrollValidationDashboard() {
         deductions.push({ label: 'Revisi Gaji', amount: 0 });
         deductions.push({ label: 'Pinlu/Tagihan', amount: emp.raw?.pinlu?.deductionAmount || 0 });
         deductions.push({ label: 'Pinjaman Kop. UNIPDU', amount: kopUnipduAmount });
-        deductions.push({ label: 'Potongan Presensi', amount: getLoyalisPresensiDeduction(emp.id) });
-        deductions.push({ label: 'Potongan Bonus Presensi', amount: getLoyalisPresenceDeduction(emp.id) });
+        // Net-paid periods carry no Potongan Presensi rows (see buildInitialDeductions).
+        if (!loyalisNetPresenceApplies(presencePeriodToken)) {
+          deductions.push({ label: 'Potongan Presensi', amount: getLoyalisPresensiDeduction(emp.id) });
+          deductions.push({ label: 'Potongan Bonus Presensi', amount: getLoyalisPresenceDeduction(emp.id) });
+        }
       } else {
         const bpjsAmount = emp.raw?.bpjs?.deductionAmount ? Math.round(emp.raw.bpjs.deductionAmount) : 0;
         const kopRochmadAmount = emp.raw?.deductions?.koperasiRochmad || 0;
@@ -1518,6 +1492,7 @@ export default function PayrollValidationDashboard() {
           getLoyalisPresenceDeduction(emp.id),
           getLoyalisPresensiDeduction(emp.id),
           koperasiSavings[emp.id] || 0,
+          presencePeriodToken,
         );
 
     // Automated TER income tax derived from employee profile and preview gross earnings
@@ -1582,7 +1557,8 @@ export default function PayrollValidationDashboard() {
           workingDays: loyalisPresenceData?.workingDays || 25,
           expectedHours: loyalisPresenceData?.expectedHours || 6.5,
           absenceMinutes: presenceEntry?.absenceMinutes || 0,
-          bonusDeduction: getLoyalisPresenceDeduction(emp.id),
+          bonusDeduction: loyalisPresenceFor(emp.id).bonusDeduction,
+          imported: loyalisPresenceFor(emp.id).imported,
         }
         : null,
       vakasiEvents: isLoyalis
@@ -2717,45 +2693,13 @@ export default function PayrollValidationDashboard() {
           rowIndex: 0
         };
 
-        // Calculations helper local implementations
-        const getFreshPresenceBonus = (empId: string): number => {
-          if (freshPresenceData?.entries && Object.keys(freshPresenceData.entries).length > 0) {
-            const entry = freshPresenceData.entries[empId];
-            if (!entry) return 0;
-          }
-          return 250000;
-        };
-
-        const getFreshPresenceDeduction = (empId: string): number => {
-          if (freshPresenceData?.entries && Object.keys(freshPresenceData.entries).length > 0) {
-            const entry = freshPresenceData.entries[empId];
-            if (entry) {
-              return entry.deduction || 0;
-            }
-          }
-          return 0;
-        };
-
-        const getFreshPresensiEarning = (empId: string): number => {
-          const workingDays = freshPresenceData?.workingDays || 25;
-          const expectedHours = freshPresenceData?.expectedHours || 6.5;
-          if (freshPresenceData?.entries && Object.keys(freshPresenceData.entries).length > 0) {
-            const entry = freshPresenceData.entries[empId];
-            if (!entry) return 0;
-          }
-          return Math.round(workingDays * expectedHours * 1650);
-        };
-
-        const getFreshPresensiDeduction = (empId: string): number => {
-          if (freshPresenceData?.entries && Object.keys(freshPresenceData.entries).length > 0) {
-            const entry = freshPresenceData.entries[empId];
-            if (entry) {
-              const absenceMinutes = entry.absenceMinutes || 0;
-              return Math.round((absenceMinutes / 60) * 1650);
-            }
-          }
-          return 0;
-        };
+        // Same shared rule as the page's own getters.
+        const freshPresence = (empId: string) =>
+          loyalisPresenceAmounts(freshPresenceData, empId, periodToken);
+        const getFreshPresenceBonus = (empId: string): number => freshPresence(empId).presenceBonus;
+        const getFreshPresenceDeduction = (empId: string): number => freshPresence(empId).presenceDeduction;
+        const getFreshPresensiEarning = (empId: string): number => freshPresence(empId).presensiEarning;
+        const getFreshPresensiDeduction = (empId: string): number => freshPresence(empId).presensiDeduction;
 
         // VakasiTambahan sum & list
         let freshVakasiSum = 0;
@@ -2823,7 +2767,8 @@ export default function PayrollValidationDashboard() {
           freshKoperasiDeduction,
           getFreshPresenceDeduction(emp.id),
           getFreshPresensiDeduction(emp.id),
-          freshKoperasiSaving
+          freshKoperasiSaving,
+          periodToken
         );
 
         // Get current slip state
@@ -3081,45 +3026,13 @@ export default function PayrollValidationDashboard() {
     const freshPresenceData = isLoyalis ? await fetchLoyalisPresence(period, true) : null;
     setLoyalisPresenceData(freshPresenceData);
 
-    // Presence calculations helpers
-    const getFreshPresenceBonus = (empId: string): number => {
-      if (freshPresenceData?.entries && Object.keys(freshPresenceData.entries).length > 0) {
-        const entry = freshPresenceData.entries[empId];
-        if (!entry) return 0;
-      }
-      return 250000;
-    };
-
-    const getFreshPresenceDeduction = (empId: string): number => {
-      if (freshPresenceData?.entries && Object.keys(freshPresenceData.entries).length > 0) {
-        const entry = freshPresenceData.entries[empId];
-        if (entry) {
-          return entry.deduction || 0;
-        }
-      }
-      return 0;
-    };
-
-    const getFreshPresensiEarning = (empId: string): number => {
-      const workingDays = freshPresenceData?.workingDays || 25;
-      const expectedHours = freshPresenceData?.expectedHours || 6.5;
-      if (freshPresenceData?.entries && Object.keys(freshPresenceData.entries).length > 0) {
-        const entry = freshPresenceData.entries[empId];
-        if (!entry) return 0;
-      }
-      return Math.round(workingDays * expectedHours * 1650);
-    };
-
-    const getFreshPresensiDeduction = (empId: string): number => {
-      if (freshPresenceData?.entries && Object.keys(freshPresenceData.entries).length > 0) {
-        const entry = freshPresenceData.entries[empId];
-        if (entry) {
-          const absenceMinutes = entry.absenceMinutes || 0;
-          return Math.round((absenceMinutes / 60) * 1650);
-        }
-      }
-      return 0;
-    };
+    // Same shared rule as the page's own getters.
+    const freshPresence = (empId: string) =>
+      loyalisPresenceAmounts(freshPresenceData, empId, periodToken);
+    const getFreshPresenceBonus = (empId: string): number => freshPresence(empId).presenceBonus;
+    const getFreshPresenceDeduction = (empId: string): number => freshPresence(empId).presenceDeduction;
+    const getFreshPresensiEarning = (empId: string): number => freshPresence(empId).presensiEarning;
+    const getFreshPresensiDeduction = (empId: string): number => freshPresence(empId).presensiDeduction;
 
     // 5. Fetch VakasiTambahan
     const vakasiSnap = await getDocsFromServer(collection(db, 'VakasiTambahan'));
@@ -3212,7 +3125,8 @@ export default function PayrollValidationDashboard() {
       freshKoperasiDeduction,
       getFreshPresenceDeduction(employeeId),
       getFreshPresensiDeduction(employeeId),
-      freshKoperasiSaving
+      freshKoperasiSaving,
+      periodToken
     );
 
     return {

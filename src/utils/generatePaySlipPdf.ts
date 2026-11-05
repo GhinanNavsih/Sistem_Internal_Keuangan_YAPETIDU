@@ -3,6 +3,7 @@ import type { MoneyField } from '@/lib/payroll/domain';
 import { LOGO_YAPETIDU_BASE64, LOGO_UNIPDU_BASE64 } from './logoConstants';
 import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
 import { explainFamilyAllowance } from '@/lib/payroll/familyAllowanceSnapshot';
+import { loyalisPresenceBreakdown } from '@/lib/payroll/loyalisPresencePay';
 
 /** Alias of the canonical MoneyField; see slipBuilders.SlipField. */
 export type PaySlipField = MoneyField;
@@ -48,6 +49,8 @@ export interface PaySlipData {
     expectedHours: number;
     absenceMinutes: number;
     bonusDeduction: number;
+    /** False while the period has no imported attendance. */
+    imported?: boolean;
   } | null;
   vakasiEvents?: { eventName: string; payGiven: number }[];
 }
@@ -389,49 +392,32 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
     // ─── POTONGAN SIDE ROWS ──────────────────────────────────────────
     const rightRows: CustomSlipRow[] = [];
 
-    // Rochmad
-    const rochmadDeduction = data.deductions.find(d => d.label.toUpperCase() === 'KOP. ROCHMAD' || d.label.toUpperCase() === 'KOPERASI ROCHMAD');
-    rightRows.push({ type: 'item', label: '1   KOPERASI ROCHMAD', amount: rochmadDeduction ? rochmadDeduction.amount : 0 });
-
-    // BPJS
-    const bpjsDeduction = data.deductions.find(d => d.label.toUpperCase() === 'BPJS');
-    rightRows.push({ type: 'item', label: '2   BPJS', amount: bpjsDeduction ? bpjsDeduction.amount : 0 });
-
-    // Tabungan Hari Tua BNI Simponi
-    const thtDeduction = data.deductions.find(d => d.label.toUpperCase() === 'TABUNGAN HARI TUA BNI SIMPONI' || d.label.toUpperCase() === 'THT');
-    rightRows.push({ type: 'item', label: '3   TABUNGAN HARI TUA BNI SIMPONI', amount: thtDeduction ? thtDeduction.amount : 0 });
-
-    // Tabungan
-    const tabDeduction = data.deductions.find(d => d.label.toUpperCase() === 'TABUNGAN');
-    rightRows.push({ type: 'item', label: '4   TABUNGAN', amount: tabDeduction ? tabDeduction.amount : 0 });
-
-    // Zakat Infaq Sodaqoh
-    const zizDeduction = data.deductions.find(d => d.label.toUpperCase() === 'ZAKAT INFAQ SODAQOH' || d.label.toUpperCase() === 'ZIZ');
-    rightRows.push({ type: 'item', label: '5   ZAKAT INFAQ SODAQOH', amount: zizDeduction ? zizDeduction.amount : 0 });
-
-    // Revisi Gaji
-    const revDeduction = data.deductions.find(d => d.label.toUpperCase() === 'REVISI GAJI');
-    rightRows.push({ type: 'item', label: '6   REVISI GAJI', amount: revDeduction ? revDeduction.amount : 0 });
-
-    // Pinlu/Tagihan
-    const pinluDeduction = data.deductions.find(d => d.label.toUpperCase() === 'PINLU/TAGIHAN');
-    rightRows.push({ type: 'item', label: '7   PINLU/TAGIHAN', amount: pinluDeduction ? pinluDeduction.amount : 0 });
-
-    // Kop Unipdu
-    const unipduDeduction = data.deductions.find(d => d.label.toUpperCase() === 'PINJAMAN KOP. UNIPDU' || d.label.toUpperCase() === 'KOP. UNIPDU REJOSO GEMILANG' || d.label.toUpperCase() === 'KOPERASI UNIPDU REJOSO GEMILANG');
-    rightRows.push({ type: 'item', label: '8   PINJAMAN KOP. UNIPDU', amount: unipduDeduction ? unipduDeduction.amount : 0 });
-
-    // Potongan Presensi
-    const presPot = data.deductions.find(d => d.label.toUpperCase() === 'POTONGAN PRESENSI');
-    rightRows.push({ type: 'item', label: '9   POTONGAN PRESENSI', amount: presPot ? presPot.amount : 0 });
-
-    // Potongan Bonus Presensi
-    const bonusPresPot = data.deductions.find(d => d.label.toUpperCase() === 'POTONGAN BONUS PRESENSI');
-    rightRows.push({ type: 'item', label: '10  POTONGAN BONUS PRESENSI', amount: bonusPresPot ? bonusPresPot.amount : 0 });
-
-    // Iuran Wajib Kop. UNIPDU
-    const simpananWajibPot = data.deductions.find(d => d.label.toUpperCase() === 'IURAN WAJIB KOP. UNIPDU' || d.label.toUpperCase() === 'IURAN WAJIB KOP. REJOSO GEMILANG' || d.label.toUpperCase() === 'SIMPANAN WAJIB KOPERASI');
-    rightRows.push({ type: 'item', label: '11  IURAN WAJIB KOP. UNIPDU', amount: simpananWajibPot ? simpananWajibPot.amount : 0 });
+    const findDeduction = (...labels: string[]) =>
+      data.deductions.find(d => labels.includes(d.label.toUpperCase()));
+    const deductionItems: { label: string; field?: PaySlipField; onlyWhenPresent?: boolean }[] = [
+      { label: 'KOPERASI ROCHMAD', field: findDeduction('KOP. ROCHMAD', 'KOPERASI ROCHMAD') },
+      { label: 'BPJS', field: findDeduction('BPJS') },
+      { label: 'TABUNGAN HARI TUA BNI SIMPONI', field: findDeduction('TABUNGAN HARI TUA BNI SIMPONI', 'THT') },
+      { label: 'TABUNGAN', field: findDeduction('TABUNGAN') },
+      { label: 'ZAKAT INFAQ SODAQOH', field: findDeduction('ZAKAT INFAQ SODAQOH', 'ZIZ') },
+      { label: 'REVISI GAJI', field: findDeduction('REVISI GAJI') },
+      { label: 'PINLU/TAGIHAN', field: findDeduction('PINLU/TAGIHAN') },
+      { label: 'PINJAMAN KOP. UNIPDU', field: findDeduction('PINJAMAN KOP. UNIPDU', 'KOP. UNIPDU REJOSO GEMILANG', 'KOPERASI UNIPDU REJOSO GEMILANG') },
+      // Only slips from before net Loyalis presence pay carry these two rows;
+      // a net slip pays Presensi and Bonus Presensi already reduced.
+      { label: 'POTONGAN PRESENSI', field: findDeduction('POTONGAN PRESENSI'), onlyWhenPresent: true },
+      { label: 'POTONGAN BONUS PRESENSI', field: findDeduction('POTONGAN BONUS PRESENSI'), onlyWhenPresent: true },
+      { label: 'IURAN WAJIB KOP. UNIPDU', field: findDeduction('IURAN WAJIB KOP. UNIPDU', 'IURAN WAJIB KOP. REJOSO GEMILANG', 'SIMPANAN WAJIB KOPERASI') },
+    ];
+    deductionItems
+      .filter(item => !item.onlyWhenPresent || item.field)
+      .forEach((item, index) => {
+        rightRows.push({
+          type: 'item',
+          label: `${String(index + 1).padEnd(4)}${item.label}`,
+          amount: item.field ? item.field.amount : 0,
+        });
+      });
 
     // ─── Drawing Rows ──────────────────────────────────────────────
     const numRows = Math.max(leftRows.length, rightRows.length);
@@ -892,8 +878,6 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
   const tunjKeluargaVal = earnings.find((e) => e.label.toUpperCase() === 'T. KELUARGA' || e.label.toUpperCase() === 'TUNJANGAN KELUARGA')?.amount || 0;
   const tunjFungsionalVal = earnings.find((e) => e.label.toUpperCase() === 'T. FUNGSIONAL' || e.label.toUpperCase() === 'TUNJANGAN FUNGSIONAL')?.amount || 0;
   const tunjKepangkatanVal = earnings.find((e) => e.label.toUpperCase() === 'KEPANGKATAN')?.amount || 0;
-  const presensiEarningVal = earnings.find((e) => e.label.toUpperCase() === 'PRESENSI')?.amount || 0;
-  const bonusPresensiVal = earnings.find((e) => e.label.toUpperCase() === 'BONUS PRESENSI')?.amount || 0;
   const tunjInstruksionalVal = earnings.find((e) => e.label.toUpperCase() === 'T. INSTRUKSIONAL' || e.label.toUpperCase() === 'INSTRUKSIONAL')?.amount || 0;
   const tunjHariTuaVal = earnings.find((e) => e.label.toUpperCase() === 'T. HARI TUA' || e.label.toUpperCase() === 'TUNJANGAN HARI TUA')?.amount || 0;
   const bpjsTkVal = earnings.find((e) => e.label.toUpperCase() === 'T. BPJS TK' || e.label.toUpperCase() === 'BPJS TK')?.amount || 0;
@@ -903,22 +887,17 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
     .filter((e) => e.label.toUpperCase().startsWith('STRUKTURAL:'))
     .reduce((sum, e) => sum + e.amount, 0);
 
-  const potonganPresensiVal = data.deductions.find((d) => d.label.toUpperCase() === 'POTONGAN PRESENSI')?.amount || 0;
-  const potonganBonusPresensiVal = data.deductions.find((d) => d.label.toUpperCase() === 'POTONGAN BONUS PRESENSI')?.amount || 0;
   const totalVakasiVal = earnings
     .filter((e) => !['GAJI POKOK', 'T. KELUARGA', 'TUNJANGAN KELUARGA', 'T. FUNGSIONAL', 'TUNJANGAN FUNGSIONAL', 'KEPANGKATAN', 'T. INSTRUKSIONAL', 'INSTRUKSIONAL', 'T. HARI TUA', 'TUNJANGAN HARI TUA', 'T. BPJS TK', 'BPJS TK', 'T. BPJS KES', 'BPJS KES', 'BERAS', 'PRESENSI', 'BONUS PRESENSI', 'PIKET', 'LEMBUR'].includes(e.label.toUpperCase()) && !e.label.toUpperCase().startsWith('STRUKTURAL:'))
     .reduce((sum, e) => sum + e.amount, 0);
 
-  const presenceInfo = data.presenceInfo || {
-    workingDays: 25,
-    expectedHours: 6.5,
-    absenceMinutes: 0,
-    bonusDeduction: 0
-  };
-
-  const targetMinutes = Math.round((presenceInfo.workingDays || 25) * (presenceInfo.expectedHours || 6.5) * 60);
-  const absenceMinutes = presenceInfo.absenceMinutes || 0;
-  const actualMinutes = Math.max(0, targetMinutes - absenceMinutes);
+  // Reads both slip shapes: legacy (full earning + Potongan rows) and net.
+  const presence = loyalisPresenceBreakdown({
+    earnings,
+    deductions: data.deductions,
+    presenceInfo: data.presenceInfo,
+  });
+  const rp = (value: number) => formatIDR(value).replace(/\s+/g, '');
 
   let vakasiEvents = data.vakasiEvents || [];
   if (vakasiEvents.length === 0 && earnings) {
@@ -1152,32 +1131,35 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
       },
       {
         title: '5. Presensi & Bonus Presensi',
-        bullets: [
-          'Penerimaan Presensi = Hari Kerja Aktif x Target Menit/hari x Rp 27,5.',
-          'Potongan Presensi = Kekurangan Menit (delta Target vs Kerja Riil) x Rp 27,5.',
-          'Bonus Presensi = Rp 250.000 (dikreditkan penuh; dipotong jika ada pelanggaran).'
-        ],
-        params: [
-          { label: 'Hari Kerja Aktif', val: `${presenceInfo.workingDays} hari` },
-          { label: 'Total Waktu Kerja', val: `${targetMinutes} menit` },
-          { label: 'Waktu Dikerjakan', val: `${actualMinutes} menit` },
-          { 
-            label: 'Bersih Presensi', 
-            val: `${formatIDR(Math.max(0, presensiEarningVal - potonganPresensiVal)).replace(/\s+/g, '')}\n= (${targetMinutes.toLocaleString('id-ID')} x Rp27,5) - ((${targetMinutes.toLocaleString('id-ID')} - ${actualMinutes.toLocaleString('id-ID')}) x Rp27,5)\n= ${formatIDR(presensiEarningVal).replace(/\s+/g, '')} - (${absenceMinutes.toLocaleString('id-ID')} x Rp27,5)\n= ${formatIDR(presensiEarningVal).replace(/\s+/g, '')} - ${formatIDR(potonganPresensiVal).replace(/\s+/g, '')}\n= ${formatIDR(Math.max(0, presensiEarningVal - potonganPresensiVal)).replace(/\s+/g, '')}`, 
-            highlight: true 
-          },
-          { 
-            label: 'Bersih Bonus Presensi', 
-            val: `${formatIDR(Math.max(0, bonusPresensiVal - potonganBonusPresensiVal)).replace(/\s+/g, '')}\nStratum ${potonganBonusPresensiVal === 0 ? 1 : potonganBonusPresensiVal <= 100000 ? 2 : potonganBonusPresensiVal <= 150000 ? 3 : potonganBonusPresensiVal <= 200000 ? 4 : 5} (${
-              potonganBonusPresensiVal === 0 ? 'Kekurangan = 0 menit' :
-              potonganBonusPresensiVal <= 100000 ? `Kekurangan ≤ ${(presenceInfo.workingDays * 30).toLocaleString('id-ID')} menit` :
-              potonganBonusPresensiVal <= 150000 ? `Kekurangan ≤ ${(presenceInfo.workingDays * 35).toLocaleString('id-ID')} menit` :
-              potonganBonusPresensiVal <= 200000 ? `Kekurangan ≤ ${(presenceInfo.workingDays * 40).toLocaleString('id-ID')} menit` :
-              `Kekurangan > ${(presenceInfo.workingDays * 40).toLocaleString('id-ID')} menit`
-            })\n= ${formatIDR(bonusPresensiVal).replace(/\s+/g, '')} - ${formatIDR(potonganBonusPresensiVal).replace(/\s+/g, '')}`, 
-            highlight: true 
-          }
-        ]
+        bullets: presence.imported
+          ? [
+            'Presensi = (Target Menit - Kekurangan Menit) x Rp 27,5; Target Menit = Hari Kerja Aktif x Jam Kerja/hari x 60.',
+            'Bonus Presensi = Rp 250.000 dikurangi potongan stratum kekurangan menit (Strata 5 = Rp 0).'
+          ]
+          : [
+            'Data presensi bulan ini belum diimpor.',
+            'Presensi dan Bonus Presensi dibayarkan setelah data presensi diimpor.'
+          ],
+        params: presence.imported
+          ? [
+            { label: 'Hari Kerja Aktif', val: `${presence.workingDays} hari` },
+            { label: 'Total Waktu Kerja', val: `${presence.targetMinutes.toLocaleString('id-ID')} menit` },
+            { label: 'Waktu Dikerjakan', val: `${presence.actualMinutes.toLocaleString('id-ID')} menit` },
+            {
+              label: 'Bersih Presensi',
+              val: `${rp(presence.netPresensi)}\n= (${presence.targetMinutes.toLocaleString('id-ID')} x Rp27,5) - (${presence.absenceMinutes.toLocaleString('id-ID')} x Rp27,5)\n= ${rp(presence.grossPresensi)} - ${rp(presence.presensiShortfall)}\n= ${rp(presence.netPresensi)}`,
+              highlight: true
+            },
+            {
+              label: 'Bersih Bonus Presensi',
+              val: `${rp(presence.netBonus)}\nStratum ${presence.stratum} (${presence.stratumRule})\n= ${rp(presence.fullBonus)} - ${rp(presence.bonusDeduction)}`,
+              highlight: true
+            }
+          ]
+          : [
+            { label: 'Presensi', val: rp(0) },
+            { label: 'Bonus Presensi', val: rp(0) }
+          ]
       },
       {
         title: '6. Tunjangan Struktural',

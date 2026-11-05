@@ -6,7 +6,7 @@ import {
   sumSlipFields,
 } from './dashboardSlipData';
 import { PAYROLL_TAX_LABEL } from './payrollTax';
-import { loyalisPresenceAmounts } from './uraianPropagation';
+import { loyalisPresenceAmounts } from './loyalisPresencePay';
 
 const inputs: DashboardPeriodInputs = {
   targetDate: new Date(2026, 7, 1),
@@ -218,7 +218,7 @@ test('the dashboard reads Loyalis presence through the shared propagation maths'
     expectedHours: 7,
     entries: { 'pekarya-1': { deduction: 15_000, absenceMinutes: 120 } },
   };
-  const expected = loyalisPresenceAmounts(presence, 'pekarya-1');
+  const expected = loyalisPresenceAmounts(presence, 'pekarya-1', '2026-08');
 
   const data = buildDashboardSlipData(
     {
@@ -245,6 +245,40 @@ test('the dashboard reads Loyalis presence through the shared propagation maths'
   // And the shared function is actually doing the arithmetic, not a constant.
   assert.equal(expected.presensiEarning, Math.round(20 * 7 * 1_650));
   assert.equal(expected.presensiDeduction, Math.round((120 / 60) * 1_650));
+});
+
+test('from November 2026 the dashboard pays Loyalis presence net with no Potongan rows', () => {
+  const employee = {
+    id: 'loyalis-1',
+    employment_profile: { date_of_hire: '2026-01-01', department_unit: 'Staf' },
+    academic_and_tier: { level_code: 'A' },
+  };
+  const amountOf = (fields: { label: string; amount: number }[], label: string) =>
+    fields.find((field) => field.label === label)?.amount;
+  const november = { ...inputs, targetDate: new Date(2026, 10, 1) };
+
+  // Not imported yet: nothing to pay.
+  const pending = buildDashboardSlipData(employee, 'loyalis', undefined, {
+    ...november,
+    loyalisPresenceData: null,
+  });
+  assert.equal(amountOf(pending.earnings, 'Presensi'), 0);
+  assert.equal(amountOf(pending.earnings, 'Bonus Presensi'), 0);
+  assert.equal(amountOf(pending.deductions, 'Potongan Presensi'), undefined);
+  assert.equal(amountOf(pending.deductions, 'Potongan Bonus Presensi'), undefined);
+
+  // Imported: 120 minutes short, Stratum 2.
+  const imported = buildDashboardSlipData(employee, 'loyalis', undefined, {
+    ...november,
+    loyalisPresenceData: {
+      workingDays: 25,
+      expectedHours: 6.5,
+      entries: { 'loyalis-1': { absenceMinutes: 120, deduction: 100_000 } },
+    },
+  });
+  assert.equal(amountOf(imported.earnings, 'Presensi'), Math.round(25 * 6.5 * 1_650) - 3_300);
+  assert.equal(amountOf(imported.earnings, 'Bonus Presensi'), 150_000);
+  assert.equal(amountOf(imported.deductions, 'Potongan Presensi'), undefined);
 });
 
 test('historical period with saved slips resolves immediately without pekaryaPreviews', () => {

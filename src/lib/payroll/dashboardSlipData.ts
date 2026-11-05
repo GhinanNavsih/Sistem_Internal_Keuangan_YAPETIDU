@@ -7,7 +7,7 @@ import {
 } from '@/lib/payroll/slipBuilders';
 import { recalculateSlipTaxes } from '@/lib/payroll/payrollTax';
 import { synchronizeFamilyAllowanceEarnings } from '@/lib/payroll/familyAllowance';
-import { loyalisPresenceAmounts } from '@/lib/payroll/uraianPropagation';
+import { loyalisPresenceAmounts } from '@/lib/payroll/loyalisPresencePay';
 import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
 import { SalaryMatrix } from '@/types';
 
@@ -141,7 +141,7 @@ export function buildDashboardSlipData(
     presenceDeduction,
     presensiEarning,
     presensiDeduction,
-  } = loyalisPresenceAmounts(inputs.loyalisPresenceData, employee.id);
+  } = loyalisPresenceAmounts(inputs.loyalisPresenceData, employee.id, period);
 
   // Pekarya has no local fallback. A missing preview means the source is
   // unavailable, not that the employee earned zero (or that an older builder
@@ -177,6 +177,7 @@ export function buildDashboardSlipData(
       presenceDeduction,
       presensiDeduction,
       inputs.koperasiSavings[employee.id] || 0,
+      period.replace('_', '-'),
     ),
     // A slip that has never been saved carries no tax: the selection is an
     // explicit super-admin action, never inferred from calculated rows.

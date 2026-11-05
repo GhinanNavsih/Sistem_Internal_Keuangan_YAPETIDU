@@ -3,7 +3,6 @@ import test from 'node:test';
 import { buildInitialEarnings } from './slipBuilders';
 import { mergeOwnedFields } from './slipPropagation';
 import {
-  loyalisPresenceAmounts,
   loyalisPresenceOwnedPredicate,
   uraianOwnedEarningPredicate,
 } from './uraianPropagation';
@@ -122,73 +121,6 @@ test('re-running propagation over an already-synced slip is a no-op', () => {
   assert.equal(first.merged.some((field) => field.label === 'Vakasi Harian'), false);
   assert.equal(first.merged.some((field) => field.label === 'Presensi Harian'), true);
   assert.equal(second.changes.length, 0, 'converges, so repeated saves stop writing');
-});
-
-test('Loyalis presence amounts match the payroll dashboard formulas', () => {
-  const presence = {
-    workingDays: 25,
-    expectedHours: 6.5,
-    entries: {
-      L1: { absenceMinutes: 120, deduction: 50_000 },
-      L2: { absenceMinutes: 0, deduction: 0 },
-    },
-  };
-
-  assert.deepEqual(loyalisPresenceAmounts(presence, 'L1'), {
-    presensiEarning: Math.round(25 * 6.5 * 1650),
-    presenceBonus: 250_000,
-    presensiDeduction: Math.round((120 / 60) * 1650),
-    presenceDeduction: 50_000,
-  });
-
-  // Present in the run with a clean record: full earning, no deductions.
-  assert.deepEqual(loyalisPresenceAmounts(presence, 'L2'), {
-    presensiEarning: Math.round(25 * 6.5 * 1650),
-    presenceBonus: 250_000,
-    presensiDeduction: 0,
-    presenceDeduction: 0,
-  });
-
-  // Absent from a run that has entries: earns neither.
-  assert.deepEqual(loyalisPresenceAmounts(presence, 'MISSING'), {
-    presensiEarning: 0,
-    presenceBonus: 0,
-    presensiDeduction: 0,
-    presenceDeduction: 0,
-  });
-
-  // The raw save materializes an entry for an employee absent from the
-  // workbook, so the full attendance shortfall and full bonus deduction are
-  // preserved in the propagated slip.
-  const absent = loyalisPresenceAmounts(
-    {
-      workingDays: 25,
-      expectedHours: 6.5,
-      entries: {
-        ABSENT: { absenceMinutes: 25 * 6.5 * 60, deduction: 250_000 },
-      },
-    },
-    'ABSENT',
-  );
-  assert.equal(absent.presensiEarning, Math.round(25 * 6.5 * 1650));
-  assert.equal(absent.presensiDeduction, Math.round(25 * 6.5 * 1650));
-  assert.equal(absent.presenceBonus - absent.presenceDeduction, 0);
-
-  // No presence document yet: everyone is credited in full, matching the
-  // dashboard's deliberate pre-calculation default.
-  assert.deepEqual(loyalisPresenceAmounts(null, 'L1'), {
-    presensiEarning: Math.round(25 * 6.5 * 1650),
-    presenceBonus: 250_000,
-    presensiDeduction: 0,
-    presenceDeduction: 0,
-  });
-
-  // Configured working days drive the earning.
-  assert.equal(
-    loyalisPresenceAmounts({ workingDays: 20, expectedHours: 7, entries: {} }, 'L1')
-      .presensiEarning,
-    Math.round(20 * 7 * 1650),
-  );
 });
 
 test('Loyalis presence owns only its four rows', () => {

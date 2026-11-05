@@ -4,7 +4,7 @@ import { periodCalendarFromData } from './calendar';
 import { loyalisLogDateToIso } from './loyalisAutoLeave';
 import { loyalisPresenceStratum } from './loyalisPaidLeave';
 import { recalculateLoyalisSummary } from './loyalisPresenceSummary';
-import { loyalisPresenceAmounts } from './uraianPropagation';
+import { loyalisPresenceAmounts } from './loyalisPresencePay';
 
 const workingDay = () => false;
 const log = (status = '', scanIn = '07:30', scanOut = '14:00', date = '01-09-2026') => ({
@@ -135,7 +135,7 @@ test('September regression: blank-status scans are retained alongside two approv
     workingDays: 26,
     expectedHours: 6.5,
     entries: { employee: { absenceMinutes, deduction: stratum.deduction } },
-  }, 'employee');
+  }, 'employee', '2026-09');
   assert.equal(absenceMinutes, 1_685);
   assert.equal(amounts.presensiEarning - amounts.presensiDeduction, 232_512);
   assert.equal(amounts.presenceBonus - amounts.presenceDeduction, 0);

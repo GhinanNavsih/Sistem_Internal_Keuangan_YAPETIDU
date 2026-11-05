@@ -323,7 +323,8 @@ export default function PaySlipDialog({
         koperasiDeduction,
         presenceDeduction,
         presensiDeduction,
-        koperasiSaving
+        koperasiSaving,
+        periodToken
       );
     }
 

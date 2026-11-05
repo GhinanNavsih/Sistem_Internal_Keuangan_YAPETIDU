@@ -2,6 +2,7 @@ import { UraianEntry, RekapColumn } from '@/types';
 import type { MoneyField } from '@/lib/payroll/domain';
 import { getRekapColumns, computeSlipAmount } from '@/utils/rekapConfig';
 import { eligibleFamilyMetrics, familyAllowancePercentage, familyAllowancePeriodDate } from './familyAllowance';
+import { loyalisNetPresenceApplies } from './loyalisPresencePay';
 import {
   isSatpamLegacyBonusColumn,
   normalizeSatpamUraianEntry,
@@ -274,7 +275,9 @@ export function buildInitialDeductions(
   koperasiDeduction = 0,
   presenceDeduction = 0,
   presensiDeduction = 0,
-  koperasiSaving = 0
+  koperasiSaving = 0,
+  /** `YYYY-MM`; decides whether a Loyalis slip still carries Potongan Presensi rows. */
+  period?: string,
 ): SlipField[] {
   const deductions: SlipField[] = [];
 
@@ -288,8 +291,13 @@ export function buildInitialDeductions(
     deductions.push({ label: 'Revisi Gaji', amount: 0 });
     deductions.push({ label: 'Pinlu/Tagihan', amount: emp.pinlu?.deductionAmount || 0 });
     deductions.push({ label: 'Pinjaman Kop. UNIPDU', amount: koperasiDeduction });
-    deductions.push({ label: 'Potongan Presensi', amount: presensiDeduction });
-    deductions.push({ label: 'Potongan Bonus Presensi', amount: presenceDeduction });
+    // From LOYALIS_NET_PRESENCE_START_PERIOD Presensi and Bonus Presensi are
+    // paid net, so these rows are left off. Older periods keep them, even at
+    // 0, because their locked slips were signed with them.
+    if (!loyalisNetPresenceApplies(period)) {
+      deductions.push({ label: 'Potongan Presensi', amount: presensiDeduction });
+      deductions.push({ label: 'Potongan Bonus Presensi', amount: presenceDeduction });
+    }
     deductions.push({ label: 'Iuran Wajib Kop. UNIPDU', amount: koperasiSaving });
   } else {
     // Blue Collar deductions matching standardized layout

@@ -76,63 +76,8 @@ export const ownsNothing: OwnedLabelPredicate = () => false;
 
 // ── Loyalis presence ────────────────────────────────────────────────────────
 
-/** Flat monthly attendance bonus for a Loyalis employee with no shortfall. */
-export const LOYALIS_PRESENCE_BONUS = 250_000;
-/** Rupiah per hour used for both the attendance earning and its shortfall. */
-export const LOYALIS_HOURLY_RATE = 1_650;
-export const LOYALIS_DEFAULT_WORKING_DAYS = 25;
-export const LOYALIS_DEFAULT_EXPECTED_HOURS = 6.5;
-
-export interface LoyalisPresenceEntry {
-  deduction?: number;
-  absenceMinutes?: number;
-}
-
-export interface LoyalisPresenceDocument {
-  workingDays?: number;
-  expectedHours?: number;
-  entries?: Record<string, LoyalisPresenceEntry | undefined>;
-}
-
-export interface LoyalisPresenceAmounts {
-  presensiEarning: number;
-  presenceBonus: number;
-  presensiDeduction: number;
-  presenceDeduction: number;
-}
-
-/**
- * Mirrors the Loyalis presence maths the payroll dashboard applies when it
- * builds a slip, so a propagated slip and a manually refreshed one agree.
- *
- * Note the deliberate asymmetry carried over from the dashboard: while the
- * period has no presence document at all, everyone is credited the full
- * attendance earning and bonus. Once entries exist, an employee missing from
- * them is treated as having earned neither.
- */
-export function loyalisPresenceAmounts(
-  presence: LoyalisPresenceDocument | null | undefined,
-  employeeId: string,
-): LoyalisPresenceAmounts {
-  const entries = presence?.entries;
-  const hasEntries = Boolean(entries && Object.keys(entries).length > 0);
-  const entry = hasEntries ? entries?.[employeeId] : undefined;
-  const isMissingFromEntries = hasEntries && !entry;
-
-  const workingDays = Number(presence?.workingDays) || LOYALIS_DEFAULT_WORKING_DAYS;
-  const expectedHours = Number(presence?.expectedHours) || LOYALIS_DEFAULT_EXPECTED_HOURS;
-
-  return {
-    presensiEarning: isMissingFromEntries
-      ? 0
-      : Math.round(workingDays * expectedHours * LOYALIS_HOURLY_RATE),
-    presenceBonus: isMissingFromEntries ? 0 : LOYALIS_PRESENCE_BONUS,
-    presensiDeduction: entry
-      ? Math.round(((Number(entry.absenceMinutes) || 0) / 60) * LOYALIS_HOURLY_RATE)
-      : 0,
-    presenceDeduction: entry ? Number(entry.deduction) || 0 : 0,
-  };
-}
+// The pay rules themselves live in `loyalisPresencePay.ts`; this module only
+// decides which slip rows a presence run owns.
 
 const LOYALIS_PRESENCE_EARNING_LABELS = new Set(['presensi', 'bonus presensi']);
 const LOYALIS_PRESENCE_DEDUCTION_LABELS = new Set([

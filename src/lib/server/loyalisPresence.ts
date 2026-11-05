@@ -1,4 +1,4 @@
-import type { LoyalisPresenceDocument } from '@/lib/payroll/uraianPropagation';
+import type { LoyalisPresenceDocument } from '@/lib/payroll/loyalisPresencePay';
 import { applyApprovedLoyalisDayCreditsToPresence } from './annualPaidLeave';
 import { loyalisPresenceRefs } from './gantiLibur';
 import { reconcileLoyalisAutoLeave } from './loyalisAutoLeave';

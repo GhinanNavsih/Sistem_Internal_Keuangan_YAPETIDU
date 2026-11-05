@@ -44,6 +44,7 @@ import { isFridayDate, normalizeNipy } from '@/lib/payroll/attendance';
 import { employeeInPayrollPeriod, readConversionFromLink } from '@/lib/employeeConversion';
 import { parseLoyalisPresenceWorkbook } from '@/lib/payroll/loyalisPresenceWorkbook';
 import { recalculateLoyalisSummary as recalculateSummary } from '@/lib/payroll/loyalisPresenceSummary';
+import { loyalisNetPresence, summarizeLoyalisPresenceDelta } from '@/lib/payroll/loyalisPresencePay';
 import {
   applyApprovedPaidLeaveToLoyalisEntry,
   applyAutomaticPaidLeaveToLoyalisEntry,
@@ -1583,6 +1584,13 @@ export default function PresensiLoyalisRawPage() {
     );
   }, [displayRows, strataFilteredRows, expandedRowKey, strataFilter]);
 
+  // What attendance cost the whole roster against everyone being present and
+  // on time, whatever the strata filter shows. Same maths as the slips.
+  const presenceDelta = useMemo(
+    () => summarizeLoyalisPresenceDelta(displayRows || [], activeWorkingDays, expectedHours),
+    [displayRows, activeWorkingDays, expectedHours],
+  );
+
   const handleExportXlsx = useCallback(() => {
     const rowsToExport = strataFilteredRows || displayRows;
     if (!rowsToExport || rowsToExport.length === 0) {
@@ -2697,6 +2705,47 @@ export default function PresensiLoyalisRawPage() {
                   </div>
                 </div>
 
+                {presenceDelta.employeeCount > 0 && (
+                  <section
+                    aria-label="Selisih terhadap kehadiran ideal"
+                    className="rounded-md border border-slate-200 bg-white"
+                  >
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-3 border-b border-slate-100">
+                      <h3 className="text-xs font-bold text-slate-700">Selisih Terhadap Kehadiran Ideal</h3>
+                      <span className="text-[11px] text-slate-500">
+                        Ideal: {presenceDelta.employeeCount} Loyalis hadir setiap hari kerja dan tepat waktu
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+                      {([
+                        ['Presensi', presenceDelta.presensi],
+                        ['Bonus Presensi', presenceDelta.bonus],
+                      ] as const).map(([title, part]) => (
+                        <div key={title} className="px-4 py-3">
+                          <p className="text-[11px] font-bold text-slate-600 mb-1.5">{title}</p>
+                          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[11px]">
+                            <dt className="text-slate-500">Ideal</dt>
+                            <dd className="text-right font-mono tabular-nums text-slate-700">{fmtRp(part.ideal)}</dd>
+                            <dt className="text-slate-500">Realisasi</dt>
+                            <dd className="text-right font-mono tabular-nums text-slate-700">{fmtRp(part.actual)}</dd>
+                            <dt className="font-bold text-slate-700">Selisih</dt>
+                            <dd className="text-right font-mono tabular-nums font-bold text-slate-900">{fmtRp(part.delta)}</dd>
+                          </dl>
+                        </div>
+                      ))}
+                      <div className="px-4 py-3">
+                        <p className="text-[11px] font-bold text-slate-600">Total Selisih</p>
+                        <p className="mt-1.5 text-base font-bold font-mono tabular-nums text-slate-900">
+                          {fmtRp(presenceDelta.totalDelta)}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-slate-500">
+                          Kekurangan {presenceDelta.shortfallMinutes.toLocaleString('id-ID')} menit
+                        </p>
+                      </div>
+                    </div>
+                  </section>
+                )}
+
                 <div className="flex justify-between items-center px-1">
                   <span className="text-[11px] text-slate-500 font-bold">
                     Menampilkan <strong className="text-indigo-600 font-mono">{filteredDisplayRows?.length || 0}</strong> dari total {displayRows.length} data
@@ -2944,7 +2993,14 @@ export default function PresensiLoyalisRawPage() {
                             <div className="flex flex-col text-center w-full">
                               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Total Upah Presensi</span>
                               <span className="text-xs font-bold text-indigo-700 mt-0.5 font-mono">
-                                {row.isMatched ? fmtRp(Math.max(0, Math.round(((row.minutes || 0) / 60) * 1650))) : '-'}
+                                {row.isMatched
+                                  ? fmtRp(loyalisNetPresence({
+                                    workingDays: activeWorkingDays,
+                                    expectedHours,
+                                    absenceMinutes: row.absenceMinutes || 0,
+                                    bonusDeduction: row.deduction || 0,
+                                  }).presensiEarning)
+                                  : '-'}
                               </span>
                             </div>
 

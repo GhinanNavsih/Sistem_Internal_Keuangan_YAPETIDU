@@ -60,6 +60,7 @@ import { authenticatedJson } from '@/lib/payroll/client';
 import { synchronizeFamilyAllowanceEarnings } from '@/lib/payroll/familyAllowance';
 import { explainFamilyAllowance, readFamilyAllowanceSnapshot, type FamilyAllowanceExplanation } from '@/lib/payroll/familyAllowanceSnapshot';
 import { activityBelongsToPayrollPeriod } from '@/lib/payroll/pekaryaSpj';
+import { loyalisPresenceBreakdown } from '@/lib/payroll/loyalisPresencePay';
 import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
 import {
   composeKoperasiLoanHistoryTrail,
@@ -465,19 +466,18 @@ export default function EmployeePayslipPage() {
     {
       id: 'presensi',
       title: 'Presensi & Bonus Presensi',
-      formula: 'Menit Maks × Rp 27,5  |  Bonus: Rp 250.000',
+      formula: '(Menit Target − Menit Kekurangan) × Rp 27,5  |  Bonus: Rp 250.000 − potongan stratum',
       bullets: [
-        'Penerimaan = Hari Kerja × Menit Wajib/hari × Rp 27,5 (dikreditkan penuh)',
-        'Jumlah Hari Kerja ditentukan berdasarkan jumlah hari kerja aktif riil pada bulan bersangkutan',
-        'Jika waktu aktual < waktu target, selisih (delta) dideduksi di Potongan',
-        'Potongan Presensi = menit absensi × Rp 27,5',
-        'Bonus Presensi Rp 250.000 dikreditkan penuh; dipotong jika ada pelanggaran',
+        'Menit Target = Hari Kerja × Menit Wajib/hari; Hari Kerja mengikuti hari kerja aktif riil bulan bersangkutan',
+        'Presensi = (Menit Target − Menit Kekurangan) × Rp 27,5',
+        'Bonus Presensi = Rp 250.000 dikurangi potongan stratum kekurangan menit (Strata 5 = Rp 0)',
+        'Mulai November 2026 keduanya dibayarkan bersih setelah data presensi diimpor; slip sebelumnya mencantumkan Potongan Presensi dan Potongan Bonus Presensi terpisah',
       ],
       table: {
-        headers: ['Komponen', 'Penerimaan', 'Potongan'],
+        headers: ['Komponen', 'Penuh', 'Dikurangi'],
         rows: [
-          ['Presensi (menit kerja)', 'Menit Maks × Rp 27,5', 'Delta menit × Rp 27,5'],
-          ['Bonus Presensi', 'Rp 250.000', 'Sesuai pelanggaran'],
+          ['Presensi (menit kerja)', 'Menit Target × Rp 27,5', 'Menit kekurangan × Rp 27,5'],
+          ['Bonus Presensi', 'Rp 250.000', 'Potongan stratum'],
         ],
       },
     },
@@ -694,6 +694,8 @@ export default function EmployeePayslipPage() {
     expectedHours: number;
     absenceMinutes: number;
     bonusDeduction: number;
+    /** False while the period has no imported attendance. */
+    imported?: boolean;
   } | null>(null);
   const [vakasiEvents, setVakasiEvents] = useState<{ eventName: string; payGiven: number }[]>([]);
   const [kepangkatanDesignations, setKepangkatanDesignations] = useState<Record<number, string>>({});
@@ -1073,7 +1075,13 @@ export default function EmployeePayslipPage() {
 
         let fallbackEarnings: PaySlipField[] = [];
         let fallbackDeductions: PaySlipField[] = [];
-        let loadedPresenceInfo = {
+        let loadedPresenceInfo: {
+          workingDays: number;
+          expectedHours: number;
+          absenceMinutes: number;
+          bonusDeduction: number;
+          imported?: boolean;
+        } = {
           workingDays: 0,
           expectedHours: 0,
           absenceMinutes: 0,
@@ -1208,6 +1216,7 @@ export default function EmployeePayslipPage() {
                 expectedHours?: unknown;
                 absenceMinutes?: unknown;
                 bonusDeduction?: unknown;
+                imported?: unknown;
               };
               vakasiEvents?: unknown;
               familyAllowance?: FamilyAllowanceExplanation | null;
@@ -1239,6 +1248,7 @@ export default function EmployeePayslipPage() {
                 expectedHours: numeric(rawPresenceInfo.expectedHours),
                 absenceMinutes: numeric(rawPresenceInfo.absenceMinutes),
                 bonusDeduction: numeric(rawPresenceInfo.bonusDeduction),
+                imported: rawPresenceInfo.imported !== false,
               };
             }
             if (Array.isArray(payslipResult.vakasiEvents)) {
@@ -1608,8 +1618,6 @@ export default function EmployeePayslipPage() {
     const tunjKeluargaVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'T. KELUARGA' || e.label.toUpperCase() === 'TUNJANGAN KELUARGA')?.amount || 0;
     const tunjFungsionalVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'T. FUNGSIONAL' || e.label.toUpperCase() === 'TUNJANGAN FUNGSIONAL')?.amount || 0;
     const tunjKepangkatanVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'KEPANGKATAN')?.amount || 0;
-    const presensiEarningVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'PRESENSI')?.amount || 0;
-    const bonusPresensiVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'BONUS PRESENSI')?.amount || 0;
     const tunjInstruksionalVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'T. INSTRUKSIONAL' || e.label.toUpperCase() === 'INSTRUKSIONAL')?.amount || 0;
     const tunjHariTuaVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'T. HARI TUA' || e.label.toUpperCase() === 'TUNJANGAN HARI TUA')?.amount || 0;
     const bpjsTkVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'T. BPJS TK' || e.label.toUpperCase() === 'BPJS TK')?.amount || 0;
@@ -1619,8 +1627,8 @@ export default function EmployeePayslipPage() {
       .filter((e: PaySlipField) => e.label.toUpperCase().startsWith('STRUKTURAL:'))
       .reduce((sum: number, e: PaySlipField) => sum + e.amount, 0);
 
-    const potonganPresensiVal = deductions.find((d: PaySlipField) => d.label.toUpperCase() === 'POTONGAN PRESENSI')?.amount || 0;
-    const potonganBonusPresensiVal = deductions.find((d: PaySlipField) => d.label.toUpperCase() === 'POTONGAN BONUS PRESENSI')?.amount || 0;
+    // Reads both slip shapes: legacy (full earning + Potongan rows) and net.
+    const presence = loyalisPresenceBreakdown({ earnings, deductions, presenceInfo });
 
     const userCreditScore = Number(employeeData.kepangkatan?.cummulativeCredit) || 0;
     const kepangkatanDesignation = kepangkatanDesignations[userCreditScore] || 'Tidak Ditemukan';
@@ -1635,20 +1643,17 @@ export default function EmployeePayslipPage() {
       tunjKeluargaVal,
       tunjFungsionalVal,
       tunjKepangkatanVal,
-      presensiEarningVal,
-      bonusPresensiVal,
       tunjInstruksionalVal,
       tunjHariTuaVal,
       bpjsTkVal,
       bpjsKesVal,
       berasVal,
       totalStrukturalVal,
-      potonganPresensiVal,
-      potonganBonusPresensiVal,
+      presence,
       userCreditScore,
       kepangkationDesignation: kepangkatanDesignation
     };
-  }, [employeeData, targetDate, periodToken, earnings, deductions, kepangkatanDesignations, isConfirmed, confirmedSlip, savedFamilyAllowance]);
+  }, [employeeData, targetDate, periodToken, earnings, deductions, presenceInfo, kepangkatanDesignations, isConfirmed, confirmedSlip, savedFamilyAllowance]);
 
   const DocRow = ({ label, value, highlight, tone = 'positive' }: {
     label: string;
@@ -2192,50 +2197,35 @@ export default function EmployeePayslipPage() {
                                 {item.id === 'presensi' && (
                                   <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
                                     {(() => {
-                                      const earning = userVariables.presensiEarningVal;
-                                      const deduction = userVariables.potonganPresensiVal;
-                                      const netPresensi = Math.max(0, earning - deduction);
-                                      const bonusEarning = userVariables.bonusPresensiVal;
-                                      const bonusDeduction = userVariables.potonganBonusPresensiVal;
-                                      const netBonus = Math.max(0, bonusEarning - bonusDeduction);
-
-                                      const targetMinutes = presenceInfo?.workingDays && presenceInfo?.expectedHours && presenceInfo.workingDays > 0 && presenceInfo.expectedHours > 0
-                                        ? Math.round(presenceInfo.workingDays * presenceInfo.expectedHours * 60)
-                                        : (earning > 0 ? Math.round(earning / 27.5) : 9750);
-
-                                      const absenceMinutes = presenceInfo?.absenceMinutes && presenceInfo.absenceMinutes > 0
-                                        ? presenceInfo.absenceMinutes
-                                        : (deduction > 0 ? Math.round(deduction / 27.5) : 0);
-
-                                      const actualMinutes = Math.max(0, targetMinutes - absenceMinutes);
-
-                                      const wDays = presenceInfo?.workingDays && presenceInfo.workingDays > 0
-                                        ? presenceInfo.workingDays
-                                        : (Math.round(targetMinutes / (6.5 * 60)) || 25);
-
-                                      let stratum = 5;
-                                      let statusText = '';
-                                      if (bonusDeduction === 0) { stratum = 1; statusText = 'Kekurangan = 0 menit'; }
-                                      else if (bonusDeduction <= 100000) { stratum = 2; statusText = `Kekurangan ≤ ${(wDays * 30).toLocaleString('id-ID')} menit`; }
-                                      else if (bonusDeduction <= 150000) { stratum = 3; statusText = `Kekurangan ≤ ${(wDays * 35).toLocaleString('id-ID')} menit`; }
-                                      else if (bonusDeduction <= 200000) { stratum = 4; statusText = `Kekurangan ≤ ${(wDays * 40).toLocaleString('id-ID')} menit`; }
-                                      else { stratum = 5; statusText = `Kekurangan > ${(wDays * 40).toLocaleString('id-ID')} menit`; }
+                                      const p = userVariables.presence;
+                                      const rp = (value: number) => formatIDR(value).replace(/\s+/g, '');
+                                      const wDays = p.workingDays;
+                                      if (!p.imported) {
+                                        return (
+                                          <>
+                                            <DocRow label="Presensi" value={formatIDR(0)} highlight />
+                                            <DocRow label="Bonus Presensi" value={formatIDR(0)} highlight />
+                                            <div style={{ gridColumn: '1 / -1' }} className="text-[11px] text-black font-normal mt-1 mb-2 leading-relaxed border-l-2 border-amber-300 pl-3">
+                                              Data presensi bulan ini belum diimpor. Presensi dan Bonus Presensi dibayarkan setelah data presensi diimpor.
+                                            </div>
+                                          </>
+                                        );
+                                      }
                                       return (
                                         <>
                                           <DocRow label="Hari Kerja Aktif" value={`${wDays} hari`} />
-                                          <DocRow label="Total Waktu Kerja" value={`${targetMinutes.toLocaleString('id-ID')} menit`} />
-                                          <DocRow label="Waktu Dikerjakan" value={`${actualMinutes.toLocaleString('id-ID')} menit`} />
-                                          <DocRow label="Bersih Presensi" value={formatIDR(netPresensi)} highlight />
+                                          <DocRow label="Total Waktu Kerja" value={`${p.targetMinutes.toLocaleString('id-ID')} menit`} />
+                                          <DocRow label="Waktu Dikerjakan" value={`${p.actualMinutes.toLocaleString('id-ID')} menit`} />
+                                          <DocRow label="Bersih Presensi" value={formatIDR(p.netPresensi)} highlight />
                                           <div style={{ gridColumn: '1 / -1' }} className="text-[11px] text-black font-mono font-normal mt-1 mb-2 leading-relaxed border-l-2 border-slate-200 pl-3">
-                                            = ({targetMinutes.toLocaleString('id-ID')} x Rp27,5) - (({targetMinutes.toLocaleString('id-ID')} - {actualMinutes.toLocaleString('id-ID')}) x Rp27,5)<br />
-                                            = {formatIDR(earning).replace(/\s+/g, '')} - ({absenceMinutes.toLocaleString('id-ID')} x Rp27,5)<br />
-                                            = {formatIDR(earning).replace(/\s+/g, '')} - {formatIDR(deduction).replace(/\s+/g, '')}<br />
-                                            = {formatIDR(netPresensi).replace(/\s+/g, '')}
+                                            = ({p.targetMinutes.toLocaleString('id-ID')} x Rp27,5) - ({p.absenceMinutes.toLocaleString('id-ID')} x Rp27,5)<br />
+                                            = {rp(p.grossPresensi)} - {rp(p.presensiShortfall)}<br />
+                                            = {rp(p.netPresensi)}
                                           </div>
-                                          <DocRow label="Bersih Bonus Presensi" value={formatIDR(netBonus)} highlight />
+                                          <DocRow label="Bersih Bonus Presensi" value={formatIDR(p.netBonus)} highlight />
                                           <div style={{ gridColumn: '1 / -1' }} className="text-[11px] text-black font-normal mt-1 mb-2 leading-relaxed border-l-2 border-slate-200 pl-3">
-                                            Stratum {stratum} ({statusText})<br />
-                                            = {formatIDR(bonusEarning).replace(/\s+/g, '')} - {formatIDR(bonusDeduction).replace(/\s+/g, '')}
+                                            Stratum {p.stratum} ({p.stratumRule})<br />
+                                            = {rp(p.fullBonus)} - {rp(p.bonusDeduction)}
                                             <div className="block text-[10px] text-black mt-2 leading-normal font-light border-t border-slate-200 pt-2">
                                               <strong>Ketentuan Bonus Presensi:</strong><br />
                                               • Stratum 1 (0 mnt): Potongan Rp0 (Sisa Rp250rb)<br />

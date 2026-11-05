@@ -12,4 +12,11 @@
 5. **Tunjangan Hari Tua**: flat 10% of Gapok.
 6. **Tunjangan BPJS**: from `bpjs.t_bpjs_tk` / `bpjs.t_bpjs_kes`.
 7. **Beras**: `salaryProfile.tunjanganBeras`.
-8. **Presensi Penalty**: `Working Days * Expected Hours * Rp 1.650` earnings; shortfall deduction `Round(Absence Minutes / 60 * Rp 1.650)`.
+8. **Presensi & Bonus Presensi** (Loyalis; rules in `src/lib/payroll/loyalisPresencePay.ts`, `loyalisPresenceAmounts`):
+   - **From period 2026-11** (`LOYALIS_NET_PRESENCE_START_PERIOD`): both are 0 until the period's `LoyalisPresence` has imported entries. After the import both are paid **net** on the earnings side, and the slip has no Potongan Presensi / Potongan Bonus Presensi rows.
+     - Presensi = `Round(Working Days × Expected Hours × Rp 1.650) − Round(Absence Minutes / 60 × Rp 1.650)`, floored at 0.
+     - Bonus Presensi = Rp 250.000 − the stratum deduction: 250k / 150k / 100k / 50k for Strata 1–4, 0 for Strata 5.
+     - Strata 5 loses only the bonus; the minutes worked are still paid. A Loyalis missing from the imported entries earns neither.
+     - PPh 21 TER is worked out on gross earnings, so a shortfall now also lowers taxable gross.
+   - **Before 2026-11** (legacy, kept so locked slips never drift): full `Working Days × Expected Hours × Rp 1.650` and Rp 250.000 credited even before import, then the shortfall `Round(Absence Minutes / 60 × Rp 1.650)` and the stratum deduction come back as the two Potongan rows.
+   - The Presensi Loyalis page shows the roster total against everyone present every working day and on time (**Selisih Terhadap Kehadiran Ideal**, `summarizeLoyalisPresenceDelta`).

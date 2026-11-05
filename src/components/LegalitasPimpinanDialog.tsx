@@ -25,6 +25,7 @@ import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { resolveGapokFromSlip } from '@/lib/payroll/slipBuilders';
 import { recalculateSlipTaxes } from '@/lib/payroll/payrollTax';
 import { eligibleFamilyMetrics, familyAllowancePercentage, familyAllowancePeriodDate } from '@/lib/payroll/familyAllowance';
+import { loyalisNetPresenceApplies } from '@/lib/payroll/loyalisPresencePay';
 
 interface EmployeeRow {
   id: string;
@@ -177,7 +178,8 @@ function buildInitialDeductions(
   koperasiDeduction = 0,
   presenceDeduction = 0,
   presensiDeduction = 0,
-  koperasiSaving = 0
+  koperasiSaving = 0,
+  targetDate: Date = new Date()
 ): PaySlipField[] {
   const deductions: PaySlipField[] = [];
 
@@ -186,8 +188,11 @@ function buildInitialDeductions(
     deductions.push({ label: 'BPJS', amount: emp.bpjs?.deductionAmount || 0 });
     deductions.push({ label: 'Kop. Rochmad', amount: emp.deductions?.koperasiRochmad || 0 });
     deductions.push({ label: 'Pinjaman Kop. UNIPDU', amount: koperasiDeduction });
-    deductions.push({ label: 'Potongan Presensi', amount: presensiDeduction });
-    deductions.push({ label: 'Potongan Bonus Presensi', amount: presenceDeduction });
+    // Net-paid periods carry no Potongan Presensi rows (see slipBuilders).
+    if (!loyalisNetPresenceApplies(`${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`)) {
+      deductions.push({ label: 'Potongan Presensi', amount: presensiDeduction });
+      deductions.push({ label: 'Potongan Bonus Presensi', amount: presenceDeduction });
+    }
     deductions.push({ label: 'Iuran Wajib Kop. UNIPDU', amount: koperasiSaving });
     return deductions;
   }
@@ -279,7 +284,7 @@ export default function LegalitasPimpinanDialog({
         const presEarning = getLoyalisPresensiEarning ? getLoyalisPresensiEarning(emp.id) : 0;
         const presDeduction = getLoyalisPresensiDeduction ? getLoyalisPresensiDeduction(emp.id) : 0;
         earnings = buildInitialEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance, pBonus, presEarning, kepangkatanAllowanceMap?.[emp.id] ?? 0, targetDate);
-        deductions = buildInitialDeductions(emp.raw, kopUnipdu, pDeduction, presDeduction, kopSaving);
+        deductions = buildInitialDeductions(emp.raw, kopUnipdu, pDeduction, presDeduction, kopSaving, targetDate);
       }
       totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);
       totalDeductions = deductions.reduce((sum, d) => sum + d.amount, 0);

@@ -13,7 +13,7 @@ import {
 import {
   loyalisPresenceAmounts,
   type LoyalisPresenceDocument,
-} from '@/lib/payroll/uraianPropagation';
+} from '@/lib/payroll/loyalisPresencePay';
 import {
   isPayableVakasiTambahan,
   vakasiWorkerCollection,
@@ -168,7 +168,7 @@ export async function GET(request: NextRequest) {
       period,
       rawPresence as (LoyalisPresenceDocument & Record<string, unknown>) | null,
     );
-    const presenceAmounts = loyalisPresenceAmounts(presence, employeeId);
+    const presenceAmounts = loyalisPresenceAmounts(presence, employeeId, period);
 
     const vakasiTambahanList: { eventName: string; payGiven: number }[] = [];
     let vakasiTambahanSum = 0;
@@ -220,6 +220,7 @@ export async function GET(request: NextRequest) {
       presenceAmounts.presenceDeduction,
       presenceAmounts.presensiDeduction,
       0,
+      period,
     );
     const presenceInfo = {
       workingDays: asNumber(presence?.workingDays) || 25,
@@ -227,7 +228,8 @@ export async function GET(request: NextRequest) {
       absenceMinutes: asNumber(
         presence?.entries?.[employeeId]?.absenceMinutes,
       ),
-      bonusDeduction: presenceAmounts.presenceDeduction,
+      bonusDeduction: presenceAmounts.bonusDeduction,
+      imported: presenceAmounts.imported,
     };
 
     return Response.json(
