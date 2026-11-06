@@ -2518,7 +2518,9 @@ export default function PekaryaAttendancePage() {
         </div>
       )}
 
-      {!loading && data?.autoLeave && data.autoLeave.results.length > 0 && (
+      {/* Before the first import every employee is only "held" for the file, so
+          there is nothing to show; the import banner above already says so. */}
+      {!loading && data?.importRevisionId && data.autoLeave && data.autoLeave.results.length > 0 && (
         <details className="rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm">
           <summary className="cursor-pointer font-semibold text-emerald-900">Cuti otomatis dan saldo cuti
             {data.autoLeave.results.some((item) => item.held?.length) && (
