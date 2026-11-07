@@ -97,6 +97,19 @@ export function canReserveVenues(role: UserRole | null | undefined): boolean {
 }
 
 /**
+ * Who may access and manage SatKer surat-menyurat (incoming and outgoing correspondence,
+ * letter drafting, and official letter agenda).
+ */
+export const SURAT_MENYURAT_ROLES: readonly UserRole[] = [
+  'super_admin',
+  'satker_head_loyalis',
+];
+
+export function canManageSuratMenyurat(role: UserRole | null | undefined): boolean {
+  return !!role && SURAT_MENYURAT_ROLES.includes(role);
+}
+
+/**
  * Who may make a Simulasi Biaya Perjalanan, and so trigger the paid Google
  * route and toll lookups behind it. Kepala SatKer Pekarya authorizes the real
  * journeys and does not get it. The route guard, both menus and the API all
