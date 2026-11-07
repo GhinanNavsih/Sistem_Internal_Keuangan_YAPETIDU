@@ -130,11 +130,57 @@ Card designs avoid harsh borders and use the medium corner radius (`rounded-md`)
 ### 4. Form Controls & Selectors
 Form items use soft borders, small semibold text (`text-xs font-semibold`), the small corner radius (`rounded-sm`), a small shadow, and an indigo focus ring.
 
-*   **Dropdown / Select**:
-    ```html
-    <select className="bg-white border border-slate-200 text-slate-600 text-xs font-semibold rounded-sm px-3 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-sm">
-      <option value="all">Semua Kategori</option>
-    </select>
+> [!IMPORTANT]
+> **Never use native browser dropdowns (`<select>` and `<option>`)**:
+> Browsers render native `<select>` and `<option>` elements using the operating system's default popups (such as the default macOS/Windows menus), which clash with the application's slate-indigo visual identity, lack custom styling, and look inconsistent across different devices.
+> Always use the app's custom themed dropdowns that match the design system:
+> - **`OptionSelect`** from `src/components/ui/option-select.tsx` for standard option lists.
+> - Or the compound **`Select` primitives** from `src/components/ui/select.tsx` (`Select`, `SelectTrigger`, `SelectContent`, `SelectItem`, `SelectValue`).
+> The trigger must always take `rounded-sm text-xs font-semibold`, and the dropdown menu container must take `rounded-md border border-slate-200 bg-white shadow-xl`.
+>
+> **Never display raw backend variable names, slugs, or database keys on the frontend**:
+> Every UI element presented to the user (dropdown options, active trigger values, status badges, table cells, dialogs) must display clean, human-readable Indonesian labels, never raw backend `snake_case` identifiers or enum keys (e.g. `menunggu_disposisi`, `segera`, `satker_head_loyalis`, or `tim_pengembangan_profesionalisme_dosen`).
+> When using compound `Select`, always pass the human-readable label as children to `<SelectValue>` (e.g. `<SelectValue>{statusLabel}</SelectValue>`), or use `OptionSelect` which automatically maps `value` to `selected.label`. Leaving `<SelectValue />` empty will render the raw backend value on screen, which is strictly prohibited.
+
+*   **Custom Themed Dropdown / Select**:
+    Using `OptionSelect`:
+    ```tsx
+    import { OptionSelect } from "@/components/ui/option-select";
+
+    <OptionSelect
+      value={categoryFilter}
+      onValueChange={setCategoryFilter}
+      options={[
+        { value: "all", label: "Semua Kategori" },
+        { value: "pendidikan", label: "Pendidikan" },
+      ]}
+      className="text-xs font-semibold w-auto min-w-[150px]"
+    />
+    ```
+
+    Or using compound `Select` primitives (`@/components/ui/select`):
+    ```tsx
+    import {
+      Select,
+      SelectContent,
+      SelectItem,
+      SelectTrigger,
+      SelectValue,
+    } from "@/components/ui/select";
+
+    <Select value={statusFilter} onValueChange={(v) => v && setStatusFilter(v)}>
+      <SelectTrigger className="bg-white border-slate-200 text-slate-700 text-xs font-semibold rounded-sm px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-sm w-auto min-w-[140px]">
+        <SelectValue placeholder="Pilih status" />
+      </SelectTrigger>
+      <SelectContent className="rounded-md border border-slate-200 bg-white p-1 shadow-xl ring-0">
+        <SelectItem
+          value="all"
+          className="rounded-sm py-2 pr-8 pl-3 text-xs font-medium text-slate-700 focus:bg-indigo-50 focus:text-indigo-900 data-[selected]:font-semibold data-[selected]:text-indigo-700"
+        >
+          Semua Status
+        </SelectItem>
+      </SelectContent>
+    </Select>
     ```
 *   **Search Input** (icon on the left, grows to fill the row):
     ```html
