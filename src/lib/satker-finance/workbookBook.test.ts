@@ -108,6 +108,18 @@ test('reports a run that does not balance before the next blank line, and an acc
   assert.match(problems, /baris 11–11: jurnal tidak seimbang/);
 });
 
+test('accepts ISO string dates in column A', () => {
+  const sheet = sheetOf({
+    ...journalHeader,
+    'A7': { v: '2026-09-01' }, 'B7': { v: 1 }, 'C7': { v: 11003 }, 'E7': { v: 'Pendaftaran' }, 'F7': { v: 500000 },
+    'A8': { v: '2026-09-01' }, 'B8': { v: 1 }, 'C8': { v: 41102 }, 'E8': { v: 'Pendaftaran' }, 'G8': { v: 500000 },
+  });
+  const read = readJurnalSheet(sheet, 'Jurnal Uji', new Set(['11003', '41102']), '2026-2027');
+  assert.deepEqual(read.problems, []);
+  assert.equal(read.vouchers.length, 1);
+  assert.equal(read.vouchers[0].date, '2026-09-01');
+});
+
 test('refuses text amounts, a day outside the month, and a line with both sides filled', () => {
   const sheet = journalSheet([
     journalRow(7, 1, 10000, 'Teks', ',', null),

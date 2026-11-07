@@ -266,7 +266,7 @@ export function readJurnalSheet(sheet: WorkSheet, label: string, accountCodes: S
       const code = String(codeValue);
       if (unnamedCodes.has(code)) throw new Error(`akun ${code} dipakai jurnal tetapi belum bernama di sheet Akun.`);
       if (!accountCodes.has(code)) throw new Error(`akun ${code} tidak ada di sheet Akun atau bukan akun posting.`);
-      if (typeof dateSerial === 'number' && (dayValue === null || typeof dayValue !== 'number')) {
+      if ((typeof dateSerial === 'number' || typeof dateSerial === 'string') && (dayValue === null || typeof dayValue !== 'number')) {
         const nextDay = valueAt(sheet, `B${row + 1}`);
         if (typeof nextDay === 'number' && Number.isInteger(nextDay)) {
           dayValue = nextDay;
@@ -274,10 +274,20 @@ export function readJurnalSheet(sheet: WorkSheet, label: string, accountCodes: S
           dayValue = Number(run.date.slice(8, 10));
         }
       }
-      if (typeof dateSerial !== 'number' || typeof dayValue !== 'number' || !Number.isInteger(dayValue)) throw new Error('bulan (kolom A) dan tanggal (kolom B) harus diisi.');
-      const day = new Date(EXCEL_EPOCH + Math.round(dateSerial) * 86_400_000);
-      const year = day.getUTCFullYear();
-      const month = day.getUTCMonth() + 1;
+      let year: number;
+      let month: number;
+      if (typeof dateSerial === 'number') {
+        const day = new Date(EXCEL_EPOCH + Math.round(dateSerial) * 86_400_000);
+        year = day.getUTCFullYear();
+        month = day.getUTCMonth() + 1;
+      } else if (typeof dateSerial === 'string' && /^\d{4}-\d{2}/.test(dateSerial.trim())) {
+        const match = /^(\d{4})-(\d{2})/.exec(dateSerial.trim());
+        year = Number(match![1]);
+        month = Number(match![2]);
+      } else {
+        throw new Error('bulan (kolom A) dan tanggal (kolom B) harus diisi.');
+      }
+      if (typeof dayValue !== 'number' || !Number.isInteger(dayValue)) throw new Error('bulan (kolom A) dan tanggal (kolom B) harus diisi.');
       if (!months.some((item) => item.monthIndex === month && item.year === year)) throw new Error('bulan di luar tahun akademik.');
       const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
       if (dayValue < 1 || dayValue > lastDay) throw new Error(`tanggal ${dayValue} tidak ada di bulan ini.`);

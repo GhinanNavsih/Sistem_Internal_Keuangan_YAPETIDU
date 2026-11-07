@@ -53,6 +53,13 @@ const units = [
     jurnal: 'Jurnal Pascasarjana',
     needsClearOrphanAccounts: true,
   },
+  {
+    name: 'Penerimaan Mahasiswa Baru',
+    unitId: 'loyalis-66skmezoflcecatg1lqsc0fghax2',
+    akun: 'Akun Penerimaan Mahasiswa Baru',
+    jurnal: 'Jurnal Penerimaan Mahasiswa Bar',
+    needsClearOrphanAccounts: true,
+  },
 ];
 
 async function run() {
@@ -72,6 +79,12 @@ async function run() {
 
     if (result.problems.length > 0 || !result.book) {
       console.error(`ERROR: ${u.name} has ${result.problems.length} problems:`, result.problems);
+      continue;
+    }
+
+    const yearDoc = await adminDb.collection('SatkerFinancialYears').doc(`${u.unitId}_${academicYear}`).get();
+    if (yearDoc.exists && Number(yearDoc.data()?.entryCount || 0) > 0) {
+      console.log(`Skipping ${u.name}: already has ${yearDoc.data()?.entryCount} entries.`);
       continue;
     }
 
