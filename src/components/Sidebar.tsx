@@ -7,6 +7,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import {
+  canManageSuratMenyurat,
   canReserveVenues,
   canSimulateDriverJourneys,
   getUserRoleLabel,
@@ -14,6 +15,7 @@ import {
 } from '@/lib/payroll/roles';
 import { VENUE_RESERVATION_PATH } from '@/lib/venueReservation';
 import { DRIVER_JOURNEY_SIMULATION_PATH } from '@/lib/driverJourneySimulation';
+import { SURAT_MENYURAT_PATH } from '@/lib/surat-menyurat/constants';
 import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
 import { SENAM_PAGI_PATH } from '@/lib/payroll/bonusTriwulan';
 import { Button } from '@/components/ui/button';
@@ -37,6 +39,7 @@ import {
   ScanLine,
   Wrench,
   LogOut,
+  Mail,
   Menu,
   X,
   ChevronsLeft,
@@ -153,6 +156,12 @@ export default function Sidebar() {
       icon: FileSpreadsheet
     },
     {
+      name: 'Surat-Menyurat',
+      path: SURAT_MENYURAT_PATH,
+      icon: Mail,
+      activePattern: SURAT_MENYURAT_PATH,
+    },
+    {
       // Starts the "monitoring" group — rendered below a separator so the
       // two dashboards read apart from the operational menus above.
       name: 'Dashboard',
@@ -188,6 +197,14 @@ export default function Sidebar() {
       icon: BarChart3,
       activePattern: '/dashboard/satker-finance',
     },
+    ...(canManageSuratMenyurat(currentProfile.role)
+      ? [{
+          name: 'Surat-Menyurat',
+          path: SURAT_MENYURAT_PATH,
+          icon: Mail,
+          activePattern: SURAT_MENYURAT_PATH,
+        }]
+      : []),
     ...(canReserveVenues(currentProfile.role)
       ? [{
           name: 'Reservasi Ruang',
