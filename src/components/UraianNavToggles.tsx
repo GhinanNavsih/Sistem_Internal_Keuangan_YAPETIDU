@@ -18,7 +18,6 @@ import {
   HandHeart,
   ListTodo,
   PersonStanding,
-  Route,
   UsersRound,
   Wrench,
 } from 'lucide-react';
@@ -49,7 +48,6 @@ export default function UraianNavToggles() {
     if (pathname.includes('/kegiatan-satker')) return 'kegiatan_satker';
     if (pathname.includes('/presensi-loyalis-raw')) return 'presensi_loyalis_raw';
     if (pathname.includes('/senam-pagi')) return 'senam_pagi';
-    if (pathname.includes('/simulasi-perjalanan')) return 'simulasi_perjalanan';
     if (pathname.includes('/tugas')) return 'tugas';
     if (pathname.includes('/santunan')) return 'santunan';
     if (pathname.includes('/spj-pekarya')) return 'kegiatan_spj';
@@ -71,7 +69,6 @@ export default function UraianNavToggles() {
       tab === 'kegiatan_satker' ||
       tab === 'presensi_loyalis_raw' ||
       tab === 'senam_pagi' ||
-      tab === 'simulasi_perjalanan' ||
       tab === 'tugas' ||
       tab === 'santunan' ||
       tab === 'driver-journeys' ||
@@ -157,15 +154,6 @@ export default function UraianNavToggles() {
             >
               <PersonStanding className="w-4 h-4" />
               Senam Pagi
-            </button>
-          )}
-          {profile.role === 'super_admin' && (
-            <button
-              onClick={() => router.push(`/dashboard/payroll/uraian/simulasi-perjalanan${getCleanParamsString('simulasi_perjalanan')}`)}
-              className={btnCls(activeTab === 'simulasi_perjalanan')}
-            >
-              <Route className="w-4 h-4" />
-              Simulasi Perjalanan
             </button>
           )}
           {profile.role === 'super_admin' && (
