@@ -3,6 +3,8 @@ import {
   buildSatpamDutyReconciliation,
   syncSatpamDutyReconciliation,
 } from '@/lib/server/satpamDutyPlan';
+import { adminDb } from '@/lib/firebase-admin';
+import { isPeriodClosed } from '@/lib/server/payrollPeriod';
 import {
   errorResponse,
   HttpError,
@@ -30,7 +32,13 @@ export async function GET(request: NextRequest) {
     if (!/^\d{4}-\d{2}$/.test(period)) {
       throw new HttpError(400, 'Periode wajib menggunakan format YYYY-MM.');
     }
-    const refresh = request.nextUrl.searchParams.get('refresh') === 'true';
+    // Pages ask for a refresh every time they open a month. A closed month's
+    // saved rekap must not move, so there the answer is the current view with
+    // nothing written, not an error. The sync still refuses a closed month
+    // inside its own transaction, so a close that lands in between is caught.
+    const refresh =
+      request.nextUrl.searchParams.get('refresh') === 'true' &&
+      !isPeriodClosed((await adminDb.doc(`PayrollPeriods/${period}`).get()).data());
     const view = refresh
       ? await syncSatpamDutyReconciliation(period, actor.uid)
       : await buildSatpamDutyReconciliation(period);
