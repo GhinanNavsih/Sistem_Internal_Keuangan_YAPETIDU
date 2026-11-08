@@ -38,7 +38,7 @@ export default function SuratDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl bg-white rounded-md p-6 border border-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.1)] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-w-2xl bg-white rounded-md p-6 border border-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.1)] max-h-[90vh] overflow-y-auto">
         <DialogHeader className="space-y-1">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
