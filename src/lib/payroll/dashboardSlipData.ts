@@ -31,6 +31,7 @@ export interface DashboardPeriodInputs {
   kepangkatanAllowanceMap: Record<string, number>;
   koperasiDeductions: Record<string, number>;
   koperasiSavings: Record<string, number>;
+  koperasiInitialSavings?: Record<string, number>;
   loyalisPresenceData: any | null;
   /**
    * Pekarya earnings as calculated by /api/payroll/slip-preview, keyed by
@@ -178,6 +179,7 @@ export function buildDashboardSlipData(
       presensiDeduction,
       inputs.koperasiSavings[employee.id] || 0,
       period.replace('_', '-'),
+      inputs.koperasiInitialSavings?.[employee.id] || 0,
     ),
     // A slip that has never been saved carries no tax: the selection is an
     // explicit super-admin action, never inferred from calculated rows.

@@ -120,6 +120,7 @@ interface PaySlipDialogProps {
   presensiEarning?: number;
   presensiDeduction?: number;
   koperasiSaving?: number;
+  koperasiInitialSaving?: number;
   /**
    * The shared Pekarya earnings preview for this employee and period, as
    * returned by /api/payroll/slip-preview. A slip that has never been saved
@@ -201,6 +202,7 @@ export default function PaySlipDialog({
   presensiEarning = 0,
   presensiDeduction = 0,
   koperasiSaving = 0,
+  koperasiInitialSaving = 0,
   pekaryaPreview = null,
   previewLoading = false,
   previewError = null,
@@ -324,7 +326,8 @@ export default function PaySlipDialog({
         presenceDeduction,
         presensiDeduction,
         koperasiSaving,
-        periodToken
+        periodToken,
+        koperasiInitialSaving,
       );
     }
 
@@ -361,6 +364,7 @@ export default function PaySlipDialog({
     presenceDeduction,
     presensiDeduction,
     koperasiSaving,
+    koperasiInitialSaving,
     pekaryaPreview
   ]);
 

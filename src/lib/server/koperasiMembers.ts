@@ -18,6 +18,10 @@ type Data = Record<string, unknown>;
 export function requireKoperasiAdmin() {
   if (!isKoperasiAdminConfigured()) throw new HttpError(503, 'Kredensial Koperasi belum dikonfigurasi di server.');
 }
+async function assertEnrollmentComplete(memberId: string) {
+  const claim = await adminDb.collection('KoperasiMemberEnrollments').doc(memberId).get();
+  if (claim.data()?.state === 'pending') throw new HttpError(409, 'Selesaikan pendaftaran pegawai sebelum mengubah anggota ini.');
+}
 export function memberCommandBody(value: unknown): Data {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new HttpError(400, 'Payload tidak valid.');
   return value as Data;
@@ -70,11 +74,12 @@ export async function prepareOperation<T extends Data>(op: Operation, intent: T)
     return { intent, completed: null };
   });
 }
-export async function finishOperation(actor: AuthenticatedProfile, op: Operation, audit: FinancialAuditInput, result: Data) {
+export async function finishOperation(actor: AuthenticatedProfile, op: Operation, audit: FinancialAuditInput, result: Data, extraWrites?: (transaction: FirebaseFirestore.Transaction) => void) {
   return adminDb.runTransaction(async transaction => {
     const previous = previousResult(await transaction.get(op.ref), op);
     if (previous) return previous;
     transaction.create(newFinancialAuditRef(), buildFinancialAuditRecord(actor, audit));
+    extraWrites?.(transaction);
     transaction.set(op.ref, {
       requestHash: op.hash, entityType: audit.entityType, entityId: audit.entityId,
       state: 'completed', result, createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -110,6 +115,13 @@ export async function editKoperasiMember(actor: AuthenticatedProfile, body: Data
   const replay = previousResult(await op.ref.get(), op);
   if (replay) return replay;
 
+  await assertEnrollmentComplete(memberId);
+
+  const currentMember = await koperasiAdminDb().collection('users').doc(memberId).get();
+  const restartInitial = currentMember.data()?.payrollSavings?.initialPaid === false &&
+    input.paymentStatus === 'Payroll Deduction' && input.membershipStatus === 'approved' &&
+    (expected.paymentStatus !== 'Payroll Deduction' || (expected.membershipStatus ?? expected.status) !== 'approved');
+  const initialPeriod = restartInitial ? await (await import('./koperasiEnrollment')).currentKoperasiEnrollmentPeriod() : null;
   const prepared = await prepareOperation(op, { memberId, expected, after });
   if (prepared.completed) return prepared.completed;
 
@@ -122,7 +134,8 @@ export async function editKoperasiMember(actor: AuthenticatedProfile, body: Data
     if (JSON.stringify(before) === JSON.stringify(after)) return { before: expected, alreadyApplied: true };
     if (JSON.stringify(before) !== JSON.stringify(expected)) throw new HttpError(409, 'Data sudah diubah, muat ulang data anggota.');
     transaction.update(ref, {
-      ...after, updatedAt: admin.firestore.FieldValue.serverTimestamp(), updatedBy: `internal-bak:${actor.uid}`,
+      ...after, ...(initialPeriod && snapshot.data()?.payrollSavings?.initialPaid === false ? { 'payrollSavings.initialPeriod': initialPeriod } : {}),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(), updatedBy: `internal-bak:${actor.uid}`,
     });
     return { before, alreadyApplied: false };
   });
@@ -162,16 +175,27 @@ export async function linkKoperasiMember(actor: AuthenticatedProfile, body: Data
   // Replay before re-reading Koperasi: the earlier result is authoritative.
   let result = previousResult(await op.ref.get(), op);
   if (!result) {
+    await assertEnrollmentComplete(memberId);
     const member = await loadMember(memberId);
     result = await adminDb.runTransaction(async transaction => {
       const previous = previousResult(await transaction.get(op.ref), op);
       if (previous) return previous;
       const targetRef = adminDb.collection(collection).doc(employeeId);
-      const [target, holders] = await Promise.all([transaction.get(targetRef), memberHolders(transaction, member)]);
+      const [target, holders, enrollmentClaim] = await Promise.all([
+        transaction.get(targetRef), memberHolders(transaction, member),
+        transaction.get(adminDb.collection('KoperasiMemberEnrollments').doc(memberId)),
+      ]);
+      if (enrollmentClaim.data()?.state === 'pending') throw new HttpError(409, 'Pendaftaran anggota masih berlangsung.');
       if (!target.exists) throw new HttpError(404, 'Pegawai tidak ditemukan.');
       const employee = target.data()!;
       if (isConvertedAway(employee)) throw new HttpError(409, 'Pekarya sudah dialihkan ke Loyalis. Gunakan data Loyalis.');
       const holder = holders[0];
+      const involved = [...new Set([target.id, ...holders.map(doc => doc.id)])];
+      const progressions = await Promise.all(involved.map(id => transaction.get(adminDb.collection('PayrollKoperasiProgressions').where('employeeId', '==', id))));
+      if (progressions.some(snapshot => snapshot.docs.some(doc => ['external_pending', 'retryable'].includes(doc.data().status)))) {
+        throw new HttpError(409, 'Selesaikan Verifikasi & Kunci Koperasi sebelum mengganti tautan.');
+      }
+      const previousEnrollment = holder ? await transaction.get(adminDb.collection('KoperasiEnrollments').doc(`${holder.ref.parent.id}__${holder.id}`)) : null;
       if (holders.length > 1 || (holder?.id || null) !== expectedId || (holder?.ref.parent.id || null) !== expectedCollection) {
         throw new HttpError(409, 'Tautan anggota sudah berubah atau sudah dipegang pegawai lain. Muat ulang.');
       }
@@ -195,6 +219,11 @@ export async function linkKoperasiMember(actor: AuthenticatedProfile, body: Data
           throw new HttpError(409, 'Tautan tidak lagi sesuai. Muat ulang data anggota.');
         }
         transaction.update(targetRef, { koperasiAuthUid: null, koperasiUserId: null, updatedAt: now, updatedBy: actor.uid });
+      }
+      if (previousEnrollment?.data()?.state === 'completed' && (action === 'unlink' || holder?.ref.path !== targetRef.path)) transaction.delete(previousEnrollment.ref);
+      if (enrollmentClaim.exists) {
+        if (action === 'link') transaction.update(enrollmentClaim.ref, { employeePath: targetRef.path });
+        else transaction.delete(enrollmentClaim.ref);
       }
       const saved = { memberId, employeeId: action === 'link' ? employeeId : null, collection,
         bankSyncPending: action === 'link' };
@@ -324,6 +353,7 @@ export async function deleteKoperasiMember(actor: AuthenticatedProfile, body: Da
   if (replay) return replay;
 
   const userRef = koperasiAdminDb().collection(KOPERASI_USERS_COLLECTION).doc(memberId);
+  await assertEnrollmentComplete(memberId);
   const userSnap = await userRef.get();
   if (!userSnap.exists) {
     throw new HttpError(404, 'Anggota Koperasi tidak ditemukan.');
@@ -360,6 +390,9 @@ export async function deleteKoperasiMember(actor: AuthenticatedProfile, body: Da
   // Unlink any SAKU employee linked to this member
   await adminDb.runTransaction(async transaction => {
     const holders = await memberHolders(transaction, member);
+    const enrollments = await Promise.all(holders.map(holder => transaction.get(adminDb.collection('KoperasiEnrollments').doc(`${holder.ref.parent.id}__${holder.id}`))));
+    const progressions = await Promise.all(holders.map(holder => transaction.get(adminDb.collection('PayrollKoperasiProgressions').where('employeeId', '==', holder.id))));
+    if (progressions.some(snapshot => snapshot.docs.some(doc => ['external_pending', 'retryable'].includes(doc.data().status)))) throw new HttpError(409, 'Selesaikan Verifikasi & Kunci Koperasi sebelum menghapus anggota.');
     for (const holder of holders) {
       transaction.update(holder.ref, {
         koperasiAuthUid: null,
@@ -368,6 +401,8 @@ export async function deleteKoperasiMember(actor: AuthenticatedProfile, body: Da
         updatedBy: actor.uid,
       });
     }
+    for (const enrollment of enrollments) if (enrollment.data()?.state === 'completed') transaction.delete(enrollment.ref);
+    transaction.delete(adminDb.collection('KoperasiMemberEnrollments').doc(memberId));
   });
 
   // Delete user document in Koperasi database

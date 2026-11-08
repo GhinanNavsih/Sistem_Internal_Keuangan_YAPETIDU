@@ -28,6 +28,7 @@ interface DashboardDataContextType {
   kepangkatanAllowanceMap: Record<string, number>;
   koperasiDeductions: Record<string, number>;
   koperasiSavings: Record<string, number>;
+  koperasiInitialSavings: Record<string, number>;
   koperasiLoans: any[];
   koperasiUsers: any[];
   loading: boolean;
@@ -146,7 +147,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
 
   const koperasiAmounts = useMemo(() => {
     if (koperasiLoans.length === 0 && koperasiUsers.length === 0) {
-      return { deductions: EMPTY_MAP, savings: EMPTY_MAP };
+      return { deductions: EMPTY_MAP, savings: EMPTY_MAP, initialSavings: EMPTY_MAP };
     }
     const now = new Date();
     const currentPayrollPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -190,6 +191,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
       kepangkatanAllowanceMap,
       koperasiDeductions: koperasiAmounts.deductions,
       koperasiSavings: koperasiAmounts.savings,
+      koperasiInitialSavings: koperasiAmounts.initialSavings,
       koperasiLoans,
       koperasiUsers,
       loading,

@@ -298,6 +298,7 @@ export default function PayrollValidationDashboard() {
     kepangkatanAllowanceMap: contextKepangkatanAllowanceMap,
     koperasiDeductions: contextKoperasiDeductions,
     koperasiSavings: contextKoperasiSavings,
+    koperasiInitialSavings: contextKoperasiInitialSavings,
     koperasiLoans,
     koperasiUsers,
     loading: contextLoading
@@ -415,6 +416,7 @@ export default function PayrollValidationDashboard() {
       return {
         deductions: contextKoperasiDeductions,
         savings: contextKoperasiSavings,
+        initialSavings: contextKoperasiInitialSavings,
       };
     }
     return buildKoperasiPayrollAmountMaps(
@@ -431,9 +433,11 @@ export default function PayrollValidationDashboard() {
     koperasiUsers,
     contextKoperasiDeductions,
     contextKoperasiSavings,
+    contextKoperasiInitialSavings,
   ]);
   const koperasiDeductions = selectedKoperasiAmounts.deductions;
   const koperasiSavings = selectedKoperasiAmounts.savings;
+  const koperasiInitialSavings = selectedKoperasiAmounts.initialSavings;
   const [loyalisPresenceData, setLoyalisPresenceData] = useState<any | null>(null);
 
   // ─── Shared Pekarya earnings preview for unlocked rows ──────────
@@ -1493,6 +1497,7 @@ export default function PayrollValidationDashboard() {
           getLoyalisPresensiDeduction(emp.id),
           koperasiSavings[emp.id] || 0,
           presencePeriodToken,
+          koperasiInitialSavings[emp.id] || 0,
         );
 
     // Automated TER income tax derived from employee profile and preview gross earnings
@@ -1588,6 +1593,7 @@ export default function PayrollValidationDashboard() {
       kepangkatanAllowanceMap,
       koperasiDeductions,
       koperasiSavings,
+      koperasiInitialSavings,
       loyalisPresenceData,
       pekaryaPreviews: effectivePekaryaPreviews,
     },
@@ -1719,6 +1725,7 @@ export default function PayrollValidationDashboard() {
     functionalAllowanceMap,
     koperasiDeductions,
     koperasiSavings,
+    koperasiInitialSavings,
     loyalisPresenceData,
     effectivePekaryaPreviews,
   ]);
@@ -2768,7 +2775,8 @@ export default function PayrollValidationDashboard() {
           getFreshPresenceDeduction(emp.id),
           getFreshPresensiDeduction(emp.id),
           freshKoperasiSaving,
-          periodToken
+          periodToken,
+          freshKoperasiAmounts.initialSavings[emp.id] || 0,
         );
 
         // Get current slip state
@@ -3126,7 +3134,8 @@ export default function PayrollValidationDashboard() {
       getFreshPresenceDeduction(employeeId),
       getFreshPresensiDeduction(employeeId),
       freshKoperasiSaving,
-      periodToken
+      periodToken,
+      freshKoperasiAmounts.initialSavings[employeeId] || 0,
     );
 
     return {
@@ -3958,6 +3967,7 @@ export default function PayrollValidationDashboard() {
           return uraianDoc?.customColumns ?? undefined;
         })()}
         koperasiDeduction={selectedEmployee ? koperasiDeductions[selectedEmployee.id] || 0 : 0}
+        koperasiInitialSaving={selectedEmployee ? koperasiInitialSavings[selectedEmployee.id] || 0 : 0}
         koperasiSaving={selectedEmployee ? koperasiSavings[selectedEmployee.id] || 0 : 0}
         presenceBonus={selectedEmployee ? getLoyalisPresenceBonus(selectedEmployee.id) : 0}
         presenceDeduction={selectedEmployee ? getLoyalisPresenceDeduction(selectedEmployee.id) : 0}
@@ -3989,6 +3999,7 @@ export default function PayrollValidationDashboard() {
         slipStates={slipStates}
         koperasiDeductions={koperasiDeductions}
         koperasiSavings={koperasiSavings}
+        koperasiInitialSavings={koperasiInitialSavings}
         ketuaShiftIds={ketuaShiftIds}
         getLoyalisPresenceBonus={getLoyalisPresenceBonus}
         getLoyalisPresenceDeduction={getLoyalisPresenceDeduction}

@@ -299,6 +299,152 @@ async function main() {
   const lostHistory = (await loans.doc('decline-lost').get()).data()!.history;
   assert.equal(lostHistory.filter((entry: { status: string }) => entry.status === 'Ditolak BAK').length, 1, 'no second history entry');
 
+  // Direct employee enrollment uses the two projects and the Koperasi Auth namespace.
+  const { POST: enroll, GET: previewEnrollment } = await import('../src/app/api/admin/koperasi-members/route');
+  const { koperasiAdminAuth } = await import('../src/lib/koperasi-admin');
+  await adminDb.doc('PayrollPeriods/2026-10').set({ attendanceStatus: 'closed' });
+  await adminDb.doc('PayrollPeriods/2026-11').set({ attendanceStatus: 'open' });
+  const enrollEmployee = async (id: string, collection = 'Employees_BlueCollar', extra = {}) => {
+    await adminDb.doc(`${collection}/${id}`).set(collection === 'Employees_BlueCollar'
+      ? { name: id, email: `${id.toLowerCase()}@example.test`, nik: `nik-${id}`, employment: { status: 'active' }, flags: { isActive: true }, bankAccount: { bankName: 'BRIS', accountNumber: '001-234' }, ...extra }
+      : { personal_info: { name: id, email: `${id.toLowerCase()}@example.test`, nik: `nik-${id}`, status: 'AKTIF' }, banking_info: { bank_name: 'BSI', account_number: '00987' }, ...extra });
+    return { employeeId: id, employeeCollection: collection, email: `${id.toLowerCase()}@example.test`, initialPassword: 'new-member-password', paymentStatus: 'Payroll Deduction', requestId: key() };
+  };
+  const newPekarya = await enrollEmployee('EnrollPekarya');
+  for (const actor of [worker, finance, loyalisAdmin]) assert.equal((await invoke(enroll, newPekarya, actor.authorization)).status, 403);
+  assert.equal((await invoke(enroll, newPekarya, '')).status, 401);
+  assert.equal((await invoke(enroll, { ...newPekarya, initialPassword: 'short' })).status, 400);
+  const enrolled = await succeeds(await invoke(enroll, newPekarya));
+  assert.equal(enrolled.firstPayrollPeriod, '2026-11');
+  const registered = (await koperasi.doc(`users/${enrolled.memberId}`).get()).data()!;
+  assert.equal(registered.uid, enrolled.uid);
+  assert.equal(registered.role, 'Member');
+  assert.equal(registered.status, 'approved');
+  assert.equal(registered.membershipStatus, 'approved');
+  assert.equal(registered.nominalTabungan, 0);
+  assert.equal(registered.iuranPokok, 250000);
+  assert.equal(registered.iuranWajib, 25000);
+  assert.equal(registered.payrollSavings.initialPaid, false);
+  assert.match(registered.nomorAnggota, /^\d{5,}$/);
+  assert.deepEqual(registered.bankDetails, { bank: 'BRIS', nomorRekening: '001234' });
+  assert.equal((await koperasiAdminAuth().getUser(enrolled.uid)).email, newPekarya.email);
+  assert.equal((await adminDb.doc('Employees_BlueCollar/EnrollPekarya').get()).data()!.koperasiAuthUid, enrolled.uid);
+  assert.equal((await succeeds(await invoke(enroll, newPekarya))).idempotent, true);
+  assert.equal((await succeeds(await invoke(enroll, { ...newPekarya, requestId: key() }))).idempotent, true);
+  const receipt = await adminDb.doc(`FinancialIdempotencyKeys/${superAdmin.uid}__${newPekarya.requestId}`).get();
+  assert.ok(!JSON.stringify(receipt.data()).includes(newPekarya.initialPassword), 'password never enters durable receipt');
+  const enrollmentAudit = await adminDb.collection('FinancialAuditLogs').where('action', '==', 'KOPERASI_MEMBER_ENROLLED').where('entityId', '==', enrolled.memberId).get();
+  assert.equal(enrollmentAudit.size, 1);
+  assert.ok(!JSON.stringify(enrollmentAudit.docs[0].data()).includes(newPekarya.initialPassword));
+
+  const subsidy = await enrollEmployee('EnrollLoyalis', 'Employees_Loyalis');
+  const subsidyResult = await succeeds(await invoke(enroll, { ...subsidy, paymentStatus: 'Yayasan Subsidy' }));
+  assert.equal((await koperasi.doc(`users/${subsidyResult.memberId}`).get()).data()!.paymentStatus, 'Yayasan Subsidy');
+  assert.deepEqual((await koperasi.doc(`users/${subsidyResult.memberId}`).get()).data()!.bankDetails, { bank: 'BSI', nomorRekening: '00987' });
+
+  // An existing account is explicitly selected and its role/password survive activation.
+  const reuseBody = await enrollEmployee('EnrollExisting');
+  const reuseIdentity = await koperasiAdminAuth().createUser({ uid: 'existing-auth', email: reuseBody.email, password: 'keep-existing-password' });
+  const passwordHash = (await koperasiAdminAuth().getUser(reuseIdentity.uid)).passwordHash;
+  await koperasi.doc('users/existing-member').set({ uid: reuseIdentity.uid, email: reuseBody.email, nama: 'EnrollExisting', role: 'BAK', membershipStatus: 'Pending', status: 'pending', iuranPokok: 300000, iuranWajib: 50000 });
+  assert.equal((await invoke(enroll, reuseBody)).status, 409, 'existing account must be explicitly selected');
+  const reused = await succeeds(await invoke(enroll, { ...reuseBody, existingMemberId: 'existing-member' }));
+  assert.equal(reused.uid, reuseIdentity.uid);
+  assert.equal((await koperasi.doc('users/existing-member').get()).data()!.role, 'BAK');
+  assert.equal((await koperasi.doc('users/existing-member').get()).data()!.iuranWajib, 50000);
+  assert.equal((await koperasiAdminAuth().getUser(reuseIdentity.uid)).passwordHash, passwordHash);
+
+  const concurrentBody = await enrollEmployee('EnrollConcurrent');
+  const concurrentEnrollment = await Promise.all([invoke(enroll, concurrentBody), invoke(enroll, { ...concurrentBody, requestId: key() })]);
+  assert.ok(concurrentEnrollment.some(response => response.status === 200));
+  assert.ok(concurrentEnrollment.every(response => [200, 409].includes(response.status)));
+  assert.equal((await koperasi.collection('users').where('email', '==', concurrentBody.email).get()).size, 1);
+
+  const lostEnrollment = await enrollEmployee('EnrollLost');
+  let enrollmentTransactions = 0;
+  Object.defineProperty(adminDb, 'runTransaction', { configurable: true, writable: true, value: (...args: Parameters<typeof adminDb.runTransaction>) => {
+    enrollmentTransactions++;
+    if (enrollmentTransactions === 4) throw new Error('Injected enrollment audit outage');
+    return originalRunTransaction(...args);
+  } });
+  try { assert.equal((await invoke(enroll, lostEnrollment)).status, 500); }
+  finally { Object.defineProperty(adminDb, 'runTransaction', { configurable: true, writable: true, value: originalRunTransaction }); }
+  const beforeResume = await koperasi.collection('users').where('email', '==', lostEnrollment.email).get();
+  const pendingClaim = await adminDb.doc('KoperasiEnrollments/Employees_BlueCollar__EnrollLost').get();
+  const pendingMemberId = pendingClaim.data()!.intent.memberId;
+  const pendingMember = (await koperasi.doc(`users/${pendingMemberId}`).get()).data()!;
+  assert.equal((await invoke(PATCH, { memberId: pendingMemberId, expected: koperasiMemberSnapshot(pendingMember), input: { paymentStatus: 'Transfer', membershipStatus: 'approved', iuranPokok: 250000, iuranWajib: 25000, role: 'Member', note: '', confirmStaffRole: false }, requestId: key() }, undefined, 'PATCH')).status, 409, 'pending enrollment cannot be edited');
+
+  assert.equal(beforeResume.size, 1);
+  const numberBeforeResume = beforeResume.docs[0].data().nomorAnggota;
+  const recoveredEnrollment = await succeeds(await invoke(enroll, lostEnrollment));
+  assert.equal(recoveredEnrollment.memberId, beforeResume.docs[0].id);
+  assert.equal((await koperasi.doc(`users/${recoveredEnrollment.memberId}`).get()).data()!.nomorAnggota, numberBeforeResume);
+  assert.equal((await adminDb.doc('KoperasiEnrollments/Employees_BlueCollar__EnrollLost').get()).data()!.state, 'completed');
+
+  // Migration preserves balances, marks the legacy initial fee settled and repairs a lost audit.
+  await koperasi.doc('users/migration-legacy').set({ uid: 'migration-uid', role: 'Member', membershipStatus: 'approved', status: 'approved', paymentStatus: 'Payroll Deduction', nominalTabungan: 650000, iuranPokok: 250000, iuranWajib: 25000 });
+  await adminDb.doc('Employees_BlueCollar/MigrationLegacy').set({ name: 'Migration Legacy', employment: { status: 'active' }, koperasiAuthUid: 'migration-uid', koperasiUserId: 'migration-legacy' });
+  const { execFileSync } = await import('node:child_process');
+  const migrate = (apply = false) => execFileSync(process.execPath, ['--import', 'tsx', 'scripts/migrateKoperasiPayrollSavings.ts', '--ids=migration-legacy', ...(apply ? ['--apply'] : [])], { cwd: process.cwd(), env: process.env, encoding: 'utf8' });
+  assert.match(migrate(), /"candidates": 1/);
+  assert.equal((await koperasi.doc('users/migration-legacy').get()).data()!.payrollSavings, undefined);
+  migrate(true);
+  const migrated = (await koperasi.doc('users/migration-legacy').get()).data()!;
+  assert.equal(migrated.nominalTabungan, 650000);
+  assert.equal(migrated.payrollSavings.initialPaid, true);
+  assert.equal(migrated.payrollSavings.startPeriod, '2026-11');
+  assert.equal((await adminDb.doc('KoperasiEnrollments/migration__2026-11').get()).data()!.state, 'completed');
+  await adminDb.doc('KoperasiEnrollments/migration__2026-11').update({ state: 'pending' });
+  assert.match(migrate(true), /"candidates": 0/);
+  assert.equal((await adminDb.doc('KoperasiEnrollments/migration__2026-11').get()).data()!.state, 'completed', 'resume completes migration even after all policies were already written');
+  const migrationAudits = await adminDb.collection('FinancialAuditLogs').where('action', '==', 'KOPERASI_SAVINGS_MIGRATED').get();
+  assert.equal(migrationAudits.size, 1);
+  await migrationAudits.docs[0].ref.delete();
+  assert.match(migrate(true), /"auditRepairs": 1/);
+  assert.equal((await adminDb.collection('FinancialAuditLogs').where('action', '==', 'KOPERASI_SAVINGS_MIGRATED').get()).size, 1);
+
+  // A lock with uncertain external completion prevents identity replacement/deletion.
+  const inFlight = adminDb.doc('PayrollKoperasiProgressions/2026_11_EnrollPekarya');
+  await inFlight.set({ employeeId: 'EnrollPekarya', status: 'external_pending' });
+  assert.equal((await invoke(link, { memberId: enrolled.memberId, action: 'unlink', employeeId: 'EnrollPekarya', employeeCollection: 'Employees_BlueCollar', expectedEmployeeId: 'EnrollPekarya', expectedEmployeeCollection: 'Employees_BlueCollar', requestId: key() })).status, 409);
+  assert.equal((await invoke(DELETE, { memberId: enrolled.memberId, requestId: key() }, undefined, 'DELETE')).status, 409);
+  await inFlight.delete();
+
+  // Enrollment claims are released on deletion, so an employee can register again.
+  await succeeds(await invoke(DELETE, { memberId: enrolled.memberId, requestId: key() }, undefined, 'DELETE'));
+  assert.equal((await adminDb.doc('KoperasiEnrollments/Employees_BlueCollar__EnrollPekarya').get()).exists, false);
+  const registeredAgain = await succeeds(await invoke(enroll, { ...newPekarya, requestId: key() }));
+  assert.notEqual(registeredAgain.uid, enrolled.uid);
+
+  const authOnlyBody = await enrollEmployee('EnrollAuthOnly');
+  await koperasiAdminAuth().createUser({ uid: 'auth-only-user', email: authOnlyBody.email, password: 'unchanged-password' });
+  const authOnlyCommand = { ...authOnlyBody, initialPassword: undefined };
+  const authOnly = await succeeds(await invoke(enroll, authOnlyCommand));
+  assert.equal(authOnly.uid, 'auth-only-user', 'Auth-only identities are reused without requiring a new password');
+
+  const ambiguous = await enrollEmployee('EnrollAmbiguous');
+  for (const memberId of ['ambiguous-one', 'ambiguous-two']) await koperasi.doc(`users/${memberId}`).set({ email: ambiguous.email, role: 'Member' });
+  assert.equal((await invoke(enroll, ambiguous)).status, 409);
+  assert.equal((await adminDb.doc('KoperasiEnrollments/Employees_BlueCollar__EnrollAmbiguous').get()).exists, false);
+
+  // A previously subsidized new member's first fee moves to the current open month.
+  await koperasi.doc(`users/${subsidyResult.memberId}`).update({ 'payrollSavings.initialPeriod': '2026-10' });
+  const beforeSwitch = (await koperasi.doc(`users/${subsidyResult.memberId}`).get()).data()!;
+  await succeeds(await invoke(PATCH, { memberId: subsidyResult.memberId, expected: koperasiMemberSnapshot(beforeSwitch), input: {
+    paymentStatus: 'Payroll Deduction', membershipStatus: 'approved', iuranPokok: 250000, iuranWajib: 25000, role: 'Member', note: '', confirmStaffRole: false,
+  }, requestId: key() }, undefined, 'PATCH'));
+  assert.equal((await koperasi.doc(`users/${subsidyResult.memberId}`).get()).data()!.payrollSavings.initialPeriod, '2026-11');
+
+  const inactiveBody = await enrollEmployee('EnrollInactive', 'Employees_BlueCollar', { employment: { status: 'inactive' } });
+  assert.equal((await invoke(enroll, inactiveBody)).status, 409);
+  await adminDb.doc('PayrollPeriods/2026-11').update({ attendanceStatus: 'closed' });
+  const closedBody = await enrollEmployee('EnrollClosed');
+  assert.equal((await invoke(enroll, closedBody)).status, 409);
+  const context = await previewEnrollment(new NextRequest('http://localhost/api/admin/koperasi-members', { headers: { authorization: superAdmin.authorization } }));
+  assert.equal(context.status, 409);
+  console.log('Employee enrollment integration passed: Pekarya, Loyalis, subsidy, Auth creation/reuse, role and password preservation, permissions, concurrent uniqueness, lost-response recovery, one audit, bank mapping and closed periods.');
+
   console.log('Koperasi member integration passed: auth, validation, optimistic edits, status mirroring, audit, replay recovery, missing uid, concurrent unique linking, replacement/unlink, converted exclusion, bank sync, empty-bank skip, rules, 308 redirect and loan decline.');
 }
 

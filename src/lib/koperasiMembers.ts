@@ -1,6 +1,7 @@
 import { isConvertedAway } from './employeeConversion';
 import { normalizeName } from './payroll/employeeNames';
 import { KOPERASI_NAME_OVERRIDES } from './payroll/koperasiNames';
+import type { PayrollSavingsPolicy } from './payroll/koperasiSavings';
 
 export const KOPERASI_PAYMENT_STATUSES = ['Payroll Deduction', 'Yayasan Subsidy', 'Transfer', 'Pending Verification'] as const;
 export const KOPERASI_PAYMENT_LABELS: Record<string, string> = {
@@ -38,15 +39,17 @@ export interface KoperasiMember {
   iuranPokok?: number | null;
   iuranWajib?: number | null;
   bankDetails?: Partial<KoperasiBankDetails> | null;
+  payrollSavings?: PayrollSavingsPolicy | null;
 }
 
 export interface KoperasiEmployeeData {
   name?: string;
   email?: string;
   nik?: string;
+  phoneNumber?: string;
   koperasiAuthUid?: string | null;
   koperasiUserId?: string | null;
-  personal_info?: { name?: string; email?: string; nik?: string; status?: string };
+  personal_info?: { name?: string; email?: string; nik?: string; status?: string; phone?: string };
   employment_profile?: { department_unit?: string };
   employment?: { status?: string; jobCategory?: string };
   flags?: { isActive?: boolean; isPayrollEligible?: boolean };

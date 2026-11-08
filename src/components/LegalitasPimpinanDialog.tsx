@@ -53,6 +53,7 @@ interface LegalitasPimpinanDialogProps {
   slipStates?: Record<string, any>;
   koperasiDeductions?: Record<string, number>;
   koperasiSavings?: Record<string, number>;
+  koperasiInitialSavings?: Record<string, number>;
   /** Ketua Shift Satpam roster, keyed by employeeId — see the fetch site in
    * dashboard/payroll/page.tsx for why it isn't fetched here directly. */
   ketuaShiftIds?: Set<string>;
@@ -71,7 +72,7 @@ function buildInitialEarnings(
   presenceBonus = 0,
   presensiEarning = 0,
   tunjanganKepangkatan?: number,
-  targetDate: Date = new Date()
+  targetDate: Date = new Date(),
 ): PaySlipField[] {
   const earnings: PaySlipField[] = [];
 
@@ -179,9 +180,10 @@ function buildInitialDeductions(
   presenceDeduction = 0,
   presensiDeduction = 0,
   koperasiSaving = 0,
-  targetDate: Date = new Date()
+  targetDate: Date = new Date(),
+  initialSaving = 0,
 ): PaySlipField[] {
-  const deductions: PaySlipField[] = [];
+  const deductions: PaySlipField[] = initialSaving ? [{ label: 'Iuran Pokok Kop. UNIPDU', amount: initialSaving }] : [];
 
   if (emp.employeeId?.startsWith('Loyalis_') || emp.id?.startsWith('Loyalis_') || emp.personal_info) {
     // White Collar / Loyalis deductions
@@ -226,6 +228,7 @@ export default function LegalitasPimpinanDialog({
   slipStates,
   koperasiDeductions = {},
   koperasiSavings = {},
+  koperasiInitialSavings = {},
   ketuaShiftIds,
   getLoyalisPresenceBonus,
   getLoyalisPresenceDeduction,
@@ -284,7 +287,7 @@ export default function LegalitasPimpinanDialog({
         const presEarning = getLoyalisPresensiEarning ? getLoyalisPresensiEarning(emp.id) : 0;
         const presDeduction = getLoyalisPresensiDeduction ? getLoyalisPresensiDeduction(emp.id) : 0;
         earnings = buildInitialEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance, pBonus, presEarning, kepangkatanAllowanceMap?.[emp.id] ?? 0, targetDate);
-        deductions = buildInitialDeductions(emp.raw, kopUnipdu, pDeduction, presDeduction, kopSaving, targetDate);
+        deductions = buildInitialDeductions(emp.raw, kopUnipdu, pDeduction, presDeduction, kopSaving, targetDate, koperasiInitialSavings[emp.id] || 0);
       }
       totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);
       totalDeductions = deductions.reduce((sum, d) => sum + d.amount, 0);

@@ -78,6 +78,7 @@ import {
 import {
   KoperasiBridgeError,
   replaceKoperasiLoanDeduction,
+  replaceKoperasiSavingsDeductions,
 } from '@/lib/server/koperasiPayrollBridge';
 
 export const dynamic = 'force-dynamic';
@@ -271,6 +272,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (koperasiInstallmentPlan) {
+      effectiveCommand = { ...effectiveCommand, deductions: replaceKoperasiSavingsDeductions(
+        validateMoneyFields(effectiveCommand.deductions, 'deductions'), koperasiInstallmentPlan,
+      ) };
+    }
+
     // The active matrices are read before the transaction: a new slip's Gaji
     // Pokok must equal what the matrix says, and nothing else, so a client
     // cannot persist a stale `salaryProfile.baseSalaryAmount` as though it
@@ -326,6 +333,16 @@ export async function POST(request: NextRequest) {
       const referralRecoveries = await referralRecoveriesForSlip(transaction, slipId);
       const referralEarning = await referralEarningForSlip(transaction, command.period, command.employeeId);
       const before = slipSnapshot.exists ? slipSnapshot.data()! : null;
+      if (isDraftWriteAction(command.action)) {
+        const migration = await transaction.get(adminDb.doc(`KoperasiEnrollments/migration__${command.period.replace('_', '-')}`));
+        if (migration.data()?.state === 'pending') throw new HttpError(409, 'Migrasi iuran Koperasi sedang berlangsung. Coba lagi setelah migrasi selesai.');
+      }
+      const koperasiOperation = isDraftWriteAction(command.action)
+        ? await transaction.get(adminDb.collection('PayrollKoperasiProgressions').doc(slipId)) : null;
+      if (koperasiOperation && ['external_pending', 'retryable'].includes(koperasiOperation.data()?.status)) {
+        throw new HttpError(409, 'Penguncian Koperasi sedang berlangsung. Ulangi Verifikasi & Kunci sebelum mengubah draf.');
+      }
+
       const commandHash = snapshotHash(command);
 
       if (idempotencySnapshot.exists) {
@@ -741,6 +758,10 @@ export async function POST(request: NextRequest) {
                 typeof loan.loanId === 'string' && plannedLoanIds.has(loan.loanId),
             );
           });
+          const savingsMemberId = koperasiInstallmentPlan?.savings?.memberId;
+          if (savingsMemberId && periodSlipsSnapshot.docs.some(document => document.id !== slipId && document.data()?.koperasiInstallmentPlan?.savings?.memberId === savingsMemberId)) {
+            throw new HttpError(409, 'Anggota Koperasi sudah digunakan pada slip pegawai lain dalam periode ini.');
+          }
           if (conflictingSlip) {
             throw new HttpError(
               409,

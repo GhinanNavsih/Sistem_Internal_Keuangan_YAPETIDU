@@ -15,6 +15,7 @@ import {
 import KoperasiMemberEditDialog from './KoperasiMemberEditDialog';
 import KoperasiLinkDialog from './KoperasiLinkDialog';
 import KoperasiBankSyncDialog from './KoperasiBankSyncDialog';
+import KoperasiEnrollmentDialog from './KoperasiEnrollmentDialog';
 
 const FILTERS = ['Semua', 'Potong Gaji', 'Subsidi Yayasan', 'Lainnya', 'Belum tertaut', 'Rekening berbeda'] as const;
 type Filter = (typeof FILTERS)[number];
@@ -44,6 +45,7 @@ export default function KoperasiMembersView({ members, employees, reload, disabl
   const [editing, setEditing] = useState<KoperasiMember | null>(null);
   const [linking, setLinking] = useState<KoperasiMember | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [enrolling, setEnrolling] = useState(false);
   const [message, setMessage] = useState('');
   const rows = useMemo(() => members.map(member => {
     const employee = employees.find(employee => employeeLinkedToMember(member, employee));
@@ -81,14 +83,14 @@ export default function KoperasiMembersView({ members, employees, reload, disabl
   });
   async function saved(text?: unknown) {
     const msg = typeof text === 'string' && text.trim() ? text : 'Perubahan anggota tersimpan. Jalankan Refresh di Payroll untuk memperbarui draf.';
-    setEditing(null); setLinking(null); setSyncing(false); setMessage(msg);
+    setEditing(null); setLinking(null); setSyncing(false); setEnrolling(false); setMessage(msg);
     await reload();
   }
-  async function staleReload() { setEditing(null); setLinking(null); setSyncing(false); await reload(); }
+  async function staleReload() { setEditing(null); setLinking(null); setSyncing(false); setEnrolling(false); await reload(); }
   return <div className="space-y-7 pb-10">
     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <h1 className="text-3xl font-bold tracking-tight text-slate-900">Anggota Koperasi</h1>
-      <Button variant="outline" className="h-10 shrink-0 rounded-sm border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900" disabled={disabled || bankRows.length === 0} onClick={() => setSyncing(true)}><Landmark className="size-4 text-indigo-600" />Samakan rekening <span className="rounded-sm bg-slate-100 px-1.5 py-0.5 tabular-nums text-slate-600">{syncCount}</span></Button>
+      <div className="flex flex-wrap gap-2"><Button disabled={disabled} onClick={() => setEnrolling(true)}>Daftarkan pegawai</Button><Button variant="outline" className="h-10 shrink-0 rounded-sm border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900" disabled={disabled || bankRows.length === 0} onClick={() => setSyncing(true)}><Landmark className="size-4 text-indigo-600" />Samakan rekening <span className="rounded-sm bg-slate-100 px-1.5 py-0.5 tabular-nums text-slate-600">{syncCount}</span></Button></div>
     </div>
     {message && <p role="status" className="flex items-start gap-2 rounded-md border border-indigo-100 bg-indigo-50 p-4 text-sm leading-relaxed text-indigo-800"><BadgeCheck className="mt-0.5 size-4 shrink-0" />{message}</p>}
     <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">{stats.map(stat => <Card key={stat.label} className="gap-0 rounded-md border-0 bg-white p-4 shadow-[0_8px_30px_rgb(15,23,42,0.04)] ring-1 ring-slate-200/70 sm:p-5"><div className="flex items-start justify-between gap-2"><div><p className="text-xs font-semibold text-slate-500">{stat.label}</p><p className="mt-2 text-2xl font-extrabold tabular-nums tracking-tight text-slate-900">{stat.count}</p></div><div className={`flex size-9 shrink-0 items-center justify-center rounded-sm ${stat.iconStyle}`}><stat.icon className="size-[18px]" /></div></div><p className="mt-3 hidden text-[11px] text-slate-400 sm:block">{stat.detail}</p></Card>)}</div>
@@ -147,6 +149,7 @@ export default function KoperasiMembersView({ members, employees, reload, disabl
       {!filtered.length && <TableRow><TableCell colSpan={7} className="py-16 text-center"><div className="mx-auto flex max-w-xs flex-col items-center"><div className="mb-3 flex size-11 items-center justify-center rounded-sm bg-slate-100 text-slate-400"><UsersRound className="size-5" /></div><p className="font-semibold text-slate-700">Tidak ada anggota yang cocok</p><p className="mt-1 text-xs text-slate-500">Ubah pencarian atau pilih filter lain untuk melihat akun.</p></div></TableCell></TableRow>}
     </TableBody></Table></div>
     </section>
+    {enrolling && <KoperasiEnrollmentDialog employees={employees} members={members} onClose={() => setEnrolling(false)} onSaved={saved} />}
     {editing && <KoperasiMemberEditDialog key={editing.id} member={editing} employee={rows.find(row => row.member.id === editing.id)?.employee} onClose={() => setEditing(null)} onSaved={msg => saved(msg)} onReload={staleReload} onLink={() => { setLinking(editing); setEditing(null); }} />}
     {linking && <KoperasiLinkDialog key={linking.id} member={linking} employees={employees} current={rows.find(row => row.member.id === linking.id)?.employee} onClose={() => setLinking(null)} onSaved={warning => saved(warning || 'Tautan anggota tersimpan. Rekening mengikuti data SAKU.')} onReload={staleReload} />}
     {syncing && <KoperasiBankSyncDialog rows={bankRows} onClose={() => setSyncing(false)} onSaved={saved} onReload={staleReload} />}

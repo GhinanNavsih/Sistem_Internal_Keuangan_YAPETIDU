@@ -97,5 +97,11 @@ export function koperasiAdminDb(): admin.firestore.Firestore {
   return app.firestore();
 }
 
+export function koperasiAdminAuth(): admin.auth.Auth {
+  const app = koperasiApp();
+  if (!app) throw new Error('Kredensial Koperasi belum dikonfigurasi di server.');
+  return app.auth();
+}
+
 export const KOPERASI_LOANS_COLLECTION = 'simpanPinjam';
 export const KOPERASI_USERS_COLLECTION = 'users';

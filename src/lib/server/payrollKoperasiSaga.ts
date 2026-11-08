@@ -19,6 +19,7 @@ import {
   KoperasiProgressionReceipt,
   hashKoperasiInstallmentPlan,
   koperasiLoanDeduction,
+  savingsDeductionsMatch,
   previewKoperasiInstallmentPlan,
 } from '@/lib/server/koperasiPayrollBridge';
 
@@ -59,6 +60,7 @@ function employeeIdentity(
   }
   return {
     id: employeeId,
+    koperasiUserId: typeof data.koperasiUserId === 'string' ? data.koperasiUserId : null,
     name: String(name).trim(),
     koperasiAuthUid:
       typeof data.koperasiAuthUid === 'string' && data.koperasiAuthUid.trim()
@@ -112,7 +114,8 @@ function validateStoredPlan(
     : -1;
   if (
     !plan ||
-    plan.schemaVersion !== 1 ||
+    ![1, 2].includes(plan.schemaVersion!) ||
+    !savingsDeductionsMatch(plan as KoperasiInstallmentPlan, validateMoneyFields(savedDeductions, 'deductions')) ||
     plan.payrollPeriod !== command.period.replace('_', '-') ||
     typeof plan.planHash !== 'string' ||
     !/^[a-f0-9]{64}$/.test(plan.planHash) ||
@@ -246,6 +249,9 @@ export async function verifyAndLockWithKoperasi(
       blueSnapshot.exists ? blueSnapshot.data() : undefined,
       loyalisSnapshot.exists ? loyalisSnapshot.data() : undefined,
     );
+    if (plan.savings && (employee.koperasiUserId !== plan.savings.memberId || employee.koperasiAuthUid !== plan.savings.uid)) {
+      throw new HttpError(409, 'Tautan Koperasi berubah. Refresh dan simpan ulang draf.');
+    }
     const now = admin.firestore.FieldValue.serverTimestamp();
     transaction.set(operationRef, {
       schemaVersion: 1,
@@ -348,6 +354,10 @@ export async function verifyAndLockWithKoperasi(
       receipt.planHash !== plan.planHash
     ) {
       throw new HttpError(409, 'Receipt Koperasi tidak cocok dengan draf yang disegel.');
+    }
+    const currentEmployee = employeeIdentity(command.employeeId, blueSnapshot.data(), loyalisSnapshot.data());
+    if (plan.savings && (currentEmployee.koperasiUserId !== plan.savings.memberId || currentEmployee.koperasiAuthUid !== plan.savings.uid)) {
+      throw new HttpError(409, 'Tautan Koperasi berubah sebelum penguncian selesai. Pulihkan tautan lalu ulangi Verifikasi & Kunci.');
     }
     const validatedEarnings = validateMoneyFields(before.earnings, 'earnings');
     const isSatpam =

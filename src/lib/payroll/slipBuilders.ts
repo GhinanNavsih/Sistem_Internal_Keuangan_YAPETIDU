@@ -278,6 +278,7 @@ export function buildInitialDeductions(
   koperasiSaving = 0,
   /** `YYYY-MM`; decides whether a Loyalis slip still carries Potongan Presensi rows. */
   period?: string,
+  koperasiInitialSaving = 0,
 ): SlipField[] {
   const deductions: SlipField[] = [];
 
@@ -314,6 +315,7 @@ export function buildInitialDeductions(
     deductions.push({ label: 'Iuran Wajib Kop. UNIPDU', amount: koperasiSaving || 0 });
   }
 
+  if (koperasiInitialSaving) deductions.push({ label: 'Iuran Pokok Kop. UNIPDU', amount: koperasiInitialSaving });
   return deductions;
 }
 

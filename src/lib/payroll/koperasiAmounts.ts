@@ -9,7 +9,7 @@ import {
   type KoperasiLoanLike,
 } from '@/lib/payroll/koperasiLoan';
 import { isConvertedAway } from '@/lib/employeeConversion';
-import { koperasiMonthlyIuranWajib } from '@/lib/koperasiMembers';
+import { koperasiSavingsAmounts, type KoperasiSavingsMember } from './koperasiSavings';
 
 interface PayrollEmployeeLike {
   id: string;
@@ -26,7 +26,7 @@ interface KoperasiPayrollLoanLike extends KoperasiLoanLike {
   userData?: { namaLengkap?: string };
 }
 
-interface KoperasiUserLike {
+interface KoperasiUserLike extends KoperasiSavingsMember {
   id: string;
   uid?: string;
   nama?: string;
@@ -39,6 +39,7 @@ interface KoperasiUserLike {
 export interface KoperasiPayrollAmountMaps {
   deductions: Record<string, number>;
   savings: Record<string, number>;
+  initialSavings: Record<string, number>;
 }
 
 function timestampMillis(value: unknown): number {
@@ -118,6 +119,7 @@ export function buildKoperasiPayrollAmountMaps(
 ): KoperasiPayrollAmountMaps {
   const deductions: Record<string, number> = {};
   const savings: Record<string, number> = {};
+  const initialSavings: Record<string, number> = {};
   // A Pekarya converted to Loyalis keeps its Koperasi link (the final Pekarya
   // slip still needs it at Verifikasi & Kunci), so only the new Loyalis record
   // may match, or the same installment would be counted twice.
@@ -161,9 +163,11 @@ export function buildKoperasiPayrollAmountMaps(
           nameMatches(String(user.nama || ''), employeeName(employee)),
         );
     for (const employee of matches) {
-      savings[employee.id] = koperasiMonthlyIuranWajib(user);
+      const amounts = koperasiSavingsAmounts(user, payrollPeriod);
+      savings[employee.id] = amounts.monthly;
+      initialSavings[employee.id] = amounts.initial;
     }
   }
 
-  return { deductions, savings };
+  return { deductions, savings, initialSavings };
 }

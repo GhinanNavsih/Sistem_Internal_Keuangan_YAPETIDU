@@ -39,6 +39,9 @@ import {
   hashKoperasiInstallmentPlan,
   KoperasiInstallmentPlan,
   koperasiLoanDeduction,
+  savingsDeductionsMatch,
+  validateKoperasiPayrollPlan,
+  KoperasiBridgeError,
 } from '@/lib/server/koperasiPayrollBridge';
 import {
   isPeriodClosed,
@@ -229,9 +232,28 @@ async function handlePeriodPost(
 
     const closesWithAttendanceChecks =
       attendanceStatus === 'closed' && period >= ATTENDANCE_PAYROLL_START_PERIOD;
-    progress.plan(
-      attendanceStatus === 'closed' ? (closesWithAttendanceChecks ? 5 : 2) : 1,
-    );
+    progress.plan(attendanceStatus === 'closed' ? (closesWithAttendanceChecks ? 6 : 3) : 1);
+    if (attendanceStatus === 'closed') progress.step('Memeriksa iuran dan pinjaman Koperasi');
+
+    const validatedKoperasiPlans = new Map<string, string>();
+    if (attendanceStatus === 'closed') {
+      const drafts = await adminDb.collection('PayrollSlipStates').where('period', '==', period.replace('-', '_')).get();
+      for (let offset = 0; offset < drafts.docs.length; offset += 10) {
+        await Promise.all(drafts.docs.slice(offset, offset + 10).filter(doc => doc.data().status === 'draft' && doc.data().koperasiInstallmentPlan && (doc.data().koperasiInstallmentPlan.schemaVersion === 2 || period >= '2026-11')).map(async doc => {
+          const data = doc.data();
+          const plan = data.koperasiInstallmentPlan as KoperasiInstallmentPlan;
+          const [blue, loyalis] = await adminDb.getAll(adminDb.doc(`Employees_BlueCollar/${data.employeeId}`), adminDb.doc(`Employees_Loyalis/${data.employeeId}`));
+          const employee = blue.exists ? blue.data()! : loyalis.data();
+          if (!employee) throw new HttpError(409, 'Pegawai payroll tidak ditemukan.');
+          try { await validateKoperasiPayrollPlan({ operationId: `validate_${createHash('sha256').update(doc.id).digest('hex').slice(0, 40)}`, slipId: doc.id,
+            payrollPeriod: period, employee: { id: data.employeeId, name: employee.name || employee.personal_info?.name || '',
+              koperasiAuthUid: employee.koperasiAuthUid || null, koperasiUserId: employee.koperasiUserId || null },
+            expectedDeduction: plan.expectedDeduction, plan, actor: { uid: actor.uid, name: actor.displayName, role: actor.role } }); }
+          catch (error) { if (error instanceof KoperasiBridgeError) throw new HttpError(error.status >= 500 ? 503 : 409, error.message); throw error; }
+          validatedKoperasiPlans.set(doc.id, plan.planHash);
+        }));
+      }
+    }
 
     if (closesWithAttendanceChecks) {
       progress.step('Menyinkronkan cuti otomatis Pekarya');
@@ -535,6 +557,8 @@ async function handlePeriodPost(
           );
         }
 
+        const enrollments = await transaction.get(adminDb.collection('KoperasiEnrollments').where('firstPayrollPeriod', '==', period));
+        if (enrollments.docs.some(doc => doc.data().state !== 'completed')) throw new HttpError(409, 'Selesaikan pendaftaran Koperasi yang masih berlangsung sebelum menutup periode.');
         const invalidDrafts = periodSlipsSnapshot.docs.filter((document) => {
           const data = document.data();
           if (data.status !== 'draft') return false;
@@ -551,8 +575,12 @@ async function handlePeriodPost(
                   0,
                 )
               : -1;
+            const employee = [...blueEmployeesSnapshot.docs, ...loyalisEmployeesSnapshot.docs].find(doc => doc.id === data.employeeId)?.data();
             return !plan ||
-              plan.schemaVersion !== 1 ||
+              Boolean(plan.savings && (employee?.koperasiUserId !== plan.savings.memberId || employee?.koperasiAuthUid !== plan.savings.uid)) ||
+              (plan.schemaVersion === 2 && validatedKoperasiPlans.get(document.id) !== plan.planHash) ||
+              ![1, 2].includes(plan.schemaVersion) ||
+              !savingsDeductionsMatch(plan, validateMoneyFields(data.deductions, 'deductions')) ||
               plan.payrollPeriod !== period ||
               typeof plan.planHash !== 'string' ||
               plan.expectedDeduction !== expectedDeduction ||

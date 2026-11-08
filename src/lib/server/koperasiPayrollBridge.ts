@@ -1,4 +1,5 @@
 import { createHash, createHmac } from 'node:crypto';
+import type { KoperasiSavingsPlan } from '@/lib/payroll/koperasiSavings';
 import { MoneyField } from '@/lib/payroll/domain';
 
 export interface KoperasiInstallmentPlanItem {
@@ -14,13 +15,14 @@ export interface KoperasiInstallmentPlanItem {
 }
 
 export interface KoperasiInstallmentPlan {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   payrollPeriod: string;
   matchType: 'uid' | 'name' | 'none';
   resolvedUserId: string | null;
   expectedDeduction: number;
   loans: KoperasiInstallmentPlanItem[];
   planHash: string;
+  savings?: KoperasiSavingsPlan | null;
 }
 
 export interface KoperasiProgressionReceiptItem {
@@ -35,18 +37,20 @@ export interface KoperasiProgressionReceiptItem {
 }
 
 export interface KoperasiProgressionReceipt {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   operationId: string;
   payrollPeriod: string;
   planHash: string;
   status: 'applied' | 'not_applicable';
   loans: KoperasiProgressionReceiptItem[];
+  savings?: { memberId: string; initial: number; monthly: number; amount: number; outcome: string; previousBalance: number; newBalance: number } | null;
 }
 
 export interface KoperasiBridgeEmployee {
   id: string;
   name: string;
   koperasiAuthUid: string | null;
+  koperasiUserId?: string | null;
 }
 
 export class KoperasiBridgeError extends Error {
@@ -71,6 +75,7 @@ export function hashKoperasiInstallmentPlan(
     resolvedUserId: plan.resolvedUserId,
     expectedDeduction: plan.expectedDeduction,
     loans: plan.loans,
+    ...(plan.schemaVersion === 2 ? { savings: plan.savings ?? null } : {}),
   };
   return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 }
@@ -117,7 +122,8 @@ export function replaceKoperasiLoanDeduction(
 function bridgeConfig(): { url: string; secret: string } {
   const url = process.env.KOPERASI_PAYROLL_BRIDGE_URL?.trim() || '';
   const secret = process.env.KOPERASI_PAYROLL_HMAC_SECRET || '';
-  if (!url || !/^https:\/\//.test(url) || secret.length < 32) {
+  const localEmulator = Boolean(process.env.FIRESTORE_EMULATOR_HOST) && /^http:\/\/(127\.0\.0\.1|localhost):\d+\//.test(url);
+  if (!url || (!/^https:\/\//.test(url) && !localEmulator) || secret.length < 32) {
     throw new KoperasiBridgeError(
       503,
       'BRIDGE_NOT_CONFIGURED',
@@ -188,13 +194,13 @@ export async function previewKoperasiInstallmentPlan(
   input: CommonBridgeInput,
 ): Promise<KoperasiInstallmentPlan> {
   const plan = await callBridge<KoperasiInstallmentPlan>({
-    schemaVersion: 1,
+    schemaVersion: 2,
     action: 'preview',
     ...input,
   });
   if (
     !plan ||
-    plan.schemaVersion !== 1 ||
+    ![1, 2].includes(plan.schemaVersion) ||
     !Array.isArray(plan.loans) ||
     typeof plan.planHash !== 'string' ||
     hashKoperasiInstallmentPlan(plan) !== plan.planHash
@@ -212,8 +218,26 @@ export function applyKoperasiInstallmentPlan(
   input: CommonBridgeInput & { plan: KoperasiInstallmentPlan },
 ): Promise<KoperasiProgressionReceipt> {
   return callBridge<KoperasiProgressionReceipt>({
-    schemaVersion: 1,
+    schemaVersion: input.plan.schemaVersion,
     action: 'apply',
     ...input,
   });
+}
+
+export function savingsDeductionsMatch(plan: KoperasiInstallmentPlan, deductions: readonly MoneyField[]): boolean {
+  if (plan.schemaVersion !== 2 || !plan.savings) return true;
+  const sum = (label: string) => deductions.filter(row => row.label.trim().toLowerCase() === label.toLowerCase()).reduce((total, row) => total + row.amount, 0);
+  return sum('Iuran Pokok Kop. UNIPDU') === plan.savings.initial && sum('Iuran Wajib Kop. UNIPDU') === plan.savings.monthly;
+}
+
+export function replaceKoperasiSavingsDeductions(deductions: readonly MoneyField[], plan: KoperasiInstallmentPlan): MoneyField[] {
+  if (plan.schemaVersion !== 2 || !plan.savings) return [...deductions];
+  const labels = new Set(['iuran pokok kop. unipdu', 'iuran wajib kop. unipdu']);
+  return [...deductions.filter(row => !labels.has(row.label.trim().toLowerCase())),
+    ...(plan.savings.initial ? [{ label: 'Iuran Pokok Kop. UNIPDU', amount: plan.savings.initial }] : []),
+    { label: 'Iuran Wajib Kop. UNIPDU', amount: plan.savings.monthly }];
+}
+
+export function validateKoperasiPayrollPlan(input: CommonBridgeInput & { plan: KoperasiInstallmentPlan }): Promise<KoperasiProgressionReceipt> {
+  return callBridge<KoperasiProgressionReceipt>({ schemaVersion: input.plan.schemaVersion, action: 'validate', ...input });
 }
