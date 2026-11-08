@@ -6,8 +6,21 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/lib/AuthContext';
-import { SIFAT_SURAT_OPTIONS, STATUS_SURAT_MASUK_OPTIONS, KATEGORI_SURAT_MASUK } from '@/lib/surat-menyurat/constants';
-import { SifatSurat, StatusSuratMasuk, SuratAttachment, SuratMasuk } from '@/lib/surat-menyurat/types';
+import {
+  SIFAT_SURAT_OPTIONS,
+  STATUS_SURAT_MASUK_OPTIONS,
+  KATEGORI_SURAT_MASUK,
+  INSTITUTION_SCOPES,
+  KLASIFIKASI_KEARSIPAN_POPULAR,
+} from '@/lib/surat-menyurat/constants';
+import { formatKodeArsip } from '@/lib/surat-menyurat/numbering';
+import {
+  InstitutionScope,
+  SifatSurat,
+  StatusSuratMasuk,
+  SuratAttachment,
+  SuratMasuk,
+} from '@/lib/surat-menyurat/types';
 import { UPLOAD_ACCEPT, UPLOAD_TYPES_TEXT, uploadFileProblem } from '@/lib/uploadFileTypes';
 import { AlertCircle, FileText, Loader2, Paperclip, Pencil, Plus, Trash2, Upload, X } from 'lucide-react';
 
@@ -29,6 +42,12 @@ export default function SuratMasukInlineForm({
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [institutionScope, setInstitutionScope] = useState<InstitutionScope>('UNIPDU');
+  const [nomorUrut, setNomorUrut] = useState<number>(1);
+  const [kodeSurat, setKodeSurat] = useState('BU');
+  const [kodeArsip, setKodeArsip] = useState('');
+  const [klasifikasiCode, setKlasifikasiCode] = useState('100');
+
   const [nomorSurat, setNomorSurat] = useState('');
   const [tanggalSurat, setTanggalSurat] = useState('');
   const [tanggalDiterima, setTanggalDiterima] = useState('');
@@ -49,6 +68,11 @@ export default function SuratMasukInlineForm({
 
   useEffect(() => {
     if (suratToEdit) {
+      setInstitutionScope(suratToEdit.institutionScope || 'UNIPDU');
+      setNomorUrut(suratToEdit.nomorUrut || 1);
+      setKodeSurat(suratToEdit.kodeSurat || 'BU');
+      setKodeArsip(suratToEdit.kodeArsip || '');
+
       setNomorSurat(suratToEdit.nomorSurat || '');
       setTanggalSurat(suratToEdit.tanggalSurat || '');
       setTanggalDiterima(suratToEdit.tanggalDiterima || '');
@@ -62,6 +86,23 @@ export default function SuratMasukInlineForm({
       setAttachments(suratToEdit.attachments || []);
     } else {
       const today = new Date().toISOString().slice(0, 10);
+      const initialScope: InstitutionScope =
+        defaultSatkerName.toLowerCase().includes('yapetidu') || defaultSatkerName.toLowerCase().includes('yayasan')
+          ? 'YAPETIDU'
+          : 'UNIPDU';
+
+      setInstitutionScope(initialScope);
+      setNomorUrut(1);
+      setKodeSurat('BU');
+      setKlasifikasiCode('100');
+      const autoArsip = formatKodeArsip({
+        type: 'masuk',
+        institutionScope: initialScope,
+        sequenceNumber: 1,
+        klasifikasiCode: '100',
+      });
+      setKodeArsip(autoArsip);
+
       setNomorSurat('');
       setTanggalSurat(today);
       setTanggalDiterima(today);
@@ -76,6 +117,16 @@ export default function SuratMasukInlineForm({
     }
     setError('');
   }, [suratToEdit, defaultSatkerName]);
+
+  const handleUpdateArsip = (seq: number, klas: string) => {
+    const auto = formatKodeArsip({
+      type: 'masuk',
+      institutionScope,
+      sequenceNumber: seq,
+      klasifikasiCode: klas,
+    });
+    setKodeArsip(auto);
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -107,7 +158,7 @@ export default function SuratMasukInlineForm({
 
         const json = await res.json();
         if (!res.ok || !json.ok) {
-          throw new Error(json.error || 'Gagal mengunggah berkas.');
+          throw new Error(json.error || `Gagal mengunggah file ${file.name}`);
         }
 
         setAttachments((prev) => [...prev, json.attachment]);
@@ -120,8 +171,8 @@ export default function SuratMasukInlineForm({
     }
   };
 
-  const handleRemoveAttachment = (id: string) => {
-    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  const handleRemoveAttachment = (attId: string) => {
+    setAttachments((prev) => prev.filter((a) => a.id !== attId));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -130,6 +181,14 @@ export default function SuratMasukInlineForm({
 
     if (!nomorSurat.trim()) {
       setError('Nomor surat wajib diisi.');
+      return;
+    }
+    if (!tanggalSurat) {
+      setError('Tanggal surat wajib diisi.');
+      return;
+    }
+    if (!tanggalDiterima) {
+      setError('Tanggal diterima wajib diisi.');
       return;
     }
     if (!pengirim.trim()) {
@@ -147,13 +206,17 @@ export default function SuratMasukInlineForm({
       const idToken = await user.getIdToken();
 
       const payload = {
+        ...(isEdit && suratToEdit ? { id: suratToEdit.id } : {}),
         type: 'masuk',
-        ...(suratToEdit ? { id: suratToEdit.id } : {}),
+        institutionScope,
+        nomorUrut,
+        kodeSurat,
+        kodeArsip: kodeArsip.trim() || undefined,
         nomorSurat: nomorSurat.trim(),
         tanggalSurat,
         tanggalDiterima,
         pengirim: pengirim.trim(),
-        penerima: penerima.trim(),
+        penerima: (penerima.trim() || `Kepala ${defaultSatkerName}`),
         perihal: perihal.trim(),
         sifat,
         kategori,
@@ -185,7 +248,6 @@ export default function SuratMasukInlineForm({
     }
   };
 
-  const sifatLabel = SIFAT_SURAT_OPTIONS.find((opt) => opt.value === sifat)?.label || 'Biasa';
   const statusLabel = STATUS_SURAT_MASUK_OPTIONS.find((opt) => opt.value === status)?.label || 'Menunggu Disposisi';
 
   return (
@@ -196,17 +258,17 @@ export default function SuratMasukInlineForm({
       {/* Header Bar */}
       <div className="flex items-center justify-between pb-3 border-b border-slate-100">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-sm bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+          <div className="w-8 h-8 rounded-sm bg-sky-50 border border-sky-100 flex items-center justify-center text-sky-600">
             {isEdit ? <Pencil className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
           </div>
           <div>
             <h3 className="text-sm font-bold text-slate-800">
-              {isEdit ? `Edit Surat Masuk: ${suratToEdit?.nomorSurat}` : 'Tambah Surat Masuk'}
+              {isEdit ? `Edit Surat Masuk: ${suratToEdit?.nomorSurat}` : 'Catat Surat Masuk (Buku Agenda)'}
             </h3>
             <p className="text-[11px] text-slate-400">
               {isEdit
-                ? 'Perbarui data dan dokumen surat masuk yang tercatat'
-                : 'Catat surat masuk resmi yang diterima oleh satuan kerja Anda'}
+                ? 'Perbarui data naskah masuk dan kelengkapan arsip'
+                : 'Pencatatan agenda surat masuk dan penomoran kode klasifikasi kearsipan'}
             </p>
           </div>
         </div>
@@ -228,37 +290,101 @@ export default function SuratMasukInlineForm({
         </div>
       )}
 
-      {/* Row 1: Nomor, Kategori, Tanggal Surat, Tanggal Diterima */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Agenda & Klasifikasi Strip */}
+      <div className="p-4 bg-slate-50 border border-slate-200 rounded-sm grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div>
-          <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Nomor Surat *</Label>
+          <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Institusi / Lingkup</Label>
+          <Select
+            value={institutionScope}
+            onValueChange={(val) => {
+              if (val) {
+                setInstitutionScope(val as InstitutionScope);
+              }
+            }}
+          >
+            <SelectTrigger className="w-full rounded-sm bg-white border-slate-200 text-xs h-9">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="rounded-md border border-slate-200 bg-white p-1 shadow-xl">
+              {INSTITUTION_SCOPES.map((scope) => (
+                <SelectItem
+                  key={scope.id}
+                  value={scope.id}
+                  className="rounded-sm py-2 pr-8 pl-3 text-xs font-medium text-slate-700 focus:bg-indigo-50 focus:text-indigo-900"
+                >
+                  {scope.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <Label className="text-xs font-semibold text-slate-700 block mb-1.5">No. Urut Agenda</Label>
           <Input
-            value={nomorSurat}
-            onChange={(e) => setNomorSurat(e.target.value)}
-            placeholder="Contoh: 124/REK/UNIPDU/XI/2026"
-            className="rounded-sm bg-white border-slate-200 text-xs h-9"
+            type="number"
+            min={1}
+            value={nomorUrut}
+            onChange={(e) => {
+              const val = parseInt(e.target.value, 10) || 1;
+              setNomorUrut(val);
+              handleUpdateArsip(val, klasifikasiCode);
+            }}
+            className="rounded-sm bg-white border-slate-200 text-xs h-9 font-mono"
             required
           />
         </div>
 
         <div>
-          <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Kategori Surat</Label>
-          <Select value={kategori} onValueChange={(val) => val && setKategori(val)}>
-            <SelectTrigger className="w-full rounded-sm bg-white border-slate-200 text-xs h-9">
-              <SelectValue>{kategori}</SelectValue>
+          <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Klasifikasi Kearsipan (000-900)</Label>
+          <Select
+            value={klasifikasiCode}
+            onValueChange={(val) => {
+              if (val) {
+                setKlasifikasiCode(val);
+                handleUpdateArsip(nomorUrut, val);
+              }
+            }}
+          >
+            <SelectTrigger className="w-full rounded-sm bg-white border-slate-200 text-xs h-9 font-mono">
+              <SelectValue />
             </SelectTrigger>
-            <SelectContent className="rounded-md border border-slate-200 bg-white p-1 shadow-xl">
-              {KATEGORI_SURAT_MASUK.map((kat) => (
+            <SelectContent className="rounded-md border border-slate-200 bg-white p-1 shadow-xl max-h-56">
+              {KLASIFIKASI_KEARSIPAN_POPULAR.map((k) => (
                 <SelectItem
-                  key={kat}
-                  value={kat}
-                  className="rounded-sm py-2 pr-8 pl-3 text-xs font-medium text-slate-700 focus:bg-indigo-50 focus:text-indigo-900 data-[selected]:font-semibold data-[selected]:text-indigo-700"
+                  key={k.code}
+                  value={k.code}
+                  className="rounded-sm py-2 pr-8 pl-3 text-xs font-medium text-slate-700 focus:bg-indigo-50 focus:text-indigo-900"
                 >
-                  {kat}
+                  {k.name}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+        </div>
+
+        <div>
+          <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Kode Arsip Fisik</Label>
+          <Input
+            value={kodeArsip}
+            onChange={(e) => setKodeArsip(e.target.value)}
+            placeholder="A.1.R1.100,01"
+            className="rounded-sm bg-white border-slate-200 text-xs h-9 font-mono font-bold text-sky-800"
+          />
+        </div>
+      </div>
+
+      {/* Row 1: Nomor Surat Pengirim, Tanggal Surat, Tanggal Diterima, Status */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div>
+          <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Nomor Surat Pengirim *</Label>
+          <Input
+            value={nomorSurat}
+            onChange={(e) => setNomorSurat(e.target.value)}
+            placeholder="cth: 001/PJM/Unipdu/I/2026"
+            className="rounded-sm bg-white border-slate-200 text-xs h-9 font-mono"
+            required
+          />
         </div>
 
         <div>
@@ -282,16 +408,36 @@ export default function SuratMasukInlineForm({
             required
           />
         </div>
+
+        <div>
+          <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Status Penanganan</Label>
+          <Select value={status} onValueChange={(val) => val && setStatus(val as StatusSuratMasuk)}>
+            <SelectTrigger className="w-full rounded-sm bg-white border-slate-200 text-xs h-9">
+              <SelectValue>{statusLabel}</SelectValue>
+            </SelectTrigger>
+            <SelectContent className="rounded-md border border-slate-200 bg-white p-1 shadow-xl">
+              {STATUS_SURAT_MASUK_OPTIONS.map((opt) => (
+                <SelectItem
+                  key={opt.value}
+                  value={opt.value}
+                  className="rounded-sm py-2 pr-8 pl-3 text-xs font-medium text-slate-700 focus:bg-indigo-50 focus:text-indigo-900"
+                >
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      {/* Row 2: Pengirim, Penerima, Sifat, Status */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Row 2: Pengirim & Penerima */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Pengirim Surat *</Label>
+          <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Pengirim Surat / Lembaga Asal *</Label>
           <Input
             value={pengirim}
             onChange={(e) => setPengirim(e.target.value)}
-            placeholder="Contoh: Rektorat UNIPDU / LPPM"
+            placeholder="cth: LLDIKTI Wilayah VII / Dinas Pendidikan / LPPM Unipdu"
             className="rounded-sm bg-white border-slate-200 text-xs h-9"
             required
           />
@@ -302,8 +448,22 @@ export default function SuratMasukInlineForm({
           <Input
             value={penerima}
             onChange={(e) => setPenerima(e.target.value)}
-            placeholder="Contoh: Kepala SatKer"
+            placeholder={`cth: Rektor UNIPDU / Kepala ${defaultSatkerName}`}
             className="rounded-sm bg-white border-slate-200 text-xs h-9"
+          />
+        </div>
+      </div>
+
+      {/* Row 3: Perihal, Sifat, Kategori */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="sm:col-span-2">
+          <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Perihal / Hal Surat *</Label>
+          <Input
+            value={perihal}
+            onChange={(e) => setPerihal(e.target.value)}
+            placeholder="cth: Undangan Sosialisasi / Permohonan Kerjasama / SK Dosen"
+            className="rounded-sm bg-white border-slate-200 text-xs h-9"
+            required
           />
         </div>
 
@@ -311,34 +471,14 @@ export default function SuratMasukInlineForm({
           <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Sifat Surat</Label>
           <Select value={sifat} onValueChange={(val) => val && setSifat(val as SifatSurat)}>
             <SelectTrigger className="w-full rounded-sm bg-white border-slate-200 text-xs h-9">
-              <SelectValue>{sifatLabel}</SelectValue>
+              <SelectValue />
             </SelectTrigger>
             <SelectContent className="rounded-md border border-slate-200 bg-white p-1 shadow-xl">
               {SIFAT_SURAT_OPTIONS.map((opt) => (
                 <SelectItem
                   key={opt.value}
                   value={opt.value}
-                  className="rounded-sm py-2 pr-8 pl-3 text-xs font-medium text-slate-700 focus:bg-indigo-50 focus:text-indigo-900 data-[selected]:font-semibold data-[selected]:text-indigo-700"
-                >
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div>
-          <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Status Surat</Label>
-          <Select value={status} onValueChange={(val) => val && setStatus(val as StatusSuratMasuk)}>
-            <SelectTrigger className="w-full rounded-sm bg-white border-slate-200 text-xs h-9">
-              <SelectValue>{statusLabel}</SelectValue>
-            </SelectTrigger>
-            <SelectContent className="rounded-md border border-slate-200 bg-white p-1 shadow-xl">
-              {STATUS_SURAT_MASUK_OPTIONS.map((opt) => (
-                <SelectItem
-                  key={opt.value}
-                  value={opt.value}
-                  className="rounded-sm py-2 pr-8 pl-3 text-xs font-medium text-slate-700 focus:bg-indigo-50 focus:text-indigo-900 data-[selected]:font-semibold data-[selected]:text-indigo-700"
+                  className="rounded-sm py-2 pr-8 pl-3 text-xs font-medium text-slate-700 focus:bg-indigo-50 focus:text-indigo-900"
                 >
                   {opt.label}
                 </SelectItem>
@@ -348,92 +488,49 @@ export default function SuratMasukInlineForm({
         </div>
       </div>
 
-      {/* Row 3: Perihal & Ringkasan */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div>
-          <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Perihal / Hal *</Label>
-          <Input
-            value={perihal}
-            onChange={(e) => setPerihal(e.target.value)}
-            placeholder="Contoh: Undangan Koordinasi Pelaksanaan Program Kerja 2026"
-            className="rounded-sm bg-white border-slate-200 text-xs h-9"
-            required
-          />
-        </div>
-
-        <div>
-          <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Ringkasan / Isi Pokok Surat</Label>
-          <Input
-            value={ringkasan}
-            onChange={(e) => setRingkasan(e.target.value)}
-            placeholder="Ringkasan atau catatan singkat mengenai isi surat..."
-            className="rounded-sm bg-white border-slate-200 text-xs h-9"
-          />
-        </div>
+      {/* Row 4: Ringkasan */}
+      <div>
+        <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Ringkasan Isi Surat</Label>
+        <textarea
+          value={ringkasan}
+          onChange={(e) => setRingkasan(e.target.value)}
+          placeholder="Ringkasan atau catatan poin penting naskah masuk..."
+          rows={3}
+          className="w-full rounded-sm bg-white border border-slate-200 text-xs p-3 text-slate-700 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all"
+        />
       </div>
 
-      {/* Row 4: Lampiran Berkas */}
-      <div className="pt-2 border-t border-slate-100 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <Label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-              <Paperclip className="w-3.5 h-3.5 text-slate-500" />
-              Lampiran Berkas / Salinan Surat Masuk
-            </Label>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              {UPLOAD_TYPES_TEXT} (maks. 5 MB)
-            </p>
-          </div>
-
-          <div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept={UPLOAD_ACCEPT}
-              multiple
-              className="hidden"
-              onChange={handleFileUpload}
-              disabled={uploading}
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-semibold bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:shadow-xs transition-all shadow-xs cursor-pointer disabled:opacity-50"
-            >
-              {uploading ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
-                  Mengunggah...
-                </>
-              ) : (
-                <>
-                  <Upload className="w-3.5 h-3.5 text-slate-500" />
-                  Lampirkan berkas
-                </>
-              )}
-            </button>
-          </div>
+      {/* Row 5: Berkas Lampiran */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <Label className="text-xs font-semibold text-slate-700">Berkas Lampiran / Salinan Naskah</Label>
+          <span className="text-[11px] text-slate-400">Format: {UPLOAD_TYPES_TEXT} (Maks 10MB)</span>
         </div>
 
         {attachments.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-1">
-            {attachments.map((file) => (
+          <div className="space-y-2 mb-3">
+            {attachments.map((att) => (
               <div
-                key={file.id}
-                className="flex items-center justify-between p-2 rounded-sm border border-slate-200 bg-slate-50/60 text-xs"
+                key={att.id}
+                className="flex items-center justify-between p-2.5 rounded-sm bg-slate-50 border border-slate-200 text-xs"
               >
-                <div className="flex items-center gap-2 min-w-0 pr-2">
-                  <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-                  <span className="truncate font-medium text-slate-700" title={file.name}>
-                    {file.name}
-                  </span>
+                <div className="flex items-center gap-2 truncate max-w-[80%]">
+                  <FileText className="w-4 h-4 text-sky-600 shrink-0" />
+                  <a
+                    href={att.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-sky-600 hover:underline truncate"
+                  >
+                    {att.name}
+                  </a>
+                  <span className="text-[10px] text-slate-400">({Math.round(att.size / 1024)} KB)</span>
                 </div>
                 <button
                   type="button"
-                  onClick={() => handleRemoveAttachment(file.id)}
-                  className="text-slate-400 hover:text-rose-600 p-1 rounded-sm transition-colors shrink-0 cursor-pointer"
-                  title="Hapus lampiran"
+                  onClick={() => handleRemoveAttachment(att.id)}
+                  className="text-rose-600 hover:text-rose-800 p-1 rounded-sm hover:bg-rose-50 transition-colors cursor-pointer"
+                  title="Hapus berkas"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -441,26 +538,63 @@ export default function SuratMasukInlineForm({
             ))}
           </div>
         )}
+
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={UPLOAD_ACCEPT}
+            multiple
+            onChange={handleFileUpload}
+            className="hidden"
+            id="file-upload-masuk"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            disabled={uploading}
+            onClick={() => fileInputRef.current?.click()}
+            className="rounded-sm border-dashed border-slate-300 text-slate-600 hover:bg-slate-50 text-xs h-9 flex items-center gap-2 shadow-xs cursor-pointer"
+          >
+            {uploading ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-600" />
+                Mengunggah...
+              </>
+            ) : (
+              <>
+                <Upload className="w-3.5 h-3.5 text-slate-400" />
+                Unggah Salinan Surat
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
-      {/* Action Footer */}
-      <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
-        <button
+      {/* Footer Actions */}
+      <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+        <Button
           type="button"
+          variant="outline"
           onClick={onCancel}
           disabled={saving}
-          className="inline-flex items-center px-4 py-2 text-xs font-semibold rounded-sm border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 transition-all shadow-xs cursor-pointer disabled:opacity-50"
+          className="rounded-sm border-slate-200 text-slate-600 hover:bg-slate-50 text-xs h-9 cursor-pointer"
         >
           Batal
-        </button>
-
+        </Button>
         <Button
           type="submit"
           disabled={saving || uploading}
-          className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs px-4 py-2 shadow-xs cursor-pointer flex items-center gap-1.5"
+          className="rounded-sm bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold h-9 flex items-center gap-2 shadow-sm cursor-pointer"
         >
-          {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-          {isEdit ? 'Simpan Perubahan' : 'Catat Surat Masuk'}
+          {saving ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Menyimpan...
+            </>
+          ) : (
+            isEdit ? 'Simpan Perubahan' : 'Catat Surat Masuk'
+          )}
         </Button>
       </div>
     </form>

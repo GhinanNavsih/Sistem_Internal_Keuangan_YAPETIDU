@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { SuratKeluar } from '@/lib/surat-menyurat/types';
+import { calculateUsiaArsip, formatKodeArsip } from '@/lib/surat-menyurat/numbering';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -225,15 +226,28 @@ export default function SuratKeluarPanel({
 
             return (
               <TableRow key={item.id} className="border-slate-100 transition-colors hover:bg-slate-50/50">
-                {/* Nomor & Tanggal */}
+                {/* Nomor Urut & Tanggal */}
                 <TableCell className="font-medium pl-8 py-4 align-top">
-                  <span className="font-bold text-slate-800 block text-xs truncate max-w-[170px]" title={item.nomorSurat}>
-                    {item.nomorSurat}
-                  </span>
-                  <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-1">
-                    <Calendar className="w-3 h-3 text-slate-400" />
-                    <span>{item.tanggalSurat}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-[11px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-xs border border-slate-200">
+                      No. {item.nomorUrut || '-'}
+                    </span>
+                    <span className="font-bold text-slate-900 block text-xs truncate max-w-[150px]" title={item.nomorSurat}>
+                      {item.nomorSurat}
+                    </span>
                   </div>
+                  <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-1.5">
+                    <span className="flex items-center gap-1 font-mono text-slate-500">
+                      <Calendar className="w-3 h-3 text-slate-400" />
+                      {item.tanggalSurat}
+                    </span>
+                    <span className="font-mono text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 px-1.5 py-0.2 rounded-xs" title="Kode Arsip">
+                      {item.kodeArsip || formatKodeArsip({ type: 'keluar', sequenceNumber: item.nomorUrut || 1 })}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">
+                    Usia: {calculateUsiaArsip(item.tanggalSurat)}
+                  </span>
                 </TableCell>
 
                 {/* Tujuan */}

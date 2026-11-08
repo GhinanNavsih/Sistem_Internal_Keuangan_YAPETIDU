@@ -1,10 +1,43 @@
-import { SifatSurat, StatusSuratMasuk, StatusSuratKeluar, TemplateType } from './types';
+import { InstitutionScope, SifatSurat, StatusSuratMasuk, StatusSuratKeluar, TemplateType } from './types';
 
 export const SURAT_MENYURAT_PATH = '/dashboard/surat-menyurat';
 
 export function isSuratMenyuratPath(pathname: string): boolean {
   return pathname === SURAT_MENYURAT_PATH || pathname.startsWith(`${SURAT_MENYURAT_PATH}/`);
 }
+
+export const INSTITUTION_SCOPES: { id: InstitutionScope; label: string; short: string; logo: string; subtitle: string }[] = [
+  {
+    id: 'UNIPDU',
+    label: 'UNIPDU (Sekretariat Rektorat)',
+    short: 'UNIPDU',
+    logo: '/Logo UNIPDU.png',
+    subtitle: 'Universitas Pesantren Tinggi Darul \'Ulum Jombang',
+  },
+  {
+    id: 'YAPETIDU',
+    label: 'YAPETIDU (Yayasan Darul \'Ulum)',
+    short: 'YAPETIDU',
+    logo: '/Logo YAPETIDU (Transparent bg).png',
+    subtitle: 'Yayasan Pesantren Tinggi Darul \'Ulum Jombang',
+  },
+  {
+    id: 'SATKER',
+    label: 'Satuan Kerja / Fakultas',
+    short: 'SatKer',
+    logo: '/Logo UNIPDU.png',
+    subtitle: 'Unit Kerja / Fakultas / Lembaga Loyalis',
+  },
+];
+
+export const KODE_SURAT_KELUAR_OPTIONS: { code: string; label: string; desc: string }[] = [
+  { code: 'AU', label: 'AU · Administrasi Umum', desc: 'Surat edaran, pemberitahuan, pengumuman, permohonan' },
+  { code: 'SK', label: 'SK · Surat Keputusan', desc: 'Penetapan pejabat, dosen tetap, purna tugas, reward' },
+  { code: 'ST', label: 'ST · Surat Tugas', desc: 'Penugasan diklat, workshop, delegasi kegiatan dinas' },
+  { code: 'MoU', label: 'MoU · Kerjasama Lembaga', desc: 'Nota kesepahaman atau perjanjian kemitraan eksternal' },
+  { code: 'SP', label: 'SP · Pengantar / Permohonan', desc: 'Pengantar dokumen berkas dan usulan' },
+  { code: 'YPTDU', label: 'YPTDU · Khusus Yayasan', desc: 'Kode persuratan tingkat pengurus yayasan' },
+];
 
 export const SIFAT_SURAT_OPTIONS: { value: SifatSurat; label: string; tone: string }[] = [
   { value: 'biasa', label: 'Biasa', tone: 'bg-slate-100 text-slate-700 border-slate-200' },
@@ -60,6 +93,49 @@ export const INSTRUKSI_DISPOSISI_PRESETS = [
   'Jadwalkan rapat / pertemuan',
   'Untuk diketahui & dipedomani',
   'Arsipkan',
+];
+
+export const DISPOSISI_DESTINATIONS = [
+  'Wakil Rektor I (Akademik & Kemahasiswaan)',
+  'Wakil Rektor II (SDM & Keuangan)',
+  'Sekretariat Rektorat',
+  'Fakultas Agama Islam (FAI)',
+  'Fakultas Bahasa dan Sastra (FBS)',
+  'Fakultas Sains & Teknologi (FST / FT / FMIPA)',
+  'Fakultas Ilmu Kesehatan (FIK)',
+  'Fakultas Bisnis dan Informatika (FIA)',
+  'Lembaga Penelitian & Pengabdian Masyarakat (LPPM)',
+  'Badan Penjaminan Mutu (BPM / PJM)',
+  'Biro Administrasi Akademik (BAAK)',
+  'Biro Administrasi Keuangan (BAK)',
+  'Perpustakaan Universitas',
+  'Bagian Umum & Sarana Prasarana',
+];
+
+export const DISPOSISI_ACTIONS = [
+  'Tanggapan dan Saran',
+  'Proses lebih lanjut',
+  'Koordinasi / Konfirmasikan',
+  'Jadwalkan rapat / Pertemuan',
+  'Untuk diketahui / Dipedomani',
+  'Arsipkan',
+];
+
+export const KLASIFIKASI_KEARSIPAN_POPULAR: { code: string; name: string }[] = [
+  { code: '000', name: '000 · UMUM' },
+  { code: '005', name: '005 · Undangan' },
+  { code: '010', name: '010 · Urusan Dalam Kantor' },
+  { code: '020', name: '020 · Peralatan & Perlengkapan' },
+  { code: '100', name: '100 · PEMERINTAHAN' },
+  { code: '166', name: '166 · Kerja Sama Antar Lembaga' },
+  { code: '400', name: '400 · KESEJAHTERAAN RAKYAT' },
+  { code: '420', name: '420 · Pendidikan & Pengajaran' },
+  { code: '700', name: '700 · PENGAWASAN & AUDIT' },
+  { code: '800', name: '800 · KEPEGAWAIAN' },
+  { code: '820', name: '820 · Pengangkatan / SK Pegawai' },
+  { code: '880', name: '880 · Pensiun / Purna Tugas' },
+  { code: '900', name: '900 · KEUANGAN & ANGGARAN' },
+  { code: '920', name: '920 · SPJ & Pertanggungjawaban' },
 ];
 
 export const TEMPLATE_OPTIONS: { id: TemplateType; title: string; desc: string }[] = [

@@ -184,6 +184,11 @@ export async function POST(request: NextRequest) {
         type: 'masuk',
         satkerId: targetSatkerId,
         satkerName: targetSatkerName,
+        institutionScope: validation.data.institutionScope,
+        nomorUrut: validation.data.nomorUrut,
+        kodeSurat: validation.data.kodeSurat,
+        kodeArsip: validation.data.kodeArsip,
+        usiaArsip: validation.data.usiaArsip,
         nomorSurat: validation.data.nomorSurat,
         tanggalSurat: validation.data.tanggalSurat,
         tanggalDiterima: validation.data.tanggalDiterima,
@@ -215,6 +220,12 @@ export async function POST(request: NextRequest) {
         type: 'keluar',
         satkerId: targetSatkerId,
         satkerName: targetSatkerName,
+        institutionScope: validation.data.institutionScope,
+        nomorUrut: validation.data.nomorUrut,
+        nomorUrutEnd: validation.data.nomorUrutEnd,
+        kodeSurat: validation.data.kodeSurat,
+        kodeArsip: validation.data.kodeArsip,
+        usiaArsip: validation.data.usiaArsip,
         nomorSurat: validation.data.nomorSurat,
         tanggalSurat: validation.data.tanggalSurat,
         tujuan: validation.data.tujuan,
@@ -283,6 +294,8 @@ export async function PUT(request: NextRequest) {
         const disposisiObj: DisposisiSurat = {
           instruksi: String(d.instruksi || '').trim(),
           diteruskanKepada: String(d.diteruskanKepada || '').trim(),
+          diteruskanChecklist: Array.isArray(d.diteruskanChecklist) ? d.diteruskanChecklist : [],
+          tindakanChecklist: Array.isArray(d.tindakanChecklist) ? d.tindakanChecklist : [],
           catatan: String(d.catatan || '').trim(),
           tanggalDisposisi: d.tanggalDisposisi || nowIso.slice(0, 10),
           disposisiOleh: actor.displayName,
@@ -296,6 +309,12 @@ export async function PUT(request: NextRequest) {
     }
 
     // Common field updates
+    if (typeof body.institutionScope === 'string') updates.institutionScope = body.institutionScope;
+    if (typeof body.nomorUrut === 'number') updates.nomorUrut = body.nomorUrut;
+    if (typeof body.nomorUrutEnd === 'number') updates.nomorUrutEnd = body.nomorUrutEnd;
+    if (typeof body.kodeSurat === 'string') updates.kodeSurat = body.kodeSurat.trim();
+    if (typeof body.kodeArsip === 'string') updates.kodeArsip = body.kodeArsip.trim();
+    if (typeof body.usiaArsip === 'string') updates.usiaArsip = body.usiaArsip.trim();
     if (typeof body.status === 'string') updates.status = body.status;
     if (typeof body.nomorSurat === 'string') updates.nomorSurat = body.nomorSurat.trim();
     if (typeof body.tanggalSurat === 'string') updates.tanggalSurat = body.tanggalSurat.trim();

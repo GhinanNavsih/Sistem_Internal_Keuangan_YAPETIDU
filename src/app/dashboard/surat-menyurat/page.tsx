@@ -4,14 +4,22 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Image from 'next/image';
 import { useAuth } from '@/lib/AuthContext';
 import { canManageSuratMenyurat } from '@/lib/payroll/roles';
-import { SuratMasuk, SuratKeluar, SuratStats, DisposisiSurat } from '@/lib/surat-menyurat/types';
+import { SuratMasuk, SuratKeluar, SuratStats, DisposisiSurat, InstitutionScope } from '@/lib/surat-menyurat/types';
 import { exportBukuAgendaToExcel } from '@/lib/surat-menyurat/excel';
-import { SIFAT_SURAT_OPTIONS, STATUS_SURAT_MASUK_OPTIONS, STATUS_SURAT_KELUAR_OPTIONS } from '@/lib/surat-menyurat/constants';
+import {
+  SIFAT_SURAT_OPTIONS,
+  STATUS_SURAT_MASUK_OPTIONS,
+  STATUS_SURAT_KELUAR_OPTIONS,
+  INSTITUTION_SCOPES,
+} from '@/lib/surat-menyurat/constants';
 import SuratMasukPanel from '@/components/surat-menyurat/SuratMasukPanel';
 import SuratKeluarPanel from '@/components/surat-menyurat/SuratKeluarPanel';
 import SuratDisposisiDialog from '@/components/surat-menyurat/SuratDisposisiDialog';
 import SuratDetailDialog from '@/components/surat-menyurat/SuratDetailDialog';
 import SuratComposerModal from '@/components/surat-menyurat/SuratComposerModal';
+import LembarDisposisiView from '@/components/surat-menyurat/LembarDisposisiView';
+import LabelArsipView from '@/components/surat-menyurat/LabelArsipView';
+import BukuAgendaTable from '@/components/surat-menyurat/BukuAgendaTable';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -30,14 +38,20 @@ import {
   Wand2,
   AlertTriangle,
   X,
+  FileCheck,
+  Tag,
+  BookOpen,
+  BarChart3,
+  Building2,
 } from 'lucide-react';
 
-type Tab = 'masuk' | 'keluar' | 'rekap';
+type Tab = 'masuk' | 'keluar' | 'agenda' | 'disposisi' | 'label' | 'rekap';
 
 export default function SuratMenyuratPage() {
   const { user, profile } = useAuth();
 
   const [activeTab, setActiveTab] = useState<Tab>('masuk');
+  const [scopeFilter, setScopeFilter] = useState<'all' | 'UNIPDU' | 'YAPETIDU'>('all');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [suratMasuk, setSuratMasuk] = useState<SuratMasuk[]>([]);
@@ -68,6 +82,9 @@ export default function SuratMenyuratPage() {
 
   const [disposisiModalOpen, setDisposisiModalOpen] = useState(false);
   const [disposisiTarget, setDisposisiTarget] = useState<SuratMasuk | null>(null);
+
+  // Lembar Disposisi Tab Active Target (replicates Cell A1 in Excel)
+  const [selectedDisposisiId, setSelectedDisposisiId] = useState<string | null>(null);
 
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [detailTarget, setDetailTarget] = useState<SuratMasuk | SuratKeluar | null>(null);
@@ -150,6 +167,17 @@ export default function SuratMenyuratPage() {
     return SIFAT_SURAT_OPTIONS.find((opt) => opt.value === sifatFilter)?.label || sifatFilter;
   }, [sifatFilter]);
 
+  // Filtered by institution scope
+  const filteredSuratMasuk = useMemo(() => {
+    if (scopeFilter === 'all') return suratMasuk;
+    return suratMasuk.filter((m) => (m.institutionScope || 'UNIPDU') === scopeFilter);
+  }, [suratMasuk, scopeFilter]);
+
+  const filteredSuratKeluar = useMemo(() => {
+    if (scopeFilter === 'all') return suratKeluar;
+    return suratKeluar.filter((k) => (k.institutionScope || 'UNIPDU') === scopeFilter);
+  }, [suratKeluar, scopeFilter]);
+
   // Disposisi Save
   const handleSaveDisposisi = async (suratId: string, disposisi: DisposisiSurat) => {
     if (!user) return;
@@ -197,18 +225,20 @@ export default function SuratMenyuratPage() {
 
   // Next sequence number for Surat Keluar
   const nextSequence = useMemo(() => {
-    return suratKeluar.length + 1;
-  }, [suratKeluar]);
+    return filteredSuratKeluar.length + 1;
+  }, [filteredSuratKeluar]);
 
-  // Export Agenda to Excel
+  // Export Agenda to Excel (Matches APLIKASI PERSURATAN 2026.xlsx)
   const handleExportExcel = () => {
     try {
       exportBukuAgendaToExcel({
-        satkerName: satkerDisplayName,
-        suratMasukList: suratMasuk,
-        suratKeluarList: suratKeluar,
+        satkerName: scopeFilter === 'YAPETIDU'
+          ? "YAYASAN PESANTREN TINGGI DARUL 'ULUM JOMBANG"
+          : "UNIVERSITAS PESANTREN TINGGI DARUL 'ULUM JOMBANG",
+        suratMasukList: filteredSuratMasuk,
+        suratKeluarList: filteredSuratKeluar,
       });
-      setSnackbar({ type: 'success', text: 'Buku agenda surat berhasil diekspor ke Excel.' });
+      setSnackbar({ type: 'success', text: 'Buku agenda persuratan berhasil diekspor ke Excel.' });
     } catch {
       setSnackbar({ type: 'error', text: 'Gagal mengekspor data ke Excel.' });
     }
@@ -245,74 +275,191 @@ export default function SuratMenyuratPage() {
               <div>
                 <div className="flex items-center gap-3 mb-4">
                   <div className="flex items-center gap-3 filter drop-shadow-sm">
-                    <Image
-                      src="/Logo YAPETIDU (Transparent bg).png"
-                      alt="Logo YAPETIDU"
-                      width={512}
-                      height={474}
-                      priority
-                      className="h-10 w-auto object-contain hover:scale-105 transition-transform duration-300 cursor-pointer"
-                    />
-                    <div className="w-px h-6 bg-slate-200" />
-                    <Image
-                      src="/Logo UNIPDU.png"
-                      alt="Logo UNIPDU"
-                      width={300}
-                      height={304}
-                      priority
-                      className="h-10 w-auto object-contain hover:scale-105 transition-transform duration-300 cursor-pointer"
-                    />
+                    {/* Dynamic Logo rendering based on Scope Filter */}
+                    {scopeFilter === 'YAPETIDU' ? (
+                      <Image
+                        src="/Logo YAPETIDU (Transparent bg).png"
+                        alt="Logo YAPETIDU"
+                        width={512}
+                        height={474}
+                        priority
+                        className="h-11 w-auto object-contain hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : scopeFilter === 'UNIPDU' ? (
+                      <Image
+                        src="/Logo UNIPDU.png"
+                        alt="Logo UNIPDU"
+                        width={300}
+                        height={304}
+                        priority
+                        className="h-11 w-auto object-contain hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      <>
+                        <Image
+                          src="/Logo YAPETIDU (Transparent bg).png"
+                          alt="Logo YAPETIDU"
+                          width={512}
+                          height={474}
+                          priority
+                          className="h-10 w-auto object-contain hover:scale-105 transition-transform duration-300 cursor-pointer"
+                        />
+                        <div className="w-px h-6 bg-slate-200" />
+                        <Image
+                          src="/Logo UNIPDU.png"
+                          alt="Logo UNIPDU"
+                          width={300}
+                          height={304}
+                          priority
+                          className="h-10 w-auto object-contain hover:scale-105 transition-transform duration-300 cursor-pointer"
+                        />
+                      </>
+                    )}
                   </div>
+
                   <div className="ml-2">
-                    <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-                      Surat-Menyurat SatKer
-                    </h1>
+                    <div className="flex items-center gap-2">
+                      <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+                        Aplikasi Persuratan 2026
+                      </h1>
+                      <Badge variant="outline" className="rounded-sm border-indigo-200 bg-indigo-50 text-indigo-700 text-[10px] font-bold">
+                        {scopeFilter === 'YAPETIDU' ? 'YAPETIDU' : scopeFilter === 'UNIPDU' ? 'REKTORAT UNIPDU' : 'ALL SCOPES'}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {scopeFilter === 'YAPETIDU'
+                        ? "Yayasan Pesantren Tinggi Darul 'Ulum Jombang"
+                        : scopeFilter === 'UNIPDU'
+                        ? "Universitas Pesantren Tinggi Darul 'Ulum — Sekretariat Rektorat"
+                        : "Sistem Buku Agenda Persuratan, Penomoran Naskah, & Lembar Disposisi Digital"}
+                    </p>
                   </div>
                 </div>
 
                 {/* Filter Controls Row */}
                 <div className="flex flex-wrap items-center gap-4 mb-6">
-                  {/* Segmented Tab Switcher */}
-                  <div className="flex bg-slate-100 p-1 rounded-md">
+                  {/* Segmented Tab Switcher replicating the Excel Worksheets */}
+                  <div className="flex flex-wrap bg-slate-100 p-1 rounded-md gap-0.5">
                     <button
                       type="button"
                       onClick={() => handleTabChange('masuk')}
-                      className={`px-4 py-1.5 rounded-sm text-xs font-semibold transition-all cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-sm text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
                         activeTab === 'masuk'
-                          ? 'bg-white text-indigo-600 shadow-sm font-bold'
+                          ? 'bg-white text-sky-700 shadow-sm font-bold'
                           : 'text-slate-500 hover:text-slate-700'
                       }`}
                     >
-                      Surat Masuk ({suratMasuk.length})
+                      <Inbox className="w-3.5 h-3.5" />
+                      Surat Masuk ({filteredSuratMasuk.length})
                     </button>
+
                     <button
                       type="button"
                       onClick={() => handleTabChange('keluar')}
-                      className={`px-4 py-1.5 rounded-sm text-xs font-semibold transition-all cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-sm text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
                         activeTab === 'keluar'
                           ? 'bg-white text-indigo-600 shadow-sm font-bold'
                           : 'text-slate-500 hover:text-slate-700'
                       }`}
                     >
-                      Surat Keluar ({suratKeluar.length})
+                      <Send className="w-3.5 h-3.5" />
+                      Surat Keluar ({filteredSuratKeluar.length})
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleTabChange('agenda')}
+                      className={`px-3 py-1.5 rounded-sm text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        activeTab === 'agenda'
+                          ? 'bg-white text-slate-800 shadow-sm font-bold'
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      <BookOpen className="w-3.5 h-3.5" />
+                      Buku Agenda
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleTabChange('disposisi')}
+                      className={`px-3 py-1.5 rounded-sm text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        activeTab === 'disposisi'
+                          ? 'bg-white text-amber-700 shadow-sm font-bold'
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      <FileCheck className="w-3.5 h-3.5" />
+                      Lembar Disposisi
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleTabChange('label')}
+                      className={`px-3 py-1.5 rounded-sm text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        activeTab === 'label'
+                          ? 'bg-white text-emerald-700 shadow-sm font-bold'
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      <Tag className="w-3.5 h-3.5" />
+                      Label Arsip
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => handleTabChange('rekap')}
-                      className={`px-4 py-1.5 rounded-sm text-xs font-semibold transition-all cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-sm text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
                         activeTab === 'rekap'
                           ? 'bg-white text-indigo-600 shadow-sm font-bold'
                           : 'text-slate-500 hover:text-slate-700'
                       }`}
                     >
-                      Buku Agenda
+                      <BarChart3 className="w-3.5 h-3.5" />
+                      Statistik
+                    </button>
+                  </div>
+
+                  {/* Institution Scope Switcher */}
+                  <div className="flex bg-slate-100 p-1 rounded-md border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setScopeFilter('all')}
+                      className={`px-2.5 py-1 rounded-sm text-xs font-semibold transition-all cursor-pointer ${
+                        scopeFilter === 'all'
+                          ? 'bg-white text-slate-800 shadow-xs font-bold'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      Semua
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setScopeFilter('UNIPDU')}
+                      className={`px-2.5 py-1 rounded-sm text-xs font-semibold transition-all cursor-pointer ${
+                        scopeFilter === 'UNIPDU'
+                          ? 'bg-white text-indigo-600 shadow-xs font-bold'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      UNIPDU (Rektorat)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setScopeFilter('YAPETIDU')}
+                      className={`px-2.5 py-1 rounded-sm text-xs font-semibold transition-all cursor-pointer ${
+                        scopeFilter === 'YAPETIDU'
+                          ? 'bg-white text-emerald-700 shadow-xs font-bold'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      YAPETIDU (Yayasan)
                     </button>
                   </div>
 
                   {/* Super Admin SatKer Filter */}
                   {isSuperAdmin && satkerList.length > 0 && (
                     <Select value={selectedSatkerFilter} onValueChange={(v) => v && setSelectedSatkerFilter(v)}>
-                      <SelectTrigger className="bg-white border-slate-200 text-slate-700 text-xs font-semibold rounded-sm px-3 py-2.5 h-10 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-sm w-auto min-w-[160px]">
+                      <SelectTrigger className="bg-white border-slate-200 text-slate-700 text-xs font-semibold rounded-sm px-3 py-2.5 h-9 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-sm w-auto min-w-[150px]">
                         <SelectValue>{satkerFilterLabel}</SelectValue>
                       </SelectTrigger>
                       <SelectContent className="rounded-md border border-slate-200 bg-white p-1 shadow-xl ring-0 max-h-60">
@@ -336,9 +483,9 @@ export default function SuratMenyuratPage() {
                   )}
 
                   {/* Status Filter */}
-                  {activeTab !== 'rekap' && (
+                  {(activeTab === 'masuk' || activeTab === 'keluar') && (
                     <Select value={statusFilter} onValueChange={(v) => v && setStatusFilter(v)}>
-                      <SelectTrigger className="bg-white border-slate-200 text-slate-700 text-xs font-semibold rounded-sm px-3 py-2.5 h-10 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-sm w-auto min-w-[150px]">
+                      <SelectTrigger className="bg-white border-slate-200 text-slate-700 text-xs font-semibold rounded-sm px-3 py-2.5 h-9 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-sm w-auto min-w-[130px]">
                         <SelectValue>{statusFilterLabel}</SelectValue>
                       </SelectTrigger>
                       <SelectContent className="rounded-md border border-slate-200 bg-white p-1 shadow-xl ring-0">
@@ -372,9 +519,9 @@ export default function SuratMenyuratPage() {
                   )}
 
                   {/* Sifat Filter */}
-                  {activeTab !== 'rekap' && (
+                  {(activeTab === 'masuk' || activeTab === 'keluar') && (
                     <Select value={sifatFilter} onValueChange={(v) => v && setSifatFilter(v)}>
-                      <SelectTrigger className="bg-white border-slate-200 text-slate-700 text-xs font-semibold rounded-sm px-3 py-2.5 h-10 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-sm w-auto min-w-[140px]">
+                      <SelectTrigger className="bg-white border-slate-200 text-slate-700 text-xs font-semibold rounded-sm px-3 py-2.5 h-9 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-sm w-auto min-w-[120px]">
                         <SelectValue>{sifatFilterLabel}</SelectValue>
                       </SelectTrigger>
                       <SelectContent className="rounded-md border border-slate-200 bg-white p-1 shadow-xl ring-0">
@@ -398,17 +545,17 @@ export default function SuratMenyuratPage() {
                   )}
 
                   {/* Search Input Bar */}
-                  {activeTab !== 'rekap' && (
-                    <div className="relative flex-1 min-w-[220px]">
+                  {(activeTab === 'masuk' || activeTab === 'keluar') && (
+                    <div className="relative flex-1 min-w-[200px]">
                       <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
                         <Search className="w-4 h-4" />
                       </span>
                       <input
                         type="text"
-                        placeholder="Cari nomor, pengirim, penerima, perihal..."
+                        placeholder="Cari nomor, pihak, perihal..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full bg-white border border-slate-200 text-slate-700 placeholder:text-slate-400 text-xs font-semibold rounded-sm pl-10 pr-4 py-2.5 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all shadow-sm"
+                        className="w-full bg-white border border-slate-200 text-slate-700 placeholder:text-slate-400 text-xs font-semibold rounded-sm pl-10 pr-4 py-2 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all shadow-sm"
                       />
                     </div>
                   )}
@@ -418,7 +565,7 @@ export default function SuratMenyuratPage() {
                 <div className="flex flex-wrap gap-8 text-sm mb-6">
                   <div>
                     <span className="text-slate-500 block mb-1">Surat Masuk</span>
-                    <span className="font-medium text-slate-800">{loading ? '...' : stats.totalMasuk}</span>
+                    <span className="font-medium text-slate-800">{loading ? '...' : filteredSuratMasuk.length}</span>
                   </div>
                   <div>
                     <span className="text-slate-500 block mb-1">Perlu Disposisi</span>
@@ -429,7 +576,7 @@ export default function SuratMenyuratPage() {
                   <div>
                     <span className="text-slate-500 block mb-1">Surat Keluar</span>
                     <span className="font-medium text-slate-800">
-                      {loading ? '...' : `${stats.totalKeluar} (${stats.terkirimKeluar} terkirim)`}
+                      {loading ? '...' : `${filteredSuratKeluar.length}`}
                     </span>
                   </div>
                   <div>
@@ -439,7 +586,7 @@ export default function SuratMenyuratPage() {
                   <div>
                     <span className="text-slate-500 block mb-1">Total Arsip</span>
                     <span className="font-medium text-slate-800">
-                      {loading ? '...' : stats.totalMasuk + stats.totalKeluar}
+                      {loading ? '...' : filteredSuratMasuk.length + filteredSuratKeluar.length}
                     </span>
                   </div>
                 </div>
@@ -455,8 +602,14 @@ export default function SuratMenyuratPage() {
                 {activeTab === 'masuk'
                   ? 'Agenda Surat Masuk'
                   : activeTab === 'keluar'
-                    ? 'Agenda Surat Keluar'
-                    : 'Buku Agenda Persuratan'}
+                  ? 'Agenda Surat Keluar'
+                  : activeTab === 'agenda'
+                  ? 'Buku Agenda Persuratan (Lengkap)'
+                  : activeTab === 'disposisi'
+                  ? 'Lembar Disposisi Dinamis (VLOOKUP A1)'
+                  : activeTab === 'label'
+                  ? 'Label Stiker Arsip (Binder & Box File)'
+                  : 'Statistik Persuratan'}
               </span>
 
               <div className="flex items-center gap-3">
@@ -467,7 +620,7 @@ export default function SuratMenyuratPage() {
                   className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm"
                 >
                   <FileDown className="w-4 h-4 text-emerald-600" />
-                  Ekspor Agenda (Excel)
+                  Ekspor Excel (Format Template)
                 </button>
 
                 {/* Outline Soft Indigo Button */}
@@ -492,7 +645,7 @@ export default function SuratMenyuratPage() {
                         setIsAddingMasuk(true);
                       }
                     }}
-                    className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center gap-2 shadow-md shadow-indigo-100"
+                    className="rounded-sm bg-sky-600 hover:bg-sky-700 text-white font-semibold flex items-center gap-2 shadow-md shadow-sky-100"
                   >
                     {isAddingMasuk ? (
                       <>
@@ -556,7 +709,7 @@ export default function SuratMenyuratPage() {
               </div>
             ) : activeTab === 'masuk' ? (
               <SuratMasukPanel
-                data={suratMasuk}
+                data={filteredSuratMasuk}
                 searchQuery={searchQuery}
                 statusFilter={statusFilter}
                 sifatFilter={sifatFilter}
@@ -588,14 +741,14 @@ export default function SuratMenyuratPage() {
                   setDetailModalOpen(true);
                 }}
                 onOpenDisposisi={(surat) => {
-                  setDisposisiTarget(surat);
-                  setDisposisiModalOpen(true);
+                  setSelectedDisposisiId(surat.id);
+                  setActiveTab('disposisi');
                 }}
                 onDelete={handleDeleteLetter}
               />
             ) : activeTab === 'keluar' ? (
               <SuratKeluarPanel
-                data={suratKeluar}
+                data={filteredSuratKeluar}
                 searchQuery={searchQuery}
                 statusFilter={statusFilter}
                 sifatFilter={sifatFilter}
@@ -630,8 +783,41 @@ export default function SuratMenyuratPage() {
                 }}
                 onDelete={handleDeleteLetter}
               />
+            ) : activeTab === 'agenda' ? (
+              /* Unified Buku Agenda Ledger View */
+              <BukuAgendaTable
+                suratMasukList={filteredSuratMasuk}
+                suratKeluarList={filteredSuratKeluar}
+                scopeFilter={scopeFilter}
+                onOpenDetail={(surat, type) => {
+                  setDetailTarget(surat);
+                  setDetailType(type);
+                  setDetailModalOpen(true);
+                }}
+                onOpenDisposisi={(surat) => {
+                  setSelectedDisposisiId(surat.id);
+                  setActiveTab('disposisi');
+                }}
+              />
+            ) : activeTab === 'disposisi' ? (
+              /* Official Printable Lembar Disposisi Sheet View */
+              <LembarDisposisiView
+                suratList={filteredSuratMasuk}
+                selectedSuratId={selectedDisposisiId}
+                onSelectSuratId={(id) => setSelectedDisposisiId(id)}
+                onSaveDisposisi={handleSaveDisposisi}
+                defaultScope={scopeFilter === 'YAPETIDU' ? 'YAPETIDU' : 'UNIPDU'}
+                currentUserName={profile?.displayName || 'Rektor UNIPDU'}
+              />
+            ) : activeTab === 'label' ? (
+              /* Printable Archive Labels Grid */
+              <LabelArsipView
+                suratMasukList={filteredSuratMasuk}
+                suratKeluarList={filteredSuratKeluar}
+                defaultScope={scopeFilter === 'YAPETIDU' ? 'YAPETIDU' : 'UNIPDU'}
+              />
             ) : (
-              /* Buku Agenda Combined Summary */
+              /* Rekap & Breakdown Summary */
               <div className="p-8 space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Status Breakdown Surat Masuk */}
@@ -696,7 +882,7 @@ export default function SuratMenyuratPage() {
         </Card>
       </div>
 
-      {/* Disposisi Modal */}
+      {/* Disposisi Modal (Quick edit popup) */}
       <SuratDisposisiDialog
         open={disposisiModalOpen}
         onOpenChange={setDisposisiModalOpen}
@@ -712,8 +898,8 @@ export default function SuratMenyuratPage() {
         surat={detailTarget}
         type={detailType}
         onOpenDisposisi={(s) => {
-          setDisposisiTarget(s);
-          setDisposisiModalOpen(true);
+          setSelectedDisposisiId(s.id);
+          setActiveTab('disposisi');
         }}
       />
 

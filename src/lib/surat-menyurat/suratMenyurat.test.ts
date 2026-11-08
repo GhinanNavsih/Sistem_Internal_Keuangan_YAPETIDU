@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { isSuratMenyuratPath, SURAT_MENYURAT_PATH, SIFAT_SURAT_OPTIONS, STATUS_SURAT_MASUK_OPTIONS } from './constants';
-import { deriveSatkerCode, formatNomorSuratKeluar, getRomanMonth } from './numbering';
+import { deriveSatkerCode, formatNomorSuratKeluar, formatNomorSuratKeluarTemplate, formatKodeArsip, calculateUsiaArsip, getRomanMonth } from './numbering';
 import { validateSuratMasukInput, validateSuratKeluarInput } from './validation';
 import { applyTemplateDefaults, getDefaultDraft } from './templates';
 
@@ -115,4 +115,82 @@ test('applyTemplateDefaults populates appropriate text for each template type', 
   const pengantar = applyTemplateDefaults(base, 'pengantar', 'Fakultas Agama Islam', 'Dekan FAI', 'Dekan');
   assert.equal(pengantar.perihal, 'Surat Pengantar Dokumen / Laporan');
   assert.match(tugas.isiParagraf3, /dipergunakan sebagaimana mestinya/);
+});
+
+test('formatNomorSuratKeluarTemplate formats UNIPDU and YAPETIDU single & batch letter numbers matching Excel', () => {
+  const date = new Date(2026, 0, 15); // January 2026
+
+  // UNIPDU single
+  const unipduSingle = formatNomorSuratKeluarTemplate({
+    sequenceNumber: 1,
+    institutionScope: 'UNIPDU',
+    kodeSurat: 'SK',
+    date,
+  });
+  assert.equal(unipduSingle, '001/A/SK/1/2026');
+
+  // UNIPDU batch multi-recipient range (e.g. 011-015/A/AU/1/2026)
+  const unipduBatch = formatNomorSuratKeluarTemplate({
+    sequenceNumber: 11,
+    sequenceNumberEnd: 15,
+    institutionScope: 'UNIPDU',
+    kodeSurat: 'AU',
+    date,
+  });
+  assert.equal(unipduBatch, '011-015/A/AU/1/2026');
+
+  // YAPETIDU single
+  const yapetiduSingle = formatNomorSuratKeluarTemplate({
+    sequenceNumber: 7,
+    institutionScope: 'YAPETIDU',
+    kodeSurat: 'SK',
+    date: new Date(2026, 1, 23), // February
+  });
+  assert.equal(yapetiduSingle, '007/YPTDU/SK/2/2026');
+
+  // YAPETIDU batch
+  const yapetiduBatch = formatNomorSuratKeluarTemplate({
+    sequenceNumber: 3,
+    sequenceNumberEnd: 5,
+    institutionScope: 'YAPETIDU',
+    kodeSurat: 'AU',
+    date,
+  });
+  assert.equal(yapetiduBatch, '003-005/YPTDU/AU/1/2026');
+});
+
+test('calculateUsiaArsip produces exact archival age in years and months matching Excel formula', () => {
+  const asOf = new Date(2026, 10, 8); // 8 Nov 2026
+  const usia = calculateUsiaArsip('2026-01-15', asOf);
+  // ~297 days elapsed -> 0 tahun 9 bulan
+  assert.equal(usia, '0 tahun 9 bulan');
+
+  const oldDate = calculateUsiaArsip('2024-01-01', asOf);
+  // ~1042 days elapsed -> 2 tahun ... bulan
+  assert.match(oldDate, /2 tahun/);
+
+  assert.equal(calculateUsiaArsip(''), '-');
+});
+
+test('formatKodeArsip creates proper UNIPDU, YAPETIDU, and incoming archive locators', () => {
+  const unipduArsip = formatKodeArsip({
+    type: 'keluar',
+    institutionScope: 'UNIPDU',
+    sequenceNumber: 1,
+  });
+  assert.equal(unipduArsip, 'S.REKTOR,001');
+
+  const yapetiduArsip = formatKodeArsip({
+    type: 'keluar',
+    institutionScope: 'YAPETIDU',
+    sequenceNumber: 8,
+  });
+  assert.equal(yapetiduArsip, 'S.YPTDU.A.100.8');
+
+  const masukArsip = formatKodeArsip({
+    type: 'masuk',
+    sequenceNumber: 5,
+    klasifikasiCode: '166',
+  });
+  assert.equal(masukArsip, 'A.1.R1.166,05');
 });

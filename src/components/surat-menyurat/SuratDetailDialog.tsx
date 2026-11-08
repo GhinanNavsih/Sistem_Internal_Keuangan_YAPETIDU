@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { SuratMasuk, SuratKeluar } from '@/lib/surat-menyurat/types';
 import { SIFAT_SURAT_OPTIONS, STATUS_SURAT_MASUK_OPTIONS, STATUS_SURAT_KELUAR_OPTIONS } from '@/lib/surat-menyurat/constants';
-import { FileText, Download, Calendar, User, Building, FileCheck, ArrowUpRight, ArrowDownLeft, Paperclip, Printer } from 'lucide-react';
+import { calculateUsiaArsip, formatKodeArsip } from '@/lib/surat-menyurat/numbering';
+import { FileText, Download, Calendar, User, Building, FileCheck, ArrowUpRight, ArrowDownLeft, Paperclip, Printer, Clock } from 'lucide-react';
 
 interface Props {
   open: boolean;
@@ -74,11 +75,26 @@ export default function SuratDetailDialog({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <span className="text-slate-400 block text-[11px] font-medium">Nomor Surat</span>
-                <span className="font-bold text-slate-800 text-sm">{surat.nomorSurat}</span>
+                <span className="font-bold text-slate-800 text-sm font-mono">{surat.nomorSurat}</span>
+                {surat.nomorUrut && (
+                  <span className="text-[10px] text-slate-500 font-mono block mt-0.5">
+                    No. Urut Agenda: {surat.nomorUrut}
+                  </span>
+                )}
               </div>
               <div>
-                <span className="text-slate-400 block text-[11px] font-medium">Kategori Surat</span>
-                <span className="font-semibold text-slate-700">{surat.kategori || '-'}</span>
+                <span className="text-slate-400 block text-[11px] font-medium">Kode Arsip & Usia</span>
+                <span className="font-semibold text-indigo-700 font-mono block">
+                  {surat.kodeArsip || formatKodeArsip({
+                    type,
+                    institutionScope: surat.institutionScope || 'UNIPDU',
+                    sequenceNumber: surat.nomorUrut || 1,
+                  })}
+                </span>
+                <span className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
+                  <Clock className="w-2.5 h-2.5 text-slate-400" />
+                  {calculateUsiaArsip(surat.tanggalSurat)}
+                </span>
               </div>
             </div>
 

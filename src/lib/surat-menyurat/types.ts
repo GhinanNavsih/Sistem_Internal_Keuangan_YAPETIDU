@@ -8,6 +8,8 @@ export type StatusSuratKeluar = 'draft' | 'disetujui' | 'terkirim' | 'diarsipkan
 
 export type TemplateType = 'tugas' | 'keterangan' | 'undangan' | 'pengantar' | 'permohonan' | 'custom';
 
+export type InstitutionScope = 'UNIPDU' | 'YAPETIDU' | 'SATKER';
+
 export interface SuratAttachment {
   id: string;
   name: string;
@@ -20,14 +22,21 @@ export interface SuratAttachment {
 export interface DisposisiSurat {
   instruksi: string; // e.g. "Tindak Lanjuti", "Hadiri / Wakili", "Koordinasikan", "Pelajari & Laporkan", "Arsipkan"
   diteruskanKepada: string; // e.g. "Sekretaris SatKer", "Bendahara", "Staf Administrasi", "Kaprodi"
+  diteruskanChecklist?: string[]; // Checkbox targets matching Excel DISPOSISI sheet
+  tindakanChecklist?: string[]; // Checkbox actions matching Excel DISPOSISI sheet
   catatan?: string;
   tanggalDisposisi: string;
-  disposisiOleh: string; // Nama Kepala SatKer
+  disposisiOleh: string; // Nama Kepala SatKer / Rektor
   disposisiOlehUid: string;
 }
 
 export interface SuratMasuk {
   id: string;
+  institutionScope?: InstitutionScope;
+  nomorUrut?: number;
+  kodeSurat?: string;
+  kodeArsip?: string;
+  usiaArsip?: string;
   satkerId: string;
   satkerName: string;
   nomorSurat: string;
@@ -50,6 +59,12 @@ export interface SuratMasuk {
 
 export interface SuratKeluar {
   id: string;
+  institutionScope?: InstitutionScope;
+  nomorUrut?: number;
+  nomorUrutEnd?: number; // For batch multi-recipient ranges (e.g. 011-015)
+  kodeSurat?: string;
+  kodeArsip?: string;
+  usiaArsip?: string;
   satkerId: string;
   satkerName: string;
   nomorSurat: string;
@@ -82,3 +97,4 @@ export interface SuratStats {
   terkirimKeluar: number;
   suratBulanIni: number;
 }
+
