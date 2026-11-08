@@ -51,15 +51,30 @@ export async function POST(request: NextRequest) {
         throw new HttpError(403, 'Proposal ini bukan milik akun Anda.');
       }
 
-      if (before.status !== 'proposal_draft') {
+      if (!['proposal_draft', 'proposal_submitted'].includes(before.status)) {
         throw new HttpError(
           409,
-          'Hanya proposal berstatus draft yang dapat dipindahkan ke periode lain.',
+          'Hanya proposal yang belum disetujui (draft atau antrean) yang dapat dipindahkan ke periode lain.',
         );
       }
 
       if (before.period === targetPeriod) {
         throw new HttpError(409, 'Proposal sudah berada di periode tujuan.');
+      }
+
+      let nextQueueNumber = before.proposalQueueNumber;
+      if (before.status === 'proposal_submitted') {
+        const counterRef = adminDb.collection('ProposalKegiatanQueueCounters').doc(targetPeriod);
+        const [counter, existingTarget] = await Promise.all([
+          tx.get(counterRef),
+          tx.get(adminDb.collection('ProposalKegiatan').where('period', '==', targetPeriod)),
+        ]);
+        nextQueueNumber =
+          Math.max(
+            Number(counter.data()?.lastNumber || 0),
+            ...existingTarget.docs.map((doc) => Number(doc.data().proposalQueueNumber || 0)),
+          ) + 1;
+        tx.set(counterRef, { lastNumber: nextQueueNumber }, { merge: true });
       }
 
       const newProposalId = `${targetPeriod}_${createFinancialRequestId('prop')}`;
@@ -69,12 +84,13 @@ export async function POST(request: NextRequest) {
         ...before,
         id: newProposalId,
         period: targetPeriod,
-        status: 'proposal_draft',
+        status: before.status,
         revision: 1,
         lastWriteActorUid: actor.uid,
         lastWriteId: createFinancialRequestId('prop_move'),
         movedFromProposalId: proposalId,
         movedFromPeriod: before.period,
+        ...(nextQueueNumber !== undefined ? { proposalQueueNumber: nextQueueNumber } : {}),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       };
 

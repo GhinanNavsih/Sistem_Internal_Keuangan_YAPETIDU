@@ -601,7 +601,8 @@ export default function KegiatanSatkerPage() {
   }, [danaOperasionalAnggaran, totalPengeluaranAnggaran]);
 
   const isProposalReadOnly = periodClosed || currentProposalStatus === 'lpj_approved' || (profile?.role !== 'super_admin' && (currentProposalStatus === 'proposal_approved' || currentProposalStatus === 'proposal_submitted' || currentProposalStatus?.startsWith('lpj_')));
-  const isLpjReadOnly = periodClosed || (currentProposalStatus === 'lpj_submitted' || currentProposalStatus === 'lpj_approved');
+  const isLpjReadOnly = currentProposalStatus === 'lpj_submitted' || currentProposalStatus === 'lpj_approved' ||
+    (profile?.role !== 'super_admin' && currentProposalStatus !== 'proposal_approved' && currentProposalStatus !== 'lpj_draft' && currentProposalStatus !== 'lpj_revision');
 
   const draftData = useMemo(() => ({
     reportName, departmentUnit, totalBudget: totalPengeluaranAnggaran || totalPemasukanAnggaran,
@@ -992,8 +993,8 @@ export default function KegiatanSatkerPage() {
 
   // Save LPJ Draft
   const handleSaveLpjDraft = async () => {
-    if (!canManageProposal || periodClosed) {
-      setMessage({ type: 'error', text: 'Draft LPJ tidak dapat disimpan pada periode yang sudah ditutup.' });
+    if (!canManageProposal) {
+      setMessage({ type: 'error', text: 'Draft LPJ tidak dapat disimpan oleh akun ini.' });
       return;
     }
     if (!selectedProposalId) {
@@ -1016,8 +1017,8 @@ export default function KegiatanSatkerPage() {
 
   // Submit LPJ to Admin
   const handleSubmitLpjToQueue = async () => {
-    if (!canManageProposal || periodClosed) {
-      setMessage({ type: 'error', text: 'LPJ tidak dapat disimpan pada periode yang sudah ditutup.' });
+    if (!canManageProposal) {
+      setMessage({ type: 'error', text: 'LPJ tidak dapat diajukan oleh akun ini.' });
       return;
     }
     if (!selectedProposalId) {
@@ -1294,11 +1295,18 @@ export default function KegiatanSatkerPage() {
                 <h2 className="font-bold text-slate-800 text-base md:text-lg flex items-center gap-2">
                   {reportName.trim() !== '' ? reportName : 'Form Kegiatan SatKer'}
                 </h2>
-                {isProposalReadOnly && activeStage === 'proposal' && (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-sm text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200/80 shadow-2xs">
-                    <Lock className="w-3 h-3 text-amber-600" />
-                    Terkunci
-                  </span>
+                {activeStage === 'proposal' && (
+                  currentProposalStatus === 'proposal_approved' || currentProposalStatus?.startsWith('lpj_') ? (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-sm text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200/80 shadow-2xs">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                      Proposal Disetujui
+                    </span>
+                  ) : isProposalReadOnly ? (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-sm text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200/80 shadow-2xs">
+                      <Lock className="w-3 h-3 text-amber-600" />
+                      Terkunci
+                    </span>
+                  ) : null
                 )}
               </div>
               <p className="text-slate-400 text-xs mt-0.5">
@@ -1354,9 +1362,9 @@ export default function KegiatanSatkerPage() {
           </div>
         </div>
 
-        {/* Closed Period Alert for Draft Proposals */}
+        {/* Closed Period Alert for Unapproved Proposals */}
         {periodClosed && activeStage === 'proposal' && (
-          selectedProposalId && (!currentProposalStatus || currentProposalStatus === 'proposal_draft') ? (
+          selectedProposalId && (!currentProposalStatus || currentProposalStatus === 'proposal_draft' || currentProposalStatus === 'proposal_submitted') ? (
             <div className="p-4 bg-amber-50/90 border border-amber-200/90 rounded-md flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-2xs">
               <div className="flex items-start gap-3">
                 <div className="w-9 h-9 rounded-sm bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
@@ -1364,10 +1372,12 @@ export default function KegiatanSatkerPage() {
                 </div>
                 <div>
                   <h4 className="font-bold text-amber-900 text-xs flex items-center gap-1.5">
-                    Draft Terkunci: Periode {MONTHS_ID[month - 1]} {year} Sudah Ditutup
+                    Proposal Terkunci: Periode {MONTHS_ID[month - 1]} {year} Sudah Ditutup
                   </h4>
                   <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
-                    Proposal ini belum sempat diajukan sebelum periode payroll ditutup. Proposal pada periode tertutup tidak dapat diedit atau diajukan. Silakan pindahkan draft ini ke periode berjalan untuk melanjutkan pengeditan dan pengajuan anggaran.
+                    {currentProposalStatus === 'proposal_submitted'
+                      ? `Proposal ini telah diajukan namun periode payroll ${MONTHS_ID[month - 1]} ${year} ditutup sebelum persetujuan selesai. Pindahkan proposal ini ke periode berjalan agar dapat diproses oleh Keuangan.`
+                      : `Proposal ini belum sempat diajukan sebelum periode payroll ditutup. Proposal pada periode tertutup tidak dapat diedit atau diajukan. Silakan pindahkan draft ini ke periode berjalan untuk melanjutkan pengeditan dan pengajuan anggaran.`}
                   </p>
                 </div>
               </div>
@@ -2096,6 +2106,23 @@ export default function KegiatanSatkerPage() {
               </div>
             ) : (
               <div className="space-y-6">
+                {/* Cross-period LPJ Notice */}
+                {periodClosed && (
+                  <div className="p-4 bg-blue-50/80 border border-blue-200/80 rounded-md flex items-start gap-3 shadow-2xs">
+                    <div className="w-8 h-8 rounded-sm bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 mt-0.5">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-blue-900 text-xs">
+                        Pelaporan Kegiatan Lintas Periode (Proposal Periode {MONTHS_ID[month - 1]} {year})
+                      </h4>
+                      <p className="text-[11px] text-blue-700 mt-0.5 leading-relaxed">
+                        Proposal anggaran kegiatan ini disetujui pada periode {MONTHS_ID[month - 1]} {year}. Karena periode tersebut telah ditutup, pencairan honorarium pegawai (Vakasi LPJ) akan disalurkan pada payroll periode berjalan saat LPJ ini disetujui oleh Keuangan.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {/* LPJ Revision Banner */}
                 {currentProposalStatus === 'lpj_revision' && currentReviewNote && (
                   <div className="p-4 bg-orange-50 border border-orange-200 rounded-md flex gap-3 text-orange-900 text-xs shadow-sm">
@@ -2769,7 +2796,7 @@ export default function KegiatanSatkerPage() {
                     <Button data-proposal-mutation
                       type="button"
                       onClick={handleSaveLpjDraft}
-                      disabled={saving || !canManageProposal || periodClosed}
+                      disabled={saving || !canManageProposal}
                       className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-sm px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer"
                     >
                       {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
@@ -2788,7 +2815,7 @@ export default function KegiatanSatkerPage() {
                     {profile?.role === 'satker_head_loyalis' && (currentProposalStatus === 'proposal_approved' || currentProposalStatus === 'lpj_draft' || currentProposalStatus === 'lpj_revision') && (
                       <Button data-proposal-mutation
                         onClick={handleSubmitLpjToQueue}
-                        disabled={saving || !canManageProposal || periodClosed}
+                        disabled={saving || !canManageProposal}
                         className="rounded-sm px-6 bg-slate-900 hover:bg-black text-white font-bold text-xs h-10 flex items-center gap-2 shadow-md cursor-pointer"
                       >
                         {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}

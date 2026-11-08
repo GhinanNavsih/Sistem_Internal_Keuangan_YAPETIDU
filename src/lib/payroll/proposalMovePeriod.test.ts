@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-export function canMoveProposalDraft(
+export function canMoveUnapprovedProposal(
   actor: { role: string; uid: string },
   proposal: { submittedBy: string; status: string; period: string },
   targetPeriod: string,
@@ -14,8 +14,8 @@ export function canMoveProposalDraft(
   if (!isFinance && proposal.submittedBy !== actor.uid) {
     return { allowed: false, reason: 'Proposal ini bukan milik akun Anda.' };
   }
-  if (proposal.status !== 'proposal_draft') {
-    return { allowed: false, reason: 'Hanya proposal berstatus draft yang dapat dipindahkan ke periode lain.' };
+  if (!['proposal_draft', 'proposal_submitted'].includes(proposal.status)) {
+    return { allowed: false, reason: 'Hanya proposal yang belum disetujui (draft atau antrean) yang dapat dipindahkan ke periode lain.' };
   }
   if (proposal.period === targetPeriod) {
     return { allowed: false, reason: 'Proposal sudah berada di periode tujuan.' };
@@ -24,6 +24,14 @@ export function canMoveProposalDraft(
     return { allowed: false, reason: 'Periode tujuan sudah ditutup.' };
   }
   return { allowed: true };
+}
+
+export function resolveLpjPayoutPeriod(
+  originPeriod: string,
+  originPeriodClosed: boolean,
+  activeLivePeriod: string,
+): string {
+  return originPeriodClosed ? activeLivePeriod : originPeriod;
 }
 
 export function formatClonedProposalName(pastName: string, targetYear: number): string {
@@ -38,45 +46,52 @@ export function formatClonedProposalName(pastName: string, targetYear: number): 
   return nextName;
 }
 
-test('only proposal_draft can be moved to another period', () => {
+test('both proposal_draft and proposal_submitted can be moved to another period', () => {
   const actor = { role: 'satker_head_loyalis', uid: 'user-1' };
   const draft = { submittedBy: 'user-1', status: 'proposal_draft', period: '2026-10' };
   const submitted = { submittedBy: 'user-1', status: 'proposal_submitted', period: '2026-10' };
   const approved = { submittedBy: 'user-1', status: 'proposal_approved', period: '2026-10' };
 
-  assert.equal(canMoveProposalDraft(actor, draft, '2026-11', false).allowed, true);
-  assert.equal(canMoveProposalDraft(actor, submitted, '2026-11', false).allowed, false);
-  assert.equal(canMoveProposalDraft(actor, approved, '2026-11', false).allowed, false);
+  assert.equal(canMoveUnapprovedProposal(actor, draft, '2026-11', false).allowed, true);
+  assert.equal(canMoveUnapprovedProposal(actor, submitted, '2026-11', false).allowed, true);
+  assert.equal(canMoveUnapprovedProposal(actor, approved, '2026-11', false).allowed, false);
 });
 
 test('moving to a closed target period is rejected', () => {
   const actor = { role: 'satker_head_loyalis', uid: 'user-1' };
   const draft = { submittedBy: 'user-1', status: 'proposal_draft', period: '2026-10' };
 
-  assert.equal(canMoveProposalDraft(actor, draft, '2026-09', true).allowed, false);
-  assert.equal(canMoveProposalDraft(actor, draft, '2026-09', true).reason, 'Periode tujuan sudah ditutup.');
+  assert.equal(canMoveUnapprovedProposal(actor, draft, '2026-09', true).allowed, false);
+  assert.equal(canMoveUnapprovedProposal(actor, draft, '2026-09', true).reason, 'Periode tujuan sudah ditutup.');
 });
 
 test('moving to the same period is rejected', () => {
   const actor = { role: 'satker_head_loyalis', uid: 'user-1' };
   const draft = { submittedBy: 'user-1', status: 'proposal_draft', period: '2026-10' };
 
-  assert.equal(canMoveProposalDraft(actor, draft, '2026-10', false).allowed, false);
+  assert.equal(canMoveUnapprovedProposal(actor, draft, '2026-10', false).allowed, false);
 });
 
-test('satker head cannot move someone else draft', () => {
+test('satker head cannot move someone else proposal', () => {
   const actor = { role: 'satker_head_loyalis', uid: 'user-1' };
   const othersDraft = { submittedBy: 'user-2', status: 'proposal_draft', period: '2026-10' };
 
-  assert.equal(canMoveProposalDraft(actor, othersDraft, '2026-11', false).allowed, false);
-  assert.equal(canMoveProposalDraft(actor, othersDraft, '2026-11', false).reason, 'Proposal ini bukan milik akun Anda.');
+  assert.equal(canMoveUnapprovedProposal(actor, othersDraft, '2026-11', false).allowed, false);
+  assert.equal(canMoveUnapprovedProposal(actor, othersDraft, '2026-11', false).reason, 'Proposal ini bukan milik akun Anda.');
 });
 
-test('super admin can move any satker draft', () => {
+test('super admin can move any satker proposal', () => {
   const admin = { role: 'super_admin', uid: 'admin-1' };
   const draft = { submittedBy: 'user-2', status: 'proposal_draft', period: '2026-10' };
 
-  assert.equal(canMoveProposalDraft(admin, draft, '2026-11', false).allowed, true);
+  assert.equal(canMoveUnapprovedProposal(admin, draft, '2026-11', false).allowed, true);
+});
+
+test('decoupled LPJ payout period resolves to origin period when open, active period when closed', () => {
+  // Origin period open -> pays into origin period
+  assert.equal(resolveLpjPayoutPeriod('2026-11', false, '2026-11'), '2026-11');
+  // Origin period closed (e.g. approved in October, LPJ in November) -> pays into active period (November)
+  assert.equal(resolveLpjPayoutPeriod('2026-10', true, '2026-11'), '2026-11');
 });
 
 test('cloned proposal name does not duplicate existing year', () => {

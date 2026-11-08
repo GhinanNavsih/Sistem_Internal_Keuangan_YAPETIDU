@@ -80,8 +80,11 @@ export async function POST(request: NextRequest) {
       ]);
       const before = snapshot.data();
       if (payrollPeriod.data()?.attendanceStatus === 'closed') {
+        const isLpjWorkflow =
+          (action === 'save_lpj' || action === 'submit_lpj') &&
+          ['proposal_approved', 'lpj_draft', 'lpj_revision'].includes(String(before?.status));
         const canBypassClosedForDraft = action === 'delete' && before?.status === 'proposal_draft';
-        if (!canBypassClosedForDraft) {
+        if (!isLpjWorkflow && !canBypassClosedForDraft) {
           throw new HttpError(409, 'Periode payroll sudah ditutup.');
         }
       }
@@ -117,7 +120,7 @@ export async function POST(request: NextRequest) {
       if (!before && !['save_draft', 'submit_proposal'].includes(action))
         throw new HttpError(404, 'Proposal tidak ditemukan.');
       const payroll = financialAction && before && (action === 'delete' || status === 'lpj_approved')
-        ? await prepareProposalPayroll(tx, { proposalId, proposal: before, approved: false, revision: revision + 1, actor, requestId }) : null;
+        ? await prepareProposalPayroll(tx, { proposalId, proposal: before, approved: false, revision: revision + 1, actor, requestId, payoutPeriod: before.payoutPeriod || before.period }) : null;
       if (action === 'delete') {
         if (actor.role !== 'super_admin' && !(actor.role === 'satker_head_loyalis' && before?.submittedBy === actor.uid))
           throw new HttpError(403, 'Akun ini tidak dapat menghapus proposal.');

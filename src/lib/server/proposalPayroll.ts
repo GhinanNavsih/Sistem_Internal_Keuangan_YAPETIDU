@@ -42,8 +42,10 @@ export async function prepareProposalPayroll(transaction: FirebaseFirestore.Tran
   proposalId: string; proposal: FirebaseFirestore.DocumentData; approved: boolean;
   revision: number; actor: AuthenticatedProfile;
   requestId: string;
+  payoutPeriod?: string;
 }) {
   const { proposal, proposalId, actor } = input;
+  const payoutPeriod = input.payoutPeriod || proposal.payoutPeriod || proposal.period;
   const existingSnapshot = await transaction.get(adminDb.collection('VakasiTambahan').where('sourceProposalId', '==', proposalId));
   const existing = new Map(existingSnapshot.docs.filter(doc => doc.data().sourceKind === PROPOSAL_LPJ_PAYROLL_SOURCE_KIND).map(doc => [doc.id, doc]));
   const normalized = input.approved ? normalizeProposalLpj(proposal) : { rows: [], reports: [] };
@@ -92,20 +94,21 @@ export async function prepareProposalPayroll(transaction: FirebaseFirestore.Tran
       wasPayable: before?.status === 'approved', currentWorkers: next?.workers || [], currentEventName: next?.eventName || before?.eventName || '', willBePayable: Boolean(next) })) affected.add(employeeId);
   }
   const employeeIds = [...affected];
-  await assertVakasiSlipsEditable(transaction, proposal.period, employeeIds, id => names.get(id) || id);
+  await assertVakasiSlipsEditable(transaction, payoutPeriod, employeeIds, id => names.get(id) || id);
   const totalPayout = [...desired.values()].reduce((sum, entry) => sum + entry.workers.reduce((amount, worker) => amount + worker.payGiven, 0), 0);
   if (!Number.isSafeInteger(totalPayout)) throw new HttpError(400, 'Total pembayaran LPJ melebihi batas nominal.');
   return {
     employeeIds, payrollReportIds: [...desired.keys()], totalPayout, syncedReports: desired.size,
     payrollReportIdsByReport: Object.fromEntries([...desired].map(([id, entry]) => [entry.report.id, id])),
     staleReports: [...existing.keys()].filter(id => !desired.has(id)).length,
+    payoutPeriod,
     write() {
       const now = admin.firestore.FieldValue.serverTimestamp();
       for (const [id, entry] of desired) {
         const before = existing.get(id)?.data();
         const after = {
           sourceKind: PROPOSAL_LPJ_PAYROLL_SOURCE_KIND, sourceProposalId: proposalId, sourceReportId: entry.report.id,
-          sourceProposalRevision: input.revision, eventName: entry.eventName, period: proposal.period,
+          sourceProposalRevision: input.revision, eventName: entry.eventName, period: payoutPeriod,
           departmentUnit: proposal.departmentUnit || null, isEndOfMonth: false,
           eventWorkers: Object.fromEntries(entry.workers.map(({ employeeId, ...worker }) => [employeeId, worker])),
           totalPayout: entry.workers.reduce((sum, worker) => sum + worker.payGiven, 0), status: 'approved',
