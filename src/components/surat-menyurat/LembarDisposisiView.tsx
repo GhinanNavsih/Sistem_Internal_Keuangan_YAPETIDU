@@ -7,6 +7,7 @@ import { DISPOSISI_DESTINATIONS, DISPOSISI_ACTIONS } from '@/lib/surat-menyurat/
 import { calculateUsiaArsip, formatKodeArsip } from '@/lib/surat-menyurat/numbering';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { AutoResizeTextarea } from '@/components/ui/auto-resize-textarea';
 import { Printer, Check, ArrowLeft, ArrowRight, Save, Loader2, Sparkles } from 'lucide-react';
 
 interface Props {
@@ -420,11 +421,11 @@ export default function LembarDisposisiView({
         <div className="border border-slate-900 grid grid-cols-3 divide-x divide-slate-900 text-xs">
           <div className="col-span-2 p-3 space-y-2">
             <h4 className="font-bold underline">Catatan :</h4>
-            <textarea
+            <AutoResizeTextarea
               value={catatan}
               onChange={(e) => setCatatan(e.target.value)}
               placeholder="Tuliskan catatan atau instruksi tambahan pimpinan di sini..."
-              rows={4}
+              minRows={4}
               className="w-full bg-slate-50 border border-slate-300 rounded-xs p-2 text-xs font-sans text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 print:bg-transparent print:border-none print:p-0 print:resize-none"
             />
           </div>

@@ -13,6 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { AutoResizeTextarea } from '@/components/ui/auto-resize-textarea';
 import { useAuth } from '@/lib/AuthContext';
 import { TEMPLATE_OPTIONS } from '@/lib/surat-menyurat/constants';
 import { deriveSatkerCode, formatNomorSuratKeluar } from '@/lib/surat-menyurat/numbering';
@@ -163,6 +164,7 @@ export default function SuratComposerModal({
             .letter-content p {
               margin-bottom: 12px;
               text-indent: 28px;
+              white-space: pre-line;
             }
             .letter-content .raw-block {
               white-space: pre-wrap;
@@ -330,9 +332,11 @@ export default function SuratComposerModal({
         </div>
         <div className="space-y-1">
           <Label className="text-xs font-semibold text-slate-700">Perihal / Hal</Label>
-          <Input
+          <AutoResizeTextarea
+            minRows={1}
             value={draft.perihal}
             onChange={(e) => setDraft((prev) => ({ ...prev, perihal: e.target.value }))}
+            placeholder="Perihal naskah dinas..."
             className="text-xs font-semibold bg-white rounded-sm border-slate-200 text-slate-900"
           />
         </div>
@@ -366,38 +370,40 @@ export default function SuratComposerModal({
       {/* Isi Surat */}
       <div className="space-y-2">
         <Label className="text-xs font-bold text-slate-700">Isi Naskah Surat</Label>
-        <Input
+        <AutoResizeTextarea
+          minRows={1}
           value={draft.salamPembuka}
           onChange={(e) => setDraft((prev) => ({ ...prev, salamPembuka: e.target.value }))}
           placeholder="Salam Pembuka"
           className="text-xs font-semibold bg-white rounded-sm border-slate-200"
         />
 
-        <textarea
-          rows={2}
+        <AutoResizeTextarea
+          minRows={2}
           value={draft.isiParagraf1}
           onChange={(e) => setDraft((prev) => ({ ...prev, isiParagraf1: e.target.value }))}
           placeholder="Paragraf pembuka..."
-          className="w-full text-xs font-medium p-2.5 rounded-sm border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all bg-white resize-y"
+          className="w-full text-xs font-medium p-2.5 rounded-sm border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all bg-white"
         />
 
-        <textarea
-          rows={4}
+        <AutoResizeTextarea
+          minRows={3}
           value={draft.isiParagraf2}
           onChange={(e) => setDraft((prev) => ({ ...prev, isiParagraf2: e.target.value }))}
           placeholder="Isi utama / rincian kegiatan / poin penting..."
-          className="w-full text-xs p-2.5 rounded-sm border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all bg-white font-mono resize-y"
+          className="w-full text-xs p-2.5 rounded-sm border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all bg-white font-mono"
         />
 
-        <textarea
-          rows={2}
+        <AutoResizeTextarea
+          minRows={2}
           value={draft.isiParagraf3}
           onChange={(e) => setDraft((prev) => ({ ...prev, isiParagraf3: e.target.value }))}
           placeholder="Paragraf penutup..."
-          className="w-full text-xs font-medium p-2.5 rounded-sm border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all bg-white resize-y"
+          className="w-full text-xs font-medium p-2.5 rounded-sm border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all bg-white"
         />
 
-        <Input
+        <AutoResizeTextarea
+          minRows={1}
           value={draft.salamPenutup}
           onChange={(e) => setDraft((prev) => ({ ...prev, salamPenutup: e.target.value }))}
           placeholder="Salam Penutup"
@@ -504,7 +510,7 @@ export default function SuratComposerModal({
           <p className="italic font-medium">{draft.salamPembuka}</p>
         )}
         {draft.isiParagraf1 && (
-          <p className="indent-6 leading-relaxed">{draft.isiParagraf1}</p>
+          <p className="indent-6 leading-relaxed whitespace-pre-line">{draft.isiParagraf1}</p>
         )}
         {draft.isiParagraf2 && (
           <div className="raw-block pl-6 whitespace-pre-wrap font-mono text-[11px] leading-relaxed bg-slate-50/50 p-2 border-l-2 border-slate-300 rounded-sm">
@@ -512,7 +518,7 @@ export default function SuratComposerModal({
           </div>
         )}
         {draft.isiParagraf3 && (
-          <p className="indent-6 leading-relaxed">{draft.isiParagraf3}</p>
+          <p className="indent-6 leading-relaxed whitespace-pre-line">{draft.isiParagraf3}</p>
         )}
         {draft.salamPenutup && (
           <p className="italic font-medium pt-1">{draft.salamPenutup}</p>

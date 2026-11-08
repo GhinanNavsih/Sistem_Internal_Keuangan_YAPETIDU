@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { AutoResizeTextarea } from '@/components/ui/auto-resize-textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/lib/AuthContext';
 import {
@@ -491,11 +492,11 @@ export default function SuratMasukInlineForm({
       {/* Row 4: Ringkasan */}
       <div>
         <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Ringkasan Isi Surat</Label>
-        <textarea
+        <AutoResizeTextarea
           value={ringkasan}
           onChange={(e) => setRingkasan(e.target.value)}
           placeholder="Ringkasan atau catatan poin penting naskah masuk..."
-          rows={3}
+          minRows={3}
           className="w-full rounded-sm bg-white border border-slate-200 text-xs p-3 text-slate-700 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all"
         />
       </div>

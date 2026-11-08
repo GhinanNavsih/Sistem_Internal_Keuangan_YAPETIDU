@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { AutoResizeTextarea } from '@/components/ui/auto-resize-textarea';
 import { INSTRUKSI_DISPOSISI_PRESETS } from '@/lib/surat-menyurat/constants';
 import { SuratMasuk, DisposisiSurat } from '@/lib/surat-menyurat/types';
 import { FileCheck, Loader2, Send } from 'lucide-react';
@@ -167,8 +168,8 @@ export default function SuratDisposisiDialog({
 
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold text-slate-700">Catatan Tambahan (Opsional)</Label>
-            <textarea
-              rows={3}
+            <AutoResizeTextarea
+              minRows={2}
               value={catatan}
               onChange={(e) => setCatatan(e.target.value)}
               placeholder="Catatan atau poin penting yang perlu diperhatikan..."
