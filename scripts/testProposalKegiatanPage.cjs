@@ -143,7 +143,7 @@ const fixture = () => ({
   updatedAt: { seconds: Math.floor(now / 1000) },
 });
 const mocks = {
-  'next/navigation': `exports.useSearchParams=()=>new URLSearchParams(globalThis.__proposalTest.params||'month=10&year=2026');`,
+  'next/navigation': `exports.useSearchParams=()=>new URLSearchParams(globalThis.__proposalTest.params||'month=10&year=2026'); exports.useRouter=()=>({push:()=>{},replace:()=>{}});`,
   'next/image': `exports.default=()=>null;`,
   '@/lib/AuthContext': `exports.useAuth=()=>({profile:globalThis.__proposalTest.profile});`,
   '@/lib/firebase': `exports.db={};`,

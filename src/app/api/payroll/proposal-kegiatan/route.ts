@@ -78,9 +78,13 @@ export async function POST(request: NextRequest) {
         tx.get(ref),
         tx.get(adminDb.collection('PayrollPeriods').doc(period)),
       ]);
-      if (payrollPeriod.data()?.attendanceStatus === 'closed')
-        throw new HttpError(409, 'Periode payroll sudah ditutup.');
       const before = snapshot.data();
+      if (payrollPeriod.data()?.attendanceStatus === 'closed') {
+        const canBypassClosedForDraft = action === 'delete' && before?.status === 'proposal_draft';
+        if (!canBypassClosedForDraft) {
+          throw new HttpError(409, 'Periode payroll sudah ditutup.');
+        }
+      }
       if (before && before.period !== period)
         throw new HttpError(409, 'Periode proposal tidak boleh berubah.');
       if (before && !isFinance && before.submittedBy !== actor.uid) {

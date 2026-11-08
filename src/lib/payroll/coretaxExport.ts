@@ -37,7 +37,9 @@ export interface CoretaxExportParams {
 }
 
 export const DEFAULT_KODE_OBJEK_PAJAK_PEGAWAI_TETAP = '21-100-01';
-export const DEFAULT_NAMA_PEMOTONG = "UNIVERSITAS PESANTREN TINGGI DARUL 'ULUM";
+export const DEFAULT_NPWP_PEMOTONG = '020075644602000';
+export const DEFAULT_NAMA_PEMOTONG = 'PESANTREN TINGGI DARUL ULUM';
+export const DEFAULT_NITKU_PEMOTONG = '0020075644602000000000';
 export const DEFAULT_NITKU_DEFAULT = '0000000000000000';
 
 function escapeXml(unsafe: string): string {
@@ -60,8 +62,8 @@ function cleanDigits(value: string | undefined | null): string {
 export function generateCoretaxBpmpXml(params: CoretaxExportParams): string {
   const year = params.year;
   const month = String(params.month).padStart(2, '0');
-  const npwpPemotong = cleanDigits(params.withholderNpwp) || '0000000000000000';
-  const nitkuPemotong = cleanDigits(params.withholderNitku) || DEFAULT_NITKU_DEFAULT;
+  const npwpPemotong = cleanDigits(params.withholderNpwp) || DEFAULT_NPWP_PEMOTONG;
+  const nitkuPemotong = cleanDigits(params.withholderNitku) || DEFAULT_NITKU_PEMOTONG;
   const namaPemotong = escapeXml(params.withholderName || DEFAULT_NAMA_PEMOTONG);
 
   const totalBruto = params.rows.reduce((sum, r) => sum + r.penghasilanBruto, 0);

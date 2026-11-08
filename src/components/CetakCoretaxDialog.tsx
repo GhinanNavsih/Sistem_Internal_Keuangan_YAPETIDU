@@ -27,7 +27,9 @@ import {
   generateCoretaxBpmpExcel,
   type CoretaxBpmpRow,
   type CoretaxExportParams,
+  DEFAULT_NPWP_PEMOTONG,
   DEFAULT_NAMA_PEMOTONG,
+  DEFAULT_NITKU_PEMOTONG,
   DEFAULT_NITKU_DEFAULT,
 } from '@/lib/payroll/coretaxExport';
 import { resolveEmployeePtkpStatus, resolveTerCategory } from '@/lib/payroll/payrollTax';
@@ -60,6 +62,9 @@ interface CetakCoretaxDialogProps {
 const STORAGE_KEY_WITHHOLDER_NPWP = 'coretax_withholder_npwp';
 const STORAGE_KEY_WITHHOLDER_NAME = 'coretax_withholder_name';
 const STORAGE_KEY_WITHHOLDER_NITKU = 'coretax_withholder_nitku';
+const LEGACY_NPWP_PEMOTONG = '0000000000000000';
+const LEGACY_NAMA_PEMOTONG = "UNIVERSITAS PESANTREN TINGGI DARUL 'ULUM";
+const LEGACY_NITKU_PEMOTONG = '0000000000000000';
 
 export default function CetakCoretaxDialog({
   open,
@@ -71,9 +76,9 @@ export default function CetakCoretaxDialog({
   getFreshSlipData,
 }: CetakCoretaxDialogProps) {
   // Withholder (Pemotong Pajak) settings with persistent defaults
-  const [withholderNpwp, setWithholderNpwp] = useState<string>('0000000000000000');
+  const [withholderNpwp, setWithholderNpwp] = useState<string>(DEFAULT_NPWP_PEMOTONG);
   const [withholderName, setWithholderName] = useState<string>(DEFAULT_NAMA_PEMOTONG);
-  const [withholderNitku, setWithholderNitku] = useState<string>(DEFAULT_NITKU_DEFAULT);
+  const [withholderNitku, setWithholderNitku] = useState<string>(DEFAULT_NITKU_PEMOTONG);
 
   // Filter option: 'all' or 'taxable_only'
   const [filterMode, setFilterMode] = useState<'all' | 'taxable_only'>('all');
@@ -86,9 +91,21 @@ export default function CetakCoretaxDialog({
       const savedName = localStorage.getItem(STORAGE_KEY_WITHHOLDER_NAME);
       const savedNitku = localStorage.getItem(STORAGE_KEY_WITHHOLDER_NITKU);
 
-      if (savedNpwp) setWithholderNpwp(savedNpwp);
-      if (savedName) setWithholderName(savedName);
-      if (savedNitku) setWithholderNitku(savedNitku);
+      if (savedNpwp) {
+        const value = savedNpwp === LEGACY_NPWP_PEMOTONG ? DEFAULT_NPWP_PEMOTONG : savedNpwp;
+        setWithholderNpwp(value);
+        if (value !== savedNpwp) localStorage.setItem(STORAGE_KEY_WITHHOLDER_NPWP, value);
+      }
+      if (savedName) {
+        const value = savedName === LEGACY_NAMA_PEMOTONG ? DEFAULT_NAMA_PEMOTONG : savedName;
+        setWithholderName(value);
+        if (value !== savedName) localStorage.setItem(STORAGE_KEY_WITHHOLDER_NAME, value);
+      }
+      if (savedNitku) {
+        const value = savedNitku === LEGACY_NITKU_PEMOTONG ? DEFAULT_NITKU_PEMOTONG : savedNitku;
+        setWithholderNitku(value);
+        if (value !== savedNitku) localStorage.setItem(STORAGE_KEY_WITHHOLDER_NITKU, value);
+      }
       setDownloadSuccess(null);
     }
   }, [open]);
@@ -299,14 +316,15 @@ export default function CetakCoretaxDialog({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="text-[11px] font-medium text-slate-600 block mb-1">
-                  NPWP Pemotong (16 Digit)
+                  NPWP Pemotong
                 </label>
                 <input
                   type="text"
+                  inputMode="numeric"
                   maxLength={16}
                   value={withholderNpwp}
                   onChange={(e) => handleNpwpChange(e.target.value)}
-                  placeholder="0000000000000000"
+                  placeholder={DEFAULT_NPWP_PEMOTONG}
                   className="w-full text-xs font-mono font-medium px-2.5 py-1.5 rounded border border-slate-300 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
@@ -326,14 +344,15 @@ export default function CetakCoretaxDialog({
 
               <div>
                 <label className="text-[11px] font-medium text-slate-600 block mb-1">
-                  NITKU Pemotong (16 Digit)
+                  NITKU Pemotong (22 Digit)
                 </label>
                 <input
                   type="text"
-                  maxLength={16}
+                  inputMode="numeric"
+                  maxLength={22}
                   value={withholderNitku}
                   onChange={(e) => handleNitkuChange(e.target.value)}
-                  placeholder="0000000000000000"
+                  placeholder={DEFAULT_NITKU_PEMOTONG}
                   className="w-full text-xs font-mono font-medium px-2.5 py-1.5 rounded border border-slate-300 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>

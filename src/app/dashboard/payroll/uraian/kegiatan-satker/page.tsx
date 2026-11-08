@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import Image from 'next/image';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -39,6 +39,7 @@ import {
   usePayrollPeriod,
 } from '@/lib/queries/hooks';
 import { MONTHS_ID } from '@/utils/rekapConfig';
+import { defaultPayrollPeriodToken } from '@/lib/payroll/domain';
 import { generateProposalKegiatanPdf } from '@/utils/generateProposalKegiatanPdf';
 import { generateLpjPdf } from '@/utils/generateLpjPdf';
 import { generateLpjExpenseReportPdf } from '@/utils/generateLpjExpenseReportPdf';
@@ -142,6 +143,7 @@ function InsertRowButton({
 export default function KegiatanSatkerPage() {
   const { profile } = useAuth();
   const searchParams = useSearchParams();
+  const router = useRouter();
 
   // Read params from URL search parameters
   const month = parseInt(searchParams.get('month') || String(new Date().getMonth() + 1), 10);
@@ -156,6 +158,7 @@ export default function KegiatanSatkerPage() {
   const deleteRequestRef = useRef<{ id: string; requestId: string } | null>(null);
   const [pendingPayrollSync, setPendingPayrollSync] = useState<string | null>(null);
   const [retryingPayroll, setRetryingPayroll] = useState(false);
+  const [movingPeriod, setMovingPeriod] = useState(false);
   const persistence = useProposalDrafts(profile, periodToken);
   const { controller: draftController } = persistence;
   const proposalList = useMemo(() => {
@@ -445,16 +448,17 @@ export default function KegiatanSatkerPage() {
   }, [currentProposalStatus, profile]);
 
   // Mirrors the ProposalKegiatan delete rule: Super Admin may delete any
-  // proposal, Kepala SatKer Loyalis only their own, and only while the period is open.
+  // proposal, Kepala SatKer Loyalis only their own. Unsubmitted drafts can be
+  // deleted even in a closed period since they have no financial records.
   const selectedProposal = useMemo(
     () => proposalList.find((item) => item.id === selectedProposalId) ?? null,
     [proposalList, selectedProposalId],
   );
   const canDeleteProposal = Boolean(
-    selectedProposal && !periodClosed && (
+    selectedProposal && (
       profile?.role === 'super_admin' ||
       (profile?.role === 'satker_head_loyalis' && selectedProposal.submittedBy === profile.uid)
-    ),
+    ) && (!periodClosed || selectedProposal.status === 'proposal_draft'),
   );
 
   const handleSelectProposal = (item: any) => {
@@ -670,7 +674,7 @@ export default function KegiatanSatkerPage() {
       nextName = nextName.replace('2025', '2026');
     } else if (nextName.includes('2024')) {
       nextName = nextName.replace('2024', '2026');
-    } else {
+    } else if (!nextName.includes(String(year))) {
       nextName = `${nextName} ${year}`;
     }
 
@@ -696,6 +700,14 @@ export default function KegiatanSatkerPage() {
       })));
     }
 
+    if (pastItem.signatures && Array.isArray(pastItem.signatures) && pastItem.signatures.length > 0) {
+      setProposalSignatures(pastItem.signatures);
+    }
+    if (pastItem.realisasiEnabled !== undefined) setRealisasiEnabled(pastItem.realisasiEnabled);
+    if (pastItem.vakasiPengujiEnabled !== undefined) setVakasiPengujiEnabled(pastItem.vakasiPengujiEnabled);
+    if (pastItem.kepanitiaaanEnabled !== undefined) setKepanitiaaanEnabled(pastItem.kepanitiaaanEnabled);
+    if (pastItem.receiptEnabled !== undefined) setReceiptEnabled(pastItem.receiptEnabled);
+
     setExpenseReports([]);
     setReportEditorGroupId(null);
 
@@ -708,6 +720,43 @@ export default function KegiatanSatkerPage() {
       type: 'success',
       text: `Berhasil mengkloning template anggaran dari "${pastItem.reportName}". Silakan sesuaikan rincian proposal.`
     });
+  };
+
+  const handleMoveProposalToCurrentPeriod = async () => {
+    if (!selectedProposalId) return;
+    const now = new Date();
+    const targetPeriod = defaultPayrollPeriodToken(now, false);
+    if (targetPeriod === periodToken) {
+      setMessage({ type: 'error', text: 'Proposal sudah berada di periode berjalan.' });
+      return;
+    }
+    setMovingPeriod(true);
+    try {
+      const res = await authenticatedJson<{ success: boolean; newProposalId: string; targetPeriod: string; reportName: string }>(
+        '/api/payroll/proposal-kegiatan/move-period',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            proposalId: selectedProposalId,
+            targetPeriod,
+          }),
+        }
+      );
+      if (res.success) {
+        const [targetYear, targetMonth] = targetPeriod.split('-').map(Number);
+        skipAutoSaveRef.current = true;
+        setMessage({
+          type: 'success',
+          text: `Proposal "${res.reportName || reportName}" berhasil dipindahkan ke periode ${MONTHS_ID[targetMonth - 1]} ${targetYear}. Silakan lanjutkan edit dan ajukan.`
+        });
+        router.push(`/dashboard/payroll/uraian/kegiatan-satker?month=${targetMonth}&year=${targetYear}`);
+      }
+    } catch (err: any) {
+      console.error('Error moving proposal period:', err);
+      setMessage({ type: 'error', text: err?.message || 'Gagal memindahkan proposal ke periode berjalan.' });
+    } finally {
+      setMovingPeriod(false);
+    }
   };
 
   // Save Proposal Draft
@@ -1304,6 +1353,45 @@ export default function KegiatanSatkerPage() {
 
           </div>
         </div>
+
+        {/* Closed Period Alert for Draft Proposals */}
+        {periodClosed && activeStage === 'proposal' && (
+          selectedProposalId && (!currentProposalStatus || currentProposalStatus === 'proposal_draft') ? (
+            <div className="p-4 bg-amber-50/90 border border-amber-200/90 rounded-md flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-2xs">
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-sm bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-amber-900 text-xs flex items-center gap-1.5">
+                    Draft Terkunci: Periode {MONTHS_ID[month - 1]} {year} Sudah Ditutup
+                  </h4>
+                  <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
+                    Proposal ini belum sempat diajukan sebelum periode payroll ditutup. Proposal pada periode tertutup tidak dapat diedit atau diajukan. Silakan pindahkan draft ini ke periode berjalan untuk melanjutkan pengeditan dan pengajuan anggaran.
+                  </p>
+                </div>
+              </div>
+              {canManageProposal && (profile?.role === 'super_admin' || selectedProposal?.submittedBy === profile?.uid) && (
+                <Button
+                  type="button"
+                  disabled={movingPeriod}
+                  onClick={handleMoveProposalToCurrentPeriod}
+                  className="rounded-sm px-4 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs h-9 flex items-center gap-1.5 shrink-0 shadow-sm cursor-pointer"
+                >
+                  {movingPeriod ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                  Pindahkan ke Periode Berjalan
+                </Button>
+              )}
+            </div>
+          ) : !selectedProposalId ? (
+            <div className="p-3.5 bg-amber-50/70 border border-amber-200/70 rounded-md flex items-center gap-2.5 text-xs text-amber-800">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>
+                Periode payroll <strong>{MONTHS_ID[month - 1]} {year}</strong> sudah ditutup. Untuk membuat kegiatan baru, pilih periode yang masih berjalan pada menu di atas.
+              </span>
+            </div>
+          ) : null
+        )}
 
         {/* Letterhead Banner */}
         <div className="border border-slate-200/80 rounded-md p-4 bg-slate-50/40 relative overflow-hidden flex items-center gap-4">
