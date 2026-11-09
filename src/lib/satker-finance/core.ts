@@ -109,8 +109,16 @@ export function defaultCashFlowSection(type: AccountType, code: string): CashFlo
 
 export const emptyCashFlows = (): CashFlowAmounts => ({ OPERATING: 0, INVESTING: 0, FINANCING: 0 });
 
+export function isCashAccount(account?: Pick<FinancialAccount, 'type' | 'code' | 'cashEquivalent'> | null): boolean {
+  if (!account) return false;
+  return Boolean(
+    account.cashEquivalent ||
+    (account.type === 'AKTIVA' && (account.code.startsWith('10') || account.code.startsWith('11')))
+  );
+}
+
 const cashChangeOf = (lines: Pick<JournalLine, 'accountCode' | 'debit' | 'credit'>[], byId: Map<string, FinancialAccount>) =>
-  lines.reduce((sum, line) => sum + (byId.get(line.accountCode)?.cashEquivalent ? line.debit - line.credit : 0), 0);
+  lines.reduce((sum, line) => sum + (isCashAccount(byId.get(line.accountCode)) ? line.debit - line.credit : 0), 0);
 
 /**
  * How much cash a journal moved in each cash-flow section. Each non-cash line
@@ -127,7 +135,7 @@ export function cashFlowAllocation(lines: Pick<JournalLine, 'accountCode' | 'deb
   if (cashChangeOf(lines, byId) === 0) return flows;
   for (const line of lines) {
     const account = byId.get(line.accountCode);
-    if (account?.cashEquivalent) continue;
+    if (isCashAccount(account)) continue;
     const section = account?.cashFlowSection;
     if (!section) throw new Error(`Akun ${account?.code || line.accountCode} belum memiliki klasifikasi arus kas. BAK dapat mengaturnya di katalog akun.`);
     flows[section] -= line.debit - line.credit;
@@ -234,8 +242,8 @@ export function buildVoucher(
     if (!account) throw new Error(`Kode akun ${String(raw.accountCode)} tidak dapat diposting.`);
     if (!source) throw new Error(`Kode akun ${String(raw.paymentAccountCode)} tidak dapat diposting.`);
     if (accountId(account) === accountId(source)) throw new Error('Akun transaksi dan sumber/tujuan kas harus berbeda.');
-    if (!source.cashEquivalent) throw new Error('Sumber/tujuan pembayaran harus akun kas atau bank.');
-    if (kind === 'TRANSFER' && !account.cashEquivalent) throw new Error('Transfer harus antar akun kas/bank.');
+    if (!isCashAccount(source)) throw new Error('Sumber/tujuan pembayaran harus akun kas atau bank.');
+    if (kind === 'TRANSFER' && !isCashAccount(account)) throw new Error('Transfer harus antar akun kas/bank.');
     lines = kind === 'INFLOW'
       ? [line(accountId(source), total, 0), line(accountId(account), 0, total)]
       : kind === 'TRANSFER'
@@ -320,8 +328,8 @@ export function buildFinancialStatements(args: {
   });
   const abnormalBalances = rows.filter((row) => hasAbnormalBalance(row.account, row.endingDebit, row.endingCredit))
     .map((row) => ({ account: row.account, side: row.endingDebit ? 'DEBIT' as const : 'CREDIT' as const, amount: row.endingDebit || row.endingCredit }));
-  const cashOpening = args.accounts.filter((account) => account.cashEquivalent).reduce((sum, account) => sum + (openingSigned.get(accountId(account)) ?? 0), 0);
-  const endingCash = rows.filter((row) => row.account.cashEquivalent).reduce((sum, row) => sum + row.endingDebit - row.endingCredit, 0);
+  const cashOpening = args.accounts.filter(isCashAccount).reduce((sum, account) => sum + (openingSigned.get(accountId(account)) ?? 0), 0);
+  const endingCash = rows.filter((row) => isCashAccount(row.account)).reduce((sum, row) => sum + row.endingDebit - row.endingCredit, 0);
   const cashFlowChange = cashFlows.OPERATING + cashFlows.INVESTING + cashFlows.FINANCING;
   const income = args.monthIndex === 'ANNUAL' ? monthlyIncome.reduce((sum, month) => sum + month.income, 0) : monthlyIncome[targetPeriod - 1].income;
   const expense = args.monthIndex === 'ANNUAL' ? monthlyIncome.reduce((sum, month) => sum + month.expense, 0) : monthlyIncome[targetPeriod - 1].expense;
@@ -330,7 +338,7 @@ export function buildFinancialStatements(args: {
   const openingCashForMonth = args.monthIndex === 'ANNUAL' ? cashOpening : cashOpening + args.entries.filter((entry) => {
     const entryPeriod = periodOf.get(entry.date.slice(0, 7));
     return entry.academicYear === args.academicYear && !!entryPeriod && entryPeriod < targetPeriod;
-  }).reduce((sum, entry) => sum + entry.lines.reduce((lineSum, line) => lineSum + (accountMap.get(line.accountCode)?.cashEquivalent ? line.debit - line.credit : 0), 0), 0);
+  }).reduce((sum, entry) => sum + entry.lines.reduce((lineSum, line) => lineSum + (isCashAccount(accountMap.get(line.accountCode)) ? line.debit - line.credit : 0), 0), 0);
   const monthCashFlows = args.monthIndex === 'ANNUAL' ? cashFlows : { OPERATING: 0, INVESTING: 0, FINANCING: 0 };
   if (args.monthIndex !== 'ANNUAL') {
     for (const entry of args.entries) {
@@ -342,7 +350,7 @@ export function buildFinancialStatements(args: {
   const monthCashChange = monthCashFlows.OPERATING + monthCashFlows.INVESTING + monthCashFlows.FINANCING;
   let runningCash = cashOpening;
   for (const month of monthlyIncome) {
-    runningCash += args.entries.filter((entry) => entry.academicYear === args.academicYear && periodOf.get(entry.date.slice(0, 7)) === month.period).reduce((sum, entry) => sum + entry.lines.reduce((lineSum, line) => lineSum + (accountMap.get(line.accountCode)?.cashEquivalent ? line.debit - line.credit : 0), 0), 0);
+    runningCash += args.entries.filter((entry) => entry.academicYear === args.academicYear && periodOf.get(entry.date.slice(0, 7)) === month.period).reduce((sum, entry) => sum + entry.lines.reduce((lineSum, line) => lineSum + (isCashAccount(accountMap.get(line.accountCode)) ? line.debit - line.credit : 0), 0), 0);
     month.endingCash = runningCash;
   }
   const incomeRows = rows.filter((row) => row.account.reportTarget === 'INCOME_STATEMENT').map((row) => ({

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   academicYearFor, buildFinancialStatements, buildVoucher, cashFlowAllocation, DEFAULT_ACCOUNTS, defaultCashFlowSection,
-  entryCashFlows, entryReceiptPaths, fiscalMonths, groupNormalBalance, hasAbnormalBalance, JournalEntry, lastDateOfMonth,
+  entryCashFlows, entryReceiptPaths, fiscalMonths, groupNormalBalance, hasAbnormalBalance, isCashAccount, JournalEntry, lastDateOfMonth,
   validateEntryDate, validateOpeningBalances, type FinancialAccount,
 } from './core';
 
@@ -20,6 +20,12 @@ test('catalog faithfully includes 129 workbook codes and rejects empty placehold
   assert.equal(DEFAULT_ACCOUNTS.find((account) => account.code === '11000')?.cashEquivalent, true);
   assert.equal(DEFAULT_ACCOUNTS.find((account) => account.code === '11001')?.name, 'Bank Mandiri');
   assert.equal(DEFAULT_ACCOUNTS.find((account) => account.code === '11002')?.postable, false);
+  assert.equal(DEFAULT_ACCOUNTS.find((account) => account.code === '11002')?.cashEquivalent, true);
+  assert.equal(isCashAccount({ code: '10000', type: 'AKTIVA', cashEquivalent: true }), true);
+  assert.equal(isCashAccount({ code: '11002', type: 'AKTIVA', cashEquivalent: false }), true);
+  assert.equal(isCashAccount({ code: '11003', type: 'AKTIVA', cashEquivalent: false }), true);
+  assert.equal(isCashAccount({ code: '12001', type: 'AKTIVA', cashEquivalent: false }), false);
+  assert.equal(isCashAccount({ code: '41000', type: 'TERIMA', cashEquivalent: false }), false);
   assert.throws(() => entry('invalid', '2026-09-02', { kind: 'EXPENSE', accountCode: '11002', paymentAccountCode: '10000', amount: 1 }), /tidak dapat diposting|memerlukan/);
 });
 
@@ -87,6 +93,17 @@ test('expense, droping, transfer, and investing vouchers reconcile ledger and ca
   assert.equal(statements.annualWorksheet.incomeDebit, statements.annualWorksheet.incomeCredit);
   assert.equal(statements.annualWorksheet.balanceDebit, statements.annualWorksheet.balanceCredit);
   assert.equal(statements.rows.find((row) => row.account.code === '10000')?.endingDebit, 345_000);
+  // Neraca: what the unit has equals what it owes plus Modal plus the surplus/deficit kept so far.
+  const sheet = statements.balanceSheet;
+  assert.equal(sheet.assets, sheet.liabilities + sheet.equity + sheet.accumulatedSurplus);
+});
+
+test('the Neraca balances in a deficit year once the running deficit is counted under Modal', () => {
+  const entries = [entry('expense', '2026-09-02', { kind: 'EXPENSE', accountCode: '52101', paymentAccountCode: '11001', amount: 700_000 })];
+  const sheet = buildFinancialStatements({ accounts: DEFAULT_ACCOUNTS, opening, entries, academicYear, monthIndex: 9 }).balanceSheet;
+  assert.equal(sheet.accumulatedSurplus, -700_000);
+  assert.notEqual(sheet.assets, sheet.liabilities + sheet.equity);
+  assert.equal(sheet.assets, sheet.liabilities + sheet.equity + sheet.accumulatedSurplus);
 });
 
 test('advanced accrual does not invent a cash flow and monthly balances chain into annual', () => {

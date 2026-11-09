@@ -36,8 +36,8 @@
     "normalBalance": "DEBIT",
     "reportTarget": "BALANCE_SHEET",
     "postable": false,
-    "cashEquivalent": false,
-    "cashFlowSection": "OPERATING"
+    "cashEquivalent": true,
+    "cashFlowSection": null
   },
   {
     "code": "12000",

@@ -1,4 +1,4 @@
-import { accountId, CASH_FLOW_SECTIONS, fiscalMonths, type CashFlowSection, type FinancialAccount, type JournalEntry } from './core';
+import { accountId, CASH_FLOW_SECTIONS, fiscalMonths, isCashAccount, type CashFlowSection, type FinancialAccount, type JournalEntry } from './core';
 
 export type CashFlowRow = { code: string; name: string; amount: number };
 export type CashFlowSectionLines = { receipts: CashFlowRow[]; payments: CashFlowRow[]; receiptTotal: number; paymentTotal: number; net: number };
@@ -28,7 +28,7 @@ export function cashFlowStatementSections(args: { entries: JournalEntry[]; accou
 
   for (const entry of args.entries) {
     if (entry.academicYear !== args.academicYear || !entry.date.startsWith(prefix)) continue;
-    const cashChange = entry.lines.reduce((sum, line) => sum + (byId.get(line.accountCode)?.cashEquivalent ? line.debit - line.credit : 0), 0);
+    const cashChange = entry.lines.reduce((sum, line) => sum + (isCashAccount(byId.get(line.accountCode)) ? line.debit - line.credit : 0), 0);
     if (!cashChange) continue;
     // Older journals have only one section; retain that assignment while showing their known account lines.
     if (!entry.cashFlows) {
@@ -36,7 +36,7 @@ export function cashFlowStatementSections(args: { entries: JournalEntry[]; accou
         let assigned = 0;
         for (const line of entry.lines) {
           const account = byId.get(line.accountCode);
-          if (account?.cashEquivalent || !account) continue;
+          if (isCashAccount(account) || !account) continue;
           const amount = line.credit - line.debit;
           add(entry.cashFlowSection, accountId(account), amount);
           assigned += amount;
@@ -48,7 +48,7 @@ export function cashFlowStatementSections(args: { entries: JournalEntry[]; accou
     }
     for (const line of entry.lines) {
       const account = byId.get(line.accountCode);
-      if (!account || account.cashEquivalent || !account.cashFlowSection) continue;
+      if (!account || isCashAccount(account) || !account.cashFlowSection) continue;
       add(account.cashFlowSection, accountId(account), line.credit - line.debit);
     }
   }
@@ -57,7 +57,7 @@ export function cashFlowStatementSections(args: { entries: JournalEntry[]; accou
   for (const section of CASH_FLOW_SECTIONS) {
     const moved = moves.get(section)!;
     // Income and expense accounts of the section are included at zero for the complete catalog view.
-    const statementIds = new Set(args.accounts.filter((account) => account.postable && !account.cashEquivalent && account.cashFlowSection === section && account.reportTarget === 'INCOME_STATEMENT').map(accountId));
+    const statementIds = new Set(args.accounts.filter((account) => account.postable && !isCashAccount(account) && account.cashFlowSection === section && account.reportTarget === 'INCOME_STATEMENT').map(accountId));
     const lines = [...new Set([...moved.keys(), ...statementIds])].filter((id) => {
       const amounts = moved.get(id);
       return (amounts?.receipts ?? 0) !== 0 || (amounts?.payments ?? 0) !== 0 || statementIds.has(id);
@@ -96,7 +96,7 @@ export function journalReceiptRefs(args: { entries: (JournalEntry & { receiptCou
     .filter((entry) => entry.academicYear === args.academicYear && entry.date.startsWith(prefix) && (entry.receiptCount ?? 0) > 0)
     .sort((a, b) => a.date.localeCompare(b.date))
     .flatMap((entry) => {
-      const cashChange = entry.lines.reduce((sum, line) => sum + (byId.get(line.accountCode)?.cashEquivalent ? line.debit - line.credit : 0), 0);
+      const cashChange = entry.lines.reduce((sum, line) => sum + (isCashAccount(byId.get(line.accountCode)) ? line.debit - line.credit : 0), 0);
       return Array.from({ length: entry.receiptCount ?? 0 }, (_, index) => ({
         entryId: entry.id, date: entry.date, description: entry.description, cashChange, totalAmount: entry.totalAmount, index, count: entry.receiptCount ?? 0,
       }));

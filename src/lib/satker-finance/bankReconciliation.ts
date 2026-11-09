@@ -13,7 +13,7 @@
  *
  * Firebase-free, so the server enforces exactly what the page shows.
  */
-import { accountId, type FinancialAccount } from './core';
+import { accountId, isCashAccount, type FinancialAccount } from './core';
 
 export type ReconciliationItemKind = 'DEPOSIT_IN_TRANSIT' | 'OUTSTANDING_PAYMENT';
 export type ReconciliationItem = { kind: ReconciliationItemKind; description: string; amount: number };
@@ -66,7 +66,7 @@ type BalanceRow = { account: FinancialAccount; endingDebit: number; endingCredit
 
 /** Cash and bank accounts that need a reconciliation for the month: any with a balance or with movement that month. */
 export function accountsToReconcile<T extends BalanceRow>(rows: T[]): T[] {
-  return rows.filter((row) => row.account.cashEquivalent && row.account.postable &&
+  return rows.filter((row) => isCashAccount(row.account) && row.account.postable &&
     (row.endingDebit || row.endingCredit || row.periodDebit || row.periodCredit));
 }
 
