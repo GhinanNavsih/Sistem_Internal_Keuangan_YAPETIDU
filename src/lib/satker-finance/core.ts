@@ -109,11 +109,11 @@ export function defaultCashFlowSection(type: AccountType, code: string): CashFlo
 
 export const emptyCashFlows = (): CashFlowAmounts => ({ OPERATING: 0, INVESTING: 0, FINANCING: 0 });
 
-export function isCashAccount(account?: Pick<FinancialAccount, 'type' | 'code' | 'cashEquivalent'> | null): boolean {
+export function isCashAccount(account?: Partial<Pick<FinancialAccount, 'type' | 'code' | 'cashEquivalent'>> | null): boolean {
   if (!account) return false;
   return Boolean(
     account.cashEquivalent ||
-    (account.type === 'AKTIVA' && (account.code.startsWith('10') || account.code.startsWith('11')))
+    (account.type === 'AKTIVA' && account.code && (account.code.startsWith('10') || account.code.startsWith('11')))
   );
 }
 
