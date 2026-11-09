@@ -5,6 +5,7 @@ import { DEFAULT_ACCOUNTS, defaultCashFlowSection, FinancialAccount, groupNormal
 import type { CashFlowSignatures, SignatureEmployee } from '@/lib/satker-finance/signatures';
 import type { FixedAsset } from '@/lib/satker-finance/depreciation';
 import biroUmumAkunData from '@/lib/satker-finance/biro-umum-26-27-akun.json';
+import psqAkunData from '@/lib/satker-finance/psq-26-27-akun.json';
 
 export const UNIT_COLLECTION = 'SatkerFinancialUnits';
 export const YEAR_COLLECTION = 'SatkerFinancialYears';
@@ -12,6 +13,8 @@ export const ACCOUNT_COLLECTION = 'SatkerFinancialAccounts';
 export const UNIT_ACCOUNT_SUBCOLLECTION = 'accountCatalog';
 export const BIRO_UMUM_ACCOUNT_UNIT_ID = 'loyalis-6e44fkzdvenwmudsoklvzbokblg3';
 export const BIRO_UMUM_ACCOUNT_SOURCE = biroUmumAkunData.source;
+export const PSQ_ACCOUNT_UNIT_ID = 'loyalis-ili3huhuirf6y7uicy7o8s81bg63';
+export const PSQ_ACCOUNT_SOURCE = psqAkunData.source;
 export const CATALOG_META_REF = adminDb.collection('SatkerFinancialCatalogMeta').doc('catalog');
 export const BOOK_PATH = '/dashboard/satker-finance';
 export const FINANCIAL_READ_ROLES = ['super_admin', 'finance_verifier', 'rector_finance'] as const;
@@ -165,7 +168,9 @@ export async function loadFixedAssets(unitId: string) {
 }
 
 export function unitAccountCatalogSource(unitId: string) {
-  return unitId === BIRO_UMUM_ACCOUNT_UNIT_ID ? BIRO_UMUM_ACCOUNT_SOURCE : null;
+  if (unitId === BIRO_UMUM_ACCOUNT_UNIT_ID) return BIRO_UMUM_ACCOUNT_SOURCE;
+  if (unitId === PSQ_ACCOUNT_UNIT_ID) return PSQ_ACCOUNT_SOURCE;
+  return null;
 }
 
 type ImportedAkun = {
@@ -186,25 +191,30 @@ function inferredCashFlowSection(account: ImportedAkun): FinancialAccount['cashF
 }
 
 function accountsForUnit(unitId: string, globalAccounts: FinancialAccount[]): FinancialAccount[] {
-  if (unitId !== BIRO_UMUM_ACCOUNT_UNIT_ID) return globalAccounts;
-  const importedAccounts = biroUmumAkunData.accounts as ImportedAkun[];
+  let importedAccounts: ImportedAkun[] | null = null;
+  if (unitId === BIRO_UMUM_ACCOUNT_UNIT_ID) {
+    importedAccounts = biroUmumAkunData.accounts as ImportedAkun[];
+  } else if (unitId === PSQ_ACCOUNT_UNIT_ID) {
+    importedAccounts = psqAkunData.accounts as ImportedAkun[];
+  }
+  if (!importedAccounts) return globalAccounts;
   const globalByCode = new Map(globalAccounts.map((account) => [account.code, account]));
   return importedAccounts.map((source) => {
     const existing = globalByCode.get(source.code);
-    const normalBalance = existing?.normalBalance ?? source.normalBalance;
-    const reportTarget = existing?.reportTarget ?? source.reportTarget;
+    const normalBalance = source.normalBalance !== undefined ? source.normalBalance : (existing?.normalBalance ?? null);
+    const reportTarget = source.reportTarget !== undefined ? source.reportTarget : (existing?.reportTarget ?? null);
     const postable = !!source.name && !!normalBalance && !!reportTarget;
     return {
       ...(existing || {}),
-      id: existing ? source.code : `biro_umum_${source.code}`,
+      id: existing ? source.code : `${unitId}_${source.code}`,
       code: source.code,
       name: source.name,
       type: source.type,
       normalBalance,
       reportTarget,
       postable,
-      cashEquivalent: existing?.cashEquivalent === true || (source.type === 'AKTIVA' && (source.code.startsWith('10') || source.code.startsWith('11'))) || (postable && (source.code === '10000' || /^11\d{3}$/.test(source.code))),
-      cashFlowSection: existing?.cashFlowSection ?? inferredCashFlowSection(source),
+      cashEquivalent: (source.type === 'AKTIVA' && (source.code.startsWith('10') || source.code.startsWith('11'))) || (existing?.cashEquivalent === true) || (postable && (source.code === '10000' || /^11\d{3}$/.test(source.code))),
+      cashFlowSection: (source.type === 'AKTIVA' && (source.code.startsWith('10') || source.code.startsWith('11'))) ? null : (existing?.cashFlowSection ?? inferredCashFlowSection(source)),
     };
   });
 }

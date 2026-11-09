@@ -1,0 +1,292 @@
+{
+  "source": "Laporan Keuangan Pusat Studi Al-Quran 26:27.xlsx · AKUN",
+  "accounts": [
+    {
+      "code": "10000",
+      "name": "KAS",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "11000",
+      "name": "BANK",
+      "type": "AKTIVA",
+      "normalBalance": null,
+      "reportTarget": null
+    },
+    {
+      "code": "11001",
+      "name": "- Rek No. 7256289339",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "12000",
+      "name": "PIUTANG",
+      "type": "AKTIVA",
+      "normalBalance": null,
+      "reportTarget": null
+    },
+    {
+      "code": "12001",
+      "name": "Piutang MTQ",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "13000",
+      "name": "AKTIVA TETAP",
+      "type": "AKTIVA",
+      "normalBalance": null,
+      "reportTarget": null
+    },
+    {
+      "code": "13001",
+      "name": "- Tanah",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "13002",
+      "name": "- Gedung",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "13003",
+      "name": "- Kendaraan",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "13004",
+      "name": "- Sarana & Perlengkapan",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "13005",
+      "name": "- Alat-Alat Laboratorium",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "13011",
+      "name": "- Akum Dep Gedung",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "13012",
+      "name": "- Akum.Dep Kendaraan",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "13013",
+      "name": "- Akum.Dep.Sarana & Perlengkapan",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "13014",
+      "name": "- Akum Dep.Alat-Alat Laboratorium",
+      "type": "AKTIVA",
+      "normalBalance": "DEBIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "20000",
+      "name": "HUTANG",
+      "type": "HUTANG",
+      "normalBalance": null,
+      "reportTarget": null
+    },
+    {
+      "code": "20001",
+      "name": "Hutang Lain-Lain",
+      "type": "HUTANG",
+      "normalBalance": "CREDIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "30000",
+      "name": "MODAL",
+      "type": "MODAL",
+      "normalBalance": "CREDIT",
+      "reportTarget": "BALANCE_SHEET"
+    },
+    {
+      "code": "40000",
+      "name": "PENDAPATAN",
+      "type": "TERIMA",
+      "normalBalance": null,
+      "reportTarget": null
+    },
+    {
+      "code": "41000",
+      "name": "Droping Universitas",
+      "type": "TERIMA",
+      "normalBalance": "CREDIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "42000",
+      "name": "Penerimaan Lain",
+      "type": "TERIMA",
+      "normalBalance": "CREDIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "50000",
+      "name": "PENGELUARAN",
+      "type": "KELUAR",
+      "normalBalance": null,
+      "reportTarget": null
+    },
+    {
+      "code": "51000",
+      "name": "kajian Selasa Barokah",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51101",
+      "name": "kajian ramadan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51102",
+      "name": "sertifikasi",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51103",
+      "name": "pembinaan tilawah",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51104",
+      "name": "MTQ",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51105",
+      "name": "SPJ dan Transportasi",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51106",
+      "name": "kesekretariatan",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51107",
+      "name": "Konsumsi",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51108",
+      "name": "Khotmil Qur'an",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51109",
+      "name": "kajian tafsir",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51110",
+      "name": "Khotmil Qur'an(medika)",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51111",
+      "name": "Tes baca qur'an",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51112",
+      "name": "Haul Pendiri UNIPDU",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51113",
+      "name": "K. Rapat Koordinasi",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51114",
+      "name": "Rekening Koran",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51115",
+      "name": "Ijazah",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51116",
+      "name": "Tes Beasiswa Tahfidz",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51117",
+      "name": "beasiswa damen",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    },
+    {
+      "code": "51120",
+      "name": "Lain-lain",
+      "type": "KELUAR",
+      "normalBalance": "DEBIT",
+      "reportTarget": "INCOME_STATEMENT"
+    }
+  ]
+}
