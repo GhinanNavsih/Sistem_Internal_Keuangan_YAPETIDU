@@ -283,9 +283,9 @@ export async function POST(request: NextRequest) {
       let accountData: Record<string, unknown>;
       if (sourceAccount) {
         const type = sourceAccount.type;
-        const isCashBank = typeof raw.cashEquivalent === 'boolean'
-          ? (raw.cashEquivalent && type === 'AKTIVA' && (code === '10000' || code.startsWith('11')))
-          : (sourceAccount.cashEquivalent || (type === 'AKTIVA' && (code === '10000' || code.startsWith('11'))));
+        const isCashBank = (type === 'AKTIVA' && (code.startsWith('10') || code.startsWith('11')))
+          || raw.cashEquivalent === true
+          || sourceAccount.cashEquivalent;
         const cashEquivalent = isCashBank;
         const contra = raw.contra === true && !cashEquivalent;
         const normalBalance = groupNormalBalance(type, contra);
@@ -302,7 +302,8 @@ export async function POST(request: NextRequest) {
       } else {
         const type = raw.type as AccountType;
         if (!['AKTIVA', 'HUTANG', 'MODAL', 'TERIMA', 'KELUAR'].includes(type)) throw new HttpError(400, 'Kelompok akun tidak valid.');
-        const cashEquivalent = raw.cashEquivalent === true;
+        const isCashBank = (type === 'AKTIVA' && (code.startsWith('10') || code.startsWith('11'))) || raw.cashEquivalent === true;
+        const cashEquivalent = isCashBank;
         if (cashEquivalent && (type !== 'AKTIVA' || (!code.startsWith('10') && !code.startsWith('11')))) {
           throw new HttpError(400, 'Akun kas atau bank harus bertipe Aktiva dan memakai nomor 10xxx atau 11xxx.');
         }
@@ -341,7 +342,8 @@ export async function POST(request: NextRequest) {
       if (normalBalance !== 'DEBIT' && normalBalance !== 'CREDIT') throw new HttpError(400, 'Pos saldo tidak valid.');
       if (reportTarget !== 'BALANCE_SHEET' && reportTarget !== 'INCOME_STATEMENT') throw new HttpError(400, 'Pos laporan tidak valid.');
       if (original.type === 'AKTIVA' && reportTarget !== 'BALANCE_SHEET' || original.type === 'HUTANG' && reportTarget !== 'BALANCE_SHEET' || original.type === 'MODAL' && reportTarget !== 'BALANCE_SHEET' || ['TERIMA', 'KELUAR'].includes(original.type) && reportTarget !== 'INCOME_STATEMENT') throw new HttpError(400, 'Pos laporan tidak sesuai kelompok akun.');
-      const cashEquivalent = raw.cashEquivalent === true;
+      const isCashBank = (original.type === 'AKTIVA' && (code.startsWith('10') || code.startsWith('11'))) || raw.cashEquivalent === true;
+      const cashEquivalent = isCashBank;
       if (cashEquivalent && code !== '10000' && !code.startsWith('11')) throw new HttpError(400, 'Hanya kode kas 10000 atau kelompok bank 11xxx dapat menjadi kas/bank.');
       const cashFlowSection = cashEquivalent ? null : raw.cashFlowSection;
       if (!cashEquivalent && !CASH_FLOW_SECTIONS.includes(cashFlowSection as typeof CASH_FLOW_SECTIONS[number])) throw new HttpError(400, 'Klasifikasi arus kas wajib diisi.');

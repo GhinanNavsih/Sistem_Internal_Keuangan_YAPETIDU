@@ -203,7 +203,7 @@ function accountsForUnit(unitId: string, globalAccounts: FinancialAccount[]): Fi
       normalBalance,
       reportTarget,
       postable,
-      cashEquivalent: existing?.cashEquivalent === true || (postable && (source.code === '10000' || /^11\d{3}$/.test(source.code))),
+      cashEquivalent: existing?.cashEquivalent === true || (source.type === 'AKTIVA' && (source.code.startsWith('10') || source.code.startsWith('11'))) || (postable && (source.code === '10000' || /^11\d{3}$/.test(source.code))),
       cashFlowSection: existing?.cashFlowSection ?? inferredCashFlowSection(source),
     };
   });
@@ -220,8 +220,8 @@ export async function loadAccounts(unitId?: string): Promise<FinancialAccount[]>
       name: String(override.name || ''),
       normalBalance: override.normalBalance,
       reportTarget: override.reportTarget,
-      cashEquivalent: override.cashEquivalent === true,
-      cashFlowSection: override.cashFlowSection,
+      cashEquivalent: (defaultAccount.type === 'AKTIVA' && (defaultAccount.code.startsWith('10') || defaultAccount.code.startsWith('11'))) || override.cashEquivalent === true,
+      cashFlowSection: ((defaultAccount.type === 'AKTIVA' && (defaultAccount.code.startsWith('10') || defaultAccount.code.startsWith('11'))) || override.cashEquivalent === true) ? null : override.cashFlowSection,
       revision: typeof override.revision === 'number' ? override.revision : 0,
     } as FinancialAccount;
     account.postable = !!account.name && !!account.normalBalance && !!account.reportTarget;
@@ -238,9 +238,9 @@ export async function loadAccounts(unitId?: string): Promise<FinancialAccount[]>
     if (!local) return { ...account, localAccountId, revision: 0 };
     const code = typeof local.code === 'string' ? local.code : account.code;
     const name = typeof local.name === 'string' ? local.name : account.name;
-    const isCashBank = typeof local.cashEquivalent === 'boolean'
-      ? local.cashEquivalent
-      : (account.cashEquivalent || (account.type === 'AKTIVA' && (code === '10000' || code.startsWith('11'))));
+    const isCashBank = (account.type === 'AKTIVA' && (code.startsWith('10') || code.startsWith('11')))
+      || local.cashEquivalent === true
+      || account.cashEquivalent === true;
     const cashEquivalent = isCashBank;
     const normalBalance: FinancialAccount['normalBalance'] = (local.normalBalance === 'DEBIT' || local.normalBalance === 'CREDIT' ? local.normalBalance : null)
       ?? account.normalBalance
@@ -272,8 +272,9 @@ export async function loadAccounts(unitId?: string): Promise<FinancialAccount[]>
       type: local.type as FinancialAccount['type'],
       normalBalance: local.normalBalance as FinancialAccount['normalBalance'],
       reportTarget: local.reportTarget as FinancialAccount['reportTarget'],
-      postable: local.postable === true, cashEquivalent: local.cashEquivalent === true,
-      cashFlowSection: local.cashFlowSection as FinancialAccount['cashFlowSection'],
+      postable: local.postable === true,
+      cashEquivalent: (local.type === 'AKTIVA' && (local.code.startsWith('10') || local.code.startsWith('11'))) || local.cashEquivalent === true,
+      cashFlowSection: ((local.type === 'AKTIVA' && (local.code.startsWith('10') || local.code.startsWith('11'))) || local.cashEquivalent === true) ? null : local.cashFlowSection as FinancialAccount['cashFlowSection'],
       revision: Number(local.revision || 0),
     });
   }
