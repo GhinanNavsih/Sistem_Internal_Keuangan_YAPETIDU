@@ -62,11 +62,11 @@ function response(params) {
   const academicYear = params.get('academicYear');
   const monthIndex = params.get('month') === 'ANNUAL' ? 'ANNUAL' : Number(params.get('month'));
   const unit = { id: 'test-unit', name: 'Test SatKer', headName: 'Kepala Unit', adminName: '', editorUids: ['head'], revision: 1 };
-  const accounts = core.DEFAULT_ACCOUNTS;
+  const accounts = T.accounts || core.DEFAULT_ACCOUNTS;
   const fiscalMonth = core.fiscalMonths(academicYear).find(m => m.monthIndex === (monthIndex === 'ANNUAL' ? 9 : monthIndex));
   const entry = { ...core.buildVoucher({ kind: 'EXPENSE', date: `${fiscalMonth.year}-${String(fiscalMonth.monthIndex).padStart(2, '0')}-02`, description: 'Biaya kantor', accountCode: '52101', paymentAccountCode: '10000', amount: 100 }, accounts),
     id: 'test-journal', satkerId: unit.id, academicYear, monthIndex: fiscalMonth.monthIndex, revision: 2, isBalanced: true, createdBy: 'head' };
-  const openingBalances = { '10000': { debit: 1000, credit: 0 }, '30000': { debit: 0, credit: 1000 } };
+  const openingBalances = T.openingBalances || { '10000': { debit: 1000, credit: 0 }, '30000': { debit: 0, credit: 1000 } };
   const statements = core.buildFinancialStatements({ accounts, opening: openingBalances, entries: [entry], academicYear, monthIndex });
   const signatureEmployees = [{ id: 'different-head', name: 'Ketua Pilihan', role: 'Ketua SatKer Pilihan' }, { id: 'warku', name: 'WarKu Test', role: 'Wakil Rektor Bid. Keuangan, SDM dan Umum' }];
   const cashFlowSignatures = T.signatures || { ketuaSatker: { name: 'Kepala Unit', title: 'Ketua SatKer' }, warku: { employeeId: 'warku', name: 'WarKu Test', title: signatureEmployees[1].role } };
@@ -137,6 +137,40 @@ test('Arus Kas PDF uses the current books without digital approval', async () =>
     assert.match(T.savedPdf, /^Lap Arus Kas - TS - Sep\d{2}\.pdf$/);
     assert.equal(T.writes.length, 0);
   } finally { await unmount(); }
+});
+test('Arus Kas shows all accounts with non-zero debit or credit balance in page table and PDF', async () => {
+  try {
+    const customAccounts = core.DEFAULT_ACCOUNTS.map(a => {
+      if (a.code === '11002') return { ...a, name: 'Rekening Universitas 1003253879', postable: true };
+      return a;
+    });
+    customAccounts.push({
+      id: 'custom_11003', code: '11003', name: 'Rekening Satker 7321428457', type: 'AKTIVA',
+      normalBalance: 'DEBIT', reportTarget: 'BALANCE_SHEET', postable: true, cashEquivalent: true, cashFlowSection: null,
+    });
+    T.accounts = customAccounts;
+    T.openingBalances = {
+      '10000': { debit: 404_633, credit: 0 },
+      '11000': { debit: 0, credit: 0 },
+      '11001': { debit: 0, credit: 0 },
+      '11002': { debit: 8_849_800, credit: 0 },
+      'custom_11003': { debit: 3_716_650, credit: 0 },
+      '30000': { debit: 0, credit: 12_971_083 },
+    };
+    await mount(); await select('satker-period-label', '9'); await click('Arus Kas');
+    assert.match(document.body.textContent, /Rincian Saldo Kas dan Setara Kas Akhir Periode/);
+    assert.match(document.body.textContent, /404\.533/);
+    assert.match(document.body.textContent, /8\.849\.800/);
+    assert.match(document.body.textContent, /3\.716\.650/);
+    await click('Unduh PDF Arus Kas + bukti');
+    assert.equal(T.prints.length, 1);
+    const codes = T.prints[0].cashAccounts.map(a => a.code).sort();
+    assert.deepEqual(codes, ['10000', '11002', '11003']);
+    assert.equal(T.prints[0].cashAccounts.some(a => a.code === '11000' || a.code === '11001'), false);
+  } finally {
+    T.accounts = null; T.openingBalances = null;
+    await unmount();
+  }
 });
 test('consolidated monitoring has no submission-status columns', async () => {
   try {
