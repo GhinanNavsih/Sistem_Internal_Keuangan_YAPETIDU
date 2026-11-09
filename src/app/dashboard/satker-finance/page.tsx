@@ -10,6 +10,7 @@ import {
   fiscalMonths, FinancialAccount, groupNormalBalance, hasAbnormalBalance, isCashAccount, JournalEntry, MAX_ENTRY_RECEIPT_BYTES, MAX_ENTRY_RECEIPTS, OpeningBalances, validateOpeningBalances, type AccountType, type CashFlowSection,
 } from '@/lib/satker-finance/core';
 import { entryChangeBlocker, reversedEntryIds } from '@/lib/satker-finance/entryEditing';
+import { findNegativeCash } from '@/lib/satker-finance/negativeCash';
 import { journalReceiptRefs, cashFlowStatementSections } from '@/lib/satker-finance/cashFlowStatement';
 import { cashFlowSignaturesFrom, defaultCashFlowSignatures, type CashFlowSignatures, type SignatureEmployee } from '@/lib/satker-finance/signatures';
 import { satkerInitials } from '@/lib/satker-finance/fileName';
@@ -160,6 +161,11 @@ export default function SatkerFinancePage() {
   })();
   const draftCashFlowParts = draftCashFlows.flows ? CASH_FLOW_SECTIONS.filter((section) => draftCashFlows.flows![section] !== 0)
     .map((section) => `${cashFlowItems[section]} ${draftCashFlows.flows![section] > 0 ? '+' : '−'}${money(Math.abs(draftCashFlows.flows![section]))}`) : [];
+  // Warns, without blocking, when the draft would leave KAS or a bank account below zero on or after its date.
+  const draftNegativeCash = canPost ? findNegativeCash({
+    accounts: postable, opening: data?.year?.openingBalances || {}, entries: data?.entries || [], academicYear, editingEntryId: editingEntry?.id,
+    draft: { date: voucherDate, lines: lines.filter((line) => line.accountCode && (amountNumber(line.debit) || amountNumber(line.credit))).map((line) => ({ accountCode: line.accountCode, debit: amountNumber(line.debit), credit: amountNumber(line.credit) })) },
+  }) : [];
   const unitItems = [...(canReadAll ? [{ value: 'ALL', label: 'Konsolidasi seluruh SatKer' }] : []), ...(data?.units.map((unit) => ({ value: unit.id, label: unit.name })) || [])];
   const periodItems = [{ value: 'ANNUAL', label: 'Tahunan (Sep–Agu)' }, ...months.map((item) => ({ value: String(item.monthIndex), label: `${monthNames[item.monthIndex - 1]} ${item.year}` }))];
   const accountItems = postable.map((account) => ({ value: financialAccountId(account), label: `${account.code} · ${account.name}` }));
@@ -481,6 +487,7 @@ export default function SatkerFinancePage() {
           {!!draftCashFlowParts.length && <p className="font-medium text-slate-600" title="Mengikuti klasifikasi arus kas akun lawan di katalog akun">Arus kas: {draftCashFlowParts.join(' · ')}</p>}
           {draftCashFlows.error && <p className="text-amber-700">{draftCashFlows.error}</p>}
           {draftDebit !== draftCredit && <p className="mt-1 text-amber-700">Belum seimbang · selisih {money(Math.abs(draftDebit - draftCredit))}</p>}
+          {draftNegativeCash.map((dip) => <p key={dip.accountCode} role="status" className="mt-1 text-amber-700">Saldo {dip.accountName} jadi minus {money(-dip.lowest)} mulai {dip.firstDate}. Catat dulu uang masuknya (mis. Tarik Tunai dari bank). Jurnal tetap bisa diposting.</p>)}
         </td>
         <td className="border-b border-slate-200 px-3 py-1.5 text-right text-xs tabular-nums text-slate-600">{money(draftDebit)}</td>
         <td className="border-b border-slate-200 px-3 py-1.5 text-right text-xs tabular-nums text-slate-600">{money(draftCredit)}</td>
