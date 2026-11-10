@@ -4,7 +4,7 @@ import type { CashFlowSignatures } from '@/lib/satker-finance/signatures';
 import type { CashFlowSection } from '@/lib/satker-finance/core';
 import { movedCashFlowSections, type CashFlowSectionLines } from '@/lib/satker-finance/cashFlowStatement';
 import type { ReceiptPageImage } from '@/utils/satkerReceiptImages';
-import { LOGO_UNIPDU_BASE64, LOGO_YAPETIDU_BASE64 } from './logoConstants';
+import { addReportHeader, addSignatureBlock } from './satkerReportLayout';
 
 export type CashFlowPageInput = {
   unitName: string;
@@ -21,8 +21,6 @@ export type CashFlowPageInput = {
  * the three activity sections, the cash balance and the signature block.
  */
 export function addCashFlowPage(pdf: jsPDF, input: CashFlowPageInput) {
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
   const bar: Partial<Styles> = { fillColor: [139, 0, 0], textColor: [255, 255, 255], fontStyle: 'bold' };
   const bold: Partial<Styles> = { fontStyle: 'bold' };
   const amount = (value: number) => (value ? new Intl.NumberFormat('id-ID').format(value) : '-');
@@ -45,50 +43,13 @@ export function addCashFlowPage(pdf: jsPDF, input: CashFlowPageInput) {
   rows.push([{ content: 'JUMLAH KESELURUHAN', colSpan: 3, styles: bar }, { content: amount(input.cashAccounts.reduce((sum, row) => sum + row.balance, 0)), styles: bar }]);
 
   pdf.addPage();
-  // The YAPETIDU and UNIPDU logos on the left; the title and the period centred in the space beside them.
-  const logoTop = 10;
-  const logoHeight = 18;
-  let titleLeft = 14;
-  for (const logo of [LOGO_YAPETIDU_BASE64, LOGO_UNIPDU_BASE64]) {
-    const size = pdf.getImageProperties(logo);
-    const width = (size.width / size.height) * logoHeight;
-    pdf.addImage(logo, 'PNG', titleLeft, logoTop, width, logoHeight);
-    titleLeft += width + 3;
-  }
-  const titleWidth = pageWidth - 14 - titleLeft;
-  const titleCenter = titleLeft + titleWidth / 2;
-  pdf.setFont('helvetica', 'bold'); pdf.setFontSize(13);
-  const titleLines: string[] = pdf.splitTextToSize(`Laporan Arus Kas ${input.unitName}`, titleWidth);
-  let titleY = logoTop + (logoHeight - (titleLines.length * 6 + 6)) / 2 + 4.5;
-  for (const line of titleLines) { pdf.text(line, titleCenter, titleY, { align: 'center' }); titleY += 6; }
-  pdf.setFont('helvetica', 'normal'); pdf.setFontSize(11);
-  pdf.text(`Periode ${input.period}`, titleCenter, titleY, { align: 'center' });
-  const ruleY = Math.max(logoTop + logoHeight + 4, titleY + 4);
-  pdf.setDrawColor(139, 0, 0); pdf.setLineWidth(0.6); pdf.line(14, ruleY, pageWidth - 14, ruleY);
+  const ruleY = addReportHeader(pdf, { title: `Laporan Arus Kas ${input.unitName}`, subtitle: `Periode ${input.period}` });
   autoTable(pdf, { startY: ruleY + 5, body: rows, theme: 'grid', margin: { left: 14, right: 14 }, styles: { fontSize: 9, textColor: [40, 40, 40], lineColor: [190, 190, 190], lineWidth: 0.1 },
     columnStyles: { 0: { cellWidth: 22 }, 1: { cellWidth: 'auto' }, 2: { cellWidth: 35, halign: 'right' }, 3: { cellWidth: 35, halign: 'right' } } });
 
   // Exactly two signature places: the selected Ketua SatKer and WarKu.
   const tableEnd = (pdf as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
-  const columnWidth = (pageWidth - 38) / 2;
-  const signers = [input.signatures.warku, input.signatures.ketuaSatker].map((signer, index) => {
-    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10);
-    const titles: string[] = pdf.splitTextToSize(signer.title, columnWidth);
-    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9.5);
-    const names: string[] = pdf.splitTextToSize(signer.name || '________________________', columnWidth);
-    return { center: 14 + columnWidth / 2 + index * (columnWidth + 10), titles, names };
-  });
-  const titleHeight = Math.max(...signers.map((signer) => signer.titles.length)) * 4.5;
-  const signatureHeight = 6 + titleHeight + 24 + Math.max(...signers.map((signer) => signer.names.length)) * 4.5;
-  let y = tableEnd + 14;
-  if (y + signatureHeight > pageHeight - 15) { pdf.addPage(); y = 20; }
-  signers.forEach((signer, index) => {
-    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10);
-    pdf.text(index === 0 ? 'Mengetahui,' : `Jombang, ${input.period}`, signer.center, y, { align: 'center' });
-    pdf.text(signer.titles, signer.center, y + 6, { align: 'center', lineHeightFactor: 1.25 });
-    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9.5);
-    pdf.text(signer.names, signer.center, y + 6 + titleHeight + 24, { align: 'center', lineHeightFactor: 1.25 });
-  });
+  addSignatureBlock(pdf, { signatures: input.signatures, dateLine: `Jombang, ${input.period}`, tableEnd });
 }
 
 export type CashFlowReceiptSource = {
