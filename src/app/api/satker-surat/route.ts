@@ -3,7 +3,7 @@ import { adminDb } from '@/lib/firebase-admin';
 import { errorResponse, HttpError, requireAuthenticatedProfile } from '@/lib/server/auth';
 import { canManageSuratMenyurat } from '@/lib/payroll/roles';
 import { validateSuratMasukInput, validateSuratKeluarInput } from '@/lib/surat-menyurat/validation';
-import { DisposisiSurat, SuratAttachment, SuratMasuk, SuratKeluar, SuratStats } from '@/lib/surat-menyurat/types';
+import { DisposisiSurat, SuratMasuk, SuratKeluar, SuratStats } from '@/lib/surat-menyurat/types';
 import { randomUUID } from 'crypto';
 
 export const dynamic = 'force-dynamic';
@@ -184,11 +184,11 @@ export async function POST(request: NextRequest) {
         type: 'masuk',
         satkerId: targetSatkerId,
         satkerName: targetSatkerName,
-        institutionScope: validation.data.institutionScope,
-        nomorUrut: validation.data.nomorUrut,
-        kodeSurat: validation.data.kodeSurat,
-        kodeArsip: validation.data.kodeArsip,
-        usiaArsip: validation.data.usiaArsip,
+        ...(validation.data.institutionScope !== undefined && { institutionScope: validation.data.institutionScope }),
+        ...(validation.data.nomorUrut !== undefined && { nomorUrut: validation.data.nomorUrut }),
+        ...(validation.data.kodeSurat !== undefined && { kodeSurat: validation.data.kodeSurat }),
+        ...(validation.data.kodeArsip !== undefined && { kodeArsip: validation.data.kodeArsip }),
+        ...(validation.data.usiaArsip !== undefined && { usiaArsip: validation.data.usiaArsip }),
         nomorSurat: validation.data.nomorSurat,
         tanggalSurat: validation.data.tanggalSurat,
         tanggalDiterima: validation.data.tanggalDiterima,
@@ -220,12 +220,12 @@ export async function POST(request: NextRequest) {
         type: 'keluar',
         satkerId: targetSatkerId,
         satkerName: targetSatkerName,
-        institutionScope: validation.data.institutionScope,
-        nomorUrut: validation.data.nomorUrut,
-        nomorUrutEnd: validation.data.nomorUrutEnd,
-        kodeSurat: validation.data.kodeSurat,
-        kodeArsip: validation.data.kodeArsip,
-        usiaArsip: validation.data.usiaArsip,
+        ...(validation.data.institutionScope !== undefined && { institutionScope: validation.data.institutionScope }),
+        ...(validation.data.nomorUrut !== undefined && { nomorUrut: validation.data.nomorUrut }),
+        ...(validation.data.nomorUrutEnd !== undefined && { nomorUrutEnd: validation.data.nomorUrutEnd }),
+        ...(validation.data.kodeSurat !== undefined && { kodeSurat: validation.data.kodeSurat }),
+        ...(validation.data.kodeArsip !== undefined && { kodeArsip: validation.data.kodeArsip }),
+        ...(validation.data.usiaArsip !== undefined && { usiaArsip: validation.data.usiaArsip }),
         nomorSurat: validation.data.nomorSurat,
         tanggalSurat: validation.data.tanggalSurat,
         tujuan: validation.data.tujuan,
@@ -236,9 +236,9 @@ export async function POST(request: NextRequest) {
         penandatanganNama: validation.data.penandatanganNama || actor.displayName,
         penandatanganJabatan: validation.data.penandatanganJabatan || 'Kepala SatKer',
         status: validation.data.status,
-        templateType: (validation.data.templateType as SuratKeluar['templateType']) || undefined,
-        contentBody: validation.data.contentBody,
-        lampiranKeterangan: validation.data.lampiranKeterangan,
+        ...(validation.data.templateType !== undefined && { templateType: validation.data.templateType as SuratKeluar['templateType'] }),
+        ...(validation.data.contentBody !== undefined && { contentBody: validation.data.contentBody }),
+        ...(validation.data.lampiranKeterangan !== undefined && { lampiranKeterangan: validation.data.lampiranKeterangan }),
         attachments: validation.data.attachments || [],
         createdAt: nowIso,
         updatedAt: nowIso,
