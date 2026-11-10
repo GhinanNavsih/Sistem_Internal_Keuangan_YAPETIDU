@@ -10,6 +10,8 @@ export type TemplateType = 'tugas' | 'keterangan' | 'undangan' | 'pengantar' | '
 
 export type InstitutionScope = 'UNIPDU' | 'YAPETIDU' | 'SATKER';
 
+import type { LetterDraftPayload } from './templates';
+
 export interface SuratAttachment {
   id: string;
   name: string;
@@ -79,6 +81,7 @@ export interface SuratKeluar {
   status: StatusSuratKeluar;
   templateType?: TemplateType;
   contentBody?: string;
+  letterDraft?: LetterDraftPayload;
   lampiranKeterangan?: string;
   attachments: SuratAttachment[];
   createdAt: string;

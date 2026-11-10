@@ -10,6 +10,7 @@ import SuratKeluarInlineForm from './SuratKeluarInlineForm';
 import {
   Calendar,
   Eye,
+  FileText,
   Paperclip,
   Pencil,
   Send,
@@ -31,6 +32,7 @@ interface Props {
   onSaveSuccess?: (data: SuratKeluar) => void;
   onOpenEdit: (surat: SuratKeluar) => void;
   onOpenDetail: (surat: SuratKeluar) => void;
+  onOpenComposer: (surat: SuratKeluar) => void;
   onDelete: (id: string) => Promise<void>;
 }
 
@@ -49,6 +51,7 @@ export default function SuratKeluarPanel({
   onSaveSuccess,
   onOpenEdit,
   onOpenDetail,
+  onOpenComposer,
   onDelete,
 }: Props) {
   const [deleteTarget, setDeleteTarget] = useState<SuratKeluar | null>(null);
@@ -303,6 +306,15 @@ export default function SuratKeluarPanel({
                 {/* Actions */}
                 <TableCell className="text-right pr-8 py-4 align-top">
                   <div className="flex items-center justify-end gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => onOpenComposer(item)}
+                      title={item.letterDraft || item.contentBody ? 'Buka dan cetak naskah surat' : 'Buat naskah dari surat ini'}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-sm text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-all cursor-pointer"
+                    >
+                      <FileText className="w-3 h-3" />
+                      {item.letterDraft || item.contentBody ? 'Buka Naskah' : 'Buat Naskah'}
+                    </button>
                     {/* Detail */}
                     <button
                       type="button"

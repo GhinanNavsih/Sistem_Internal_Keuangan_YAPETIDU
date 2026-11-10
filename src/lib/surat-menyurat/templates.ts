@@ -1,4 +1,4 @@
-import { TemplateType } from './types';
+import type { SuratKeluar, TemplateType } from './types';
 
 export interface LetterDraftPayload {
   templateType: TemplateType;
@@ -18,6 +18,54 @@ export interface LetterDraftPayload {
   penandatanganJabatan: string;
   penandatanganNipy: string;
   satkerName: string;
+}
+
+const templateTypes: TemplateType[] = ['tugas', 'keterangan', 'undangan', 'pengantar', 'permohonan', 'custom'];
+const draftFieldLimits: Record<Exclude<keyof LetterDraftPayload, 'templateType'>, number> = {
+  nomorSurat: 100, lampiranKeterangan: 150, perihal: 250, tanggalSurat: 10,
+  tujuanNama: 150, tujuanJabatanInstansi: 150, tujuanAlamatKota: 150,
+  salamPembuka: 1000, isiParagraf1: 10000, isiParagraf2: 10000,
+  isiParagraf3: 10000, salamPenutup: 1000, penandatanganNama: 100,
+  penandatanganJabatan: 100, penandatanganNipy: 100, satkerName: 150,
+};
+
+/** Reject invalid or oversized drafts rather than silently losing edited text. */
+export function parseLetterDraft(value: unknown): LetterDraftPayload | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  if (!templateTypes.includes(raw.templateType as TemplateType)) return null;
+  const result: Record<string, string> = { templateType: raw.templateType as string };
+  for (const [key, limit] of Object.entries(draftFieldLimits)) {
+    if (typeof raw[key] !== 'string' || raw[key].length > limit) return null;
+    result[key] = raw[key];
+  }
+  return result as unknown as LetterDraftPayload;
+}
+
+export function draftRecipient(draft: LetterDraftPayload): string {
+  return [draft.tujuanNama.trim(), draft.tujuanJabatanInstansi.trim()].filter(Boolean).join(' - ');
+}
+
+/** Agenda fields are authoritative if they were changed outside the composer. */
+export function draftFromSurat(surat: SuratKeluar, fallbackSatker: string): LetterDraftPayload {
+  const saved = parseLetterDraft(surat.letterDraft);
+  const draft = saved || {
+    ...getDefaultDraft(surat.satkerName || fallbackSatker),
+    templateType: (templateTypes.includes(surat.templateType as TemplateType) ? surat.templateType : 'custom') as TemplateType,
+    tujuanNama: surat.tujuan || '', tujuanJabatanInstansi: '', tujuanAlamatKota: 'di Tempat',
+    salamPembuka: '', isiParagraf1: '', isiParagraf2: surat.contentBody || '', isiParagraf3: '', salamPenutup: '',
+    penandatanganNipy: '',
+  };
+  if (saved && draftRecipient(saved) !== surat.tujuan) {
+    draft.tujuanNama = surat.tujuan || '';
+    draft.tujuanJabatanInstansi = '';
+  }
+  return {
+    ...draft, nomorSurat: surat.nomorSurat || '', tanggalSurat: surat.tanggalSurat || '',
+    perihal: surat.perihal || '', penandatanganNama: surat.penandatanganNama || '',
+    penandatanganJabatan: surat.penandatanganJabatan || '',
+    lampiranKeterangan: surat.lampiranKeterangan ?? draft.lampiranKeterangan,
+  };
 }
 
 export function getDefaultDraft(satkerName: string, kepalaName = '', kepalaJabatan = 'Kepala Satuan Kerja'): LetterDraftPayload {

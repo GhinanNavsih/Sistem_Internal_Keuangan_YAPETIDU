@@ -3,6 +3,7 @@ import { adminDb } from '@/lib/firebase-admin';
 import { errorResponse, HttpError, requireAuthenticatedProfile } from '@/lib/server/auth';
 import { canManageSuratMenyurat } from '@/lib/payroll/roles';
 import { validateSuratMasukInput, validateSuratKeluarInput } from '@/lib/surat-menyurat/validation';
+import { parseLetterDraft } from '@/lib/surat-menyurat/templates';
 import { DisposisiSurat, SuratMasuk, SuratKeluar, SuratStats } from '@/lib/surat-menyurat/types';
 import { randomUUID } from 'crypto';
 
@@ -214,6 +215,8 @@ export async function POST(request: NextRequest) {
       if (!validation.ok || !validation.data) {
         throw new HttpError(400, validation.error || 'Data surat keluar tidak valid.');
       }
+      const letterDraft = body.letterDraft === undefined ? undefined : parseLetterDraft(body.letterDraft);
+      if (letterDraft === null) throw new HttpError(400, 'Naskah surat tidak valid atau terlalu panjang.');
 
       const docData: SuratKeluar & { type: string } = {
         id,
@@ -239,6 +242,7 @@ export async function POST(request: NextRequest) {
         ...(validation.data.templateType !== undefined && { templateType: validation.data.templateType as SuratKeluar['templateType'] }),
         ...(validation.data.contentBody !== undefined && { contentBody: validation.data.contentBody }),
         ...(validation.data.lampiranKeterangan !== undefined && { lampiranKeterangan: validation.data.lampiranKeterangan }),
+        ...(letterDraft !== undefined && { letterDraft }),
         attachments: validation.data.attachments || [],
         createdAt: nowIso,
         updatedAt: nowIso,
@@ -284,6 +288,14 @@ export async function PUT(request: NextRequest) {
     const updates: Record<string, unknown> = {
       updatedAt: nowIso,
     };
+
+    if (body.letterDraft !== undefined) {
+      if (existingData.type !== 'keluar') throw new HttpError(400, 'Naskah hanya untuk surat keluar.');
+      const letterDraft = parseLetterDraft(body.letterDraft);
+      if (!letterDraft) throw new HttpError(400, 'Naskah surat tidak valid atau terlalu panjang.');
+      updates.letterDraft = letterDraft;
+      updates.templateType = letterDraft.templateType;
+    }
 
     // Handle Disposisi update on Surat Masuk
     if (body.disposisi !== undefined) {

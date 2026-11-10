@@ -3,7 +3,8 @@ import test from 'node:test';
 import { isSuratMenyuratPath, SURAT_MENYURAT_PATH, SIFAT_SURAT_OPTIONS, STATUS_SURAT_MASUK_OPTIONS } from './constants';
 import { deriveSatkerCode, formatNomorSuratKeluar, formatNomorSuratKeluarTemplate, formatKodeArsip, calculateUsiaArsip, getRomanMonth } from './numbering';
 import { validateSuratMasukInput, validateSuratKeluarInput } from './validation';
-import { applyTemplateDefaults, getDefaultDraft } from './templates';
+import { applyTemplateDefaults, draftFromSurat, draftRecipient, getDefaultDraft, parseLetterDraft } from './templates';
+import type { SuratKeluar } from './types';
 
 test('isSuratMenyuratPath correctly matches path and subpaths', () => {
   assert.equal(isSuratMenyuratPath(SURAT_MENYURAT_PATH), true);
@@ -115,6 +116,31 @@ test('applyTemplateDefaults populates appropriate text for each template type', 
   const pengantar = applyTemplateDefaults(base, 'pengantar', 'Fakultas Agama Islam', 'Dekan FAI', 'Dekan');
   assert.equal(pengantar.perihal, 'Surat Pengantar Dokumen / Laporan');
   assert.match(tugas.isiParagraf3, /dipergunakan sebagaimana mestinya/);
+});
+
+test('recorded and legacy letters reopen with their actual agenda data and text', () => {
+  const surat = {
+    nomorSurat: '001/A/AU/11/2026', tanggalSurat: '2026-11-10', tujuan: 'Fatmah', perihal: 'Undangan Rapat',
+    satkerName: 'BAK', penandatanganNama: 'Kepala BAK', penandatanganJabatan: 'Kepala',
+    contentBody: 'Teks lama\n\nBaris kedua',
+  } as SuratKeluar;
+  const legacy = draftFromSurat(surat, 'Lain');
+  assert.equal(legacy.nomorSurat, surat.nomorSurat);
+  assert.equal(legacy.tujuanNama, 'Fatmah');
+  assert.equal(legacy.isiParagraf2, surat.contentBody);
+  assert.equal(legacy.isiParagraf1, '');
+  const saved = { ...legacy, tujuanJabatanInstansi: 'BAK', tujuanAlamatKota: 'di Jombang', penandatanganNipy: '123', isiParagraf1: 'Pembuka' };
+  assert.deepEqual(parseLetterDraft(saved), saved);
+  const reopened = draftFromSurat({ ...surat, tujuan: draftRecipient(saved), letterDraft: saved }, 'Lain');
+  assert.equal(reopened.tujuanJabatanInstansi, 'BAK');
+  assert.equal(reopened.penandatanganNipy, '123');
+  assert.equal(reopened.isiParagraf1, 'Pembuka');
+  const agendaChanged = draftFromSurat({ ...surat, tujuan: 'Penerima Baru', perihal: 'Hal Baru', letterDraft: saved }, 'Lain');
+  assert.equal(agendaChanged.tujuanNama, 'Penerima Baru');
+  assert.equal(agendaChanged.tujuanJabatanInstansi, '');
+  assert.equal(agendaChanged.perihal, 'Hal Baru');
+  assert.equal(agendaChanged.isiParagraf1, 'Pembuka');
+  assert.equal(parseLetterDraft({ ...saved, isiParagraf1: 'x'.repeat(10001) }), null);
 });
 
 test('formatNomorSuratKeluarTemplate formats UNIPDU and YAPETIDU single & batch letter numbers matching Excel', () => {

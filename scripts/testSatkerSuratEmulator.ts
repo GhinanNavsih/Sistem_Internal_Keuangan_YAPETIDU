@@ -1,6 +1,7 @@
 /** Exercises surat creation through the real route and isolated Firebase emulators. */
 import assert from 'node:assert/strict';
 import { NextRequest } from 'next/server';
+import { draftFromSurat, getDefaultDraft } from '../src/lib/surat-menyurat/templates';
 
 const PROJECT = 'demo-satker-surat';
 
@@ -12,7 +13,7 @@ async function main() {
   }
 
   const { adminDb } = await import('../src/lib/firebase-admin');
-  const { POST, GET } = await import('../src/app/api/satker-surat/route');
+  const { POST, PUT, GET } = await import('../src/app/api/satker-surat/route');
   const signup = await fetch(`http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email: 'surat@example.test', password: 'password123', returnSecureToken: true }),
@@ -50,7 +51,60 @@ async function main() {
   const data = await list.json();
   assert.equal(data.suratKeluar.length, 4);
   assert.equal(data.suratMasuk.length, 1);
-  console.log('Satker surat integration passed: incoming and outgoing writes, optional fields, batch range, and listing.');
+
+  // A recorded outgoing letter gains a reusable manuscript without a new agenda entry.
+  const existing = data.suratKeluar.find((item: { nomorUrutEnd?: number }) => item.nomorUrutEnd === 5);
+  assert.ok(existing);
+  const originalCount = (await adminDb.collection('SatkerLetters').get()).size;
+  const attachment = { id: 'a', name: 'scan.pdf', url: 'https://example.test/scan.pdf', contentType: 'application/pdf', size: 100, uploadedAt: '2026-11-10' };
+  await adminDb.doc(`SatkerLetters/${existing.id}`).update({ attachments: [attachment], status: 'terkirim', ringkasan: 'Catatan agenda' });
+  const draft = { ...draftFromSurat(existing, 'BAK'), tujuanNama: 'Pembina Tilawah', tujuanJabatanInstansi: 'Unit A',
+    tujuanAlamatKota: 'di Jombang', isiParagraf1: 'Undangan rapat', isiParagraf2: 'Hari: Selasa\nWaktu: 09.00',
+    penandatanganNipy: '123', lampiranKeterangan: 'Satu berkas' };
+  const update = (body: unknown) => PUT(new NextRequest('http://localhost/api/satker-surat', { method: 'PUT', headers, body: JSON.stringify(body) }));
+  let response = await update({ id: existing.id, letterDraft: draft, tujuan: 'Pembina Tilawah - Unit A', contentBody: 'Undangan rapat\n\nHari: Selasa\nWaktu: 09.00', lampiranKeterangan: 'Satu berkas' });
+  assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
+  let stored = (await adminDb.doc(`SatkerLetters/${existing.id}`).get()).data()!;
+  assert.deepEqual(stored.letterDraft, draft);
+  assert.equal(stored.status, 'terkirim');
+  assert.equal(stored.ringkasan, 'Catatan agenda');
+  assert.equal(stored.nomorUrutEnd, 5);
+  assert.deepEqual(stored.attachments, [attachment]);
+  const reopened = draftFromSurat({ ...stored, id: existing.id } as typeof existing, 'BAK');
+  assert.equal(reopened.isiParagraf2, 'Hari: Selasa\nWaktu: 09.00');
+  assert.equal(reopened.tujuanJabatanInstansi, 'Unit A');
+  assert.equal(reopened.penandatanganNipy, '123');
+  response = await update({ id: existing.id, letterDraft: { ...draft, isiParagraf2: 'Waktu: 10.00' }, contentBody: 'Waktu: 10.00' });
+  assert.equal(response.status, 200);
+  assert.equal((await adminDb.collection('SatkerLetters').get()).size, originalCount);
+  stored = (await adminDb.doc(`SatkerLetters/${existing.id}`).get()).data()!;
+  assert.equal(stored.letterDraft.isiParagraf2, 'Waktu: 10.00');
+  const refreshed = await GET(new NextRequest('http://localhost/api/satker-surat', { headers }));
+  const reopenedFromApi = (await refreshed.json()).suratKeluar.find((item: { id: string }) => item.id === existing.id);
+  assert.equal(draftFromSurat(reopenedFromApi, 'BAK').isiParagraf2, 'Waktu: 10.00');
+  response = await update({ id: existing.id, letterDraft: { ...draft, isiParagraf1: 'x'.repeat(10001) } });
+  assert.equal(response.status, 400);
+  assert.equal((await adminDb.doc(`SatkerLetters/${existing.id}`).get()).data()?.letterDraft.isiParagraf2, 'Waktu: 10.00');
+  response = await update({ id: data.suratMasuk[0].id, letterDraft: draft });
+  assert.equal(response.status, 400, 'incoming letters cannot acquire a manuscript');
+  const otherSignup = await fetch(`http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'other@example.test', password: 'password123', returnSecureToken: true }),
+  });
+  const other = await otherSignup.json();
+  await adminDb.doc(`users/${other.localId}`).set({ role: 'satker_head_loyalis', displayName: 'Other', satkerName: 'Other Satker' });
+  response = await PUT(new NextRequest('http://localhost/api/satker-surat', { method: 'PUT',
+    headers: { ...headers, authorization: `Bearer ${other.idToken}` }, body: JSON.stringify({ id: existing.id, letterDraft: draft }) }));
+  assert.equal(response.status, 403, 'a different SatKer cannot change the manuscript');
+
+  // The standalone composer also stores its complete draft for later reopening.
+  const newDraft = { ...getDefaultDraft('BAK'), nomorSurat: '003', tanggalSurat: '2026-11-10', perihal: 'Rapat' };
+  response = await POST(new NextRequest('http://localhost/api/satker-surat', { method: 'POST', headers,
+    body: JSON.stringify({ type: 'keluar', nomorSurat: '003', tanggalSurat: '2026-11-10', tujuan: 'Penerima', perihal: 'Rapat', letterDraft: newDraft }) }));
+  assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
+  const created = (await response.json()).data;
+  assert.deepEqual((await adminDb.doc(`SatkerLetters/${created.id}`).get()).data()?.letterDraft, newDraft);
+  console.log('Satker surat integration passed: creation, manuscript save/reopen/update, metadata preservation, validation, and listing.');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });

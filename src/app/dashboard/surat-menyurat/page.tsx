@@ -91,6 +91,7 @@ export default function SuratMenyuratPage() {
   const [detailType, setDetailType] = useState<'masuk' | 'keluar'>('masuk');
 
   const [composerModalOpen, setComposerModalOpen] = useState(false);
+  const [composerTarget, setComposerTarget] = useState<SuratKeluar | null>(null);
 
   const isSuperAdmin = profile?.role === 'super_admin';
   const satkerDisplayName = profile?.satkerName || profile?.displayName || 'Satuan Kerja Loyalis';
@@ -626,7 +627,7 @@ export default function SuratMenyuratPage() {
                 {/* Outline Soft Indigo Button */}
                 <button
                   type="button"
-                  onClick={() => setComposerModalOpen(true)}
+                  onClick={() => { setComposerTarget(null); setComposerModalOpen(true); }}
                   className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-indigo-200 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm"
                 >
                   <Wand2 className="w-4 h-4 text-indigo-500" />
@@ -781,6 +782,10 @@ export default function SuratMenyuratPage() {
                   setDetailType('keluar');
                   setDetailModalOpen(true);
                 }}
+                onOpenComposer={(surat) => {
+                  setComposerTarget(surat);
+                  setComposerModalOpen(true);
+                }}
                 onDelete={handleDeleteLetter}
               />
             ) : activeTab === 'agenda' ? (
@@ -904,16 +909,17 @@ export default function SuratMenyuratPage() {
       />
 
       {/* Surat Composer Live Template Generator */}
-      <SuratComposerModal
+      {composerModalOpen && <SuratComposerModal
         open={composerModalOpen}
         onOpenChange={setComposerModalOpen}
         defaultSatkerName={satkerDisplayName}
         defaultKepalaName={profile?.displayName || ''}
         nextSequence={nextSequence}
+        surat={composerTarget}
         onSavedToSuratKeluar={() => {
           fetchData(true);
         }}
-      />
+      />}
 
       {snackbar && (
         <FloatingSnackbar

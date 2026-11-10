@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import Image from 'next/image';
 import {
   Dialog,
@@ -17,9 +17,9 @@ import { AutoResizeTextarea } from '@/components/ui/auto-resize-textarea';
 import { useAuth } from '@/lib/AuthContext';
 import { TEMPLATE_OPTIONS } from '@/lib/surat-menyurat/constants';
 import { deriveSatkerCode, formatNomorSuratKeluar } from '@/lib/surat-menyurat/numbering';
-import { applyTemplateDefaults, getDefaultDraft, LetterDraftPayload } from '@/lib/surat-menyurat/templates';
+import { applyTemplateDefaults, draftFromSurat, draftRecipient, getDefaultDraft, LetterDraftPayload } from '@/lib/surat-menyurat/templates';
 import { SuratKeluar, TemplateType } from '@/lib/surat-menyurat/types';
-import { Columns2, Edit3, Eye, FileText, Loader2, Printer, Save, Sparkles, Wand2 } from 'lucide-react';
+import { Columns2, Edit3, Eye, Loader2, Printer, Save, Sparkles, Wand2 } from 'lucide-react';
 
 interface Props {
   open: boolean;
@@ -27,6 +27,7 @@ interface Props {
   defaultSatkerName: string;
   defaultKepalaName?: string;
   nextSequence: number;
+  surat?: SuratKeluar | null;
   onSavedToSuratKeluar?: (data: SuratKeluar) => void;
 }
 
@@ -36,37 +37,35 @@ export default function SuratComposerModal({
   defaultSatkerName,
   defaultKepalaName = '',
   nextSequence,
+  surat = null,
   onSavedToSuratKeluar,
 }: Props) {
   const { user } = useAuth();
-  const [draft, setDraft] = useState<LetterDraftPayload>(() =>
-    getDefaultDraft(defaultSatkerName, defaultKepalaName, `Kepala ${defaultSatkerName}`)
-  );
+  const isYapetidu = surat?.institutionScope === 'YAPETIDU';
+  const [draft, setDraft] = useState<LetterDraftPayload>(() => {
+    if (surat) return draftFromSurat(surat, defaultSatkerName);
+    const initial = getDefaultDraft(defaultSatkerName, defaultKepalaName, `Kepala ${defaultSatkerName}`);
+    initial.nomorSurat = formatNomorSuratKeluar({ sequenceNumber: nextSequence, satkerCode: deriveSatkerCode(defaultSatkerName), date: new Date() });
+    return initial;
+  });
+  const [savedId, setSavedId] = useState<string | null>(surat?.id || null);
+  const [lastSavedDraft, setLastSavedDraft] = useState<string | null>(surat?.letterDraft ? JSON.stringify(draft) : null);
   const [viewMode, setViewMode] = useState<'both' | 'edit' | 'preview'>('both');
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [saveSuccess, setSaveSuccess] = useState('');
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (open) {
-      const code = deriveSatkerCode(defaultSatkerName);
-      const autoNo = formatNomorSuratKeluar({
-        sequenceNumber: nextSequence,
-        satkerCode: code,
-        date: new Date(),
-      });
-      const initial = getDefaultDraft(defaultSatkerName, defaultKepalaName, `Kepala ${defaultSatkerName}`);
-      initial.nomorSurat = autoNo;
-      setDraft(initial);
-      setError('');
-      setSaveSuccess('');
-    }
-  }, [open, defaultSatkerName, defaultKepalaName, nextSequence]);
-
   const handleTemplateChange = (newType: TemplateType) => {
-    setDraft((prev) =>
-      applyTemplateDefaults(prev, newType, defaultSatkerName, defaultKepalaName, `Kepala ${defaultSatkerName}`)
-    );
+    setDraft((prev) => {
+      const next = applyTemplateDefaults(prev, newType, prev.satkerName, prev.penandatanganNama, prev.penandatanganJabatan);
+      if (isYapetidu) {
+        next.isiParagraf1 = next.isiParagraf1.replace("Universitas Pesantren Tinggi Darul 'Ulum (UNIPDU) Jombang", "Yayasan Pesantren Tinggi Darul 'Ulum Jombang");
+      }
+      return savedId ? { ...next, perihal: prev.perihal, tujuanNama: prev.tujuanNama,
+        tujuanJabatanInstansi: prev.tujuanJabatanInstansi, tujuanAlamatKota: prev.tujuanAlamatKota,
+        penandatanganNama: prev.penandatanganNama, penandatanganJabatan: prev.penandatanganJabatan } : next;
+    });
   };
 
   const handleGenerateNumber = () => {
@@ -94,7 +93,7 @@ export default function SuratComposerModal({
       <!DOCTYPE html>
       <html>
         <head>
-          <title>${draft.perihal || 'Surat Resmi UNIPDU'}</title>
+          <title>Surat Resmi UNIPDU</title>
           <style>
             @page {
               size: A4 portrait;
@@ -148,6 +147,10 @@ export default function SuratComposerModal({
             .meta-left table {
               border-collapse: collapse;
             }
+            .meta-left > div { display: flex; }
+            .meta-left > div > span:first-child { width: 65px; flex-shrink: 0; }
+            .meta-left > div > span:nth-child(2) { width: 12px; flex-shrink: 0; }
+            .kop-container img { width: 56px; height: 56px; object-fit: contain; }
             .meta-left td {
               padding: 1px 4px;
               vertical-align: top;
@@ -202,7 +205,7 @@ export default function SuratComposerModal({
   };
 
   const handleSaveToSuratKeluar = async () => {
-    if (!user) return;
+    if (!user || savingRef.current) return;
     if (!draft.nomorSurat.trim()) {
       setError('Nomor surat wajib diisi.');
       return;
@@ -211,7 +214,17 @@ export default function SuratComposerModal({
       setError('Perihal surat wajib diisi.');
       return;
     }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.tanggalSurat)) {
+      setError('Tanggal surat wajib diisi.');
+      return;
+    }
+    const tujuan = draftRecipient(draft);
+    if (!tujuan || tujuan.length > 150) {
+      setError('Tujuan surat wajib diisi dan maksimal 150 karakter.');
+      return;
+    }
 
+    savingRef.current = true;
     try {
       setSaving(true);
       setError('');
@@ -227,30 +240,23 @@ export default function SuratComposerModal({
       ].filter(Boolean).join('\n\n');
 
       const payload = {
-        type: 'keluar',
+        ...(savedId ? { id: savedId } : { type: 'keluar', sifat: 'biasa', status: 'draft', attachments: [],
+          kategori: draft.templateType === 'tugas' ? 'Surat Tugas' : draft.templateType === 'undangan' ? 'Surat Undangan' : 'Surat Keluar' }),
         nomorSurat: draft.nomorSurat.trim(),
         tanggalSurat: draft.tanggalSurat,
-        tujuan: `${draft.tujuanNama} - ${draft.tujuanJabatanInstansi}`.trim(),
+        tujuan,
         perihal: draft.perihal.trim(),
-        sifat: 'biasa',
-        kategori:
-          draft.templateType === 'tugas'
-            ? 'Surat Tugas'
-            : draft.templateType === 'undangan'
-            ? 'Surat Undangan'
-            : 'Surat Keluar',
-        ringkasan: combinedBody.slice(0, 300),
+        ...(!savedId ? { ringkasan: combinedBody.slice(0, 300) } : {}),
         penandatanganNama: draft.penandatanganNama.trim(),
         penandatanganJabatan: draft.penandatanganJabatan.trim(),
-        status: 'draft',
         templateType: draft.templateType,
-        contentBody: combinedBody,
+        contentBody: combinedBody.slice(0, 10000),
         lampiranKeterangan: draft.lampiranKeterangan,
-        attachments: [],
+        letterDraft: draft,
       };
 
       const res = await fetch('/api/satker-surat', {
-        method: 'POST',
+        method: savedId ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${idToken}`,
@@ -263,11 +269,14 @@ export default function SuratComposerModal({
         throw new Error(json.error || 'Gagal menyimpan ke Surat Keluar.');
       }
 
-      setSaveSuccess('Surat berhasil disimpan ke daftar Surat Keluar (Status: Draft)!');
+      setSavedId(json.data.id);
+      setLastSavedDraft(JSON.stringify(draft));
+      setSaveSuccess('Naskah berhasil disimpan pada Surat Keluar.');
       if (onSavedToSuratKeluar) onSavedToSuratKeluar(json.data);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Gagal menyimpan.');
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -445,12 +454,12 @@ export default function SuratComposerModal({
       className="bg-white shadow-xl border border-slate-200 rounded-xs p-8 sm:p-12 w-full min-w-[540px] max-w-[210mm] text-slate-900 font-serif text-[12.5px] leading-relaxed select-text"
       style={{ minHeight: '297mm' }}
     >
-      {/* Kop Surat Resmi UNIPDU */}
+      {/* Kop surat sesuai lingkup surat yang dicatat */}
       <div className="kop-container border-b-4 border-double border-slate-900 pb-3 mb-6 flex items-center justify-between gap-3">
         <div className="w-14 h-14 relative shrink-0 flex items-center justify-center">
           <Image
-            src="/Logo UNIPDU.png"
-            alt="Logo UNIPDU"
+            src={isYapetidu ? '/Logo YAPETIDU (Transparent bg).png' : '/Logo UNIPDU.png'}
+            alt={isYapetidu ? 'Logo YAPETIDU' : 'Logo UNIPDU'}
             width={56}
             height={56}
             priority
@@ -459,7 +468,7 @@ export default function SuratComposerModal({
         </div>
         <div className="kop-text flex-1 text-center">
           <h3 className="kop-instansi text-xs font-bold uppercase tracking-wider text-slate-800 m-0">
-            UNIVERSITAS PESANTREN TINGGI DARUL &apos;ULUM
+            {isYapetidu ? "YAYASAN PESANTREN TINGGI DARUL 'ULUM JOMBANG" : "UNIVERSITAS PESANTREN TINGGI DARUL 'ULUM"}
           </h3>
           <h2 className="kop-satker text-sm sm:text-base font-extrabold uppercase tracking-wide text-slate-900 my-0.5">
             {draft.satkerName || defaultSatkerName || 'SATUAN KERJA'}
@@ -616,7 +625,7 @@ export default function SuratComposerModal({
                 className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center gap-1.5 shadow-md shadow-indigo-100 text-xs px-3.5 py-1.5 cursor-pointer disabled:opacity-50"
               >
                 {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                {saving ? 'Menyimpan...' : 'Simpan ke Surat Keluar'}
+                {saving ? 'Menyimpan...' : savedId ? 'Simpan Naskah' : 'Simpan ke Surat Keluar'}
               </Button>
             </div>
           </div>
@@ -628,9 +637,14 @@ export default function SuratComposerModal({
             {error}
           </div>
         )}
-        {saveSuccess && (
+        {saveSuccess && lastSavedDraft === JSON.stringify(draft) && (
           <div className="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 p-2.5 rounded-sm my-1 shrink-0">
             {saveSuccess}
+          </div>
+        )}
+        {lastSavedDraft !== JSON.stringify(draft) && (
+          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 p-2.5 rounded-sm my-1 shrink-0">
+            Naskah belum disimpan. Pilih {savedId ? 'Simpan Naskah' : 'Simpan ke Surat Keluar'} agar dapat dibuka kembali.
           </div>
         )}
 
@@ -668,9 +682,10 @@ export default function SuratComposerModal({
               </div>
             </div>
           ) : viewMode === 'edit' ? (
-            <div className="h-full overflow-y-auto max-w-3xl mx-auto w-full px-2">
-              {renderEditorForm()}
-            </div>
+            <>
+              <div className="h-full overflow-y-auto max-w-3xl mx-auto w-full px-2">{renderEditorForm()}</div>
+              <div className="hidden">{renderPreviewPaper()}</div>
+            </>
           ) : (
             <div className="h-full bg-slate-100/90 rounded-md p-4 sm:p-6 overflow-auto flex justify-center items-start border border-slate-200">
               {renderPreviewPaper()}
