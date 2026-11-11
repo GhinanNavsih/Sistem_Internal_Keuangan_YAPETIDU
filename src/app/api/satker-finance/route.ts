@@ -100,7 +100,15 @@ async function loadYear(unitId: string, academicYear: string, includeHistory = f
     ref.get(), ref.collection('entries').orderBy('date', 'asc').get(), ref.collection('bankReconciliations').get(),
     includeHistory ? ref.collection('audit').orderBy('at', 'desc').limit(200).get() : null,
   ]);
-  const entries = entryDocs.docs.map((doc) => ({ id: doc.id, ...doc.data() } as JournalEntry));
+  // Keep the date query so legacy records without createdAt remain visible. For a shared date,
+  // use the original creation time (not updatedAt); imports with the same timestamp retain query order.
+  const entries = entryDocs.docs.sort((a, b) => {
+    const dateOrder = String(a.get('date')).localeCompare(String(b.get('date')));
+    if (dateOrder) return dateOrder;
+    const aTime = a.get('createdAt') instanceof admin.firestore.Timestamp ? a.get('createdAt') as FirebaseFirestore.Timestamp : a.createTime;
+    const bTime = b.get('createdAt') instanceof admin.firestore.Timestamp ? b.get('createdAt') as FirebaseFirestore.Timestamp : b.createTime;
+    return aTime.seconds - bTime.seconds || aTime.nanoseconds - bTime.nanoseconds;
+  }).map((doc) => ({ id: doc.id, ...doc.data() } as JournalEntry));
   const events = auditDocs?.docs.map((doc) => ({ id: doc.id, ...doc.data() })) || [];
   const reconciliations = reconciliationDocs.docs.map((doc) => reconciliationFrom(doc.data()));
   return { ref, year: publicYear(yearDoc.data()), entries, events, reconciliations };

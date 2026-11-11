@@ -451,6 +451,26 @@ async function main() {
   const manualSignatures = { ...signatures, ketuaSatker: { name: 'Nama Ketua dengan gelar tambahan', title: 'Ketua SatKer' } };
   await succeeds(await invoke(secretary, { ...signatureRequest, signatures: manualSignatures, expectedRevision: savedSignatureView.unit.revision }));
   assert.deepEqual((await succeeds(await read(head, { ...base, month: '9' }))).cashFlowSignatures, manualSignatures);
+
+  // Same-date journals follow original posting order even when their IDs sort in the opposite order,
+  // a journal is edited, or a legacy record has no createdAt. The on-screen and printable ledgers
+  // consume the same order returned to the journal history.
+  const orderBase = { ...secondUnit, action: 'POST_ENTRY', monthIndex: 11, date: '2026-11-11', paymentAccountCode: '10000' };
+  await succeeds(await invoke(secretary, { ...orderBase, entryId: 'z-order-first', kind: 'INFLOW', accountCode: '41000', amount: 1000, description: 'Dana masuk' }));
+  await succeeds(await invoke(secretary, { ...orderBase, entryId: 'a-order-second', kind: 'EXPENSE', accountCode: '52101', amount: 300, description: 'Pengeluaran pertama' }));
+  await succeeds(await invoke(secretary, { ...orderBase, entryId: 'b-order-third', kind: 'EXPENSE', accountCode: '52101', amount: 100, description: 'Pengeluaran kedua' }));
+  const orderYear = adminDb.collection('SatkerFinancialYears').doc(`${secondUnit.unitId}_2026-2027`);
+  await orderYear.collection('entries').doc('b-order-third').update({ createdAt: admin.firestore.FieldValue.delete() });
+  await succeeds(await invoke(secretary, { ...secondUnit, action: 'UPDATE_ENTRY', entryId: 'z-order-first', expectedRevision: 0, monthIndex: 11, date: '2026-11-11', description: 'Dana masuk dikoreksi', lines: [{ accountCode: '10000', debit: 1000, credit: 0 }, { accountCode: '41000', debit: 0, credit: 1000 }] }));
+  const orderedView = await succeeds(await read(secretary, { ...secondUnit, month: '11' }));
+  assert.deepEqual(orderedView.entries.filter((item: { date: string }) => item.date === '2026-11-11').map((item: { id: string }) => item.id), ['z-order-first', 'a-order-second', 'b-order-third']);
+  const { buildLedger, printableLedgers } = await import('../src/lib/satker-finance/ledger');
+  const { fiscalMonths } = await import('../src/lib/satker-finance/core');
+  const ledgerArgs = { entries: orderedView.entries, opening: orderedView.year.openingBalances, accountCode: '10000', months: fiscalMonths('2026-2027'), month: 11 as const };
+  const cashLedger = buildLedger(ledgerArgs);
+  assert.deepEqual(cashLedger.rows.map((row) => row.balance), [1250, 950, 850]);
+  const printedCash = printableLedgers({ ...ledgerArgs, accounts: orderedView.accounts }).find((item) => item.code === '10000')!;
+  assert.deepEqual(printedCash.rows.map((row) => row.balance), [1250, 950, 850]);
   console.log('SatKer finance emulator workflow passed.');
   await admin.app().delete();
 }
