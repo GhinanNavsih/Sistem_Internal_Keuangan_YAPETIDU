@@ -87,10 +87,7 @@ export default function SuratMasukInlineForm({
       setAttachments(suratToEdit.attachments || []);
     } else {
       const today = new Date().toISOString().slice(0, 10);
-      const initialScope: InstitutionScope =
-        defaultSatkerName.toLowerCase().includes('yapetidu') || defaultSatkerName.toLowerCase().includes('yayasan')
-          ? 'YAPETIDU'
-          : 'UNIPDU';
+      const initialScope: InstitutionScope = 'UNIPDU';
 
       setInstitutionScope(initialScope);
       setNomorUrut(1);
@@ -292,8 +289,8 @@ export default function SuratMasukInlineForm({
       )}
 
       {/* Agenda & Klasifikasi Strip */}
-      <div className="p-4 bg-slate-50 border border-slate-200 rounded-sm grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div>
+      <div className={`p-4 bg-slate-50 border border-slate-200 rounded-sm grid grid-cols-1 sm:grid-cols-2 ${isEdit ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-4`}>
+        {isEdit && <div>
           <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Institusi / Lingkup</Label>
           <Select
             value={institutionScope}
@@ -318,7 +315,7 @@ export default function SuratMasukInlineForm({
               ))}
             </SelectContent>
           </Select>
-        </div>
+        </div>}
 
         <div>
           <Label className="text-xs font-semibold text-slate-700 block mb-1.5">No. Urut Agenda</Label>

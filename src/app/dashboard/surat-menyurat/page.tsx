@@ -1,13 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import Image from 'next/image';
 import { useAuth } from '@/lib/AuthContext';
 import { canManageSuratMenyurat } from '@/lib/payroll/roles';
 import { SuratMasuk, SuratKeluar, SuratStats, DisposisiSurat, InstitutionScope } from '@/lib/surat-menyurat/types';
 import { exportBukuAgendaToExcel } from '@/lib/surat-menyurat/excel';
 import {
-  SIFAT_SURAT_OPTIONS,
   STATUS_SURAT_MASUK_OPTIONS,
   STATUS_SURAT_KELUAR_OPTIONS,
   INSTITUTION_SCOPES,
@@ -32,7 +30,6 @@ import {
   Inbox,
   Loader2,
   Plus,
-  RefreshCw,
   Search,
   Send,
   Wand2,
@@ -51,9 +48,8 @@ export default function SuratMenyuratPage() {
   const { user, profile } = useAuth();
 
   const [activeTab, setActiveTab] = useState<Tab>('masuk');
-  const [scopeFilter, setScopeFilter] = useState<'all' | 'UNIPDU' | 'YAPETIDU'>('all');
+  const [scopeFilter, setScopeFilter] = useState<'all' | 'UNIPDU' | 'YAPETIDU'>('UNIPDU');
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [suratMasuk, setSuratMasuk] = useState<SuratMasuk[]>([]);
   const [suratKeluar, setSuratKeluar] = useState<SuratKeluar[]>([]);
   const [stats, setStats] = useState<SuratStats>({
@@ -69,7 +65,6 @@ export default function SuratMenyuratPage() {
   const [satkerList, setSatkerList] = useState<{ id: string; name: string }[]>([]);
   const [selectedSatkerFilter, setSelectedSatkerFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [sifatFilter, setSifatFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [snackbar, setSnackbar] = useState<SnackbarMessage | null>(null);
   const [userContact, setUserContact] = useState<{ email: string; phone: string }>({ email: '', phone: '' });
@@ -102,7 +97,6 @@ export default function SuratMenyuratPage() {
     if (!user) return;
     try {
       if (!isSilent) setLoading(true);
-      else setRefreshing(true);
 
       const idToken = await user.getIdToken();
       let url = '/api/satker-surat';
@@ -133,7 +127,6 @@ export default function SuratMenyuratPage() {
       });
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   }, [user, isSuperAdmin, selectedSatkerFilter]);
 
@@ -141,11 +134,10 @@ export default function SuratMenyuratPage() {
     fetchData();
   }, [fetchData]);
 
-  // Reset status & sifat filters and inline forms when switching tabs
+  // Reset status filter and inline forms when switching tabs
   const handleTabChange = (newTab: Tab) => {
     setActiveTab(newTab);
     setStatusFilter('all');
-    setSifatFilter('all');
     setIsAddingMasuk(false);
     setMasukToEdit(null);
     setIsAddingKeluar(false);
@@ -166,11 +158,6 @@ export default function SuratMenyuratPage() {
     }
     return STATUS_SURAT_KELUAR_OPTIONS.find((opt) => opt.value === statusFilter)?.label || statusFilter;
   }, [statusFilter, activeTab]);
-
-  const sifatFilterLabel = useMemo(() => {
-    if (sifatFilter === 'all') return 'Semua Sifat';
-    return SIFAT_SURAT_OPTIONS.find((opt) => opt.value === sifatFilter)?.label || sifatFilter;
-  }, [sifatFilter]);
 
   // Filtered by institution scope
   const filteredSuratMasuk = useMemo(() => {
@@ -272,83 +259,22 @@ export default function SuratMenyuratPage() {
       <div className="relative z-10">
         <GlobalHeader />
 
+        <h1 className="mb-8 text-3xl font-bold text-slate-800">Surat Menyurat</h1>
+
         {/* Main Card */}
-        <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none overflow-hidden">
+        <Card className="gap-0 bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none overflow-hidden">
           <div className="p-8 pb-0">
             {/* Title & Info Header */}
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="flex items-center gap-3 filter drop-shadow-sm">
-                    {/* Dynamic Logo rendering based on Scope Filter */}
-                    {scopeFilter === 'YAPETIDU' ? (
-                      <Image
-                        src="/Logo YAPETIDU (Transparent bg).png"
-                        alt="Logo YAPETIDU"
-                        width={512}
-                        height={474}
-                        priority
-                        className="h-11 w-auto object-contain hover:scale-105 transition-transform duration-300"
-                      />
-                    ) : scopeFilter === 'UNIPDU' ? (
-                      <Image
-                        src="/Logo UNIPDU.png"
-                        alt="Logo UNIPDU"
-                        width={300}
-                        height={304}
-                        priority
-                        className="h-11 w-auto object-contain hover:scale-105 transition-transform duration-300"
-                      />
-                    ) : (
-                      <>
-                        <Image
-                          src="/Logo YAPETIDU (Transparent bg).png"
-                          alt="Logo YAPETIDU"
-                          width={512}
-                          height={474}
-                          priority
-                          className="h-10 w-auto object-contain hover:scale-105 transition-transform duration-300 cursor-pointer"
-                        />
-                        <div className="w-px h-6 bg-slate-200" />
-                        <Image
-                          src="/Logo UNIPDU.png"
-                          alt="Logo UNIPDU"
-                          width={300}
-                          height={304}
-                          priority
-                          className="h-10 w-auto object-contain hover:scale-105 transition-transform duration-300 cursor-pointer"
-                        />
-                      </>
-                    )}
-                  </div>
-
-                  <div className="ml-2">
-                    <div className="flex items-center gap-2">
-                      <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-                        Aplikasi Persuratan 2026
-                      </h1>
-                      <Badge variant="outline" className="rounded-sm border-indigo-200 bg-indigo-50 text-indigo-700 text-[10px] font-bold">
-                        {scopeFilter === 'YAPETIDU' ? 'YAPETIDU' : scopeFilter === 'UNIPDU' ? 'REKTORAT UNIPDU' : 'ALL SCOPES'}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {scopeFilter === 'YAPETIDU'
-                        ? "Yayasan Pesantren Tinggi Darul 'Ulum Jombang"
-                        : scopeFilter === 'UNIPDU'
-                        ? "Universitas Pesantren Tinggi Darul 'Ulum — Sekretariat Rektorat"
-                        : "Sistem Buku Agenda Persuratan, Penomoran Naskah, & Lembar Disposisi Digital"}
-                    </p>
-                  </div>
-                </div>
-
+            <div className="flex justify-between items-start">
+              <div className="w-full min-w-0">
                 {/* Filter Controls Row */}
-                <div className="flex flex-wrap items-center gap-4 mb-6">
+                <div className="flex flex-wrap items-center gap-4">
                   {/* Segmented Tab Switcher replicating the Excel Worksheets */}
                   <div className="flex flex-wrap bg-slate-100 p-1 rounded-md gap-0.5">
                     <button
                       type="button"
                       onClick={() => handleTabChange('masuk')}
-                      className={`px-3 py-1.5 rounded-sm text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      className={`px-4 py-2 rounded-sm text-sm font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
                         activeTab === 'masuk'
                           ? 'bg-white text-sky-700 shadow-sm font-bold'
                           : 'text-slate-500 hover:text-slate-700'
@@ -361,7 +287,7 @@ export default function SuratMenyuratPage() {
                     <button
                       type="button"
                       onClick={() => handleTabChange('keluar')}
-                      className={`px-3 py-1.5 rounded-sm text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      className={`px-4 py-2 rounded-sm text-sm font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
                         activeTab === 'keluar'
                           ? 'bg-white text-indigo-600 shadow-sm font-bold'
                           : 'text-slate-500 hover:text-slate-700'
@@ -371,6 +297,7 @@ export default function SuratMenyuratPage() {
                       Surat Keluar ({filteredSuratKeluar.length})
                     </button>
 
+                    <div hidden>
                     <button
                       type="button"
                       onClick={() => handleTabChange('agenda')}
@@ -422,10 +349,11 @@ export default function SuratMenyuratPage() {
                       <BarChart3 className="w-3.5 h-3.5" />
                       Statistik
                     </button>
+                    </div>
                   </div>
 
                   {/* Institution Scope Switcher */}
-                  <div className="flex bg-slate-100 p-1 rounded-md border border-slate-200">
+                  <div className="hidden bg-slate-100 p-1 rounded-md border border-slate-200">
                     <button
                       type="button"
                       onClick={() => setScopeFilter('all')}
@@ -487,6 +415,22 @@ export default function SuratMenyuratPage() {
                     </Select>
                   )}
 
+                  {/* Search Input Bar */}
+                  {(activeTab === 'masuk' || activeTab === 'keluar') && (
+                    <div className="relative flex-1 min-w-[200px]">
+                      <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                        <Search className="w-4 h-4" />
+                      </span>
+                      <input
+                        type="text"
+                        placeholder="Cari nomor, pihak, perihal..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full bg-white border border-slate-200 text-slate-700 placeholder:text-slate-400 text-xs font-semibold rounded-sm pl-10 pr-4 py-2 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all shadow-sm"
+                      />
+                    </div>
+                  )}
+
                   {/* Status Filter */}
                   {(activeTab === 'masuk' || activeTab === 'keluar') && (
                     <Select value={statusFilter} onValueChange={(v) => v && setStatusFilter(v)}>
@@ -523,78 +467,8 @@ export default function SuratMenyuratPage() {
                     </Select>
                   )}
 
-                  {/* Sifat Filter */}
-                  {(activeTab === 'masuk' || activeTab === 'keluar') && (
-                    <Select value={sifatFilter} onValueChange={(v) => v && setSifatFilter(v)}>
-                      <SelectTrigger className="bg-white border-slate-200 text-slate-700 text-xs font-semibold rounded-sm px-3 py-2.5 h-9 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-sm w-auto min-w-[120px]">
-                        <SelectValue>{sifatFilterLabel}</SelectValue>
-                      </SelectTrigger>
-                      <SelectContent className="rounded-md border border-slate-200 bg-white p-1 shadow-xl ring-0">
-                        <SelectItem
-                          value="all"
-                          className="rounded-sm py-2 pr-8 pl-3 text-xs font-medium text-slate-700 focus:bg-indigo-50 focus:text-indigo-900 data-[selected]:font-semibold data-[selected]:text-indigo-700"
-                        >
-                          Semua Sifat
-                        </SelectItem>
-                        {SIFAT_SURAT_OPTIONS.map((opt) => (
-                          <SelectItem
-                            key={opt.value}
-                            value={opt.value}
-                            className="rounded-sm py-2 pr-8 pl-3 text-xs font-medium text-slate-700 focus:bg-indigo-50 focus:text-indigo-900 data-[selected]:font-semibold data-[selected]:text-indigo-700"
-                          >
-                            {opt.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-
-                  {/* Search Input Bar */}
-                  {(activeTab === 'masuk' || activeTab === 'keluar') && (
-                    <div className="relative flex-1 min-w-[200px]">
-                      <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                        <Search className="w-4 h-4" />
-                      </span>
-                      <input
-                        type="text"
-                        placeholder="Cari nomor, pihak, perihal..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full bg-white border border-slate-200 text-slate-700 placeholder:text-slate-400 text-xs font-semibold rounded-sm pl-10 pr-4 py-2 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all shadow-sm"
-                      />
-                    </div>
-                  )}
                 </div>
 
-                {/* Summary Stats Row */}
-                <div className="flex flex-wrap gap-8 text-sm mb-6">
-                  <div>
-                    <span className="text-slate-500 block mb-1">Surat Masuk</span>
-                    <span className="font-medium text-slate-800">{loading ? '...' : filteredSuratMasuk.length}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block mb-1">Perlu Disposisi</span>
-                    <span className={`font-medium ${stats.menungguDisposisi > 0 ? 'text-amber-600 font-semibold' : 'text-slate-600'}`}>
-                      {loading ? '...' : stats.menungguDisposisi}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block mb-1">Surat Keluar</span>
-                    <span className="font-medium text-slate-800">
-                      {loading ? '...' : `${filteredSuratKeluar.length}`}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block mb-1">Surat Bulan Ini</span>
-                    <span className="font-bold text-indigo-600">{loading ? '...' : stats.suratBulanIni}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block mb-1">Total Arsip</span>
-                    <span className="font-medium text-slate-800">
-                      {loading ? '...' : filteredSuratMasuk.length + filteredSuratKeluar.length}
-                    </span>
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -625,18 +499,20 @@ export default function SuratMenyuratPage() {
                   className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm"
                 >
                   <FileDown className="w-4 h-4 text-emerald-600" />
-                  Ekspor Excel (Format Template)
+                  Ekspor Arsip (xlsx)
                 </button>
 
                 {/* Outline Soft Indigo Button */}
-                <button
-                  type="button"
-                  onClick={() => { setComposerTarget(null); setComposerModalOpen(true); }}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-indigo-200 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm"
-                >
-                  <Wand2 className="w-4 h-4 text-indigo-500" />
-                  Buat Surat (Template)
-                </button>
+                {activeTab !== 'masuk' && (
+                  <button
+                    type="button"
+                    onClick={() => { setComposerTarget(null); setComposerModalOpen(true); }}
+                    className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-indigo-200 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm"
+                  >
+                    <Wand2 className="w-4 h-4 text-indigo-500" />
+                    Buat Surat (Template)
+                  </button>
+                )}
 
                 {/* Solid Primary Button */}
                 {activeTab === 'masuk' && (
@@ -667,14 +543,6 @@ export default function SuratMenyuratPage() {
                 )}
 
                 {activeTab === 'keluar' && (
-                  <>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => { setInlineComposerOpen(false); setKeluarToEdit(null); setIsAddingKeluar(!isAddingKeluar); }}
-                  >
-                    {isAddingKeluar ? 'Tutup Formulir Agenda' : 'Catat Surat Tanpa Naskah'}
-                  </Button>
                   <Button
                     type="button"
                     onClick={() => {
@@ -687,19 +555,8 @@ export default function SuratMenyuratPage() {
                     <Plus className="w-4 h-4" />
                     {inlineComposerOpen ? 'Tutup Formulir' : 'Catat Surat Keluar'}
                   </Button>
-                  </>
                 )}
 
-                {/* Neutral Outline Button */}
-                <button
-                  type="button"
-                  onClick={() => fetchData(true)}
-                  disabled={refreshing}
-                  className="inline-flex items-center justify-center w-8 h-8 rounded-sm border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 transition-all shadow-sm cursor-pointer"
-                  title="Segarkan data"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${refreshing ? 'animate-spin' : ''}`} />
-                </button>
               </div>
             </div>
 
@@ -714,7 +571,7 @@ export default function SuratMenyuratPage() {
                 data={filteredSuratMasuk}
                 searchQuery={searchQuery}
                 statusFilter={statusFilter}
-                sifatFilter={sifatFilter}
+                sifatFilter="all"
                 isAdding={isAddingMasuk}
                 editingItem={masukToEdit}
                 defaultSatkerName={satkerDisplayName}
@@ -760,13 +617,17 @@ export default function SuratMenyuratPage() {
                 defaultKepalaPhone={userContact.phone || profile?.phoneNumber || profile?.phone || ''}
                 nextSequence={nextSequence}
                 targetSatkerId={isSuperAdmin && selectedSatkerFilter !== 'all' ? selectedSatkerFilter : undefined}
-                onSavedToSuratKeluar={() => fetchData(true)}
+                onSavedToSuratKeluar={() => {
+                  setInlineComposerOpen(false);
+                  fetchData(true);
+                  setSnackbar({ type: 'success', text: 'Surat keluar berhasil dicatat.' });
+                }}
               /></div>}
               <SuratKeluarPanel
                 data={filteredSuratKeluar}
                 searchQuery={searchQuery}
                 statusFilter={statusFilter}
-                sifatFilter={sifatFilter}
+                sifatFilter="all"
                 isAdding={isAddingKeluar}
                 editingItem={keluarToEdit}
                 defaultSatkerName={satkerDisplayName}

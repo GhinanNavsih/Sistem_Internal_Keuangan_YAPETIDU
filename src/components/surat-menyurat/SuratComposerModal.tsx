@@ -296,7 +296,7 @@ export default function SuratComposerModal({
       const kategori = draft.templateType === 'custom' ? 'Lainnya' : TEMPLATE_OPTIONS.find((option) => option.id === draft.templateType)?.title || 'Lainnya';
       const payload = {
         ...(!savedId && targetSatkerId ? { satkerId: targetSatkerId } : {}),
-        ...(savedId ? { id: savedId } : { type: 'keluar', sifat: 'biasa', status: 'draft', attachments: [] }),
+        ...(savedId ? { id: savedId } : { type: 'keluar', institutionScope: 'UNIPDU', sifat: 'biasa', status: 'draft', attachments: [] }),
         ...(!savedId || savedTemplateType.current !== draft.templateType ? { kategori } : {}),
         nomorSurat: draft.nomorSurat.trim(),
         tanggalSurat: draft.tanggalSurat,

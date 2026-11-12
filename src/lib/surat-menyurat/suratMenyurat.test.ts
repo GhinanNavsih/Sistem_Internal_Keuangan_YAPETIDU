@@ -133,6 +133,24 @@ test('each outgoing letter category has a distinct template that survives draft 
   assert.equal(openings.size, options.length);
 });
 
+test('edits belong to the saved letter and do not change the next letter template', () => {
+  const makeDraft = () => getDefaultDraft('BAK', 'Kepala BAK', 'Kepala');
+  for (const option of TEMPLATE_OPTIONS) {
+    const template = applyTemplateDefaults(makeDraft(), option.id, 'BAK', 'Kepala BAK', 'Kepala');
+    const edited = { ...template, nomorSurat: '001/BAK', perihal: 'Perihal khusus', isiParagraf1: 'Pembuka khusus', isiParagraf2: 'Isi khusus', isiParagraf3: 'Penutup khusus' };
+    const saved = parseLetterDraft(edited);
+    assert.ok(saved);
+    const letter = { nomorSurat: saved.nomorSurat, tanggalSurat: saved.tanggalSurat, tujuan: draftRecipient(saved), perihal: saved.perihal, satkerName: 'BAK', penandatanganNama: saved.penandatanganNama, penandatanganJabatan: saved.penandatanganJabatan, letterDraft: saved } as SuratKeluar;
+    assert.equal(draftFromSurat(letter, 'BAK').isiParagraf2, 'Isi khusus');
+    const next = applyTemplateDefaults(makeDraft(), option.id, 'BAK', 'Kepala BAK', 'Kepala');
+    assert.deepEqual(next, template, option.title);
+    assert.notEqual(next.isiParagraf2, edited.isiParagraf2);
+  }
+  const initial = makeDraft();
+  const tugas = applyTemplateDefaults(initial, 'tugas', 'BAK', 'Kepala BAK', 'Kepala');
+  assert.equal(initial.isiParagraf3, tugas.isiParagraf3);
+});
+
 test('task drafts preserve multiple assigned employees from both collections', () => {
   const draft = { ...getDefaultDraft('BAK'), assignedPeople: [
     { id: 'loyalis-1', collection: 'Employees_Loyalis' as const, name: 'Ahmad', role: 'Staf' },

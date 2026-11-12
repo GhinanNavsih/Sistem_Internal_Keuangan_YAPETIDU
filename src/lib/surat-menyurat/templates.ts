@@ -147,7 +147,7 @@ export function getDefaultDraft(
     salamPembuka: 'Assalamu\'alaikum Wr. Wb.',
     isiParagraf1: 'Dengan ini memberikan tugas kepada:',
     isiParagraf2: 'Untuk melaksanakan tugas: .................................\nPada tanggal/tempat: ......................................',
-    isiParagraf3: 'Demikian surat tugas ini dibuat agar dapat dilaksanakan dengan penuh tanggung jawab dan dedikasi yang tinggi.',
+    isiParagraf3: 'Demikian surat tugas ini diterbitkan untuk dipergunakan sebagaimana mestinya dan setelah melaksanakan tugas segera menyampaikan laporan.',
     salamPenutup: 'Wassalamu\'alaikum Wr. Wb.',
     penandatanganNama: kepalaName || 'Kepala SatKer',
     penandatanganJabatan: resolvedJabatan,
