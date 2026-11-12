@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isSuratMenyuratPath, SURAT_MENYURAT_PATH, SIFAT_SURAT_OPTIONS, STATUS_SURAT_MASUK_OPTIONS } from './constants';
+import { isSuratMenyuratPath, SURAT_MENYURAT_PATH, SIFAT_SURAT_OPTIONS, STATUS_SURAT_MASUK_OPTIONS, TEMPLATE_OPTIONS, KATEGORI_SURAT_KELUAR } from './constants';
 import { deriveSatkerCode, formatNomorSuratKeluar, formatNomorSuratKeluarTemplate, formatKodeArsip, calculateUsiaArsip, getRomanMonth } from './numbering';
 import { validateSuratMasukInput, validateSuratKeluarInput } from './validation';
-import { applyTemplateDefaults, draftFromSurat, draftRecipient, getDefaultDraft, parseLetterDraft } from './templates';
+import { applyTemplateDefaults, draftFromSurat, draftRecipient, formatPenandatanganJabatan, getDefaultDraft, parseLetterDraft } from './templates';
 import type { SuratKeluar } from './types';
 
 test('isSuratMenyuratPath correctly matches path and subpaths', () => {
@@ -118,6 +118,36 @@ test('applyTemplateDefaults populates appropriate text for each template type', 
   assert.match(tugas.isiParagraf3, /dipergunakan sebagaimana mestinya/);
 });
 
+test('each outgoing letter category has a distinct template that survives draft validation', () => {
+  const base = getDefaultDraft('BAK', 'Kepala BAK', 'Kepala');
+  const options = TEMPLATE_OPTIONS.filter((option) => option.id !== 'custom');
+  assert.deepEqual(options.map((option) => option.title), KATEGORI_SURAT_KELUAR.filter((category) => category !== 'Lainnya'));
+  const openings = new Set<string>();
+  for (const option of options) {
+    const draft = applyTemplateDefaults(base, option.id, 'BAK', 'Kepala BAK', 'Kepala');
+    assert.ok(draft.salamPembuka && draft.isiParagraf1 && draft.isiParagraf2 && draft.isiParagraf3 && draft.salamPenutup, option.title);
+    assert.deepEqual(parseLetterDraft(draft), draft);
+    assert.equal(draftFromSurat({ nomorSurat: draft.nomorSurat, tanggalSurat: draft.tanggalSurat, tujuan: draftRecipient(draft), perihal: draft.perihal, satkerName: 'BAK', penandatanganNama: draft.penandatanganNama, penandatanganJabatan: draft.penandatanganJabatan, letterDraft: draft } as SuratKeluar, 'BAK').templateType, option.id);
+    openings.add(draft.isiParagraf1);
+  }
+  assert.equal(openings.size, options.length);
+});
+
+test('task drafts preserve multiple assigned employees from both collections', () => {
+  const draft = { ...getDefaultDraft('BAK'), assignedPeople: [
+    { id: 'loyalis-1', collection: 'Employees_Loyalis' as const, name: 'Ahmad', role: 'Staf' },
+    { id: 'pekarya-1', collection: 'Employees_BlueCollar' as const, name: 'Budi', role: 'Teknisi' },
+  ], taskAssigner: { id: 'head-1', collection: 'Employees_Loyalis' as const, name: 'Siti', role: 'Dekan' }, penandatanganNama: 'Siti', penandatanganJabatan: 'Dekan' };
+  assert.deepEqual(parseLetterDraft(draft), draft);
+  assert.equal(parseLetterDraft({ ...draft, assignedPeople: [draft.assignedPeople[0], draft.assignedPeople[0]] }), null);
+  assert.equal(parseLetterDraft({ ...draft, assignedPeople: [{ ...draft.assignedPeople[0], collection: 'other' }] }), null);
+  assert.equal(parseLetterDraft({ ...draft, taskAssigner: { ...draft.taskAssigner, collection: 'other' } }), null);
+  const letter = { nomorSurat: '001', tanggalSurat: draft.tanggalSurat, tujuan: draftRecipient(draft), perihal: draft.perihal, satkerName: 'BAK', penandatanganNama: draft.penandatanganNama, penandatanganJabatan: draft.penandatanganJabatan, letterDraft: draft } as SuratKeluar;
+  assert.deepEqual(draftFromSurat(letter, 'BAK').assignedPeople, draft.assignedPeople);
+  assert.deepEqual(draftFromSurat(letter, 'BAK').taskAssigner, draft.taskAssigner);
+  assert.equal(draftFromSurat(letter, 'BAK').penandatanganJabatan, 'Dekan');
+});
+
 test('recorded and legacy letters reopen with their actual agenda data and text', () => {
   const surat = {
     nomorSurat: '001/A/AU/11/2026', tanggalSurat: '2026-11-10', tujuan: 'Fatmah', perihal: 'Undangan Rapat',
@@ -141,6 +171,32 @@ test('recorded and legacy letters reopen with their actual agenda data and text'
   assert.equal(agendaChanged.perihal, 'Hal Baru');
   assert.equal(agendaChanged.isiParagraf1, 'Pembuka');
   assert.equal(parseLetterDraft({ ...saved, isiParagraf1: 'x'.repeat(10001) }), null);
+
+  // Draft with SatKer head contact details
+  const withContacts = {
+    ...saved,
+    satkerHeadEmail: 'bak@unipdu.ac.id',
+    satkerHeadPhone: '081234567890',
+  };
+  assert.deepEqual(parseLetterDraft(withContacts), withContacts);
+  assert.equal(parseLetterDraft({ ...withContacts, satkerHeadEmail: 'x'.repeat(151) }), null);
+  assert.equal(parseLetterDraft({ ...withContacts, satkerHeadPhone: 'x'.repeat(51) }), null);
+
+  const defaultWithContacts = getDefaultDraft('BAK', 'Ahmad', 'Kepala BAK', 'bak@unipdu.ac.id', '081234567890');
+  assert.equal(defaultWithContacts.satkerHeadEmail, 'bak@unipdu.ac.id');
+  assert.equal(defaultWithContacts.satkerHeadPhone, '081234567890');
+
+  const reopenedWithContacts = draftFromSurat({ ...surat, letterDraft: withContacts }, 'Lain');
+  assert.equal(reopenedWithContacts.satkerHeadEmail, 'bak@unipdu.ac.id');
+  assert.equal(reopenedWithContacts.satkerHeadPhone, '081234567890');
+
+  // Verify formatPenandatanganJabatan prevents repeating SatKer name
+  assert.equal(formatPenandatanganJabatan('Kepala Pusat Komputer Net', 'Pusat Komputer Net'), 'Kepala Pusat Komputer Net');
+  assert.equal(formatPenandatanganJabatan('Kepala Pusat Komputer Net Pusat Komputer Net', 'Pusat Komputer Net'), 'Kepala Pusat Komputer Net');
+  assert.equal(formatPenandatanganJabatan('Kepala', 'Pusat Komputer Net'), 'Kepala Pusat Komputer Net');
+  assert.equal(formatPenandatanganJabatan('Kepala Satuan Kerja', 'Pusat Komputer Net'), 'Kepala Pusat Komputer Net');
+  assert.equal(formatPenandatanganJabatan('Dekan Fakultas Agama Islam', 'Fakultas Agama Islam'), 'Dekan Fakultas Agama Islam');
+  assert.equal(getDefaultDraft('Pusat Komputer Net', 'Ahmad', 'Kepala Pusat Komputer Net').penandatanganJabatan, 'Kepala Pusat Komputer Net');
 });
 
 test('formatNomorSuratKeluarTemplate formats UNIPDU and YAPETIDU single & batch letter numbers matching Excel', () => {

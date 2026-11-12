@@ -5,6 +5,7 @@ import { canManageSuratMenyurat } from '@/lib/payroll/roles';
 import { validateSuratMasukInput, validateSuratKeluarInput } from '@/lib/surat-menyurat/validation';
 import { parseLetterDraft } from '@/lib/surat-menyurat/templates';
 import { DisposisiSurat, SuratMasuk, SuratKeluar, SuratStats } from '@/lib/surat-menyurat/types';
+import { loadReservationContact } from '@/lib/server/venueContact';
 import { randomUUID } from 'crypto';
 
 export const dynamic = 'force-dynamic';
@@ -145,6 +146,14 @@ export async function GET(request: NextRequest) {
 
     const satkerList = Array.from(satkerMap.entries()).map(([id, name]) => ({ id, name }));
 
+    let userPhone = '';
+    try {
+      const contact = await loadReservationContact(adminDb, actor);
+      userPhone = contact.phone || '';
+    } catch {
+      // safe fallback
+    }
+
     return NextResponse.json({
       ok: true,
       suratMasuk,
@@ -152,6 +161,10 @@ export async function GET(request: NextRequest) {
       stats,
       satkerList,
       actorSatker,
+      userContact: {
+        email: actor.email || '',
+        phone: userPhone,
+      },
     });
   } catch (error) {
     return errorResponse(error);

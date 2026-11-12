@@ -165,6 +165,21 @@ export const TEMPLATE_OPTIONS: { id: TemplateType; title: string; desc: string }
     desc: 'Permohonan sarana, narasumber, izin, atau dukungan pelaksanaan kegiatan.',
   },
   {
+    id: 'edaran',
+    title: 'Surat Edaran Internal',
+    desc: 'Pemberitahuan atau arahan kepada unit dan pegawai di lingkungan institusi.',
+  },
+  {
+    id: 'rekomendasi',
+    title: 'Surat Rekomendasi',
+    desc: 'Rekomendasi resmi untuk seseorang atau kegiatan.',
+  },
+  {
+    id: 'balasan',
+    title: 'Surat Balasan',
+    desc: 'Tanggapan atas surat, permohonan, atau undangan yang diterima.',
+  },
+  {
     id: 'custom',
     title: 'Format Bebas (Custom)',
     desc: 'Format surat resmi standar dengan kop SatKer tanpa format isian template kaku.',

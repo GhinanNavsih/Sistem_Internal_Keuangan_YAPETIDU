@@ -6,7 +6,7 @@ export type StatusSuratMasuk = 'menunggu_disposisi' | 'diproses' | 'selesai' | '
 
 export type StatusSuratKeluar = 'draft' | 'disetujui' | 'terkirim' | 'diarsipkan';
 
-export type TemplateType = 'tugas' | 'keterangan' | 'undangan' | 'pengantar' | 'permohonan' | 'custom';
+export type TemplateType = 'tugas' | 'keterangan' | 'undangan' | 'pengantar' | 'permohonan' | 'edaran' | 'rekomendasi' | 'balasan' | 'custom';
 
 export type InstitutionScope = 'UNIPDU' | 'YAPETIDU' | 'SATKER';
 

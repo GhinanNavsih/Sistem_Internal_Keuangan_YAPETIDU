@@ -25,6 +25,8 @@ export interface UserProfile {
   satkerName?: string;
   linkedEmployeeId?: string;
   disabled?: boolean;
+  phoneNumber?: string;
+  phone?: string;
 }
 
 export interface ImpersonationSession {

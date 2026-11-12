@@ -376,7 +376,7 @@ export default function SuratMasukInlineForm({
       </div>
 
       {/* Row 1: Nomor Surat Pengirim, Tanggal Surat, Tanggal Diterima, Status */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${isEdit ? "lg:grid-cols-4" : "lg:grid-cols-3"} gap-4`}>
         <div>
           <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Nomor Surat Pengirim *</Label>
           <Input
@@ -410,25 +410,27 @@ export default function SuratMasukInlineForm({
           />
         </div>
 
-        <div>
-          <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Status Penanganan</Label>
-          <Select value={status} onValueChange={(val) => val && setStatus(val as StatusSuratMasuk)}>
-            <SelectTrigger className="w-full rounded-sm bg-white border-slate-200 text-xs h-9">
-              <SelectValue>{statusLabel}</SelectValue>
-            </SelectTrigger>
-            <SelectContent className="rounded-md border border-slate-200 bg-white p-1 shadow-xl">
-              {STATUS_SURAT_MASUK_OPTIONS.map((opt) => (
-                <SelectItem
-                  key={opt.value}
-                  value={opt.value}
-                  className="rounded-sm py-2 pr-8 pl-3 text-xs font-medium text-slate-700 focus:bg-indigo-50 focus:text-indigo-900"
-                >
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {isEdit && (
+          <div>
+            <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Status Penanganan</Label>
+            <Select value={status} onValueChange={(val) => val && setStatus(val as StatusSuratMasuk)}>
+              <SelectTrigger className="w-full rounded-sm bg-white border-slate-200 text-xs h-9">
+                <SelectValue>{statusLabel}</SelectValue>
+              </SelectTrigger>
+              <SelectContent className="rounded-md border border-slate-200 bg-white p-1 shadow-xl">
+                {STATUS_SURAT_MASUK_OPTIONS.map((opt) => (
+                  <SelectItem
+                    key={opt.value}
+                    value={opt.value}
+                    className="rounded-sm py-2 pr-8 pl-3 text-xs font-medium text-slate-700 focus:bg-indigo-50 focus:text-indigo-900"
+                  >
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       {/* Row 2: Pengirim & Penerima */}

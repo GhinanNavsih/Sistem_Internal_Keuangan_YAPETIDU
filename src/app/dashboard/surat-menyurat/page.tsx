@@ -72,6 +72,7 @@ export default function SuratMenyuratPage() {
   const [sifatFilter, setSifatFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [snackbar, setSnackbar] = useState<SnackbarMessage | null>(null);
+  const [userContact, setUserContact] = useState<{ email: string; phone: string }>({ email: '', phone: '' });
 
   // Inline form state
   const [isAddingMasuk, setIsAddingMasuk] = useState(false);
@@ -91,6 +92,7 @@ export default function SuratMenyuratPage() {
   const [detailType, setDetailType] = useState<'masuk' | 'keluar'>('masuk');
 
   const [composerModalOpen, setComposerModalOpen] = useState(false);
+  const [inlineComposerOpen, setInlineComposerOpen] = useState(false);
   const [composerTarget, setComposerTarget] = useState<SuratKeluar | null>(null);
 
   const isSuperAdmin = profile?.role === 'super_admin';
@@ -123,6 +125,7 @@ export default function SuratMenyuratPage() {
       setSuratKeluar(json.suratKeluar || []);
       if (json.stats) setStats(json.stats);
       if (json.satkerList) setSatkerList(json.satkerList);
+      if (json.userContact) setUserContact(json.userContact);
     } catch (err: unknown) {
       setSnackbar({
         type: 'error',
@@ -146,6 +149,7 @@ export default function SuratMenyuratPage() {
     setIsAddingMasuk(false);
     setMasukToEdit(null);
     setIsAddingKeluar(false);
+    setInlineComposerOpen(false);
     setKeluarToEdit(null);
   };
 
@@ -663,30 +667,27 @@ export default function SuratMenyuratPage() {
                 )}
 
                 {activeTab === 'keluar' && (
+                  <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => { setInlineComposerOpen(false); setKeluarToEdit(null); setIsAddingKeluar(!isAddingKeluar); }}
+                  >
+                    {isAddingKeluar ? 'Tutup Formulir Agenda' : 'Catat Surat Tanpa Naskah'}
+                  </Button>
                   <Button
                     type="button"
                     onClick={() => {
-                      if (isAddingKeluar) {
-                        setIsAddingKeluar(false);
-                      } else {
-                        setKeluarToEdit(null);
-                        setIsAddingKeluar(true);
-                      }
+                      setIsAddingKeluar(false);
+                      setKeluarToEdit(null);
+                      setInlineComposerOpen((open) => !open);
                     }}
                     className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center gap-2 shadow-md shadow-indigo-100"
                   >
-                    {isAddingKeluar ? (
-                      <>
-                        <X className="w-4 h-4" />
-                        Tutup Formulir
-                      </>
-                    ) : (
-                      <>
-                        <Plus className="w-4 h-4" />
-                        Catat Surat Keluar
-                      </>
-                    )}
+                    <Plus className="w-4 h-4" />
+                    {inlineComposerOpen ? 'Tutup Formulir' : 'Catat Surat Keluar'}
                   </Button>
+                  </>
                 )}
 
                 {/* Neutral Outline Button */}
@@ -748,6 +749,19 @@ export default function SuratMenyuratPage() {
                 onDelete={handleDeleteLetter}
               />
             ) : activeTab === 'keluar' ? (
+              <>
+              {inlineComposerOpen && <div className="p-6"><SuratComposerModal
+                inline
+                open
+                onOpenChange={setInlineComposerOpen}
+                defaultSatkerName={satkerDisplayName}
+                defaultKepalaName={profile?.displayName || ''}
+                defaultKepalaEmail={userContact.email || profile?.email || user?.email || ''}
+                defaultKepalaPhone={userContact.phone || profile?.phoneNumber || profile?.phone || ''}
+                nextSequence={nextSequence}
+                targetSatkerId={isSuperAdmin && selectedSatkerFilter !== 'all' ? selectedSatkerFilter : undefined}
+                onSavedToSuratKeluar={() => fetchData(true)}
+              /></div>}
               <SuratKeluarPanel
                 data={filteredSuratKeluar}
                 searchQuery={searchQuery}
@@ -774,6 +788,7 @@ export default function SuratMenyuratPage() {
                   });
                 }}
                 onOpenEdit={(surat) => {
+                  setInlineComposerOpen(false);
                   setIsAddingKeluar(false);
                   setKeluarToEdit(surat);
                 }}
@@ -788,6 +803,7 @@ export default function SuratMenyuratPage() {
                 }}
                 onDelete={handleDeleteLetter}
               />
+              </>
             ) : activeTab === 'agenda' ? (
               /* Unified Buku Agenda Ledger View */
               <BukuAgendaTable
@@ -914,7 +930,10 @@ export default function SuratMenyuratPage() {
         onOpenChange={setComposerModalOpen}
         defaultSatkerName={satkerDisplayName}
         defaultKepalaName={profile?.displayName || ''}
+        defaultKepalaEmail={userContact.email || profile?.email || user?.email || ''}
+        defaultKepalaPhone={userContact.phone || profile?.phoneNumber || profile?.phone || ''}
         nextSequence={nextSequence}
+        targetSatkerId={isSuperAdmin && selectedSatkerFilter !== 'all' ? selectedSatkerFilter : undefined}
         surat={composerTarget}
         onSavedToSuratKeluar={() => {
           fetchData(true);

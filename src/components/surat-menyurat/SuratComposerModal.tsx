@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import {
   Dialog,
@@ -17,16 +17,20 @@ import { AutoResizeTextarea } from '@/components/ui/auto-resize-textarea';
 import { useAuth } from '@/lib/AuthContext';
 import { TEMPLATE_OPTIONS } from '@/lib/surat-menyurat/constants';
 import { deriveSatkerCode, formatNomorSuratKeluar } from '@/lib/surat-menyurat/numbering';
-import { applyTemplateDefaults, draftFromSurat, draftRecipient, getDefaultDraft, LetterDraftPayload } from '@/lib/surat-menyurat/templates';
+import { applyTemplateDefaults, draftFromSurat, draftRecipient, formatPenandatanganJabatan, getDefaultDraft, LetterDraftPayload, AssignedPerson } from '@/lib/surat-menyurat/templates';
 import { SuratKeluar, TemplateType } from '@/lib/surat-menyurat/types';
-import { Columns2, Edit3, Eye, Loader2, Printer, Save, Sparkles, Wand2 } from 'lucide-react';
+import { Columns2, Edit3, Eye, Loader2, Printer, Save, Sparkles, Wand2, Trash2 } from 'lucide-react';
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultSatkerName: string;
   defaultKepalaName?: string;
+  defaultKepalaEmail?: string;
+  defaultKepalaPhone?: string;
   nextSequence: number;
+  targetSatkerId?: string;
+  inline?: boolean;
   surat?: SuratKeluar | null;
   onSavedToSuratKeluar?: (data: SuratKeluar) => void;
 }
@@ -36,25 +40,56 @@ export default function SuratComposerModal({
   onOpenChange,
   defaultSatkerName,
   defaultKepalaName = '',
+  defaultKepalaEmail = '',
+  defaultKepalaPhone = '',
   nextSequence,
+  targetSatkerId,
+  inline = false,
   surat = null,
   onSavedToSuratKeluar,
 }: Props) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const isYapetidu = surat?.institutionScope === 'YAPETIDU';
   const [draft, setDraft] = useState<LetterDraftPayload>(() => {
     if (surat) return draftFromSurat(surat, defaultSatkerName);
-    const initial = getDefaultDraft(defaultSatkerName, defaultKepalaName, `Kepala ${defaultSatkerName}`);
+    const initial = getDefaultDraft(
+      defaultSatkerName,
+      defaultKepalaName,
+      'Kepala',
+      defaultKepalaEmail || profile?.email || user?.email || '',
+      defaultKepalaPhone || profile?.phoneNumber || profile?.phone || '',
+    );
     initial.nomorSurat = formatNomorSuratKeluar({ sequenceNumber: nextSequence, satkerCode: deriveSatkerCode(defaultSatkerName), date: new Date() });
     return initial;
   });
   const [savedId, setSavedId] = useState<string | null>(surat?.id || null);
+  const savedTemplateType = useRef(draft.templateType);
   const [lastSavedDraft, setLastSavedDraft] = useState<string | null>(surat?.letterDraft ? JSON.stringify(draft) : null);
   const [viewMode, setViewMode] = useState<'both' | 'edit' | 'preview'>('both');
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [saveSuccess, setSaveSuccess] = useState('');
   const [error, setError] = useState('');
+  const [editingPreview, setEditingPreview] = useState<Exclude<keyof LetterDraftPayload, 'templateType' | 'assignedPeople' | 'taskAssigner'> | null>(null);
+  const [people, setPeople] = useState<AssignedPerson[]>([]);
+  const [peopleLoaded, setPeopleLoaded] = useState(false);
+  const [peopleError, setPeopleError] = useState('');
+  const [peopleRetry, setPeopleRetry] = useState(0);
+  const peopleLoading = !peopleLoaded && !peopleError;
+  const [personSearch, setPersonSearch] = useState('');
+  const [personSearchOpen, setPersonSearchOpen] = useState(false);
+  const [assignerSearch, setAssignerSearch] = useState('');
+  const [assignerSearchOpen, setAssignerSearchOpen] = useState(false);
+
+  useEffect(() => {
+    if (draft.templateType !== 'tugas' || !user || peopleLoaded) return;
+    let cancelled = false;
+    user.getIdToken().then((token) => fetch('/api/satker-surat/employees', { headers: { Authorization: `Bearer ${token}` } }))
+      .then(async (response) => { const data = await response.json(); if (!response.ok || !data.ok) throw new Error(data.error || 'Gagal memuat pegawai.'); return data.people as AssignedPerson[]; })
+      .then((list) => { if (!cancelled) { setPeople(list); setPeopleLoaded(true); setPeopleError(''); } })
+      .catch((err) => { if (!cancelled) setPeopleError(err instanceof Error ? err.message : 'Gagal memuat pegawai.'); });
+    return () => { cancelled = true; };
+  }, [draft.templateType, user, peopleLoaded, peopleRetry]);
 
   const handleTemplateChange = (newType: TemplateType) => {
     setDraft((prev) => {
@@ -119,25 +154,39 @@ export default function SuratComposerModal({
               flex: 1;
               text-align: center;
               padding: 0 10px;
+              min-width: 0;
             }
             .kop-instansi {
-              font-size: 13pt;
-              font-weight: bold;
+              font-size: 13.5pt;
+              font-weight: 800;
               text-transform: uppercase;
-              letter-spacing: 0.5px;
+              letter-spacing: 0.2px;
+              line-height: 1.2;
               margin: 0;
+              white-space: nowrap;
             }
             .kop-satker {
-              font-size: 15pt;
+              font-size: 11pt;
               font-weight: bold;
               text-transform: uppercase;
-              letter-spacing: 1px;
-              margin: 2px 0;
+              letter-spacing: 0.2px;
+              line-height: 1.25;
+              margin: 3px 0;
+              white-space: nowrap;
             }
             .kop-alamat {
-              font-size: 9pt;
+              font-size: 8.5pt;
               margin: 2px 0 0 0;
+              line-height: 1.3;
+              white-space: nowrap;
             }
+            .kop-kontak {
+              font-size: 8.5pt;
+              margin: 1px 0 0 0;
+              line-height: 1.3;
+              white-space: nowrap;
+            }
+            .kop-container img { width: 56px; height: 56px; object-fit: contain; }
             .letter-meta {
               display: flex;
               justify-content: space-between;
@@ -180,6 +229,9 @@ export default function SuratComposerModal({
               width: 250px;
               text-align: center;
               font-size: 11pt;
+            }
+            .signature-date {
+              margin: 0 0 4px 0;
             }
             .sign-space {
               height: 75px;
@@ -233,15 +285,19 @@ export default function SuratComposerModal({
 
       const combinedBody = [
         draft.salamPembuka,
+        ...(draft.templateType === 'tugas' && draft.taskAssigner ? [`Pemberi tugas:\nNama: ${draft.penandatanganNama}\nJabatan: ${draft.penandatanganJabatan || '-'}`] : []),
         draft.isiParagraf1,
+        ...(draft.templateType === 'tugas' ? [(draft.assignedPeople || []).map((person, index) => `${index + 1}. ${person.name}${person.role ? ` — ${person.role}` : ''}`).join('\n')] : []),
         draft.isiParagraf2,
         draft.isiParagraf3,
         draft.salamPenutup,
       ].filter(Boolean).join('\n\n');
 
+      const kategori = draft.templateType === 'custom' ? 'Lainnya' : TEMPLATE_OPTIONS.find((option) => option.id === draft.templateType)?.title || 'Lainnya';
       const payload = {
-        ...(savedId ? { id: savedId } : { type: 'keluar', sifat: 'biasa', status: 'draft', attachments: [],
-          kategori: draft.templateType === 'tugas' ? 'Surat Tugas' : draft.templateType === 'undangan' ? 'Surat Undangan' : 'Surat Keluar' }),
+        ...(!savedId && targetSatkerId ? { satkerId: targetSatkerId } : {}),
+        ...(savedId ? { id: savedId } : { type: 'keluar', sifat: 'biasa', status: 'draft', attachments: [] }),
+        ...(!savedId || savedTemplateType.current !== draft.templateType ? { kategori } : {}),
         nomorSurat: draft.nomorSurat.trim(),
         tanggalSurat: draft.tanggalSurat,
         tujuan,
@@ -270,6 +326,7 @@ export default function SuratComposerModal({
       }
 
       setSavedId(json.data.id);
+      savedTemplateType.current = draft.templateType;
       setLastSavedDraft(JSON.stringify(draft));
       setSaveSuccess('Naskah berhasil disimpan pada Surat Keluar.');
       if (onSavedToSuratKeluar) onSavedToSuratKeluar(json.data);
@@ -298,6 +355,45 @@ export default function SuratComposerModal({
   // Shared Form Fields JSX
   const renderEditorForm = () => (
     <div className="space-y-4">
+      {/* Pengaturan Kop SatKer */}
+      <div className="p-3 bg-slate-50 border border-slate-200 rounded-sm space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-slate-700 block">Kop Surat & Identitas SatKer</span>
+          <span className="text-[10px] text-slate-500 font-medium">Header resmi surat dinas</span>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[11px] font-semibold text-slate-600">Nama Satuan Kerja (SatKer)</Label>
+          <Input
+            value={draft.satkerName}
+            onChange={(e) => setDraft((prev) => ({ ...prev, satkerName: e.target.value }))}
+            placeholder="Contoh: BIRO ADMINISTRASI KEUANGAN (BAK)"
+            className="text-xs font-semibold bg-white rounded-sm border-slate-200 uppercase"
+          />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="space-y-1">
+            <Label className="text-[11px] font-semibold text-slate-600">Email SatKer / Kepala</Label>
+            <Input
+              type="text"
+              value={draft.satkerHeadEmail || ''}
+              onChange={(e) => setDraft((prev) => ({ ...prev, satkerHeadEmail: e.target.value }))}
+              placeholder="email:{satker_head_email}"
+              className="text-xs font-semibold bg-white rounded-sm border-slate-200"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[11px] font-semibold text-slate-600">No. Telp Kepala SatKer</Label>
+            <Input
+              type="text"
+              value={draft.satkerHeadPhone || ''}
+              onChange={(e) => setDraft((prev) => ({ ...prev, satkerHeadPhone: e.target.value }))}
+              placeholder="Telp. {satker_head_phone_number}"
+              className="text-xs font-semibold bg-white rounded-sm border-slate-200"
+            />
+          </div>
+        </div>
+      </div>
+
       {/* Nomor Surat & Tanggal */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1">
@@ -379,6 +475,38 @@ export default function SuratComposerModal({
       {/* Isi Surat */}
       <div className="space-y-2">
         <Label className="text-xs font-bold text-slate-700">Isi Naskah Surat</Label>
+        {draft.templateType === 'tugas' && <div className="space-y-2 rounded-sm border border-slate-200 bg-slate-50 p-3">
+          <span className="block text-xs font-bold text-slate-700">Pemberi Tugas / Penandatangan</span>
+          {draft.taskAssigner && <div className="flex items-center gap-2"><div className="flex-1 rounded-sm border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800">{draft.taskAssigner.name} <span className="text-slate-500">· {draft.taskAssigner.collection === 'Employees_Loyalis' ? 'Loyalis' : 'Pekarya'}{draft.taskAssigner.role ? ` · ${draft.taskAssigner.role}` : ''}</span></div><button type="button" aria-label="Hapus pemberi tugas" onClick={() => setDraft((prev) => { const next = { ...prev }; delete next.taskAssigner; next.penandatanganNama = ''; next.penandatanganJabatan = ''; next.penandatanganNipy = ''; return next; })} className="p-2 text-rose-600"><Trash2 className="h-4 w-4" /></button></div>}
+          <div className="relative">
+            <Input aria-label="Cari pemberi tugas" placeholder={draft.taskAssigner ? 'Ganti pemberi tugas...' : 'Cari pemberi tugas...'} value={assignerSearch} autoComplete="off" onFocus={() => setAssignerSearchOpen(true)} onChange={(e) => { setAssignerSearch(e.target.value); setAssignerSearchOpen(true); }} onBlur={() => window.setTimeout(() => setAssignerSearchOpen(false), 200)} onKeyDown={(e) => { if (e.key === 'Escape') setAssignerSearchOpen(false); }} className="rounded-sm border-slate-200 bg-white text-xs" />
+            {assignerSearchOpen && <div className="absolute left-0 right-0 top-full z-50 max-h-48 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-xl">
+              {peopleLoading ? <div className="p-3 text-xs text-slate-500">Memuat pegawai...</div> : peopleError ? <div className="p-3 text-xs text-rose-600">{peopleError} <button type="button" className="underline" onClick={() => { setPeopleError(''); setPeopleRetry((count) => count + 1); }}>Coba lagi</button></div> : (['Employees_Loyalis', 'Employees_BlueCollar'] as const).map((collection) => {
+                const matches = people.filter((person) => person.collection === collection && `${person.name} ${person.role}`.toLocaleLowerCase('id').includes(assignerSearch.trim().toLocaleLowerCase('id')));
+                return matches.length ? <div key={collection}><div className="sticky top-0 bg-slate-50 px-4 py-1.5 text-[9px] font-bold uppercase text-slate-500">{collection === 'Employees_Loyalis' ? 'Loyalis' : 'Pekarya'}</div>{matches.map((person) => <button key={person.id} type="button" onClick={() => { setDraft((prev) => ({ ...prev, taskAssigner: person, penandatanganNama: person.name.slice(0, 100), penandatanganJabatan: person.role.slice(0, 100), penandatanganNipy: '' })); setAssignerSearch(''); setAssignerSearchOpen(false); }} className="flex w-full justify-between gap-3 px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"><span>{person.name}</span><span className="text-[10px] text-slate-400">{person.role}</span></button>)}</div> : null;
+              })}
+              {!peopleLoading && !peopleError && !people.some((person) => `${person.name} ${person.role}`.toLocaleLowerCase('id').includes(assignerSearch.trim().toLocaleLowerCase('id'))) && <div className="p-3 text-xs text-slate-500">Pegawai tidak ditemukan.</div>}
+            </div>}
+          </div>
+          <p className="text-[11px] text-slate-500">Nama dan jabatan pemberi tugas digunakan sebagai penandatangan dan dapat disunting di bawah.</p>
+        </div>}
+        {draft.templateType === 'tugas' && <div className="space-y-2 rounded-sm border border-slate-200 bg-slate-50 p-3">
+          <span className="block text-xs font-bold text-slate-700">Pegawai yang Ditugaskan</span>
+          {(draft.assignedPeople || []).map((person) => <div key={`${person.collection}:${person.id}`} className="flex items-center gap-2">
+            <div className="flex-1 rounded-sm border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800">{person.name} <span className="text-slate-500">· {person.collection === 'Employees_Loyalis' ? 'Loyalis' : 'Pekarya'}{person.role ? ` · ${person.role}` : ''}</span></div>
+            <button type="button" aria-label={`Hapus ${person.name}`} onClick={() => setDraft((prev) => ({ ...prev, assignedPeople: (prev.assignedPeople || []).filter((item) => item.id !== person.id || item.collection !== person.collection) }))} className="p-2 text-rose-600"><Trash2 className="h-4 w-4" /></button>
+          </div>)}
+          <div className="relative">
+            <Input placeholder={(draft.assignedPeople || []).length >= 100 ? "Maksimal 100 pegawai" : "Cari Pegawai..."} disabled={(draft.assignedPeople || []).length >= 100} value={personSearch} autoComplete="off" onFocus={() => setPersonSearchOpen(true)} onChange={(e) => { setPersonSearch(e.target.value); setPersonSearchOpen(true); }} onBlur={() => window.setTimeout(() => setPersonSearchOpen(false), 200)} onKeyDown={(e) => { if (e.key === 'Escape') setPersonSearchOpen(false); }} className="rounded-sm border-slate-200 bg-white text-xs" />
+            {personSearchOpen && <div className="absolute left-0 right-0 top-full z-50 max-h-48 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-xl">
+              {peopleLoading ? <div className="p-3 text-xs text-slate-500">Memuat pegawai...</div> : peopleError ? <div className="p-3 text-xs text-rose-600">{peopleError} <button type="button" className="underline" onClick={() => { setPeopleError(''); setPeopleRetry((count) => count + 1); }}>Coba lagi</button></div> : (['Employees_Loyalis', 'Employees_BlueCollar'] as const).map((collection) => {
+                const matches = people.filter((person) => person.collection === collection && `${person.name} ${person.role}`.toLocaleLowerCase('id').includes(personSearch.trim().toLocaleLowerCase('id')) && !(draft.assignedPeople || []).some((selected) => selected.id === person.id && selected.collection === person.collection));
+                return matches.length ? <div key={collection}><div className="sticky top-0 bg-slate-50 px-4 py-1.5 text-[9px] font-bold uppercase text-slate-500">{collection === 'Employees_Loyalis' ? 'Loyalis' : 'Pekarya'}</div>{matches.map((person) => <button key={person.id} type="button" onClick={() => { setDraft((prev) => ({ ...prev, assignedPeople: [...(prev.assignedPeople || []), person] })); setPersonSearch(''); setPersonSearchOpen(false); }} className="flex w-full justify-between gap-3 px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"><span>{person.name}</span><span className="text-[10px] text-slate-400">{person.role}</span></button>)}</div> : null;
+              })}
+              {!peopleLoading && !peopleError && !people.some((person) => `${person.name} ${person.role}`.toLocaleLowerCase('id').includes(personSearch.trim().toLocaleLowerCase('id')) && !(draft.assignedPeople || []).some((selected) => selected.id === person.id && selected.collection === person.collection)) && <div className="p-3 text-xs text-slate-500">Pegawai tidak ditemukan atau sudah dipilih.</div>}
+            </div>}
+          </div>
+        </div>}
         <AutoResizeTextarea
           minRows={1}
           value={draft.salamPembuka}
@@ -447,110 +575,151 @@ export default function SuratComposerModal({
     </div>
   );
 
-  // Shared Preview Paper JSX
-  const renderPreviewPaper = () => (
-    <div
-      id="printable-official-letter"
-      className="bg-white shadow-xl border border-slate-200 rounded-xs p-8 sm:p-12 w-full min-w-[540px] max-w-[210mm] text-slate-900 font-serif text-[12.5px] leading-relaxed select-text"
-      style={{ minHeight: '297mm' }}
-    >
-      {/* Kop surat sesuai lingkup surat yang dicatat */}
-      <div className="kop-container border-b-4 border-double border-slate-900 pb-3 mb-6 flex items-center justify-between gap-3">
-        <div className="w-14 h-14 relative shrink-0 flex items-center justify-center">
-          <Image
-            src={isYapetidu ? '/Logo YAPETIDU (Transparent bg).png' : '/Logo UNIPDU.png'}
-            alt={isYapetidu ? 'Logo YAPETIDU' : 'Logo UNIPDU'}
-            width={56}
-            height={56}
-            priority
-            className="object-contain"
-          />
-        </div>
-        <div className="kop-text flex-1 text-center">
-          <h3 className="kop-instansi text-xs font-bold uppercase tracking-wider text-slate-800 m-0">
-            {isYapetidu ? "YAYASAN PESANTREN TINGGI DARUL 'ULUM JOMBANG" : "UNIVERSITAS PESANTREN TINGGI DARUL 'ULUM"}
-          </h3>
-          <h2 className="kop-satker text-sm sm:text-base font-extrabold uppercase tracking-wide text-slate-900 my-0.5">
-            {draft.satkerName || defaultSatkerName || 'SATUAN KERJA'}
-          </h2>
-          <p className="kop-alamat text-[10px] text-slate-600 m-0">
-            Kompleks Pondok Pesantren Darul &apos;Ulum Rejoso, Peterongan, Jombang 61481 | Website: www.unipdu.ac.id
-          </p>
-        </div>
-        <div className="w-14 shrink-0" />
-      </div>
+  const previewField = (
+    field: Exclude<keyof LetterDraftPayload, 'templateType' | 'assignedPeople' | 'taskAssigner'>,
+    display: string,
+    label: string,
+    multiline = false,
+  ) => {
+    if (editingPreview === field) {
+      const props = {
+        autoFocus: true,
+        'aria-label': label,
+        value: draft[field] || '',
+        onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+          setDraft((prev) => ({ ...prev, [field]: event.target.value })),
+        onBlur: () => setEditingPreview(null),
+        onKeyDown: (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+          if (event.key === 'Escape' || (!multiline && event.key === 'Enter')) event.currentTarget.blur();
+        },
+        className: field === 'perihal'
+          ? 'block w-full min-w-0 resize-none border-0 bg-transparent p-0 font-inherit text-inherit underline outline outline-1 outline-indigo-400 focus:outline-2'
+          : 'w-full min-w-0 rounded border border-indigo-400 bg-white px-1 text-inherit font-inherit text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200',
+        ...(field === 'perihal' ? { style: { fieldSizing: 'content' as const, fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', lineHeight: 'inherit' } } : {}),
+      };
+      return multiline ? <textarea {...props} rows={field === 'perihal' ? 1 : Math.max(2, (draft[field] || '').split('\n').length)} /> : <input {...props} type={field === 'tanggalSurat' ? 'date' : 'text'} />;
+    }
+    return <span role="button" tabIndex={0} title={`Klik dua kali untuk mengedit ${label}`} className="cursor-text rounded-sm hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500" onDoubleClick={() => setEditingPreview(field)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setEditingPreview(field); } }}>{display}</span>;
+  };
 
-      {/* Nomor, Lampiran, Hal & Tanggal */}
-      <div className="letter-meta flex justify-between items-start mb-6 text-xs">
+  // Shared Preview Paper JSX
+  const renderPreviewPaper = () => {
+    const satkerHeadEmail = draft.satkerHeadEmail || defaultKepalaEmail || profile?.email || user?.email || '';
+    const satkerHeadPhone = draft.satkerHeadPhone || defaultKepalaPhone || profile?.phoneNumber || profile?.phone || '';
+
+    const emailDisplay = satkerHeadEmail || '{satker_head_email}';
+    const phoneDisplay = satkerHeadPhone || '{satker_head_phone_number}';
+    const emailFormatted = emailDisplay.startsWith('{') ? `email:${emailDisplay}` : `email: ${emailDisplay}`;
+
+    return (
+      <div
+        id="printable-official-letter"
+        className="bg-white shadow-xl border border-slate-200 rounded-xs p-6 sm:p-8 md:p-10 w-full min-w-[540px] max-w-[210mm] text-slate-900 font-serif text-[12.5px] leading-relaxed select-text"
+        style={{ minHeight: '297mm' }}
+      >
+        {/* Kop surat sesuai lingkup surat yang dicatat */}
+        <div className="kop-container border-b-4 border-double border-slate-900 pb-3 mb-6 flex items-center justify-between gap-2 sm:gap-3">
+          <div className="w-14 h-14 relative shrink-0 flex items-center justify-center">
+            <Image
+              src={isYapetidu ? '/Logo YAPETIDU (Transparent bg).png' : '/Logo UNIPDU.png'}
+              alt={isYapetidu ? 'Logo YAPETIDU' : 'Logo UNIPDU'}
+              width={56}
+              height={56}
+              priority
+              className="object-contain"
+            />
+          </div>
+          <div className="kop-text flex-1 text-center min-w-0 px-1 sm:px-2">
+            <h1 className="kop-instansi text-xs sm:text-sm md:text-[15px] lg:text-[16px] font-black uppercase tracking-tight text-slate-900 m-0 leading-tight whitespace-nowrap">
+              {isYapetidu ? "YAYASAN PESANTREN TINGGI DARUL 'ULUM JOMBANG" : "UNIVERSITAS PESANTREN TINGGI DARUL 'ULUM"}
+            </h1>
+            <h2 className="kop-satker text-[11px] sm:text-xs md:text-[13px] lg:text-sm font-bold uppercase tracking-tight text-slate-800 my-1 leading-snug whitespace-nowrap">
+              {previewField('satkerName', draft.satkerName || defaultSatkerName || 'SATUAN KERJA', 'nama SatKer')}
+            </h2>
+            <p className="kop-alamat text-[9px] sm:text-[9.5px] md:text-[10px] text-slate-600 m-0 leading-tight whitespace-nowrap">
+              Alamat: PP Darul Ulum, Tromol Pos 10 Peterongan Jombang Jawa Timur 61481
+            </p>
+            <p className="kop-kontak text-[9px] sm:text-[9.5px] md:text-[10px] text-slate-600 mt-0.5 m-0 leading-tight whitespace-nowrap">
+              Website: unipdu.ac.id | {previewField('satkerHeadEmail', emailFormatted, 'email')} | Telp. {previewField('satkerHeadPhone', phoneDisplay, 'telepon')}
+            </p>
+          </div>
+          <div className="w-14 shrink-0" />
+        </div>
+
+      {/* Nomor, Lampiran, Hal */}
+      <div className="letter-meta mb-6 text-xs">
         <div className="meta-left space-y-0.5">
           <div className="flex">
             <span className="w-16">Nomor</span>
             <span className="w-3">:</span>
-            <span className="font-semibold">{draft.nomorSurat || '.../.../UNIPDU/.../2026'}</span>
+            <span className="font-semibold">{previewField('nomorSurat', draft.nomorSurat || '.../.../UNIPDU/.../2026', 'nomor surat')}</span>
           </div>
           <div className="flex">
             <span className="w-16">Lampiran</span>
             <span className="w-3">:</span>
-            <span>{draft.lampiranKeterangan || '-'}</span>
+            <span>{previewField('lampiranKeterangan', draft.lampiranKeterangan || '-', 'lampiran')}</span>
           </div>
           <div className="flex">
-            <span className="w-16">Hal</span>
-            <span className="w-3">:</span>
-            <span className="font-semibold underline">{draft.perihal || 'Surat Dinas'}</span>
+            <span className="w-16 shrink-0">Hal</span>
+            <span className="w-3 shrink-0">:</span>
+            <span className="min-w-0 flex-1 font-semibold underline whitespace-pre-wrap">{previewField('perihal', draft.perihal || 'Surat Dinas', 'perihal', true)}</span>
           </div>
-        </div>
-
-        <div className="text-right">
-          <span>Jombang, {formatDateIndo(draft.tanggalSurat) || '....................'}</span>
         </div>
       </div>
 
       {/* Kepada Yth */}
       <div className="destination-block mb-6 text-xs">
         <p className="m-0">Kepada Yth.</p>
-        <p className="font-bold m-0">{draft.tujuanNama || 'Bapak / Ibu'}</p>
-        {draft.tujuanJabatanInstansi && <p className="m-0">{draft.tujuanJabatanInstansi}</p>}
-        <p className="m-0 italic">{draft.tujuanAlamatKota || 'di Tempat'}</p>
+        <p className="font-bold m-0">{previewField('tujuanNama', draft.tujuanNama || 'Bapak / Ibu', 'nama penerima')}</p>
+        {(draft.tujuanJabatanInstansi || editingPreview === 'tujuanJabatanInstansi') && <p className="m-0">{previewField('tujuanJabatanInstansi', draft.tujuanJabatanInstansi, 'instansi penerima')}</p>}
+        <p className="m-0 italic">{previewField('tujuanAlamatKota', draft.tujuanAlamatKota || 'di Tempat', 'alamat penerima')}</p>
       </div>
 
       {/* Isi Surat */}
       <div className="letter-content space-y-3 text-xs text-justify">
-        {draft.salamPembuka && (
-          <p className="italic font-medium">{draft.salamPembuka}</p>
+        {(draft.salamPembuka || editingPreview === 'salamPembuka') && (
+          <p className="italic font-medium">{previewField('salamPembuka', draft.salamPembuka, 'salam pembuka', true)}</p>
         )}
-        {draft.isiParagraf1 && (
-          <p className="indent-6 leading-relaxed whitespace-pre-line">{draft.isiParagraf1}</p>
+        {draft.templateType === 'tugas' && draft.taskAssigner && <div className="whitespace-pre-line">Pemberi tugas:<br />Nama: {draft.penandatanganNama || '........................'}<br />Jabatan: {draft.penandatanganJabatan || '........................'}</div>}
+        {(draft.isiParagraf1 || editingPreview === 'isiParagraf1') && (
+          <p className="indent-6 leading-relaxed whitespace-pre-line">{previewField('isiParagraf1', draft.isiParagraf1, 'paragraf pembuka', true)}</p>
         )}
-        {draft.isiParagraf2 && (
+        {draft.templateType === 'tugas' && (draft.assignedPeople || []).length > 0 && <ol className="list-decimal pl-8">{draft.assignedPeople?.map((person) => <li key={`${person.collection}:${person.id}`}>{person.name}{person.role ? ` — ${person.role}` : ''}</li>)}</ol>}
+        {(draft.isiParagraf2 || editingPreview === 'isiParagraf2') && (
           <div className="raw-block pl-6 whitespace-pre-wrap font-mono text-[11px] leading-relaxed bg-slate-50/50 p-2 border-l-2 border-slate-300 rounded-sm">
-            {draft.isiParagraf2}
+            {previewField('isiParagraf2', draft.isiParagraf2, 'isi surat', true)}
           </div>
         )}
-        {draft.isiParagraf3 && (
-          <p className="indent-6 leading-relaxed whitespace-pre-line">{draft.isiParagraf3}</p>
+        {(draft.isiParagraf3 || editingPreview === 'isiParagraf3') && (
+          <p className="indent-6 leading-relaxed whitespace-pre-line">{previewField('isiParagraf3', draft.isiParagraf3, 'paragraf penutup', true)}</p>
         )}
-        {draft.salamPenutup && (
-          <p className="italic font-medium pt-1">{draft.salamPenutup}</p>
+        {(draft.salamPenutup || editingPreview === 'salamPenutup') && (
+          <p className="italic font-medium pt-1">{previewField('salamPenutup', draft.salamPenutup, 'salam penutup', true)}</p>
         )}
       </div>
 
       {/* Tanda Tangan */}
       <div className="signature-block mt-10 ml-auto w-64 text-center text-xs">
-        <p className="m-0 font-medium">{draft.penandatanganJabatan || 'Kepala SatKer'},</p>
+        <p className="signature-date m-0 text-slate-800 font-medium">
+          Jombang, {previewField('tanggalSurat', formatDateIndo(draft.tanggalSurat) || '....................', 'tanggal surat')}
+        </p>
+        <p className="m-0 font-medium mt-1">
+          {previewField('penandatanganJabatan', draft.templateType === 'tugas' && draft.taskAssigner ? draft.penandatanganJabatan : formatPenandatanganJabatan(draft.penandatanganJabatan, draft.satkerName || defaultSatkerName), 'jabatan penandatangan')},
+        </p>
         <div className="sign-space h-20" />
         <p className="sign-name font-bold underline m-0">
-          {draft.penandatanganNama || '................................'}
+          {previewField('penandatanganNama', draft.penandatanganNama || '................................', 'nama penandatangan')}
         </p>
-        {draft.penandatanganNipy && (
-          <p className="text-[11px] text-slate-600 m-0">NIPY: {draft.penandatanganNipy}</p>
+        {(draft.penandatanganNipy || editingPreview === 'penandatanganNipy') && (
+          <p className="text-[11px] text-slate-600 m-0">NIPY: {previewField('penandatanganNipy', draft.penandatanganNipy, 'NIPY')}</p>
         )}
       </div>
     </div>
   );
+};
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[96vw] max-w-[96vw] sm:max-w-[96vw] lg:max-w-7xl h-[94vh] max-h-[94vh] bg-white rounded-md p-6 border border-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden">
+  const content = (
+      <div className={inline ? 'bg-white rounded-md p-6 border border-slate-200 shadow-sm flex flex-col' : 'h-full flex flex-col overflow-hidden'}>
         {/* Header Bar */}
         <DialogHeader className="space-y-1 pb-3 border-b border-slate-100 shrink-0">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -559,12 +728,7 @@ export default function SuratComposerModal({
                 <Wand2 className="w-5 h-5" />
               </div>
               <div>
-                <DialogTitle className="text-xl font-bold tracking-tight text-slate-900">
-                  Pembuat Surat Resmi SatKer
-                </DialogTitle>
-                <DialogDescription className="text-xs text-slate-500">
-                  Susun surat dinas resmi dengan kop SatKer, format standar, dan cetak langsung ke PDF.
-                </DialogDescription>
+                {inline ? <><h2 className="text-xl font-bold tracking-tight text-slate-900">Catat Surat Keluar</h2><p className="text-xs text-slate-500">Susun surat dinas dan lihat hasilnya secara langsung.</p></> : <><DialogTitle className="text-xl font-bold tracking-tight text-slate-900">Pembuat Surat Resmi SatKer</DialogTitle><DialogDescription className="text-xs text-slate-500">Susun surat dinas resmi dengan kop SatKer, format standar, dan cetak langsung ke PDF.</DialogDescription></>}
               </div>
             </div>
 
@@ -668,16 +832,16 @@ export default function SuratComposerModal({
         </div>
 
         {/* Content Body */}
-        <div className="flex-1 min-h-0 py-3 overflow-hidden">
+        <div className={inline ? 'py-3' : 'flex-1 min-h-0 py-3 overflow-hidden'}>
           {viewMode === 'both' ? (
             <div className="h-full flex flex-col lg:flex-row gap-6 min-h-0">
               {/* Left Column: Form Fields */}
-              <div className="w-full lg:w-[45%] xl:w-[42%] h-full overflow-y-auto pr-3">
+              <div className={inline ? 'w-full lg:w-[45%] xl:w-[42%] pr-3' : 'w-full lg:w-[45%] xl:w-[42%] h-full overflow-y-auto pr-3'}>
                 {renderEditorForm()}
               </div>
 
               {/* Right Column: Live A4 Visual Preview */}
-              <div className="w-full lg:w-[55%] xl:w-[58%] h-full bg-slate-100/90 rounded-md p-4 sm:p-6 overflow-auto flex justify-center items-start border border-slate-200">
+              <div className={`w-full lg:w-[55%] xl:w-[58%] ${inline ? '' : 'h-full'} bg-slate-100/90 rounded-md p-4 sm:p-6 overflow-auto flex justify-center items-start border border-slate-200`}>
                 {renderPreviewPaper()}
               </div>
             </div>
@@ -703,7 +867,8 @@ export default function SuratComposerModal({
             Tutup
           </button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </div>
   );
+  if (inline) return content;
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="w-[96vw] max-w-[96vw] sm:max-w-[96vw] lg:max-w-7xl h-[94vh] max-h-[94vh] bg-white rounded-md p-6 border border-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.1)] overflow-hidden">{content}</DialogContent></Dialog>;
 }
