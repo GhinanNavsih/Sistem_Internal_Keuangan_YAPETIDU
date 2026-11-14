@@ -11,6 +11,11 @@ import {
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import { linkedAccountUidsByUid } from '@/lib/server/linkedAccounts';
 import { ownUnitId, UNIT_COLLECTION } from '@/lib/server/satkerFinance';
+import {
+  findSatkerInitialsConflict,
+  normalizeSatkerInitials,
+  satkerInitialsProblem,
+} from '@/lib/surat-menyurat/satkerInitials';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +24,8 @@ interface UserInput {
   password?: string;
   displayName?: string;
   satkerName?: string;
+  /** Kepala SatKer Loyalis only: the SatKer code in Surat Keluar numbers. Unique among active heads. */
+  satkerInitials?: string;
   role: UserRole;
   permittedCategories: string[];
   linkedEmployeeId?: string;
@@ -66,6 +73,28 @@ async function assertSatkerNameAvailable(uid: string, name: string): Promise<voi
   }
 }
 
+type HeadDoc = { uid: string } & Record<string, unknown>;
+
+function initialsConflictError(initials: string, owner: HeadDoc): HttpError {
+  const ownerName = [owner.satkerName, owner.displayName, owner.email].find(
+    (item): item is string => typeof item === 'string' && item.trim() !== '',
+  );
+  return new HttpError(
+    409,
+    `Inisial SatKer ${initials} sudah digunakan${ownerName ? ` oleh ${ownerName.trim()}` : ' SatKer lain'}. Pilih inisial yang unik.`,
+  );
+}
+
+async function assertSatkerInitialsAvailable(uid: string, initials: string): Promise<void> {
+  const heads = await adminDb.collection('users').where('role', '==', 'satker_head_loyalis').get();
+  const conflict = findSatkerInitialsConflict(
+    initials,
+    heads.docs.map((head): HeadDoc => ({ uid: head.id, ...head.data() })),
+    uid,
+  );
+  if (conflict) throw initialsConflictError(initials, conflict);
+}
+
 function parseUserInput(raw: unknown, requirePassword: boolean): UserInput {
   if (!raw || typeof raw !== 'object') {
     throw new HttpError(400, 'Payload pengguna tidak valid.');
@@ -96,6 +125,15 @@ function parseUserInput(raw: unknown, requirePassword: boolean): UserInput {
   if (!requirePassword && value.role === 'satker_head_loyalis' && !satkerName) {
     throw new HttpError(400, 'Nama SatKer Loyalis wajib diisi.');
   }
+  if (value.satkerInitials !== undefined && typeof value.satkerInitials !== 'string') {
+    throw new HttpError(400, 'Inisial SatKer tidak valid.');
+  }
+  let satkerInitials: string | undefined;
+  if (value.role === 'satker_head_loyalis') {
+    const problem = satkerInitialsProblem(value.satkerInitials);
+    if (problem) throw new HttpError(400, problem);
+    satkerInitials = normalizeSatkerInitials(value.satkerInitials);
+  }
   let personEmployeeId: string | null | undefined;
   if (value.personEmployeeId === undefined) {
     personEmployeeId = undefined;
@@ -122,6 +160,7 @@ function parseUserInput(raw: unknown, requirePassword: boolean): UserInput {
     password: typeof value.password === 'string' ? value.password : undefined,
     displayName: typeof value.displayName === 'string' ? value.displayName.trim() : '',
     satkerName,
+    satkerInitials,
     role: value.role,
     permittedCategories: Array.from(
       new Set(value.permittedCategories.map((item) => item.trim()).filter(Boolean)),
@@ -243,6 +282,9 @@ export async function POST(request: NextRequest) {
     if (input.role === 'satker_head_loyalis' && input.satkerName) {
       await assertSatkerNameAvailable('', input.satkerName);
     }
+    if (input.role === 'satker_head_loyalis' && input.satkerInitials) {
+      await assertSatkerInitialsAvailable('', input.satkerInitials);
+    }
     await assertEmployeeLink(input);
     const personEmployeeId = personEmployeeIdToSave(input, null);
     await assertPersonEmployee(input, personEmployeeId, null);
@@ -260,6 +302,9 @@ export async function POST(request: NextRequest) {
       displayName: input.displayName || '',
       ...(input.role === 'satker_head_loyalis' && input.satkerName
         ? { satkerName: input.satkerName }
+        : {}),
+      ...(input.role === 'satker_head_loyalis' && input.satkerInitials
+        ? { satkerInitials: input.satkerInitials }
         : {}),
       role: input.role,
       permittedCategories: input.permittedCategories,
@@ -286,6 +331,9 @@ export async function POST(request: NextRequest) {
           personEmployeeId,
           ...(input.role === 'satker_head_loyalis' && input.satkerName
             ? { satkerName: input.satkerName }
+            : {}),
+          ...(input.role === 'satker_head_loyalis' && input.satkerInitials
+            ? { satkerInitials: input.satkerInitials }
             : {}),
         },
       }),
@@ -341,6 +389,7 @@ export async function PUT(request: NextRequest) {
     await assertPersonEmployee(input, personEmployeeId, before.personEmployeeId);
     if (input.role === 'satker_head_loyalis') {
       await assertSatkerNameAvailable(uid, input.satkerName!);
+      await assertSatkerInitialsAvailable(uid, input.satkerInitials!);
     }
 
     try {
@@ -361,7 +410,9 @@ export async function PUT(request: NextRequest) {
     const after = {
       email: input.email || before.email || '',
       displayName: input.displayName || '',
-      ...(input.role === 'satker_head_loyalis' ? { satkerName: input.satkerName! } : {}),
+      ...(input.role === 'satker_head_loyalis'
+        ? { satkerName: input.satkerName!, satkerInitials: input.satkerInitials! }
+        : {}),
       role: input.role,
       permittedCategories: input.permittedCategories,
       linkedEmployeeId: input.linkedEmployeeId || null,
@@ -396,6 +447,13 @@ export async function PUT(request: NextRequest) {
         if (peerNames.some((peerName) => normalizedSatkerName(peerName) === normalizedSatkerName(input.satkerName))) {
           throw new HttpError(409, 'Nama SatKer Loyalis sudah digunakan akun lain. Pilih nama yang unik.');
         }
+        // Checked again inside the transaction so two simultaneous saves cannot both take the same initials.
+        const initialsConflict = findSatkerInitialsConflict(
+          input.satkerInitials,
+          peers.map((head): HeadDoc => ({ uid: head.id, ...head.data() })),
+          uid,
+        );
+        if (initialsConflict) throw initialsConflictError(input.satkerInitials!, initialsConflict);
       }
       transaction.set(userRef, after, { merge: true });
       const unitEditors = Array.isArray(unitData?.editorUids) ? unitData.editorUids : [];
@@ -436,13 +494,16 @@ export async function PUT(request: NextRequest) {
             linkedEmployeeId: currentSnapshot.data()?.linkedEmployeeId || null,
             personEmployeeId: currentSnapshot.data()?.personEmployeeId || null,
             satkerName: currentSnapshot.data()?.satkerName || null,
+            satkerInitials: currentSnapshot.data()?.satkerInitials || null,
           },
           after: {
             email: after.email,
             role: after.role,
             linkedEmployeeId: after.linkedEmployeeId,
             personEmployeeId: after.personEmployeeId,
-            ...(input.role === 'satker_head_loyalis' ? { satkerName: after.satkerName } : {}),
+            ...(input.role === 'satker_head_loyalis'
+              ? { satkerName: after.satkerName, satkerInitials: after.satkerInitials }
+              : {}),
           },
         }),
       );

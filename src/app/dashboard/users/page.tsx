@@ -65,12 +65,15 @@ import { collection, getDocsFromServer } from 'firebase/firestore';
 import { SUPPORTED_CATEGORIES } from '@/utils/rekapConfig';
 import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
 import { getUserRoleLabel, isEmployeeLinkRole, normalizeUserRole, UserRole } from '@/lib/payroll/roles';
+import { findSatkerInitialsConflict, satkerInitialsProblem } from '@/lib/surat-menyurat/satkerInitials';
+import SatkerInitialsField from '@/components/SatkerInitialsField';
 
 interface ManagedUser {
   uid: string;
   email: string;
   displayName?: string;
   satkerName?: string;
+  satkerInitials?: string;
   role: UserRole;
   permittedCategories: string[];
   linkedEmployeeId?: string;
@@ -230,6 +233,7 @@ export default function UserManagementPage() {
   const [newPassword, setNewPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState('');
+  const [newSatkerInitials, setNewSatkerInitials] = useState('');
   const [newRole, setNewRole] = useState<UserRole>('satker_head');
   const [newPermitted, setNewPermitted] = useState<string[]>([]);
   const [newLinkedEmployeeId, setNewLinkedEmployeeId] = useState('');
@@ -244,6 +248,7 @@ export default function UserManagementPage() {
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
   const [editDisplayName, setEditDisplayName] = useState('');
   const [editSatkerName, setEditSatkerName] = useState('');
+  const [editSatkerInitials, setEditSatkerInitials] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editRole, setEditRole] = useState<UserRole>('satker_head');
   const [editPermitted, setEditPermitted] = useState<string[]>([]);
@@ -437,6 +442,16 @@ export default function UserManagementPage() {
     );
   };
 
+  // Who else already uses these SatKer initials. The server decides on save; this only warns early.
+  const initialsTakenBy = (initials: string, exceptUid?: string): string | undefined => {
+    const owner = findSatkerInitialsConflict(
+      initials,
+      users.filter((u) => u.role === 'satker_head_loyalis'),
+      exceptUid,
+    );
+    return owner ? owner.satkerName || owner.displayName || owner.email : undefined;
+  };
+
   // Add User submit handler
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -444,6 +459,18 @@ export default function UserManagementPage() {
     if (!newEmail || !newPassword) {
       setErrorMsg('Email dan Password wajib diisi.');
       return;
+    }
+    if (newRole === 'satker_head_loyalis') {
+      const problem = satkerInitialsProblem(newSatkerInitials);
+      if (problem) {
+        setErrorMsg(problem);
+        return;
+      }
+      const owner = initialsTakenBy(newSatkerInitials);
+      if (owner) {
+        setErrorMsg(`Inisial SatKer ${newSatkerInitials} sudah dipakai oleh ${owner}. Pilih inisial yang unik.`);
+        return;
+      }
     }
     if (newRole === 'ketua_shift_satpam') {
       if (!newLinkedEmployeeId) {
@@ -473,6 +500,7 @@ export default function UserManagementPage() {
           email: newEmail,
           password: newPassword,
           displayName: newDisplayName,
+          satkerInitials: newRole === 'satker_head_loyalis' ? newSatkerInitials : undefined,
           role: newRole,
           permittedCategories: (newRole === 'honorer' || newRole === 'loyalis' || newRole === 'ketua_shift_satpam') ? (newLinkedEmployeeId ? [allEmployees.find(e => e.id === newLinkedEmployeeId)?.detail || ''] : []) : newPermitted,
           linkedEmployeeId: (newRole === 'honorer' || newRole === 'loyalis' || newRole === 'ketua_shift_satpam') ? newLinkedEmployeeId : undefined,
@@ -514,6 +542,7 @@ export default function UserManagementPage() {
       setNewEmail('');
       setNewPassword('');
       setNewDisplayName('');
+      setNewSatkerInitials('');
       setNewRole('satker_head');
       setNewPermitted([]);
       setNewLinkedEmployeeId('');
@@ -540,6 +569,7 @@ export default function UserManagementPage() {
     setEditingUser(u);
     setEditDisplayName(u.displayName || '');
     setEditSatkerName(u.satkerName || u.displayName || '');
+    setEditSatkerInitials(u.satkerInitials || '');
     setEditEmail(u.email || '');
     setEditRole(u.role);
     setEditPermitted(u.permittedCategories || []);
@@ -584,6 +614,18 @@ export default function UserManagementPage() {
       setErrorMsg('Nama SatKer Loyalis wajib diisi.');
       return;
     }
+    if (editRole === 'satker_head_loyalis') {
+      const problem = satkerInitialsProblem(editSatkerInitials);
+      if (problem) {
+        setErrorMsg(problem);
+        return;
+      }
+      const owner = initialsTakenBy(editSatkerInitials, editingUser.uid);
+      if (owner) {
+        setErrorMsg(`Inisial SatKer ${editSatkerInitials} sudah dipakai oleh ${owner}. Pilih inisial yang unik.`);
+        return;
+      }
+    }
     isActionLoadingRef.current = true;
     setActionLoading(true);
     setErrorMsg(null);
@@ -601,6 +643,7 @@ export default function UserManagementPage() {
           email: editEmail,
           displayName: editDisplayName,
           satkerName: editRole === 'satker_head_loyalis' ? editSatkerName.trim() : undefined,
+          satkerInitials: editRole === 'satker_head_loyalis' ? editSatkerInitials : undefined,
           role: editRole,
           permittedCategories: (editRole === 'honorer' || editRole === 'loyalis' || editRole === 'ketua_shift_satpam') ? (editLinkedEmployeeId ? [allEmployees.find(e => e.id === editLinkedEmployeeId)?.detail || ''] : []) : editPermitted,
           linkedEmployeeId: (editRole === 'honorer' || editRole === 'loyalis' || editRole === 'ketua_shift_satpam') ? editLinkedEmployeeId : undefined,
@@ -647,6 +690,7 @@ export default function UserManagementPage() {
                 ...u,
                 displayName: editDisplayName,
                 satkerName: editRole === 'satker_head_loyalis' ? editSatkerName.trim() : u.satkerName,
+                satkerInitials: editRole === 'satker_head_loyalis' ? editSatkerInitials : u.satkerInitials,
                 email: editEmail,
                 role: editRole,
                 permittedCategories: updatedCategories,
@@ -940,6 +984,15 @@ export default function UserManagementPage() {
                       </div>
                     </div>
                   </div>
+
+                  {newRole === 'satker_head_loyalis' && (
+                    <SatkerInitialsField
+                      id="newSatkerInitials"
+                      value={newSatkerInitials}
+                      onChange={setNewSatkerInitials}
+                      takenBy={initialsTakenBy(newSatkerInitials)}
+                    />
+                  )}
 
                   {/* Permitted Categories */}
                   <div className="space-y-4">
@@ -1654,6 +1707,15 @@ export default function UserManagementPage() {
                         Nama ini menjadi nama buku keuangan SatKer milik akun ini dan harus unik.
                       </p>
                     </div>
+                  )}
+
+                  {editRole === 'satker_head_loyalis' && (
+                    <SatkerInitialsField
+                      id="editSatkerInitials"
+                      value={editSatkerInitials}
+                      onChange={setEditSatkerInitials}
+                      takenBy={initialsTakenBy(editSatkerInitials, editingUser?.uid)}
+                    />
                   )}
 
                   {/* Role Summary Badge */}

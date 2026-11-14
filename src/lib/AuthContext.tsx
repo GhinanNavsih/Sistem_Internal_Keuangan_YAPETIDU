@@ -23,6 +23,8 @@ export interface UserProfile {
   permittedCategories: string[];
   displayName?: string;
   satkerName?: string;
+  /** Kepala SatKer Loyalis: the SatKer code used in Surat Keluar numbers. */
+  satkerInitials?: string;
   linkedEmployeeId?: string;
   disabled?: boolean;
   phoneNumber?: string;

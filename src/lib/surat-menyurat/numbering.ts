@@ -1,5 +1,6 @@
 import { ROMAN_MONTHS } from './constants';
 import { InstitutionScope } from './types';
+import { normalizeSatkerInitials, satkerInitialsProblem } from './satkerInitials';
 
 /**
  * Returns Roman numeral representation of a month (1-12).
@@ -150,6 +151,17 @@ export function formatNomorSuratKeluarTemplate({
   const code = (satkerCode || 'SATKER').trim().toUpperCase();
   const monthRoman = getRomanMonth(monthNum);
   return `${seqPart}/${code}/UNIPDU/${monthRoman}/${year}`;
+}
+
+/**
+ * The SatKer code for a Surat Keluar number: the head's saved initials when they
+ * are valid, otherwise a code guessed from the SatKer name (accounts made before
+ * initials existed).
+ */
+export function satkerCodeFor(initials: unknown, satkerName: string): string {
+  return satkerInitialsProblem(initials) === null
+    ? normalizeSatkerInitials(initials)
+    : deriveSatkerCode(satkerName);
 }
 
 /**
