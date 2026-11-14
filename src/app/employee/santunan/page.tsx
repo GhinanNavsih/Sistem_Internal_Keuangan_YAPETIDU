@@ -46,7 +46,7 @@ import {
   type BansosEmployeeView,
 } from '@/lib/payroll/santunan';
 import { authenticatedFormData, authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
-import { UPLOAD_ACCEPT, UPLOAD_TYPES_TEXT, uploadFileProblem } from '@/lib/uploadFileTypes';
+import { UPLOAD_ACCEPT, uploadFileProblem } from '@/lib/uploadFileTypes';
 
 interface BansosData {
   employeeName: string;
@@ -61,6 +61,7 @@ function todayInJakarta(): string {
 }
 
 const KIND_OPTIONS = ['duka', 'melahirkan'] as const;
+const RELATIONSHIP_OPTIONS = BANSOS_RELATIONSHIPS.filter((option) => option.value !== 'lainnya');
 
 const KIND_DETAILS: Record<BansosKind, { icon: typeof Flower2; hint: string }> = {
   duka: { icon: Flower2, hint: 'Keluarga meninggal dunia' },
@@ -106,7 +107,6 @@ export default function BansosRequestPage() {
   const [kind, setKind] = useState<BansosKind | null>(null);
   const [eventDate, setEventDate] = useState('');
   const [relationship, setRelationship] = useState('');
-  const [relationshipOther, setRelationshipOther] = useState('');
   const [subjectName, setSubjectName] = useState('');
   const [note, setNote] = useState('');
   const [proof, setProof] = useState<File | null>(null);
@@ -151,7 +151,6 @@ export default function BansosRequestPage() {
     setKind(null);
     setEventDate('');
     setRelationship('');
-    setRelationshipOther('');
     setSubjectName('');
     setNote('');
     setProof(null);
@@ -163,7 +162,6 @@ export default function BansosRequestPage() {
     setKind(next);
     setEventDate('');
     setRelationship('');
-    setRelationshipOther('');
     setSubjectName('');
     edited();
   };
@@ -174,7 +172,6 @@ export default function BansosRequestPage() {
     if (eventDate > today) return 'Tanggal tidak boleh setelah hari ini.';
     if (kind === 'duka') {
       if (!relationship) return 'Pilih hubungan keluarga.';
-      if (relationship === 'lainnya' && relationshipOther.trim().length < 2) return 'Tuliskan hubungan keluarga.';
       if (subjectName.trim().length < 2) return 'Isi nama almarhum/almarhumah.';
     }
     if (!proof) return 'Lampirkan bukti terlebih dahulu.';
@@ -198,7 +195,6 @@ export default function BansosRequestPage() {
     form.set('subjectName', subjectName);
     if (kind === 'duka') {
       form.set('relationship', relationship);
-      if (relationship === 'lainnya') form.set('relationshipOther', relationshipOther);
     }
     if (note.trim()) form.set('note', note);
     form.set('file', proof!);
@@ -310,16 +306,9 @@ export default function BansosRequestPage() {
                       value={relationship}
                       placeholder="Pilih hubungan"
                       onValueChange={(value) => { setRelationship(value); edited(); }}
-                      options={BANSOS_RELATIONSHIPS}
+                      options={RELATIONSHIP_OPTIONS}
                     />
                   </div>
-                  {relationship === 'lainnya' && (
-                    <div className="space-y-2">
-                      <label htmlFor="bansos-relationship-other" className={labelClass}>Hubungan lainnya</label>
-                      <Input id="bansos-relationship-other" value={relationshipOther} maxLength={80} placeholder="Contoh: Paman"
-                        onChange={(event) => { setRelationshipOther(event.target.value); edited(); }} className={inputClass} />
-                    </div>
-                  )}
                   <div className="space-y-2">
                     <label htmlFor="bansos-subject" className={labelClass}>Nama almarhum/almarhumah</label>
                     <Input id="bansos-subject" value={subjectName} maxLength={120}
@@ -385,16 +374,12 @@ export default function BansosRequestPage() {
                       </div>
                     ) : (
                       <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()}
-                        className="rounded-sm border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 bg-white font-semibold shadow-sm h-10">
+                        className="h-20 w-full rounded-sm border border-dashed border-slate-300 bg-white font-semibold text-slate-600 hover:border-indigo-300 hover:text-indigo-600">
                         <Paperclip className="size-4" /> Lampirkan bukti
                       </Button>
                     )}
-                    {proofProblem ? (
+                    {proofProblem && (
                       <p role="alert" className="text-xs text-red-700">{proofProblem}</p>
-                    ) : (
-                      <p className="text-xs text-slate-500">
-                        Wajib: {kind === 'duka' ? 'surat kematian atau keterangan dari desa/kelurahan' : 'surat keterangan lahir atau akta kelahiran'}. {UPLOAD_TYPES_TEXT}, maks 5 MB.
-                      </p>
                     )}
                   </div>
                 </>
