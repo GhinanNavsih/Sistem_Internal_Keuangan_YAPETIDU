@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { errorResponse, HttpError, requireAuthenticatedProfile } from '@/lib/server/auth';
 import { canManageSuratMenyurat } from '@/lib/payroll/roles';
-import { assertValidProofFile, saveUploadedFile } from '@/lib/server/storageUpload';
+import { saveUploadedFile } from '@/lib/server/storageUpload';
+import { detectUploadFileType } from '@/lib/uploadFileTypes';
 import { randomUUID } from 'crypto';
 
 export const dynamic = 'force-dynamic';
@@ -15,14 +16,19 @@ export async function POST(request: NextRequest) {
 
     const form = await request.formData();
     const file = form.get('file');
-    assertValidProofFile(file, 10 * 1024 * 1024, { allowPdf: true });
+    if (!(file instanceof File) || file.size < 1 || file.size > 10 * 1024 * 1024) {
+      throw new HttpError(400, 'Ukuran berkas harus di antara 1 byte dan 10 MB.');
+    }
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const detected = detectUploadFileType(bytes);
+    if (!detected) throw new HttpError(400, 'Jenis berkas tidak didukung.');
+    const validatedFile = new File([bytes], file.name, { type: detected.mime });
 
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 150) || 'berkas_surat';
-    const extension = file.type === 'application/pdf' ? 'pdf' : (file.name.split('.').pop() || 'jpg');
     const storagePath = `satker-surat/${actor.uid}/${Date.now()}_${randomUUID().slice(0, 8)}_${safeName}`;
 
-    const url = await saveUploadedFile(storagePath, file, actor.uid, {
-      contentType: file.type || 'application/octet-stream',
+    const url = await saveUploadedFile(storagePath, validatedFile, actor.uid, {
+      contentType: detected.mime,
     });
 
     return NextResponse.json({
@@ -31,7 +37,7 @@ export async function POST(request: NextRequest) {
         id: randomUUID(),
         name: file.name,
         url,
-        contentType: file.type || 'application/octet-stream',
+        contentType: detected.mime,
         size: file.size,
         uploadedAt: new Date().toISOString(),
       },

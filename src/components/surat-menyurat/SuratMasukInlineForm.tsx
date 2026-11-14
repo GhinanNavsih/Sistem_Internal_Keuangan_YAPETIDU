@@ -8,7 +8,6 @@ import { AutoResizeTextarea } from '@/components/ui/auto-resize-textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/lib/AuthContext';
 import {
-  SIFAT_SURAT_OPTIONS,
   STATUS_SURAT_MASUK_OPTIONS,
   KATEGORI_SURAT_MASUK,
   INSTITUTION_SCOPES,
@@ -23,6 +22,7 @@ import {
   SuratMasuk,
 } from '@/lib/surat-menyurat/types';
 import { UPLOAD_ACCEPT, UPLOAD_TYPES_TEXT, uploadFileProblem } from '@/lib/uploadFileTypes';
+import type { ExtractedSuratMasuk } from '@/lib/surat-menyurat/extractSuratMasuk';
 import { AlertCircle, FileText, Loader2, Paperclip, Pencil, Plus, Trash2, Upload, X } from 'lucide-react';
 
 interface Props {
@@ -62,6 +62,8 @@ export default function SuratMasukInlineForm({
   const [attachments, setAttachments] = useState<SuratAttachment[]>([]);
 
   const [uploading, setUploading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisMessage, setAnalysisMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -130,15 +132,18 @@ export default function SuratMasukInlineForm({
     const files = e.target.files;
     if (!files || files.length === 0 || !user) return;
 
+    const initial = { nomorSurat, tanggalSurat, pengirim, penerima, perihal, ringkasan };
+    let firstUploaded: File | null = null;
     try {
       setUploading(true);
       setError('');
+      setAnalysisMessage('');
       const idToken = await user.getIdToken();
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
 
-        const problem = uploadFileProblem(file);
+        const problem = uploadFileProblem(file, 10 * 1024 * 1024);
         if (problem) {
           throw new Error(`${file.name}: ${problem}`);
         }
@@ -160,6 +165,30 @@ export default function SuratMasukInlineForm({
         }
 
         setAttachments((prev) => [...prev, json.attachment]);
+        if (!firstUploaded) firstUploaded = file;
+      }
+      if (firstUploaded) {
+        setAnalyzing(true);
+        try {
+          const data = new FormData();
+          data.append('file', firstUploaded);
+          const response = await fetch('/api/satker-surat/parse', { method: 'POST', headers: { Authorization: `Bearer ${idToken}` }, body: data });
+          const result = await response.json();
+          if (!response.ok || !result.ok) throw new Error(result.error || 'Analisis surat gagal.');
+          const extracted = result.data as ExtractedSuratMasuk;
+          const today = new Date().toISOString().slice(0, 10);
+          if (extracted.nomorSurat && !initial.nomorSurat.trim()) setNomorSurat((prev) => prev === initial.nomorSurat ? extracted.nomorSurat : prev);
+          if (!initial.tanggalSurat || (!isEdit && initial.tanggalSurat === today)) setTanggalSurat((prev) => prev === initial.tanggalSurat ? extracted.tanggalSurat : prev);
+          if (extracted.pengirim && !initial.pengirim.trim()) setPengirim((prev) => prev === initial.pengirim ? extracted.pengirim : prev);
+          if (extracted.penerima && (!initial.penerima.trim() || (!isEdit && initial.penerima === `Kepala ${defaultSatkerName || 'SatKer'}`))) setPenerima((prev) => prev === initial.penerima ? extracted.penerima : prev);
+          if (extracted.perihal && !initial.perihal.trim()) setPerihal((prev) => prev === initial.perihal ? extracted.perihal : prev);
+          if (extracted.ringkasan && !initial.ringkasan.trim()) setRingkasan((prev) => prev === initial.ringkasan ? extracted.ringkasan : prev);
+          setAnalysisMessage(Object.values(extracted).some(Boolean) ? 'Analisis selesai. Periksa dan lengkapi data sebelum menyimpan.' : 'Informasi surat tidak terbaca. Isi data secara manual atau coba berkas lain.');
+        } catch (err: unknown) {
+          setAnalysisMessage(`Berkas sudah diunggah, tetapi analisis gagal: ${err instanceof Error ? err.message : 'Silakan isi data secara manual.'}`);
+        } finally {
+          setAnalyzing(false);
+        }
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Gagal mengunggah berkas.');
@@ -287,6 +316,7 @@ export default function SuratMasukInlineForm({
           <span>{error}</span>
         </div>
       )}
+      {analysisMessage && <div role="status" className="rounded-sm border border-sky-200 bg-sky-50 p-2.5 text-xs text-sky-800">{analysisMessage}</div>}
 
       {/* Agenda & Klasifikasi Strip */}
       <div className={`p-4 bg-slate-50 border border-slate-200 rounded-sm grid grid-cols-1 sm:grid-cols-2 ${isEdit ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-4`}>
@@ -344,8 +374,8 @@ export default function SuratMasukInlineForm({
               }
             }}
           >
-            <SelectTrigger className="w-full rounded-sm bg-white border-slate-200 text-xs h-9 font-mono">
-              <SelectValue />
+            <SelectTrigger className="w-full min-h-9 h-auto rounded-sm bg-white border-slate-200 text-xs whitespace-normal *:data-[slot=select-value]:line-clamp-none">
+              <SelectValue>{KLASIFIKASI_KEARSIPAN_POPULAR.find((item) => item.code === klasifikasiCode)?.name || klasifikasiCode}</SelectValue>
             </SelectTrigger>
             <SelectContent className="rounded-md border border-slate-200 bg-white p-1 shadow-xl max-h-56">
               {KLASIFIKASI_KEARSIPAN_POPULAR.map((k) => (
@@ -454,9 +484,9 @@ export default function SuratMasukInlineForm({
         </div>
       </div>
 
-      {/* Row 3: Perihal, Sifat, Kategori */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="sm:col-span-2">
+      {/* Row 3: Perihal */}
+      <div>
+        <div>
           <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Perihal / Hal Surat *</Label>
           <Input
             value={perihal}
@@ -467,25 +497,6 @@ export default function SuratMasukInlineForm({
           />
         </div>
 
-        <div>
-          <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Sifat Surat</Label>
-          <Select value={sifat} onValueChange={(val) => val && setSifat(val as SifatSurat)}>
-            <SelectTrigger className="w-full rounded-sm bg-white border-slate-200 text-xs h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="rounded-md border border-slate-200 bg-white p-1 shadow-xl">
-              {SIFAT_SURAT_OPTIONS.map((opt) => (
-                <SelectItem
-                  key={opt.value}
-                  value={opt.value}
-                  className="rounded-sm py-2 pr-8 pl-3 text-xs font-medium text-slate-700 focus:bg-indigo-50 focus:text-indigo-900"
-                >
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
       </div>
 
       {/* Row 4: Ringkasan */}
@@ -552,11 +563,13 @@ export default function SuratMasukInlineForm({
           <Button
             type="button"
             variant="outline"
-            disabled={uploading}
+            disabled={uploading || analyzing}
             onClick={() => fileInputRef.current?.click()}
             className="rounded-sm border-dashed border-slate-300 text-slate-600 hover:bg-slate-50 text-xs h-9 flex items-center gap-2 shadow-xs cursor-pointer"
           >
-            {uploading ? (
+            {analyzing ? (
+              <><Loader2 className="w-3.5 h-3.5 animate-spin text-sky-600" /> Menganalisis surat...</>
+            ) : uploading ? (
               <>
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-600" />
                 Mengunggah...
@@ -569,6 +582,7 @@ export default function SuratMasukInlineForm({
             )}
           </Button>
         </div>
+        <p className="mt-2 text-[11px] text-slate-500">Berkas surat pertama dianalisis dengan Gemini untuk mengisi data. Periksa hasilnya sebelum menyimpan.</p>
       </div>
 
       {/* Footer Actions */}
@@ -584,7 +598,7 @@ export default function SuratMasukInlineForm({
         </Button>
         <Button
           type="submit"
-          disabled={saving || uploading}
+          disabled={saving || uploading || analyzing}
           className="rounded-sm bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold h-9 flex items-center gap-2 shadow-sm cursor-pointer"
         >
           {saving ? (

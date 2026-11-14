@@ -122,20 +122,20 @@ export const DISPOSISI_ACTIONS = [
 ];
 
 export const KLASIFIKASI_KEARSIPAN_POPULAR: { code: string; name: string }[] = [
-  { code: '000', name: '000 · UMUM' },
+  { code: '000', name: '000 · Umum' },
   { code: '005', name: '005 · Undangan' },
   { code: '010', name: '010 · Urusan Dalam Kantor' },
   { code: '020', name: '020 · Peralatan & Perlengkapan' },
-  { code: '100', name: '100 · PEMERINTAHAN' },
+  { code: '100', name: '100 · Pemerintahan' },
   { code: '166', name: '166 · Kerja Sama Antar Lembaga' },
-  { code: '400', name: '400 · KESEJAHTERAAN RAKYAT' },
+  { code: '400', name: '400 · Kesejahteraan Rakyat' },
   { code: '420', name: '420 · Pendidikan & Pengajaran' },
-  { code: '700', name: '700 · PENGAWASAN & AUDIT' },
-  { code: '800', name: '800 · KEPEGAWAIAN' },
-  { code: '820', name: '820 · Pengangkatan / SK Pegawai' },
+  { code: '700', name: '700 · Pengawasan & Audit' },
+  { code: '800', name: '800 · Kepegawaian' },
+  { code: '820', name: '820 · Pengangkatan / Sk Pegawai' },
   { code: '880', name: '880 · Pensiun / Purna Tugas' },
-  { code: '900', name: '900 · KEUANGAN & ANGGARAN' },
-  { code: '920', name: '920 · SPJ & Pertanggungjawaban' },
+  { code: '900', name: '900 · Keuangan & Anggaran' },
+  { code: '920', name: '920 · Spj & Pertanggungjawaban' },
 ];
 
 export const TEMPLATE_OPTIONS: { id: TemplateType; title: string; desc: string }[] = [
