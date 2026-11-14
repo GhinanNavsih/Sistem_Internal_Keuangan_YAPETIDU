@@ -17,7 +17,7 @@ import { cashFlowSignaturesFrom, defaultCashFlowSignatures, type CashFlowSignatu
 import { satkerInitials } from '@/lib/satker-finance/fileName';
 import type { FixedAsset } from '@/lib/satker-finance/depreciation';
 import type { BankReconciliation } from '@/lib/satker-finance/bankReconciliation';
-import type { FinancialUnit } from '@/lib/server/satkerFinance';
+import type { FinancialUnit, FinancialUnitListItem } from '@/lib/server/satkerFinance';
 import type { BookReadResult } from '@/lib/satker-finance/workbookBook';
 import type { WorkBook } from 'xlsx';
 import { fitUploadToLimit } from '@/lib/photoEvidence';
@@ -41,7 +41,7 @@ type Statements = ReturnType<typeof buildFinancialStatements>;
 type EntryRecord = JournalEntry & { hasReceipt?: boolean; receiptCount?: number; revision?: number };
 type ResponseData = {
   academicYear: string;
-  units: FinancialUnit[]; accounts: FinancialAccount[]; globalAccounts?: FinancialAccount[]; accountCatalogRevision?: number; accountCatalogSource?: string | null; editorUsers?: { uid: string; displayName: string; role: string }[];
+  units: FinancialUnitListItem[]; accounts: FinancialAccount[]; globalAccounts?: FinancialAccount[]; accountCatalogRevision?: number; accountCatalogSource?: string | null; editorUsers?: { uid: string; displayName: string; role: string }[];
   unit?: FinancialUnit;
   year?: { revision: number; entryCount: number; openingBalances: OpeningBalances };
   fixedAssets?: FixedAsset[]; reconciliations?: BankReconciliation[];
@@ -168,7 +168,7 @@ export default function SatkerFinancePage() {
     accounts: postable, opening: data?.year?.openingBalances || {}, entries: data?.entries || [], academicYear, editingEntryId: editingEntry?.id,
     draft: { date: voucherDate, lines: lines.filter((line) => line.accountCode && (amountNumber(line.debit) || amountNumber(line.credit))).map((line) => ({ accountCode: line.accountCode, debit: amountNumber(line.debit), credit: amountNumber(line.credit) })) },
   }) : [];
-  const unitItems = [...(canReadAll ? [{ value: 'ALL', label: 'Konsolidasi seluruh SatKer' }] : []), ...(data?.units.map((unit) => ({ value: unit.id, label: unit.name })) || [])];
+  const unitItems = [...(canReadAll ? [{ value: 'ALL', label: 'Konsolidasi seluruh SatKer' }] : []), ...(data?.units.map((unit) => ({ value: unit.id, label: unit.name, keywords: unit.initials ? [unit.initials] : undefined })) || [])];
   const periodItems = [{ value: 'ANNUAL', label: 'Tahunan (Sep–Agu)' }, ...months.map((item) => ({ value: String(item.monthIndex), label: `${monthNames[item.monthIndex - 1]} ${item.year}` }))];
   const accountItems = postable.map((account) => ({ value: financialAccountId(account), label: `${account.code} · ${account.name}` }));
   const globalAccounts = data?.globalAccounts || data?.accounts || [];

@@ -4,7 +4,7 @@ import admin, { adminDb, adminStorage } from '@/lib/firebase-admin';
 import { errorResponse, HttpError, requireAuthenticatedProfile, requireRole } from '@/lib/server/auth';
 import {
   ACCOUNT_COLLECTION, CATALOG_META_REF, assertUnitEdit, audit, canReadAll, ensureOwnUnit, ensureUnassignedHeadUnits, fixedAssetCollection, fixedAssetFrom, getUnit,
-  inactiveHeadUids, isInactiveHeadBook, listUnits, loadAccounts, loadFixedAssets, loadSignatureEmployees, unitAccountCatalogSource, openingFrom, publicYear, UNIT_COLLECTION, unitAccountCatalogMetaRef,
+  type FinancialUnitListItem, activeHeadInitialsByUid, inactiveHeadUids, isInactiveHeadBook, listUnits, loadAccounts, loadFixedAssets, loadSignatureEmployees, unitAccountCatalogSource, openingFrom, publicYear, UNIT_COLLECTION, unitAccountCatalogMetaRef,
   unitAccountCollection, yearRef,
 } from '@/lib/server/satkerFinance';
 import {
@@ -142,7 +142,15 @@ export async function GET(request: NextRequest) {
     let accounts = globalAccounts;
     // Books of disabled Kepala SatKer Loyalis are left out of the lists; consolidated totals still count them.
     const inactiveHeads = canReadAll(actor) ? await inactiveHeadUids() : new Set<string>();
-    const base: Record<string, unknown> = { units: units.filter((unit) => !isInactiveHeadBook(unit, inactiveHeads)), accounts, academicYear, monthIndex };
+    // Super Admin and the other readers pick a SatKer from a list; the initials let them find it by its short name.
+    const headInitials = canReadAll(actor) ? await activeHeadInitialsByUid() : new Map<string, string>();
+    const listedUnits: FinancialUnitListItem[] = units
+      .filter((unit) => !isInactiveHeadBook(unit, inactiveHeads))
+      .map((unit) => {
+        const initials = unit.editorUids.map((uid) => headInitials.get(uid)).find(Boolean);
+        return initials ? { ...unit, initials } : unit;
+      });
+    const base: Record<string, unknown> = { units: listedUnits, accounts, academicYear, monthIndex };
     if (actor.role === 'super_admin') {
       const users = await adminDb.collection('users').get();
       base.editorUsers = users.docs.filter((doc) => doc.data().disabled !== true && ['satker_head_loyalis', 'satker_finance_admin'].includes(doc.data().role))

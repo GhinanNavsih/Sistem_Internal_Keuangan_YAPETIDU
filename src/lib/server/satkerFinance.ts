@@ -6,6 +6,7 @@ import type { CashFlowSignatures, SignatureEmployee } from '@/lib/satker-finance
 import type { FixedAsset } from '@/lib/satker-finance/depreciation';
 import biroUmumAkunData from '@/lib/satker-finance/biro-umum-26-27-akun.json';
 import psqAkunData from '@/lib/satker-finance/psq-26-27-akun.json';
+import { normalizeSatkerInitials } from '@/lib/surat-menyurat/satkerInitials';
 
 export const UNIT_COLLECTION = 'SatkerFinancialUnits';
 export const YEAR_COLLECTION = 'SatkerFinancialYears';
@@ -53,6 +54,20 @@ export async function listUnits(actor: AuthenticatedProfile): Promise<FinancialU
   return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as FinancialUnit))
     .filter((unit) => canReadAll(actor) || canEditUnit(actor, unit))
     .sort((a, b) => a.name.localeCompare(b.name, 'id'));
+}
+
+/** A book as listed for choosing one: with the initials of the Kepala SatKer Loyalis who edits it, when they have set them. */
+export type FinancialUnitListItem = FinancialUnit & { initials?: string };
+
+/** The saved SatKer initials of each active Kepala SatKer Loyalis, by account uid. */
+export async function activeHeadInitialsByUid(): Promise<Map<string, string>> {
+  const heads = await adminDb.collection('users').where('role', '==', 'satker_head_loyalis').get();
+  const initials = new Map<string, string>();
+  for (const head of heads.docs) {
+    const saved = normalizeSatkerInitials(head.data().satkerInitials);
+    if (saved && head.data().disabled !== true) initials.set(head.id, saved);
+  }
+  return initials;
 }
 
 /** Kepala SatKer Loyalis accounts that are disabled. */

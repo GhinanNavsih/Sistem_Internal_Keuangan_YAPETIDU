@@ -63,3 +63,31 @@ test('normalizeSearchText folds case, accents and punctuation', () => {
   assert.equal(normalizeSearchText('  Perbaikan — Fakultas  Ilmu Kesehatan '), 'perbaikan fakultas ilmu kesehatan');
   assert.equal(normalizeSearchText('Café Rofi\'ah'), 'cafe rofiah');
 });
+
+const SATKERS = [
+  { value: 'a', label: 'Badan Pelayanan Administrasi Keuangan', keywords: ['BPAK'] },
+  { value: 'b', label: 'Badan Pelayanan Kemahasiswaan', keywords: ['BPKM'] },
+  { value: 'c', label: 'Biro Administrasi Akademik', keywords: ['BAA'] },
+  { value: 'd', label: 'Fakultas Agama Islam', keywords: ['FAI'] },
+  { value: 'e', label: 'Biro Fai Umum' },
+];
+const satkerFor = (query: string) => rankSearchOptions(SATKERS, query).map((option) => option.value);
+
+test('hidden keywords such as initials find the option, in any case', () => {
+  assert.deepEqual(satkerFor('bpkm'), ['b']);
+  assert.deepEqual(satkerFor('BAA'), ['c']);
+  assert.deepEqual(satkerFor('bpak'), ['a']);
+});
+
+test('a keyword equal to the query ranks above a label that merely contains it', () => {
+  assert.deepEqual(satkerFor('fai'), ['d', 'e']);
+});
+
+test('a keyword that starts with the query ranks like a label that starts with it', () => {
+  assert.deepEqual(satkerFor('bp'), ['a', 'b']);
+});
+
+test('names still match as before when options carry keywords, and options without keywords are unaffected', () => {
+  assert.deepEqual(satkerFor('kemahasiswaan'), ['b']);
+  assert.deepEqual(labelsFor('perbaikan'), ['2', '3']);
+});

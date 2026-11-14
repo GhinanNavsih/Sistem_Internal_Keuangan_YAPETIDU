@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils"
 export interface SearchSelectOption {
   value: string
   label: string
+  /** Extra text that finds this option (an abbreviation, say) without being shown. */
+  keywords?: readonly string[]
 }
 
 interface SearchSelectProps {
