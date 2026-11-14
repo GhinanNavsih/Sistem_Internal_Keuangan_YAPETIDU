@@ -1,8 +1,6 @@
-import { InstitutionScope, SifatSurat, StatusSuratMasuk, StatusSuratKeluar, SuratAttachment } from './types';
+import { InstitutionScope, SifatSurat, SuratAttachment } from './types';
 
 const VALID_SIFAT: readonly SifatSurat[] = ['biasa', 'penting', 'segera', 'rahasia'];
-const VALID_STATUS_MASUK: readonly StatusSuratMasuk[] = ['menunggu_disposisi', 'diproses', 'selesai', 'diarsipkan'];
-const VALID_STATUS_KELUAR: readonly StatusSuratKeluar[] = ['draft', 'disetujui', 'terkirim', 'diarsipkan'];
 const VALID_SCOPES: readonly InstitutionScope[] = ['UNIPDU', 'YAPETIDU', 'SATKER'];
 const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -29,7 +27,6 @@ export function validateSuratMasukInput(raw: Record<string, unknown>): {
     sifat: SifatSurat;
     kategori: string;
     ringkasan: string;
-    status: StatusSuratMasuk;
     attachments: SuratAttachment[];
   };
 } {
@@ -54,9 +51,6 @@ export function validateSuratMasukInput(raw: Record<string, unknown>): {
 
   const kategori = sanitizeText(raw.kategori, 100) || 'Lainnya';
   const ringkasan = sanitizeText(raw.ringkasan, 1000);
-
-  const status = (raw.status as StatusSuratMasuk) || 'menunggu_disposisi';
-  if (!VALID_STATUS_MASUK.includes(status)) return { ok: false, error: 'Status surat masuk tidak valid.' };
 
   const institutionScope = (raw.institutionScope && VALID_SCOPES.includes(raw.institutionScope as InstitutionScope))
     ? (raw.institutionScope as InstitutionScope)
@@ -86,7 +80,6 @@ export function validateSuratMasukInput(raw: Record<string, unknown>): {
       sifat,
       kategori,
       ringkasan,
-      status,
       attachments,
     },
   };
@@ -111,7 +104,6 @@ export function validateSuratKeluarInput(raw: Record<string, unknown>): {
     ringkasan: string;
     penandatanganNama: string;
     penandatanganJabatan: string;
-    status: StatusSuratKeluar;
     templateType?: string;
     contentBody?: string;
     lampiranKeterangan?: string;
@@ -137,9 +129,6 @@ export function validateSuratKeluarInput(raw: Record<string, unknown>): {
   const ringkasan = sanitizeText(raw.ringkasan, 1000);
   const penandatanganNama = sanitizeText(raw.penandatanganNama, 100);
   const penandatanganJabatan = sanitizeText(raw.penandatanganJabatan, 100);
-
-  const status = (raw.status as StatusSuratKeluar) || 'terkirim';
-  if (!VALID_STATUS_KELUAR.includes(status)) return { ok: false, error: 'Status surat keluar tidak valid.' };
 
   const institutionScope = (raw.institutionScope && VALID_SCOPES.includes(raw.institutionScope as InstitutionScope))
     ? (raw.institutionScope as InstitutionScope)
@@ -174,7 +163,6 @@ export function validateSuratKeluarInput(raw: Record<string, unknown>): {
       ringkasan,
       penandatanganNama,
       penandatanganJabatan,
-      status,
       templateType,
       contentBody,
       lampiranKeterangan,

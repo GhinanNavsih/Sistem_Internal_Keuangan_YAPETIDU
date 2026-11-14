@@ -35,7 +35,6 @@ export function exportBukuAgendaToExcel({
       'Kode Arsip': arsip,
       'Usia Arsip': usia,
       'Penandatangan': item.penandatanganNama ? `${item.penandatanganNama} (${item.penandatanganJabatan})` : '-',
-      'Status': item.status.toUpperCase(),
       'Lampiran': item.attachments?.length ? `${item.attachments.length} berkas` : (item.lampiranKeterangan || '-'),
     };
   });
@@ -64,10 +63,6 @@ export function exportBukuAgendaToExcel({
       'Sifat Surat': (item.sifat || 'biasa').toUpperCase(),
       'Kode Arsip': arsip,
       'Usia Arsip': usia,
-      'Status': item.status.replace(/_/g, ' ').toUpperCase(),
-      'Instruksi Disposisi': item.disposisi?.instruksi || '-',
-      'Diteruskan Kepada': item.disposisi?.diteruskanKepada || '-',
-      'Catatan Disposisi': item.disposisi?.catatan || '-',
       'Lampiran': item.attachments?.length ? `${item.attachments.length} berkas` : 'Tidak ada',
     };
   });
@@ -80,7 +75,7 @@ export function exportBukuAgendaToExcel({
     { 'Parameter': 'Satuan Kerja', 'Nilai': satkerName || 'UNIVERSITAS PESANTREN TINGGI DARUL \'ULUM JOMBANG' },
     { 'Parameter': 'Fakultas / Unit', 'Nilai': 'Sekretariat Rektorat' },
     { 'Parameter': 'Alamat', 'Nilai': 'PP. Darul Ulum Tromol Pos 10 Jombang 61481' },
-    { 'Parameter': 'Nomor Telepon / Fax', 'Nilai': '(0321) 876771, 873655 Fax: (0321) 876771' },
+    { 'Parameter': 'Nomor Telepon', 'Nilai': '(0321) 876771, 873655' },
     { 'Parameter': 'Website & Email', 'Nilai': 'www.unipdu.ac.id | rektorat@unipdu.ac.id' },
     { 'Parameter': 'Tahun Arsip', 'Nilai': `TAHUN ${new Date().getFullYear()}` },
   ];

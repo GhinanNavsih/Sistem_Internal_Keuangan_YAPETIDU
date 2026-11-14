@@ -4,9 +4,11 @@ import { errorResponse, HttpError, requireAuthenticatedProfile } from '@/lib/ser
 import { canManageSuratMenyurat } from '@/lib/payroll/roles';
 import { validateSuratMasukInput, validateSuratKeluarInput } from '@/lib/surat-menyurat/validation';
 import { parseLetterDraft } from '@/lib/surat-menyurat/templates';
-import { DisposisiSurat, SuratMasuk, SuratKeluar, SuratStats } from '@/lib/surat-menyurat/types';
+import { SuratMasuk, SuratKeluar, SuratStats } from '@/lib/surat-menyurat/types';
+import { normalizeIncomingLetter, normalizeStoredLetter } from '@/lib/surat-menyurat/legacyIncoming';
 import { loadReservationContact } from '@/lib/server/venueContact';
 import { randomUUID } from 'crypto';
+import { normalizeSatkerInitials } from '@/lib/surat-menyurat/satkerInitials';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,13 +46,15 @@ export async function GET(request: NextRequest) {
     }
 
     const snapshot = await query.get();
-    const allDocs = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
+    const allDocs = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      const item = { id: doc.id, ...data };
+      return data.type === 'keluar' ? normalizeStoredLetter(item) : normalizeIncomingLetter(item);
+    });
 
     // Collect all unique satker info for super_admin filter
     const satkerMap = new Map<string, string>();
+    const initialsBySatker = new Map<string, string>();
     if (isSuperAdmin) {
       const allSatkerLetters = await adminDb.collection(COLLECTION_NAME).select('satkerId', 'satkerName').get();
       allSatkerLetters.docs.forEach((d) => {
@@ -66,6 +70,8 @@ export async function GET(request: NextRequest) {
         if (u.satkerName) {
           const sid = u.satkerName.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
           satkerMap.set(sid, u.satkerName.trim());
+          const initials = normalizeSatkerInitials(u.satkerInitials);
+          if (initials && u.disabled !== true) initialsBySatker.set(sid, initials);
         }
       });
     }
@@ -79,11 +85,6 @@ export async function GET(request: NextRequest) {
 
     let totalMasuk = 0;
     let totalKeluar = 0;
-    let menungguDisposisi = 0;
-    let diproses = 0;
-    let selesaiMasuk = 0;
-    let draftKeluar = 0;
-    let terkirimKeluar = 0;
     let suratBulanIni = 0;
 
     for (const item of allDocs) {
@@ -117,15 +118,10 @@ export async function GET(request: NextRequest) {
         const m = item as unknown as SuratMasuk;
         suratMasuk.push(m);
         totalMasuk++;
-        if (m.status === 'menunggu_disposisi') menungguDisposisi++;
-        else if (m.status === 'diproses') diproses++;
-        else if (m.status === 'selesai') selesaiMasuk++;
       } else {
         const k = item as unknown as SuratKeluar;
         suratKeluar.push(k);
         totalKeluar++;
-        if (k.status === 'draft') draftKeluar++;
-        else if (k.status === 'terkirim') terkirimKeluar++;
       }
     }
 
@@ -136,15 +132,14 @@ export async function GET(request: NextRequest) {
     const stats: SuratStats = {
       totalMasuk,
       totalKeluar,
-      menungguDisposisi,
-      diproses,
-      selesaiMasuk,
-      draftKeluar,
-      terkirimKeluar,
       suratBulanIni,
     };
 
-    const satkerList = Array.from(satkerMap.entries()).map(([id, name]) => ({ id, name }));
+    const satkerList = Array.from(satkerMap.entries()).map(([id, name]) => ({
+      id,
+      name,
+      ...(initialsBySatker.has(id) ? { initials: initialsBySatker.get(id) } : {}),
+    }));
 
     let userPhone = '';
     try {
@@ -212,8 +207,6 @@ export async function POST(request: NextRequest) {
         sifat: validation.data.sifat,
         kategori: validation.data.kategori,
         ringkasan: validation.data.ringkasan,
-        status: validation.data.status,
-        disposisi: null,
         attachments: validation.data.attachments || [],
         createdAt: nowIso,
         updatedAt: nowIso,
@@ -251,7 +244,6 @@ export async function POST(request: NextRequest) {
         ringkasan: validation.data.ringkasan,
         penandatanganNama: validation.data.penandatanganNama || actor.displayName,
         penandatanganJabatan: validation.data.penandatanganJabatan || 'Kepala SatKer',
-        status: validation.data.status,
         ...(validation.data.templateType !== undefined && { templateType: validation.data.templateType as SuratKeluar['templateType'] }),
         ...(validation.data.contentBody !== undefined && { contentBody: validation.data.contentBody }),
         ...(validation.data.lampiranKeterangan !== undefined && { lampiranKeterangan: validation.data.lampiranKeterangan }),
@@ -310,27 +302,8 @@ export async function PUT(request: NextRequest) {
       updates.templateType = letterDraft.templateType;
     }
 
-    // Handle Disposisi update on Surat Masuk
     if (body.disposisi !== undefined) {
-      if (body.disposisi === null) {
-        updates.disposisi = null;
-      } else {
-        const d = body.disposisi;
-        const disposisiObj: DisposisiSurat = {
-          instruksi: String(d.instruksi || '').trim(),
-          diteruskanKepada: String(d.diteruskanKepada || '').trim(),
-          diteruskanChecklist: Array.isArray(d.diteruskanChecklist) ? d.diteruskanChecklist : [],
-          tindakanChecklist: Array.isArray(d.tindakanChecklist) ? d.tindakanChecklist : [],
-          catatan: String(d.catatan || '').trim(),
-          tanggalDisposisi: d.tanggalDisposisi || nowIso.slice(0, 10),
-          disposisiOleh: actor.displayName,
-          disposisiOlehUid: actor.uid,
-        };
-        updates.disposisi = disposisiObj;
-        if (existingData.status === 'menunggu_disposisi') {
-          updates.status = 'diproses';
-        }
-      }
+      throw new HttpError(400, 'Permintaan pembaruan tidak didukung.');
     }
 
     // Common field updates
@@ -340,7 +313,6 @@ export async function PUT(request: NextRequest) {
     if (typeof body.kodeSurat === 'string') updates.kodeSurat = body.kodeSurat.trim();
     if (typeof body.kodeArsip === 'string') updates.kodeArsip = body.kodeArsip.trim();
     if (typeof body.usiaArsip === 'string') updates.usiaArsip = body.usiaArsip.trim();
-    if (typeof body.status === 'string') updates.status = body.status;
     if (typeof body.nomorSurat === 'string') updates.nomorSurat = body.nomorSurat.trim();
     if (typeof body.tanggalSurat === 'string') updates.tanggalSurat = body.tanggalSurat.trim();
     if (typeof body.perihal === 'string') updates.perihal = body.perihal.trim();
@@ -363,7 +335,8 @@ export async function PUT(request: NextRequest) {
 
     await docRef.update(updates);
     const updatedDoc = (await docRef.get()).data();
-    return NextResponse.json({ ok: true, data: { id, ...updatedDoc } });
+    const result = { id, ...updatedDoc };
+    return NextResponse.json({ ok: true, data: existingData.type === 'keluar' ? normalizeStoredLetter(result) : normalizeIncomingLetter(result) });
   } catch (error) {
     return errorResponse(error);
   }

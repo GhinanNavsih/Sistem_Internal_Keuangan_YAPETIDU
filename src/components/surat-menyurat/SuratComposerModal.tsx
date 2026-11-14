@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from 'react';
-import Image from 'next/image';
 import {
   Dialog,
   DialogContent,
@@ -13,18 +12,23 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { OptionSelect } from '@/components/ui/option-select';
 import { AutoResizeTextarea } from '@/components/ui/auto-resize-textarea';
 import { useAuth } from '@/lib/AuthContext';
 import { TEMPLATE_OPTIONS } from '@/lib/surat-menyurat/constants';
-import { deriveSatkerCode, formatNomorSuratKeluar } from '@/lib/surat-menyurat/numbering';
-import { applyTemplateDefaults, draftFromSurat, draftRecipient, formatPenandatanganJabatan, getDefaultDraft, LetterDraftPayload, AssignedPerson } from '@/lib/surat-menyurat/templates';
+import { formatNomorSuratKeluar, satkerCodeFor } from '@/lib/surat-menyurat/numbering';
+import { applyTemplateDefaults, draftFromSurat, draftRecipient, getDefaultDraft, LetterDraftPayload, AssignedPerson } from '@/lib/surat-menyurat/templates';
 import { SuratKeluar, TemplateType } from '@/lib/surat-menyurat/types';
-import { Columns2, Edit3, Eye, Loader2, Printer, Save, Sparkles, Wand2, Trash2 } from 'lucide-react';
+import LetterPaper, { type LetterField } from './LetterPaper';
+import IndonesianDatePicker from './IndonesianDatePicker';
+import { Loader2, Printer, Save, Sparkles, Wand2, Trash2 } from 'lucide-react';
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultSatkerName: string;
+  /** The SatKer head's saved initials; the number's SatKer code is guessed from the name without them. */
+  defaultSatkerInitials?: string;
   defaultKepalaName?: string;
   defaultKepalaEmail?: string;
   defaultKepalaPhone?: string;
@@ -39,6 +43,7 @@ export default function SuratComposerModal({
   open,
   onOpenChange,
   defaultSatkerName,
+  defaultSatkerInitials,
   defaultKepalaName = '',
   defaultKepalaEmail = '',
   defaultKepalaPhone = '',
@@ -59,13 +64,12 @@ export default function SuratComposerModal({
       defaultKepalaEmail || profile?.email || user?.email || '',
       defaultKepalaPhone || profile?.phoneNumber || profile?.phone || '',
     );
-    initial.nomorSurat = formatNomorSuratKeluar({ sequenceNumber: nextSequence, satkerCode: deriveSatkerCode(defaultSatkerName), date: new Date() });
+    initial.nomorSurat = formatNomorSuratKeluar({ sequenceNumber: nextSequence, satkerCode: satkerCodeFor(defaultSatkerInitials, defaultSatkerName), date: new Date() });
     return initial;
   });
   const [savedId, setSavedId] = useState<string | null>(surat?.id || null);
   const savedTemplateType = useRef(draft.templateType);
   const [lastSavedDraft, setLastSavedDraft] = useState<string | null>(surat?.letterDraft ? JSON.stringify(draft) : null);
-  const [viewMode, setViewMode] = useState<'both' | 'edit' | 'preview'>('both');
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [saveSuccess, setSaveSuccess] = useState('');
@@ -104,7 +108,7 @@ export default function SuratComposerModal({
   };
 
   const handleGenerateNumber = () => {
-    const code = deriveSatkerCode(defaultSatkerName);
+    const code = satkerCodeFor(defaultSatkerInitials, defaultSatkerName);
     const date = draft.tanggalSurat ? new Date(draft.tanggalSurat) : new Date();
     const autoNo = formatNomorSuratKeluar({
       sequenceNumber: nextSequence,
@@ -114,13 +118,26 @@ export default function SuratComposerModal({
     setDraft((prev) => ({ ...prev, nomorSurat: autoNo }));
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
+    if (savingRef.current) return;
     const printContent = document.getElementById('printable-official-letter');
     if (!printContent) return;
+    const letterHtml = printContent.innerHTML;
+    const numberPart = draft.nomorSurat.trim().split('/')[0].trim().replace(/[\\<>:"|?*\x00-\x1f]/g, '-');
+    const orderNumber = /^\d+$/.test(numberPart) ? numberPart.padStart(3, '0') : numberPart;
+    const templateTitle = TEMPLATE_OPTIONS.find((option) => option.id === draft.templateType)?.title || 'Surat';
+    const suratType = templateTitle.replace(/^Surat\s+/i, '');
+    const [year, month, day] = draft.tanggalSurat.split('-');
+    const printTitle = `${orderNumber} ${suratType} ${day}-${month}-${year?.slice(-2)}`;
 
     const printWindow = window.open('', '_blank');
+    const saved = await handleSaveToSuratKeluar();
+    if (!saved) {
+      printWindow?.close();
+      return;
+    }
     if (!printWindow) {
-      alert('Mohon izinkan pop-up browser untuk mencetak surat.');
+      alert('Surat berhasil disimpan. Mohon izinkan pop-up browser untuk mencetak surat.');
       return;
     }
 
@@ -128,7 +145,7 @@ export default function SuratComposerModal({
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Surat Resmi UNIPDU</title>
+          <title></title>
           <style>
             @page {
               size: A4 portrait;
@@ -243,7 +260,7 @@ export default function SuratComposerModal({
           </style>
         </head>
         <body>
-          ${printContent.innerHTML}
+          ${letterHtml}
           <script>
             window.onload = function() {
               window.print();
@@ -253,27 +270,32 @@ export default function SuratComposerModal({
         </body>
       </html>
     `);
+    printWindow.document.title = printTitle;
     printWindow.document.close();
   };
 
   const handleSaveToSuratKeluar = async () => {
-    if (!user || savingRef.current) return;
+    if (savingRef.current) return false;
+    if (!user) {
+      setError('Silakan masuk untuk menyimpan surat.');
+      return false;
+    }
     if (!draft.nomorSurat.trim()) {
       setError('Nomor surat wajib diisi.');
-      return;
+      return false;
     }
     if (!draft.perihal.trim()) {
       setError('Perihal surat wajib diisi.');
-      return;
+      return false;
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.tanggalSurat)) {
       setError('Tanggal surat wajib diisi.');
-      return;
+      return false;
     }
     const tujuan = draftRecipient(draft);
     if (!tujuan || tujuan.length > 150) {
       setError('Tujuan surat wajib diisi dan maksimal 150 karakter.');
-      return;
+      return false;
     }
 
     savingRef.current = true;
@@ -296,7 +318,7 @@ export default function SuratComposerModal({
       const kategori = draft.templateType === 'custom' ? 'Lainnya' : TEMPLATE_OPTIONS.find((option) => option.id === draft.templateType)?.title || 'Lainnya';
       const payload = {
         ...(!savedId && targetSatkerId ? { satkerId: targetSatkerId } : {}),
-        ...(savedId ? { id: savedId } : { type: 'keluar', institutionScope: 'UNIPDU', sifat: 'biasa', status: 'draft', attachments: [] }),
+        ...(savedId ? { id: savedId } : { type: 'keluar', institutionScope: 'UNIPDU', sifat: 'biasa', attachments: [] }),
         ...(!savedId || savedTemplateType.current !== draft.templateType ? { kategori } : {}),
         nomorSurat: draft.nomorSurat.trim(),
         tanggalSurat: draft.tanggalSurat,
@@ -330,25 +352,13 @@ export default function SuratComposerModal({
       setLastSavedDraft(JSON.stringify(draft));
       setSaveSuccess('Naskah berhasil disimpan pada Surat Keluar.');
       if (onSavedToSuratKeluar) onSavedToSuratKeluar(json.data);
+      return true;
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Gagal menyimpan.');
+      return false;
     } finally {
       savingRef.current = false;
       setSaving(false);
-    }
-  };
-
-  const formatDateIndo = (isoDate: string) => {
-    if (!isoDate) return '';
-    try {
-      const d = new Date(isoDate);
-      return d.toLocaleDateString('id-ID', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-      });
-    } catch {
-      return isoDate;
     }
   };
 
@@ -414,12 +424,12 @@ export default function SuratComposerModal({
           />
         </div>
         <div className="space-y-1">
-          <Label className="text-xs font-semibold text-slate-700">Tanggal Surat</Label>
-          <Input
-            type="date"
+          <Label htmlFor="composer-tanggal-surat" className="text-xs font-semibold text-slate-700">Tanggal Surat</Label>
+          <IndonesianDatePicker
+            id="composer-tanggal-surat"
+            label="Tanggal Surat"
             value={draft.tanggalSurat}
-            onChange={(e) => setDraft((prev) => ({ ...prev, tanggalSurat: e.target.value }))}
-            className="text-xs font-semibold bg-white rounded-sm border-slate-200"
+            onValueChange={(value) => setDraft((prev) => ({ ...prev, tanggalSurat: value }))}
           />
         </div>
       </div>
@@ -576,12 +586,15 @@ export default function SuratComposerModal({
   );
 
   const previewField = (
-    field: Exclude<keyof LetterDraftPayload, 'templateType' | 'assignedPeople' | 'taskAssigner'>,
+    field: LetterField,
     display: string,
     label: string,
     multiline = false,
   ) => {
     if (editingPreview === field) {
+      if (field === 'tanggalSurat') {
+        return <IndonesianDatePicker value={draft.tanggalSurat} label="Tanggal surat" initiallyOpen onValueChange={(value) => setDraft((prev) => ({ ...prev, tanggalSurat: value }))} onClose={() => setEditingPreview(null)} />;
+      }
       const props = {
         autoFocus: true,
         'aria-label': label,
@@ -597,126 +610,24 @@ export default function SuratComposerModal({
           : 'w-full min-w-0 rounded border border-indigo-400 bg-white px-1 text-inherit font-inherit text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200',
         ...(field === 'perihal' ? { style: { fieldSizing: 'content' as const, fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', lineHeight: 'inherit' } } : {}),
       };
-      return multiline ? <textarea {...props} rows={field === 'perihal' ? 1 : Math.max(2, (draft[field] || '').split('\n').length)} /> : <input {...props} type={field === 'tanggalSurat' ? 'date' : 'text'} />;
+      return multiline ? <textarea {...props} rows={field === 'perihal' ? 1 : Math.max(2, (draft[field] || '').split('\n').length)} /> : <input {...props} type="text" />;
     }
     return <span role="button" tabIndex={0} title={`Klik dua kali untuk mengedit ${label}`} className="cursor-text rounded-sm hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500" onDoubleClick={() => setEditingPreview(field)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setEditingPreview(field); } }}>{display}</span>;
   };
 
   // Shared Preview Paper JSX
-  const renderPreviewPaper = () => {
-    const satkerHeadEmail = draft.satkerHeadEmail || defaultKepalaEmail || profile?.email || user?.email || '';
-    const satkerHeadPhone = draft.satkerHeadPhone || defaultKepalaPhone || profile?.phoneNumber || profile?.phone || '';
-
-    const emailDisplay = satkerHeadEmail || '{satker_head_email}';
-    const phoneDisplay = satkerHeadPhone || '{satker_head_phone_number}';
-    const emailFormatted = emailDisplay.startsWith('{') ? `email:${emailDisplay}` : `email: ${emailDisplay}`;
-
-    return (
-      <div
-        id="printable-official-letter"
-        className="bg-white shadow-xl border border-slate-200 rounded-xs p-6 sm:p-8 md:p-10 w-full min-w-[540px] max-w-[210mm] text-slate-900 font-serif text-[12.5px] leading-relaxed select-text"
-        style={{ minHeight: '297mm' }}
-      >
-        {/* Kop surat sesuai lingkup surat yang dicatat */}
-        <div className="kop-container border-b-4 border-double border-slate-900 pb-3 mb-6 flex items-center justify-between gap-2 sm:gap-3">
-          <div className="w-14 h-14 relative shrink-0 flex items-center justify-center">
-            <Image
-              src={isYapetidu ? '/Logo YAPETIDU (Transparent bg).png' : '/Logo UNIPDU.png'}
-              alt={isYapetidu ? 'Logo YAPETIDU' : 'Logo UNIPDU'}
-              width={56}
-              height={56}
-              priority
-              className="object-contain"
-            />
-          </div>
-          <div className="kop-text flex-1 text-center min-w-0 px-1 sm:px-2">
-            <h1 className="kop-instansi text-xs sm:text-sm md:text-[15px] lg:text-[16px] font-black uppercase tracking-tight text-slate-900 m-0 leading-tight whitespace-nowrap">
-              {isYapetidu ? "YAYASAN PESANTREN TINGGI DARUL 'ULUM JOMBANG" : "UNIVERSITAS PESANTREN TINGGI DARUL 'ULUM"}
-            </h1>
-            <h2 className="kop-satker text-[11px] sm:text-xs md:text-[13px] lg:text-sm font-bold uppercase tracking-tight text-slate-800 my-1 leading-snug whitespace-nowrap">
-              {previewField('satkerName', draft.satkerName || defaultSatkerName || 'SATUAN KERJA', 'nama SatKer')}
-            </h2>
-            <p className="kop-alamat text-[9px] sm:text-[9.5px] md:text-[10px] text-slate-600 m-0 leading-tight whitespace-nowrap">
-              Alamat: PP Darul Ulum, Tromol Pos 10 Peterongan Jombang Jawa Timur 61481
-            </p>
-            <p className="kop-kontak text-[9px] sm:text-[9.5px] md:text-[10px] text-slate-600 mt-0.5 m-0 leading-tight whitespace-nowrap">
-              Website: unipdu.ac.id | {previewField('satkerHeadEmail', emailFormatted, 'email')} | Telp. {previewField('satkerHeadPhone', phoneDisplay, 'telepon')}
-            </p>
-          </div>
-          <div className="w-14 shrink-0" />
-        </div>
-
-      {/* Nomor, Lampiran, Hal */}
-      <div className="letter-meta mb-6 text-xs">
-        <div className="meta-left space-y-0.5">
-          <div className="flex">
-            <span className="w-16">Nomor</span>
-            <span className="w-3">:</span>
-            <span className="font-semibold">{previewField('nomorSurat', draft.nomorSurat || '.../.../UNIPDU/.../2026', 'nomor surat')}</span>
-          </div>
-          <div className="flex">
-            <span className="w-16">Lampiran</span>
-            <span className="w-3">:</span>
-            <span>{previewField('lampiranKeterangan', draft.lampiranKeterangan || '-', 'lampiran')}</span>
-          </div>
-          <div className="flex">
-            <span className="w-16 shrink-0">Hal</span>
-            <span className="w-3 shrink-0">:</span>
-            <span className="min-w-0 flex-1 font-semibold underline whitespace-pre-wrap">{previewField('perihal', draft.perihal || 'Surat Dinas', 'perihal', true)}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Kepada Yth */}
-      <div className="destination-block mb-6 text-xs">
-        <p className="m-0">Kepada Yth.</p>
-        <p className="font-bold m-0">{previewField('tujuanNama', draft.tujuanNama || 'Bapak / Ibu', 'nama penerima')}</p>
-        {(draft.tujuanJabatanInstansi || editingPreview === 'tujuanJabatanInstansi') && <p className="m-0">{previewField('tujuanJabatanInstansi', draft.tujuanJabatanInstansi, 'instansi penerima')}</p>}
-        <p className="m-0 italic">{previewField('tujuanAlamatKota', draft.tujuanAlamatKota || 'di Tempat', 'alamat penerima')}</p>
-      </div>
-
-      {/* Isi Surat */}
-      <div className="letter-content space-y-3 text-xs text-justify">
-        {(draft.salamPembuka || editingPreview === 'salamPembuka') && (
-          <p className="italic font-medium">{previewField('salamPembuka', draft.salamPembuka, 'salam pembuka', true)}</p>
-        )}
-        {draft.templateType === 'tugas' && draft.taskAssigner && <div className="whitespace-pre-line">Pemberi tugas:<br />Nama: {draft.penandatanganNama || '........................'}<br />Jabatan: {draft.penandatanganJabatan || '........................'}</div>}
-        {(draft.isiParagraf1 || editingPreview === 'isiParagraf1') && (
-          <p className="indent-6 leading-relaxed whitespace-pre-line">{previewField('isiParagraf1', draft.isiParagraf1, 'paragraf pembuka', true)}</p>
-        )}
-        {draft.templateType === 'tugas' && (draft.assignedPeople || []).length > 0 && <ol className="list-decimal pl-8">{draft.assignedPeople?.map((person) => <li key={`${person.collection}:${person.id}`}>{person.name}{person.role ? ` — ${person.role}` : ''}</li>)}</ol>}
-        {(draft.isiParagraf2 || editingPreview === 'isiParagraf2') && (
-          <div className="raw-block pl-6 whitespace-pre-wrap font-mono text-[11px] leading-relaxed bg-slate-50/50 p-2 border-l-2 border-slate-300 rounded-sm">
-            {previewField('isiParagraf2', draft.isiParagraf2, 'isi surat', true)}
-          </div>
-        )}
-        {(draft.isiParagraf3 || editingPreview === 'isiParagraf3') && (
-          <p className="indent-6 leading-relaxed whitespace-pre-line">{previewField('isiParagraf3', draft.isiParagraf3, 'paragraf penutup', true)}</p>
-        )}
-        {(draft.salamPenutup || editingPreview === 'salamPenutup') && (
-          <p className="italic font-medium pt-1">{previewField('salamPenutup', draft.salamPenutup, 'salam penutup', true)}</p>
-        )}
-      </div>
-
-      {/* Tanda Tangan */}
-      <div className="signature-block mt-10 ml-auto w-64 text-center text-xs">
-        <p className="signature-date m-0 text-slate-800 font-medium">
-          Jombang, {previewField('tanggalSurat', formatDateIndo(draft.tanggalSurat) || '....................', 'tanggal surat')}
-        </p>
-        <p className="m-0 font-medium mt-1">
-          {previewField('penandatanganJabatan', draft.templateType === 'tugas' && draft.taskAssigner ? draft.penandatanganJabatan : formatPenandatanganJabatan(draft.penandatanganJabatan, draft.satkerName || defaultSatkerName), 'jabatan penandatangan')},
-        </p>
-        <div className="sign-space h-20" />
-        <p className="sign-name font-bold underline m-0">
-          {previewField('penandatanganNama', draft.penandatanganNama || '................................', 'nama penandatangan')}
-        </p>
-        {(draft.penandatanganNipy || editingPreview === 'penandatanganNipy') && (
-          <p className="text-[11px] text-slate-600 m-0">NIPY: {previewField('penandatanganNipy', draft.penandatanganNipy, 'NIPY')}</p>
-        )}
-      </div>
-    </div>
+  const renderPreviewPaper = () => (
+    <LetterPaper
+      id="printable-official-letter"
+      draft={draft}
+      defaultSatkerName={defaultSatkerName}
+      isYapetidu={isYapetidu}
+      email={draft.satkerHeadEmail || defaultKepalaEmail || profile?.email || user?.email || ''}
+      phone={draft.satkerHeadPhone || defaultKepalaPhone || profile?.phoneNumber || profile?.phone || ''}
+      renderField={previewField}
+      isEditing={(field) => editingPreview === field}
+    />
   );
-};
 
   const content = (
       <div className={inline ? 'bg-white rounded-md p-6 border border-slate-200 shadow-sm flex flex-col' : 'h-full flex flex-col overflow-hidden'}>
@@ -728,69 +639,8 @@ export default function SuratComposerModal({
                 <Wand2 className="w-5 h-5" />
               </div>
               <div>
-                {inline ? <><h2 className="text-xl font-bold tracking-tight text-slate-900">Catat Surat Keluar</h2><p className="text-xs text-slate-500">Susun surat dinas dan lihat hasilnya secara langsung.</p></> : <><DialogTitle className="text-xl font-bold tracking-tight text-slate-900">Pembuat Surat Resmi SatKer</DialogTitle><DialogDescription className="text-xs text-slate-500">Susun surat dinas resmi dengan kop SatKer, format standar, dan cetak langsung ke PDF.</DialogDescription></>}
+                {inline ? <><h2 className="text-xl font-bold tracking-tight text-slate-900">{surat ? 'Edit Surat Keluar' : 'Catat Surat Keluar'}</h2><p className="text-xs text-slate-500">{surat ? 'Ubah isi surat dan lihat hasilnya secara langsung.' : 'Susun surat dinas dan lihat hasilnya secara langsung.'}</p></> : <><DialogTitle className="text-xl font-bold tracking-tight text-slate-900">Pembuat Surat Resmi SatKer</DialogTitle><DialogDescription className="text-xs text-slate-500">Susun surat dinas resmi dengan kop SatKer, format standar, dan cetak langsung ke PDF.</DialogDescription></>}
               </div>
-            </div>
-
-            {/* View Mode Toggle & Action Buttons */}
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex rounded-md bg-slate-100 p-1 text-xs font-semibold">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('edit')}
-                  className={`px-3 py-1.5 rounded-sm transition-all cursor-pointer flex items-center gap-1 ${
-                    viewMode === 'edit'
-                      ? 'bg-white shadow-sm text-indigo-600 font-bold'
-                      : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('preview')}
-                  className={`px-3 py-1.5 rounded-sm transition-all cursor-pointer flex items-center gap-1 ${
-                    viewMode === 'preview'
-                      ? 'bg-white shadow-sm text-indigo-600 font-bold'
-                      : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  Preview
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('both')}
-                  className={`px-3 py-1.5 rounded-sm transition-all cursor-pointer flex items-center gap-1 ${
-                    viewMode === 'both'
-                      ? 'bg-white shadow-sm text-indigo-600 font-bold'
-                      : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  <Columns2 className="w-3.5 h-3.5" />
-                  Keduanya
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={handlePrint}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-sm border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 transition-all shadow-sm cursor-pointer"
-              >
-                <Printer className="w-3.5 h-3.5 text-indigo-600" />
-                Cetak / PDF
-              </button>
-
-              <Button
-                type="button"
-                disabled={saving}
-                onClick={handleSaveToSuratKeluar}
-                className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center gap-1.5 shadow-md shadow-indigo-100 text-xs px-3.5 py-1.5 cursor-pointer disabled:opacity-50"
-              >
-                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                {saving ? 'Menyimpan...' : savedId ? 'Simpan Naskah' : 'Simpan ke Surat Keluar'}
-              </Button>
             </div>
           </div>
         </DialogHeader>
@@ -806,55 +656,57 @@ export default function SuratComposerModal({
             {saveSuccess}
           </div>
         )}
-        {lastSavedDraft !== JSON.stringify(draft) && (
-          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 p-2.5 rounded-sm my-1 shrink-0">
-            Naskah belum disimpan. Pilih {savedId ? 'Simpan Naskah' : 'Simpan ke Surat Keluar'} agar dapat dibuka kembali.
-          </div>
-        )}
-
         {/* Template Selector Bar */}
-        <div className="py-2.5 shrink-0 flex items-center gap-2 overflow-x-auto border-b border-slate-100">
-          <span className="text-xs font-semibold text-slate-500 shrink-0">Pilih Template:</span>
-          {TEMPLATE_OPTIONS.map((tpl) => (
+        <div className="py-2.5 shrink-0 flex flex-wrap items-center gap-2 border-b border-slate-100">
+          <Label htmlFor="surat-template" className="text-xs font-semibold text-slate-500 shrink-0">Pilih Template:</Label>
+          <OptionSelect
+            id="surat-template"
+            value={draft.templateType}
+            onValueChange={(value) => {
+              const template = TEMPLATE_OPTIONS.find((option) => option.id === value);
+              if (template) handleTemplateChange(template.id);
+            }}
+            options={TEMPLATE_OPTIONS.map((template) => ({ value: template.id, label: template.title }))}
+            size="sm"
+            className="w-full max-w-64"
+          />
+          {/* Action Buttons */}
+          <div className="ml-auto flex flex-wrap items-center gap-2">
             <button
-              key={tpl.id}
               type="button"
-              onClick={() => handleTemplateChange(tpl.id)}
-              className={`text-xs px-3 py-1.5 rounded-sm border transition-all shrink-0 cursor-pointer font-semibold ${
-                draft.templateType === tpl.id
-                  ? 'bg-indigo-50 border-indigo-300 text-indigo-700 font-bold shadow-xs'
-                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-              }`}
+              onClick={handlePrint}
+              disabled={saving}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-sm border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 transition-all shadow-sm cursor-pointer disabled:opacity-50"
             >
-              {tpl.title}
+              <Printer className="w-3.5 h-3.5 text-indigo-600" />
+              Cetak / PDF
             </button>
-          ))}
+
+            <Button
+              type="button"
+              disabled={saving}
+              onClick={handleSaveToSuratKeluar}
+              className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center gap-1.5 shadow-md shadow-indigo-100 text-xs px-3.5 py-1.5 cursor-pointer disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+              {saving ? 'Menyimpan...' : savedId ? (inline ? 'Simpan Perubahan' : 'Simpan Naskah') : 'Simpan ke Surat Keluar'}
+            </Button>
+          </div>
         </div>
 
         {/* Content Body */}
-        <div className={inline ? 'py-3' : 'flex-1 min-h-0 py-3 overflow-hidden'}>
-          {viewMode === 'both' ? (
-            <div className="h-full flex flex-col lg:flex-row gap-6 min-h-0">
+        <div className={inline ? 'py-3 overflow-x-auto' : 'flex-1 min-h-0 py-3 overflow-x-auto overflow-y-hidden'}>
+            <div className="h-full min-w-[900px] flex flex-row gap-6 min-h-0">
               {/* Left Column: Form Fields */}
-              <div className={inline ? 'w-full lg:w-[45%] xl:w-[42%] pr-3' : 'w-full lg:w-[45%] xl:w-[42%] h-full overflow-y-auto pr-3'}>
+              <div className={inline ? 'w-[45%] xl:w-[42%] pr-3' : 'w-[45%] xl:w-[42%] h-full overflow-y-auto pr-3'}>
                 {renderEditorForm()}
               </div>
 
               {/* Right Column: Live A4 Visual Preview */}
-              <div className={`w-full lg:w-[55%] xl:w-[58%] ${inline ? '' : 'h-full'} bg-slate-100/90 rounded-md p-4 sm:p-6 overflow-auto flex justify-center items-start border border-slate-200`}>
+              <div className={`w-[55%] xl:w-[58%] ${inline ? '' : 'h-full'} bg-slate-100/90 rounded-md p-4 sm:p-6 overflow-auto flex justify-center items-start border border-slate-200`}>
                 {renderPreviewPaper()}
               </div>
             </div>
-          ) : viewMode === 'edit' ? (
-            <>
-              <div className="h-full overflow-y-auto max-w-3xl mx-auto w-full px-2">{renderEditorForm()}</div>
-              <div className="hidden">{renderPreviewPaper()}</div>
-            </>
-          ) : (
-            <div className="h-full bg-slate-100/90 rounded-md p-4 sm:p-6 overflow-auto flex justify-center items-start border border-slate-200">
-              {renderPreviewPaper()}
-            </div>
-          )}
         </div>
 
         {/* Footer */}

@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { SuratMasuk, SuratKeluar, InstitutionScope } from '@/lib/surat-menyurat/types';
+import { formatLetterDate } from '@/lib/surat-menyurat/date';
 import { calculateUsiaArsip, formatKodeArsip } from '@/lib/surat-menyurat/numbering';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -10,7 +11,6 @@ import {
   Calendar,
   Clock,
   Eye,
-  FileCheck,
   FileText,
   Inbox,
   Send,
@@ -23,7 +23,6 @@ interface Props {
   suratKeluarList: SuratKeluar[];
   scopeFilter: string;
   onOpenDetail: (surat: SuratMasuk | SuratKeluar, type: 'masuk' | 'keluar') => void;
-  onOpenDisposisi: (surat: SuratMasuk) => void;
 }
 
 export default function BukuAgendaTable({
@@ -31,7 +30,6 @@ export default function BukuAgendaTable({
   suratKeluarList,
   scopeFilter,
   onOpenDetail,
-  onOpenDisposisi,
 }: Props) {
   const [activeFilter, setActiveFilter] = useState<'all' | 'masuk' | 'keluar'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -57,8 +55,6 @@ export default function BukuAgendaTable({
         sequenceNumber: m.nomorUrut || idx + 1,
       }),
       usiaArsip: m.usiaArsip || calculateUsiaArsip(m.tanggalSurat),
-      status: m.status,
-      disposisi: m.disposisi,
     }));
 
     const keluar = suratKeluarList.map((k, idx) => ({
@@ -80,8 +76,6 @@ export default function BukuAgendaTable({
         sequenceNumber: k.nomorUrut || idx + 1,
       }),
       usiaArsip: k.usiaArsip || calculateUsiaArsip(k.tanggalSurat),
-      status: k.status,
-      disposisi: null,
     }));
 
     // Merge and sort by sequence / date
@@ -213,7 +207,7 @@ export default function BukuAgendaTable({
                   </span>
                   <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-1">
                     <Calendar className="w-3 h-3 text-slate-400" />
-                    <span>{row.tanggalSurat}</span>
+                    <span>{formatLetterDate(row.tanggalSurat)}</span>
                   </div>
                 </TableCell>
 
@@ -269,16 +263,6 @@ export default function BukuAgendaTable({
                       Detail
                     </button>
 
-                    {row.type === 'masuk' && (
-                      <button
-                        type="button"
-                        onClick={() => onOpenDisposisi(row.raw as SuratMasuk)}
-                        className="px-2 py-1 rounded-xs text-[11px] font-semibold bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 transition-colors shadow-xs cursor-pointer inline-flex items-center gap-1"
-                      >
-                        <FileCheck className="w-3 h-3 text-indigo-500" />
-                        Disposisi
-                      </button>
-                    )}
                   </div>
                 </TableCell>
               </TableRow>

@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isSuratMenyuratPath, SURAT_MENYURAT_PATH, SIFAT_SURAT_OPTIONS, STATUS_SURAT_MASUK_OPTIONS, TEMPLATE_OPTIONS, KATEGORI_SURAT_KELUAR } from './constants';
-import { deriveSatkerCode, formatNomorSuratKeluar, formatNomorSuratKeluarTemplate, formatKodeArsip, calculateUsiaArsip, getRomanMonth } from './numbering';
+import { isSuratMenyuratPath, SURAT_MENYURAT_PATH, TEMPLATE_OPTIONS, KATEGORI_SURAT_KELUAR } from './constants';
+import { deriveSatkerCode, satkerCodeFor, formatNomorSuratKeluar, formatNomorSuratKeluarTemplate, formatKodeArsip, calculateUsiaArsip, getRomanMonth } from './numbering';
 import { validateSuratMasukInput, validateSuratKeluarInput } from './validation';
+import { normalizeIncomingLetter, normalizeStoredLetter } from './legacyIncoming';
+import { formatLetterDate } from './date';
 import { applyTemplateDefaults, draftFromSurat, draftRecipient, formatPenandatanganJabatan, getDefaultDraft, parseLetterDraft } from './templates';
+import { findSatkerInitialsConflict, normalizeSatkerInitials, satkerInitialsProblem } from './satkerInitials';
 import type { SuratKeluar } from './types';
 
 test('isSuratMenyuratPath correctly matches path and subpaths', () => {
@@ -11,6 +14,13 @@ test('isSuratMenyuratPath correctly matches path and subpaths', () => {
   assert.equal(isSuratMenyuratPath(`${SURAT_MENYURAT_PATH}/detail`), true);
   assert.equal(isSuratMenyuratPath('/dashboard/surat-menyurat-lain'), false);
   assert.equal(isSuratMenyuratPath('/dashboard/payroll'), false);
+});
+
+test('letter dates use Indonesian month names and preserve date-only values', () => {
+  assert.equal(formatLetterDate('2026-11-14'), '14 November 2026');
+  assert.equal(formatLetterDate('2024-02-29'), '29 Februari 2024');
+  assert.equal(formatLetterDate('2026-02-30'), '2026-02-30');
+  assert.equal(formatLetterDate(''), '');
 });
 
 test('getRomanMonth produces accurate Roman numeral for months', () => {
@@ -68,14 +78,22 @@ test('validateSuratMasukInput validates required fields and accepts valid payloa
     sifat: 'penting',
     kategori: 'Undangan / Rapat',
     ringkasan: 'Rapat pembahasan RKAT',
-    status: 'menunggu_disposisi',
+    status: 'baru',
     attachments: [],
   });
 
   assert.equal(valid.ok, true);
   assert.equal(valid.data?.nomorSurat, '045/UNIPDU/R/XI/2026');
   assert.equal(valid.data?.sifat, 'penting');
-  assert.equal(valid.data?.status, 'menunggu_disposisi');
+  assert.equal(Object.hasOwn(valid.data!, 'status'), false);
+});
+
+test('older incoming records remain readable without exposing removed fields', () => {
+  const stored = { status: 'menunggu_disposisi', kategori: 'Instruksi / Disposisi Rektorat', disposisi: { catatan: 'arsip' }, perihal: 'Rapat' };
+  assert.deepEqual(normalizeIncomingLetter(stored), { kategori: 'Instruksi Rektorat', perihal: 'Rapat' });
+  assert.equal(stored.status, 'menunggu_disposisi');
+  assert.deepEqual(stored.disposisi, { catatan: 'arsip' });
+  assert.deepEqual(normalizeStoredLetter({ status: 'draft', perihal: 'Surat keluar' }), { perihal: 'Surat keluar' });
 });
 
 test('validateSuratKeluarInput validates required fields and accepts valid payload', () => {
@@ -99,7 +117,7 @@ test('validateSuratKeluarInput validates required fields and accepts valid paylo
 
   assert.equal(valid.ok, true);
   assert.equal(valid.data?.tujuan, 'Dosen Fakultas Agama Islam');
-  assert.equal(valid.data?.status, 'draft');
+  assert.equal(Object.hasOwn(valid.data!, 'status'), false);
 });
 
 test('applyTemplateDefaults populates appropriate text for each template type', () => {
@@ -131,6 +149,19 @@ test('each outgoing letter category has a distinct template that survives draft 
     openings.add(draft.isiParagraf1);
   }
   assert.equal(openings.size, options.length);
+});
+
+test('new letter templates contain no dotted placeholders', () => {
+  const base = getDefaultDraft('BAK', 'Kepala BAK', 'Kepala');
+  const assertNoDots = (draft: typeof base) => {
+    for (const value of Object.values(draft)) {
+      if (typeof value === 'string') assert.doesNotMatch(value, /\.{3,}|…/);
+    }
+  };
+  assertNoDots(base);
+  for (const option of TEMPLATE_OPTIONS) {
+    assertNoDots(applyTemplateDefaults(base, option.id, 'BAK', 'Kepala BAK', 'Kepala'));
+  }
 });
 
 test('edits belong to the saved letter and do not change the next letter template', () => {
@@ -293,4 +324,37 @@ test('formatKodeArsip creates proper UNIPDU, YAPETIDU, and incoming archive loca
     klasifikasiCode: '166',
   });
   assert.equal(masukArsip, 'A.1.R1.166,05');
+});
+
+test('SatKer initials are upper-cased letters or digits, 1 to 10 long', () => {
+  assert.equal(normalizeSatkerInitials('  bpm '), 'BPM');
+  assert.equal(normalizeSatkerInitials(null), '');
+  assert.equal(satkerInitialsProblem('bpm'), null);
+  assert.equal(satkerInitialsProblem('PERPUS2'), null);
+  assert.equal(satkerInitialsProblem('a'), null, 'the Rektorat code is one letter');
+  for (const bad of ['', '   ', 'B P M', 'BPM/1', 'BP-M', 'ABCDEFGHIJK', undefined]) {
+    assert.notEqual(satkerInitialsProblem(bad), null, `${String(bad)} should be refused`);
+  }
+});
+
+test('SatKer initials conflict with another active head, ignoring case, self and disabled accounts', () => {
+  const heads = [
+    { uid: 'a', satkerInitials: 'BPM' },
+    { uid: 'b', satkerInitials: 'perpus' },
+    { uid: 'c', satkerInitials: 'LPPM', disabled: true },
+    { uid: 'd' },
+  ];
+  assert.equal(findSatkerInitialsConflict('bpm', heads)?.uid, 'a');
+  assert.equal(findSatkerInitialsConflict(' PERPUS ', heads)?.uid, 'b');
+  assert.equal(findSatkerInitialsConflict('BPM', heads, 'a'), undefined, 'an account never conflicts with itself');
+  assert.equal(findSatkerInitialsConflict('LPPM', heads), undefined, 'a disabled account frees its initials');
+  assert.equal(findSatkerInitialsConflict('NEW', heads), undefined);
+  assert.equal(findSatkerInitialsConflict('', heads), undefined);
+});
+
+test('satkerCodeFor prefers valid initials and falls back to the name', () => {
+  assert.equal(satkerCodeFor('bpm', 'Biro Umum'), 'BPM');
+  assert.equal(satkerCodeFor(undefined, 'Perpustakaan'), 'PERPUS');
+  assert.equal(satkerCodeFor('B P', 'Perpustakaan'), 'PERPUS');
+  assert.equal(formatNomorSuratKeluar({ sequenceNumber: 5, satkerCode: satkerCodeFor('bpm', 'x'), date: new Date(2026, 10, 14) }), '005/BPM/UNIPDU/XI/2026');
 });

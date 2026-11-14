@@ -146,7 +146,7 @@ export function getDefaultDraft(
     tujuanAlamatKota: 'di Tempat',
     salamPembuka: 'Assalamu\'alaikum Wr. Wb.',
     isiParagraf1: 'Dengan ini memberikan tugas kepada:',
-    isiParagraf2: 'Untuk melaksanakan tugas: .................................\nPada tanggal/tempat: ......................................',
+    isiParagraf2: 'Untuk melaksanakan tugas:\nPada tanggal/tempat:',
     isiParagraf3: 'Demikian surat tugas ini diterbitkan untuk dipergunakan sebagaimana mestinya dan setelah melaksanakan tugas segera menyampaikan laporan.',
     salamPenutup: 'Wassalamu\'alaikum Wr. Wb.',
     penandatanganNama: kepalaName || 'Kepala SatKer',
@@ -184,7 +184,7 @@ export function applyTemplateDefaults(
         lampiranKeterangan: '-',
         salamPembuka: 'Assalamu\'alaikum Wr. Wb.',
         isiParagraf1: 'Dengan ini memberikan tugas kepada:',
-        isiParagraf2: 'Untuk melaksanakan tugas: .................................\nPada tanggal/tempat: ......................................',
+        isiParagraf2: 'Untuk melaksanakan tugas:\nPada tanggal/tempat:',
         isiParagraf3: 'Demikian surat tugas ini diterbitkan untuk dipergunakan sebagaimana mestinya dan setelah melaksanakan tugas segera menyampaikan laporan.',
         salamPenutup: 'Wassalamu\'alaikum Wr. Wb.',
       };
@@ -199,7 +199,7 @@ export function applyTemplateDefaults(
         tujuanAlamatKota: 'di Tempat',
         salamPembuka: 'Assalamu\'alaikum Wr. Wb.',
         isiParagraf1: `Yang bertanda tangan di bawah ini, ${base.penandatanganJabatan || 'Kepala SatKer'} Universitas Pesantren Tinggi Darul 'Ulum (UNIPDU) Jombang menerangkan bahwa:`,
-        isiParagraf2: 'Nama: ....................................................\nNIPY / NIM: ..............................................\nUnit / Prodi: ............................................\nAdalah benar aktif dan terdaftar pada unit kami.',
+        isiParagraf2: 'Nama:\nNIPY / NIM:\nUnit / Prodi:\nAdalah benar aktif dan terdaftar pada unit kami.',
         isiParagraf3: 'Demikian surat keterangan ini kami buat dengan sebenarnya untuk dapat dipergunakan sebagaimana mestinya.',
         salamPenutup: 'Wassalamu\'alaikum Wr. Wb.',
       };
@@ -214,7 +214,7 @@ export function applyTemplateDefaults(
         tujuanAlamatKota: 'di Tempat',
         salamPembuka: 'Assalamu\'alaikum Wr. Wb.',
         isiParagraf1: `Puji syukur kita panjatkan ke hadirat Allah SWT atas limpahan rahmat-Nya. Sehubungan dengan program kerja ${satkerName}, kami mengharap kehadiran Bapak/Ibu pada rapat koordinasi yang akan diselenggarakan pada:`,
-        isiParagraf2: 'Hari / Tanggal: ...........................................\nWaktu: ...................................................\nTempat: ..................................................\nAgenda: ..................................................',
+        isiParagraf2: 'Hari / Tanggal:\nWaktu:\nTempat:\nAgenda:',
         isiParagraf3: 'Mengingat pentingnya agenda tersebut, mohon hadir tepat waktu. Atas perhatian dan kerjasamanya, kami sampaikan terima kasih.',
         salamPenutup: 'Wassalamu\'alaikum Wr. Wb.',
       };
@@ -244,7 +244,7 @@ export function applyTemplateDefaults(
         tujuanAlamatKota: 'di Jombang',
         salamPembuka: 'Assalamu\'alaikum Wr. Wb.',
         isiParagraf1: `Semoga Allah SWT senantiasa melimpahkan taufiq dan hidayah-Nya dalam menjalankan tugas sehari-hari. Sehubungan dengan kegiatan yang diselenggarakan oleh ${satkerName}, bersama ini kami mengajukan permohonan:`,
-        isiParagraf2: 'Kegiatan: ................................................\nKebutuhan: ...............................................\nWaktu Pelaksanaan: .......................................',
+        isiParagraf2: 'Kegiatan:\nKebutuhan:\nWaktu Pelaksanaan:',
         isiParagraf3: 'Besar harapan kami permohonan ini dapat dikabulkan. Atas bantuan dan perkenan yang diberikan, kami sampaikan terima kasih jazakumullah khairan.',
         salamPenutup: 'Wassalamu\'alaikum Wr. Wb.',
       };
@@ -258,8 +258,8 @@ export function applyTemplateDefaults(
         tujuanJabatanInstansi: targetSatker,
         tujuanAlamatKota: 'di Tempat',
         salamPembuka: 'Assalamu\'alaikum Wr. Wb.',
-        isiParagraf1: 'Sehubungan dengan ................................................, bersama ini kami sampaikan pemberitahuan sebagai berikut:',
-        isiParagraf2: 'Ketentuan / informasi: ....................................\nBerlaku mulai: ............................................\nHal yang perlu ditindaklanjuti: ...........................',
+        isiParagraf1: 'Bersama ini kami sampaikan pemberitahuan sebagai berikut:',
+        isiParagraf2: 'Ketentuan / informasi:\nBerlaku mulai:\nHal yang perlu ditindaklanjuti:',
         isiParagraf3: 'Demikian edaran ini disampaikan untuk diketahui dan dilaksanakan sebagaimana mestinya. Atas perhatian dan kerja samanya, kami ucapkan terima kasih.',
         salamPenutup: 'Wassalamu\'alaikum Wr. Wb.',
       };
@@ -274,7 +274,7 @@ export function applyTemplateDefaults(
         tujuanAlamatKota: 'di Tempat',
         salamPembuka: 'Assalamu\'alaikum Wr. Wb.',
         isiParagraf1: `Yang bertanda tangan di bawah ini, ${base.penandatanganJabatan}, dengan ini memberikan rekomendasi kepada:`,
-        isiParagraf2: 'Nama: ....................................................\nNIPY / NIM: ..............................................\nJabatan / Unit: ..........................................\nUntuk keperluan: .........................................\nDasar pertimbangan: ......................................',
+        isiParagraf2: 'Nama:\nNIPY / NIM:\nJabatan / Unit:\nUntuk keperluan:\nDasar pertimbangan:',
         isiParagraf3: 'Demikian surat rekomendasi ini diberikan untuk dipergunakan sesuai dengan keperluan tersebut. Atas perhatian dan kerja samanya, kami ucapkan terima kasih.',
         salamPenutup: 'Wassalamu\'alaikum Wr. Wb.',
       };
@@ -288,8 +288,8 @@ export function applyTemplateDefaults(
         tujuanJabatanInstansi: 'Instansi Pengirim',
         tujuanAlamatKota: 'di Tempat',
         salamPembuka: 'Assalamu\'alaikum Wr. Wb.',
-        isiParagraf1: 'Menindaklanjuti surat Bapak/Ibu nomor ................................ tanggal ................................ perihal ................................, bersama ini kami sampaikan tanggapan sebagai berikut:',
-        isiParagraf2: 'Tanggapan: ...............................................\nTindak lanjut: ...........................................',
+        isiParagraf1: 'Menindaklanjuti surat Bapak/Ibu, bersama ini kami sampaikan tanggapan sebagai berikut:',
+        isiParagraf2: 'Tanggapan:\nTindak lanjut:',
         isiParagraf3: 'Demikian tanggapan ini kami sampaikan. Atas perhatian dan kerja sama Bapak/Ibu, kami ucapkan terima kasih.',
         salamPenutup: 'Wassalamu\'alaikum Wr. Wb.',
       };
@@ -302,7 +302,7 @@ export function applyTemplateDefaults(
         lampiranKeterangan: '-',
         salamPembuka: 'Assalamu\'alaikum Wr. Wb.',
         isiParagraf1: 'Dengan hormat, kami sampaikan hal-hal sebagai berikut:',
-        isiParagraf2: 'Tulis isi surat di sini...',
+        isiParagraf2: '',
         isiParagraf3: 'Demikian surat ini kami sampaikan, atas perhatian dan kerjasamanya kami ucapkan terima kasih.',
         salamPenutup: 'Wassalamu\'alaikum Wr. Wb.',
       };

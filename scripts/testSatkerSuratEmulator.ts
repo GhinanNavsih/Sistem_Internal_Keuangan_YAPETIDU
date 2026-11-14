@@ -26,7 +26,7 @@ async function main() {
   const cases = [
     { label: 'keluar tanpa rentang', body: { ...common, type: 'keluar', tujuan: 'Pembina Tilawah' }, absent: ['nomorUrutEnd', 'usiaArsip', 'templateType', 'contentBody', 'lampiranKeterangan'] },
     { label: 'keluar dengan rentang', body: { ...common, type: 'keluar', tujuan: 'Pembina Tilawah', nomorUrutEnd: 5 }, absent: ['usiaArsip', 'templateType', 'contentBody', 'lampiranKeterangan'] },
-    { label: 'masuk tanpa usia arsip', body: { ...common, type: 'masuk', tanggalDiterima: '2026-11-10', pengirim: 'Rektorat' }, absent: ['usiaArsip'] },
+    { label: 'masuk tanpa usia arsip', body: { ...common, type: 'masuk', tanggalDiterima: '2026-11-10', pengirim: 'Rektorat' }, absent: ['usiaArsip', 'status'] },
     { label: 'keluar tanpa metadata opsional', body: { type: 'keluar', nomorSurat: '002', tanggalSurat: '2026-11-10', tujuan: 'Tujuan', perihal: 'Perihal' }, absent: ['institutionScope', 'nomorUrut', 'kodeSurat', 'kodeArsip', 'usiaArsip'] },
     { label: 'keluar dengan metadata', body: { ...common, type: 'keluar', tujuan: 'Tujuan', nomorUrutEnd: 5, usiaArsip: '1 tahun', templateType: 'tugas', contentBody: 'Isi', lampiranKeterangan: 'Satu berkas' }, absent: [] },
   ];
@@ -40,6 +40,8 @@ async function main() {
     }
     const stored = (await adminDb.doc(`SatkerLetters/${json.data.id}`).get()).data();
     assert.ok(stored, item.label);
+    assert.equal(Object.hasOwn(stored, 'status'), false, `${item.label}: status`);
+    assert.equal(Object.hasOwn(json.data, 'status'), false, `${item.label}: response status`);
     for (const key of item.absent) assert.equal(Object.hasOwn(stored, key), false, `${item.label}: ${key}`);
     for (const key of ['nomorUrutEnd', 'usiaArsip', 'templateType', 'contentBody', 'lampiranKeterangan'] as const) {
       if (key in item.body) assert.equal(stored[key], item.body[key as keyof typeof item.body], `${item.label}: ${key}`);
@@ -51,6 +53,27 @@ async function main() {
   const data = await list.json();
   assert.equal(data.suratKeluar.length, 4);
   assert.equal(data.suratMasuk.length, 1);
+  assert.equal(Object.hasOwn(data.suratMasuk[0], 'status'), false);
+  assert.equal(data.stats.totalMasuk, 1);
+
+  // Older stored letters remain editable and visible without their retired fields.
+  const incomingRef = adminDb.doc(`SatkerLetters/${data.suratMasuk[0].id}`);
+  await incomingRef.update({ status: 'menunggu_disposisi', kategori: 'Instruksi / Disposisi Rektorat', disposisi: { catatan: 'Catatan lama' } });
+  const legacyList = await (await GET(new NextRequest('http://localhost/api/satker-surat', { headers }))).json();
+  assert.equal(Object.hasOwn(legacyList.suratMasuk[0], 'status'), false);
+  assert.equal(legacyList.suratMasuk[0].kategori, 'Instruksi Rektorat');
+  assert.equal(Object.hasOwn(legacyList.suratMasuk[0], 'disposisi'), false);
+  assert.equal(legacyList.stats.totalMasuk, 1);
+  let legacyUpdate = await PUT(new NextRequest('http://localhost/api/satker-surat', { method: 'PUT', headers,
+    body: JSON.stringify({ id: data.suratMasuk[0].id, perihal: 'Perihal baru', status: 'baru' }) }));
+  assert.equal(legacyUpdate.status, 200);
+  assert.equal(Object.hasOwn((await legacyUpdate.json()).data, 'disposisi'), false);
+  assert.deepEqual((await incomingRef.get()).data()?.disposisi, { catatan: 'Catatan lama' });
+  assert.equal((await incomingRef.get()).data()?.status, 'menunggu_disposisi');
+  legacyUpdate = await PUT(new NextRequest('http://localhost/api/satker-surat', { method: 'PUT', headers,
+    body: JSON.stringify({ id: data.suratMasuk[0].id, disposisi: { catatan: 'Baru' } }) }));
+  assert.equal(legacyUpdate.status, 400);
+  assert.deepEqual((await incomingRef.get()).data()?.disposisi, { catatan: 'Catatan lama' });
 
   // A recorded outgoing letter gains a reusable manuscript without a new agenda entry.
   const existing = data.suratKeluar.find((item: { nomorUrutEnd?: number }) => item.nomorUrutEnd === 5);
@@ -81,6 +104,7 @@ async function main() {
   assert.equal(stored.letterDraft.isiParagraf2, 'Waktu: 10.00');
   const refreshed = await GET(new NextRequest('http://localhost/api/satker-surat', { headers }));
   const reopenedFromApi = (await refreshed.json()).suratKeluar.find((item: { id: string }) => item.id === existing.id);
+  assert.equal(Object.hasOwn(reopenedFromApi, 'status'), false);
   assert.equal(draftFromSurat(reopenedFromApi, 'BAK').isiParagraf2, 'Waktu: 10.00');
   response = await update({ id: existing.id, letterDraft: { ...draft, isiParagraf1: 'x'.repeat(10001) } });
   assert.equal(response.status, 400);

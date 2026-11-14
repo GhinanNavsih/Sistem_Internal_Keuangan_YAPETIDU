@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { SuratMasuk, SuratKeluar, InstitutionScope } from '@/lib/surat-menyurat/types';
+import { formatLetterDate } from '@/lib/surat-menyurat/date';
 import { formatKodeArsip } from '@/lib/surat-menyurat/numbering';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -174,7 +175,7 @@ export default function LabelArsipView({
                   <span className="font-mono font-extrabold text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded-xs border border-slate-300">
                     {item.kodeArsip}
                   </span>
-                  <span className="text-slate-400 font-mono text-[9px]">{item.tanggal}</span>
+                  <span className="text-slate-400 font-mono text-[9px]">{formatLetterDate(item.tanggal)}</span>
                 </div>
               </div>
             ))}

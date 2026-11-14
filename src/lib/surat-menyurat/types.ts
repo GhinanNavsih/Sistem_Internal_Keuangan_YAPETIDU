@@ -2,10 +2,6 @@ export type SuratType = 'masuk' | 'keluar';
 
 export type SifatSurat = 'biasa' | 'penting' | 'segera' | 'rahasia';
 
-export type StatusSuratMasuk = 'menunggu_disposisi' | 'diproses' | 'selesai' | 'diarsipkan';
-
-export type StatusSuratKeluar = 'draft' | 'disetujui' | 'terkirim' | 'diarsipkan';
-
 export type TemplateType = 'tugas' | 'keterangan' | 'undangan' | 'pengantar' | 'permohonan' | 'edaran' | 'rekomendasi' | 'balasan' | 'custom';
 
 export type InstitutionScope = 'UNIPDU' | 'YAPETIDU' | 'SATKER';
@@ -19,17 +15,6 @@ export interface SuratAttachment {
   contentType: string;
   size: number;
   uploadedAt: string;
-}
-
-export interface DisposisiSurat {
-  instruksi: string; // e.g. "Tindak Lanjuti", "Hadiri / Wakili", "Koordinasikan", "Pelajari & Laporkan", "Arsipkan"
-  diteruskanKepada: string; // e.g. "Sekretaris SatKer", "Bendahara", "Staf Administrasi", "Kaprodi"
-  diteruskanChecklist?: string[]; // Checkbox targets matching Excel DISPOSISI sheet
-  tindakanChecklist?: string[]; // Checkbox actions matching Excel DISPOSISI sheet
-  catatan?: string;
-  tanggalDisposisi: string;
-  disposisiOleh: string; // Nama Kepala SatKer / Rektor
-  disposisiOlehUid: string;
 }
 
 export interface SuratMasuk {
@@ -50,8 +35,6 @@ export interface SuratMasuk {
   sifat: SifatSurat;
   kategori: string;
   ringkasan?: string;
-  status: StatusSuratMasuk;
-  disposisi?: DisposisiSurat | null;
   attachments: SuratAttachment[];
   createdAt: string;
   updatedAt: string;
@@ -78,7 +61,6 @@ export interface SuratKeluar {
   ringkasan?: string;
   penandatanganNama: string;
   penandatanganJabatan: string;
-  status: StatusSuratKeluar;
   templateType?: TemplateType;
   contentBody?: string;
   letterDraft?: LetterDraftPayload;
@@ -93,11 +75,6 @@ export interface SuratKeluar {
 export interface SuratStats {
   totalMasuk: number;
   totalKeluar: number;
-  menungguDisposisi: number;
-  diproses: number;
-  selesaiMasuk: number;
-  draftKeluar: number;
-  terkirimKeluar: number;
   suratBulanIni: number;
 }
 

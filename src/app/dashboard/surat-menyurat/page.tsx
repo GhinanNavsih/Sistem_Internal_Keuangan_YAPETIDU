@@ -1,21 +1,17 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { canManageSuratMenyurat } from '@/lib/payroll/roles';
-import { SuratMasuk, SuratKeluar, SuratStats, DisposisiSurat, InstitutionScope } from '@/lib/surat-menyurat/types';
+import { SuratMasuk, SuratKeluar, SuratStats, InstitutionScope } from '@/lib/surat-menyurat/types';
 import { exportBukuAgendaToExcel } from '@/lib/surat-menyurat/excel';
 import {
-  STATUS_SURAT_MASUK_OPTIONS,
-  STATUS_SURAT_KELUAR_OPTIONS,
   INSTITUTION_SCOPES,
 } from '@/lib/surat-menyurat/constants';
 import SuratMasukPanel from '@/components/surat-menyurat/SuratMasukPanel';
 import SuratKeluarPanel from '@/components/surat-menyurat/SuratKeluarPanel';
-import SuratDisposisiDialog from '@/components/surat-menyurat/SuratDisposisiDialog';
 import SuratDetailDialog from '@/components/surat-menyurat/SuratDetailDialog';
 import SuratComposerModal from '@/components/surat-menyurat/SuratComposerModal';
-import LembarDisposisiView from '@/components/surat-menyurat/LembarDisposisiView';
 import LabelArsipView from '@/components/surat-menyurat/LabelArsipView';
 import BukuAgendaTable from '@/components/surat-menyurat/BukuAgendaTable';
 import { Card } from '@/components/ui/card';
@@ -35,14 +31,13 @@ import {
   Wand2,
   AlertTriangle,
   X,
-  FileCheck,
   Tag,
   BookOpen,
   BarChart3,
   Building2,
 } from 'lucide-react';
 
-type Tab = 'masuk' | 'keluar' | 'agenda' | 'disposisi' | 'label' | 'rekap';
+type Tab = 'masuk' | 'keluar' | 'agenda' | 'label' | 'rekap';
 
 export default function SuratMenyuratPage() {
   const { user, profile } = useAuth();
@@ -55,16 +50,10 @@ export default function SuratMenyuratPage() {
   const [stats, setStats] = useState<SuratStats>({
     totalMasuk: 0,
     totalKeluar: 0,
-    menungguDisposisi: 0,
-    diproses: 0,
-    selesaiMasuk: 0,
-    draftKeluar: 0,
-    terkirimKeluar: 0,
     suratBulanIni: 0,
   });
-  const [satkerList, setSatkerList] = useState<{ id: string; name: string }[]>([]);
+  const [satkerList, setSatkerList] = useState<{ id: string; name: string; initials?: string }[]>([]);
   const [selectedSatkerFilter, setSelectedSatkerFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [snackbar, setSnackbar] = useState<SnackbarMessage | null>(null);
   const [userContact, setUserContact] = useState<{ email: string; phone: string }>({ email: '', phone: '' });
@@ -73,14 +62,7 @@ export default function SuratMenyuratPage() {
   const [isAddingMasuk, setIsAddingMasuk] = useState(false);
   const [masukToEdit, setMasukToEdit] = useState<SuratMasuk | null>(null);
 
-  const [isAddingKeluar, setIsAddingKeluar] = useState(false);
   const [keluarToEdit, setKeluarToEdit] = useState<SuratKeluar | null>(null);
-
-  const [disposisiModalOpen, setDisposisiModalOpen] = useState(false);
-  const [disposisiTarget, setDisposisiTarget] = useState<SuratMasuk | null>(null);
-
-  // Lembar Disposisi Tab Active Target (replicates Cell A1 in Excel)
-  const [selectedDisposisiId, setSelectedDisposisiId] = useState<string | null>(null);
 
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [detailTarget, setDetailTarget] = useState<SuratMasuk | SuratKeluar | null>(null);
@@ -88,10 +70,14 @@ export default function SuratMenyuratPage() {
 
   const [composerModalOpen, setComposerModalOpen] = useState(false);
   const [inlineComposerOpen, setInlineComposerOpen] = useState(false);
-  const [composerTarget, setComposerTarget] = useState<SuratKeluar | null>(null);
+  const keluarComposerRef = useRef<HTMLDivElement>(null);
 
   const isSuperAdmin = profile?.role === 'super_admin';
   const satkerDisplayName = profile?.satkerName || profile?.displayName || 'Satuan Kerja Loyalis';
+  // Super Admin writes for the SatKer picked in the filter; a head writes for their own.
+  const satkerInitials = isSuperAdmin
+    ? satkerList.find((s) => s.id === selectedSatkerFilter)?.initials
+    : profile?.satkerInitials;
 
   const fetchData = useCallback(async (isSilent = false) => {
     if (!user) return;
@@ -134,13 +120,16 @@ export default function SuratMenyuratPage() {
     fetchData();
   }, [fetchData]);
 
-  // Reset status filter and inline forms when switching tabs
+  // The edit form opens above the table, so bring it into view from any row.
+  useEffect(() => {
+    if (keluarToEdit) keluarComposerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [keluarToEdit]);
+
+  // Reset inline forms when switching tabs
   const handleTabChange = (newTab: Tab) => {
     setActiveTab(newTab);
-    setStatusFilter('all');
     setIsAddingMasuk(false);
     setMasukToEdit(null);
-    setIsAddingKeluar(false);
     setInlineComposerOpen(false);
     setKeluarToEdit(null);
   };
@@ -150,14 +139,6 @@ export default function SuratMenyuratPage() {
     if (selectedSatkerFilter === 'all') return 'Semua SatKer';
     return satkerList.find((s) => s.id === selectedSatkerFilter)?.name || selectedSatkerFilter;
   }, [selectedSatkerFilter, satkerList]);
-
-  const statusFilterLabel = useMemo(() => {
-    if (statusFilter === 'all') return 'Semua Status';
-    if (activeTab === 'masuk') {
-      return STATUS_SURAT_MASUK_OPTIONS.find((opt) => opt.value === statusFilter)?.label || statusFilter;
-    }
-    return STATUS_SURAT_KELUAR_OPTIONS.find((opt) => opt.value === statusFilter)?.label || statusFilter;
-  }, [statusFilter, activeTab]);
 
   // Filtered by institution scope
   const filteredSuratMasuk = useMemo(() => {
@@ -169,31 +150,6 @@ export default function SuratMenyuratPage() {
     if (scopeFilter === 'all') return suratKeluar;
     return suratKeluar.filter((k) => (k.institutionScope || 'UNIPDU') === scopeFilter);
   }, [suratKeluar, scopeFilter]);
-
-  // Disposisi Save
-  const handleSaveDisposisi = async (suratId: string, disposisi: DisposisiSurat) => {
-    if (!user) return;
-    const idToken = await user.getIdToken();
-    const res = await fetch('/api/satker-surat', {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${idToken}`,
-      },
-      body: JSON.stringify({
-        id: suratId,
-        disposisi,
-      }),
-    });
-
-    const json = await res.json();
-    if (!res.ok || !json.ok) {
-      throw new Error(json.error || 'Gagal menyimpan disposisi.');
-    }
-
-    setSnackbar({ type: 'success', text: 'Disposisi berhasil disimpan dan diperbarui.' });
-    fetchData(true);
-  };
 
   // Delete handler
   const handleDeleteLetter = async (id: string) => {
@@ -313,19 +269,6 @@ export default function SuratMenyuratPage() {
 
                     <button
                       type="button"
-                      onClick={() => handleTabChange('disposisi')}
-                      className={`px-3 py-1.5 rounded-sm text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-                        activeTab === 'disposisi'
-                          ? 'bg-white text-amber-700 shadow-sm font-bold'
-                          : 'text-slate-500 hover:text-slate-700'
-                      }`}
-                    >
-                      <FileCheck className="w-3.5 h-3.5" />
-                      Lembar Disposisi
-                    </button>
-
-                    <button
-                      type="button"
                       onClick={() => handleTabChange('label')}
                       className={`px-3 py-1.5 rounded-sm text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
                         activeTab === 'label'
@@ -395,7 +338,7 @@ export default function SuratMenyuratPage() {
                       <SelectTrigger className="bg-white border-slate-200 text-slate-700 text-xs font-semibold rounded-sm px-3 py-2.5 h-9 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-sm w-auto min-w-[150px]">
                         <SelectValue>{satkerFilterLabel}</SelectValue>
                       </SelectTrigger>
-                      <SelectContent className="rounded-md border border-slate-200 bg-white p-1 shadow-xl ring-0 max-h-60">
+                      <SelectContent className="w-max min-w-(--anchor-width) max-w-[calc(100vw-2rem)] rounded-md border border-slate-200 bg-white p-1 shadow-xl ring-0 max-h-60">
                         <SelectItem
                           value="all"
                           className="rounded-sm py-2 pr-8 pl-3 text-xs font-medium text-slate-700 focus:bg-indigo-50 focus:text-indigo-900 data-[selected]:font-semibold data-[selected]:text-indigo-700"
@@ -431,42 +374,6 @@ export default function SuratMenyuratPage() {
                     </div>
                   )}
 
-                  {/* Status Filter */}
-                  {(activeTab === 'masuk' || activeTab === 'keluar') && (
-                    <Select value={statusFilter} onValueChange={(v) => v && setStatusFilter(v)}>
-                      <SelectTrigger className="bg-white border-slate-200 text-slate-700 text-xs font-semibold rounded-sm px-3 py-2.5 h-9 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-sm w-auto min-w-[130px]">
-                        <SelectValue>{statusFilterLabel}</SelectValue>
-                      </SelectTrigger>
-                      <SelectContent className="rounded-md border border-slate-200 bg-white p-1 shadow-xl ring-0">
-                        <SelectItem
-                          value="all"
-                          className="rounded-sm py-2 pr-8 pl-3 text-xs font-medium text-slate-700 focus:bg-indigo-50 focus:text-indigo-900 data-[selected]:font-semibold data-[selected]:text-indigo-700"
-                        >
-                          Semua Status
-                        </SelectItem>
-                        {activeTab === 'masuk'
-                          ? STATUS_SURAT_MASUK_OPTIONS.map((opt) => (
-                              <SelectItem
-                                key={opt.value}
-                                value={opt.value}
-                                className="rounded-sm py-2 pr-8 pl-3 text-xs font-medium text-slate-700 focus:bg-indigo-50 focus:text-indigo-900 data-[selected]:font-semibold data-[selected]:text-indigo-700"
-                              >
-                                {opt.label}
-                              </SelectItem>
-                            ))
-                          : STATUS_SURAT_KELUAR_OPTIONS.map((opt) => (
-                              <SelectItem
-                                key={opt.value}
-                                value={opt.value}
-                                className="rounded-sm py-2 pr-8 pl-3 text-xs font-medium text-slate-700 focus:bg-indigo-50 focus:text-indigo-900 data-[selected]:font-semibold data-[selected]:text-indigo-700"
-                              >
-                                {opt.label}
-                              </SelectItem>
-                            ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-
                 </div>
 
               </div>
@@ -484,8 +391,6 @@ export default function SuratMenyuratPage() {
                   ? 'Agenda Surat Keluar'
                   : activeTab === 'agenda'
                   ? 'Buku Agenda Persuratan (Lengkap)'
-                  : activeTab === 'disposisi'
-                  ? 'Lembar Disposisi Dinamis (VLOOKUP A1)'
                   : activeTab === 'label'
                   ? 'Label Stiker Arsip (Binder & Box File)'
                   : 'Statistik Persuratan'}
@@ -506,11 +411,11 @@ export default function SuratMenyuratPage() {
                 {activeTab !== 'masuk' && (
                   <button
                     type="button"
-                    onClick={() => { setComposerTarget(null); setComposerModalOpen(true); }}
+                    onClick={() => setComposerModalOpen(true)}
                     className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-sm border border-indigo-200 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm"
                   >
                     <Wand2 className="w-4 h-4 text-indigo-500" />
-                    Buat Surat (Template)
+                    Atur Template Surat
                   </button>
                 )}
 
@@ -546,14 +451,13 @@ export default function SuratMenyuratPage() {
                   <Button
                     type="button"
                     onClick={() => {
-                      setIsAddingKeluar(false);
                       setKeluarToEdit(null);
                       setInlineComposerOpen((open) => !open);
                     }}
                     className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center gap-2 shadow-md shadow-indigo-100"
                   >
                     <Plus className="w-4 h-4" />
-                    {inlineComposerOpen ? 'Tutup Formulir' : 'Catat Surat Keluar'}
+                    {inlineComposerOpen || keluarToEdit ? 'Tutup Formulir' : 'Catat Surat Keluar'}
                   </Button>
                 )}
 
@@ -570,7 +474,6 @@ export default function SuratMenyuratPage() {
               <SuratMasukPanel
                 data={filteredSuratMasuk}
                 searchQuery={searchQuery}
-                statusFilter={statusFilter}
                 sifatFilter="all"
                 isAdding={isAddingMasuk}
                 editingItem={masukToEdit}
@@ -599,48 +502,29 @@ export default function SuratMenyuratPage() {
                   setDetailType('masuk');
                   setDetailModalOpen(true);
                 }}
-                onOpenDisposisi={(surat) => {
-                  setSelectedDisposisiId(surat.id);
-                  setActiveTab('disposisi');
-                }}
                 onDelete={handleDeleteLetter}
               />
             ) : activeTab === 'keluar' ? (
               <>
-              {inlineComposerOpen && <div className="p-6"><SuratComposerModal
+              {(inlineComposerOpen || keluarToEdit) && <div ref={keluarComposerRef} className="p-6"><SuratComposerModal
+                key={keluarToEdit?.id ?? 'new'}
                 inline
                 open
-                onOpenChange={setInlineComposerOpen}
+                surat={keluarToEdit}
+                onOpenChange={() => {
+                  setInlineComposerOpen(false);
+                  setKeluarToEdit(null);
+                }}
                 defaultSatkerName={satkerDisplayName}
+                defaultSatkerInitials={satkerInitials}
                 defaultKepalaName={profile?.displayName || ''}
                 defaultKepalaEmail={userContact.email || profile?.email || user?.email || ''}
                 defaultKepalaPhone={userContact.phone || profile?.phoneNumber || profile?.phone || ''}
                 nextSequence={nextSequence}
                 targetSatkerId={isSuperAdmin && selectedSatkerFilter !== 'all' ? selectedSatkerFilter : undefined}
                 onSavedToSuratKeluar={() => {
-                  setInlineComposerOpen(false);
-                  fetchData(true);
-                  setSnackbar({ type: 'success', text: 'Surat keluar berhasil dicatat.' });
-                }}
-              /></div>}
-              <SuratKeluarPanel
-                data={filteredSuratKeluar}
-                searchQuery={searchQuery}
-                statusFilter={statusFilter}
-                sifatFilter="all"
-                isAdding={isAddingKeluar}
-                editingItem={keluarToEdit}
-                defaultSatkerName={satkerDisplayName}
-                defaultKepalaName={profile?.displayName || ''}
-                nextSequence={nextSequence}
-                targetSatkerId={isSuperAdmin && selectedSatkerFilter !== 'all' ? selectedSatkerFilter : undefined}
-                onCancelForm={() => {
-                  setIsAddingKeluar(false);
-                  setKeluarToEdit(null);
-                }}
-                onSaveSuccess={() => {
                   const wasEditing = Boolean(keluarToEdit);
-                  setIsAddingKeluar(false);
+                  setInlineComposerOpen(false);
                   setKeluarToEdit(null);
                   fetchData(true);
                   setSnackbar({
@@ -648,19 +532,19 @@ export default function SuratMenyuratPage() {
                     text: wasEditing ? 'Surat keluar berhasil diperbarui.' : 'Surat keluar berhasil dicatat.',
                   });
                 }}
+              /></div>}
+              <SuratKeluarPanel
+                data={filteredSuratKeluar}
+                searchQuery={searchQuery}
+                sifatFilter="all"
                 onOpenEdit={(surat) => {
                   setInlineComposerOpen(false);
-                  setIsAddingKeluar(false);
                   setKeluarToEdit(surat);
                 }}
                 onOpenDetail={(surat) => {
                   setDetailTarget(surat);
                   setDetailType('keluar');
                   setDetailModalOpen(true);
-                }}
-                onOpenComposer={(surat) => {
-                  setComposerTarget(surat);
-                  setComposerModalOpen(true);
                 }}
                 onDelete={handleDeleteLetter}
               />
@@ -676,20 +560,6 @@ export default function SuratMenyuratPage() {
                   setDetailType(type);
                   setDetailModalOpen(true);
                 }}
-                onOpenDisposisi={(surat) => {
-                  setSelectedDisposisiId(surat.id);
-                  setActiveTab('disposisi');
-                }}
-              />
-            ) : activeTab === 'disposisi' ? (
-              /* Official Printable Lembar Disposisi Sheet View */
-              <LembarDisposisiView
-                suratList={filteredSuratMasuk}
-                selectedSuratId={selectedDisposisiId}
-                onSelectSuratId={(id) => setSelectedDisposisiId(id)}
-                onSaveDisposisi={handleSaveDisposisi}
-                defaultScope={scopeFilter === 'YAPETIDU' ? 'YAPETIDU' : 'UNIPDU'}
-                currentUserName={profile?.displayName || 'Rektor UNIPDU'}
               />
             ) : activeTab === 'label' ? (
               /* Printable Archive Labels Grid */
@@ -702,53 +572,29 @@ export default function SuratMenyuratPage() {
               /* Rekap & Breakdown Summary */
               <div className="p-8 space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Status Breakdown Surat Masuk */}
+                  {/* Surat Masuk */}
                   <div className="bg-slate-50/50 rounded-md p-6 border border-slate-200 space-y-3">
                     <span className="text-sm font-semibold text-slate-800 flex items-center gap-2">
                       <Inbox className="w-4 h-4 text-sky-600" />
-                      Penanganan Surat Masuk
+                      Surat Masuk
                     </span>
                     <div className="space-y-2 text-xs">
                       <div className="flex justify-between items-center bg-white p-3 rounded-sm border border-slate-200">
-                        <span className="text-slate-600 font-medium">Menunggu Disposisi:</span>
-                        <Badge variant="outline" className="rounded-sm border-amber-200 bg-amber-50 text-amber-700 font-semibold">
-                          {stats.menungguDisposisi} surat
-                        </Badge>
-                      </div>
-                      <div className="flex justify-between items-center bg-white p-3 rounded-sm border border-slate-200">
-                        <span className="text-slate-600 font-medium">Sedang Diproses:</span>
-                        <Badge variant="outline" className="rounded-sm border-indigo-200 bg-indigo-50 text-indigo-700 font-semibold">
-                          {stats.diproses} surat
-                        </Badge>
-                      </div>
-                      <div className="flex justify-between items-center bg-white p-3 rounded-sm border border-slate-200">
-                        <span className="text-slate-600 font-medium">Selesai Ditindaklanjuti:</span>
-                        <Badge variant="outline" className="rounded-sm border-emerald-200 bg-emerald-50 text-emerald-700 font-semibold">
-                          {stats.selesaiMasuk} surat
+                        <span className="text-slate-600 font-medium">Total Surat Masuk:</span>
+                        <Badge variant="outline" className="rounded-sm border-sky-200 bg-sky-50 text-sky-700 font-semibold">
+                          {stats.totalMasuk} surat
                         </Badge>
                       </div>
                     </div>
                   </div>
 
-                  {/* Status Breakdown Surat Keluar */}
+                  {/* Surat Keluar */}
                   <div className="bg-slate-50/50 rounded-md p-6 border border-slate-200 space-y-3">
                     <span className="text-sm font-semibold text-slate-800 flex items-center gap-2">
                       <Send className="w-4 h-4 text-indigo-600" />
-                      Penerbitan Surat Keluar
+                      Surat Keluar
                     </span>
                     <div className="space-y-2 text-xs">
-                      <div className="flex justify-between items-center bg-white p-3 rounded-sm border border-slate-200">
-                        <span className="text-slate-600 font-medium">Draft Naskah:</span>
-                        <Badge variant="outline" className="rounded-sm border-slate-200 bg-slate-100 text-slate-700 font-semibold">
-                          {stats.draftKeluar} surat
-                        </Badge>
-                      </div>
-                      <div className="flex justify-between items-center bg-white p-3 rounded-sm border border-slate-200">
-                        <span className="text-slate-600 font-medium">Terkirim Resmi:</span>
-                        <Badge variant="outline" className="rounded-sm border-emerald-200 bg-emerald-50 text-emerald-700 font-semibold">
-                          {stats.terkirimKeluar} surat
-                        </Badge>
-                      </div>
                       <div className="flex justify-between items-center bg-white p-3 rounded-sm border border-slate-200">
                         <span className="text-slate-600 font-medium">Total Surat Keluar:</span>
                         <Badge variant="outline" className="rounded-sm border-indigo-200 bg-indigo-50 text-indigo-700 font-semibold">
@@ -764,25 +610,12 @@ export default function SuratMenyuratPage() {
         </Card>
       </div>
 
-      {/* Disposisi Modal (Quick edit popup) */}
-      <SuratDisposisiDialog
-        open={disposisiModalOpen}
-        onOpenChange={setDisposisiModalOpen}
-        surat={disposisiTarget}
-        currentUserName={profile?.displayName || 'Kepala SatKer'}
-        onSave={handleSaveDisposisi}
-      />
-
       {/* Detail Dialog */}
       <SuratDetailDialog
         open={detailModalOpen}
         onOpenChange={setDetailModalOpen}
         surat={detailTarget}
         type={detailType}
-        onOpenDisposisi={(s) => {
-          setSelectedDisposisiId(s.id);
-          setActiveTab('disposisi');
-        }}
       />
 
       {/* Surat Composer Live Template Generator */}
@@ -790,12 +623,12 @@ export default function SuratMenyuratPage() {
         open={composerModalOpen}
         onOpenChange={setComposerModalOpen}
         defaultSatkerName={satkerDisplayName}
+        defaultSatkerInitials={satkerInitials}
         defaultKepalaName={profile?.displayName || ''}
         defaultKepalaEmail={userContact.email || profile?.email || user?.email || ''}
         defaultKepalaPhone={userContact.phone || profile?.phoneNumber || profile?.phone || ''}
         nextSequence={nextSequence}
         targetSatkerId={isSuperAdmin && selectedSatkerFilter !== 'all' ? selectedSatkerFilter : undefined}
-        surat={composerTarget}
         onSavedToSuratKeluar={() => {
           fetchData(true);
         }}

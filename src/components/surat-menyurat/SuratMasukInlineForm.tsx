@@ -5,10 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AutoResizeTextarea } from '@/components/ui/auto-resize-textarea';
+import IndonesianDatePicker from './IndonesianDatePicker';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/lib/AuthContext';
 import {
-  STATUS_SURAT_MASUK_OPTIONS,
   KATEGORI_SURAT_MASUK,
   INSTITUTION_SCOPES,
   KLASIFIKASI_KEARSIPAN_POPULAR,
@@ -17,13 +17,12 @@ import { formatKodeArsip } from '@/lib/surat-menyurat/numbering';
 import {
   InstitutionScope,
   SifatSurat,
-  StatusSuratMasuk,
   SuratAttachment,
   SuratMasuk,
 } from '@/lib/surat-menyurat/types';
 import { UPLOAD_ACCEPT, UPLOAD_TYPES_TEXT, uploadFileProblem } from '@/lib/uploadFileTypes';
 import type { ExtractedSuratMasuk } from '@/lib/surat-menyurat/extractSuratMasuk';
-import { AlertCircle, FileText, Loader2, Paperclip, Pencil, Plus, Trash2, Upload, X } from 'lucide-react';
+import { AlertCircle, FileText, Loader2, Pencil, Plus, Trash2, Upload, X } from 'lucide-react';
 
 interface Props {
   suratToEdit?: SuratMasuk | null;
@@ -58,16 +57,20 @@ export default function SuratMasukInlineForm({
   const [sifat, setSifat] = useState<SifatSurat>('biasa');
   const [kategori, setKategori] = useState(KATEGORI_SURAT_MASUK[0]);
   const [ringkasan, setRingkasan] = useState('');
-  const [status, setStatus] = useState<StatusSuratMasuk>('menunggu_disposisi');
   const [attachments, setAttachments] = useState<SuratAttachment[]>([]);
 
   const [uploading, setUploading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisMessage, setAnalysisMessage] = useState('');
+  const [dragActive, setDragActive] = useState(false);
+  const [fieldsRevealed, setFieldsRevealed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   const isEdit = Boolean(suratToEdit);
+  const busy = uploading || analyzing;
+  // A new letter starts as one big upload area; the fields appear once the letter is read (or on request).
+  const showFields = isEdit || fieldsRevealed || (attachments.length > 0 && !busy);
 
   useEffect(() => {
     if (suratToEdit) {
@@ -85,7 +88,6 @@ export default function SuratMasukInlineForm({
       setSifat(suratToEdit.sifat || 'biasa');
       setKategori(suratToEdit.kategori || KATEGORI_SURAT_MASUK[0]);
       setRingkasan(suratToEdit.ringkasan || '');
-      setStatus(suratToEdit.status || 'menunggu_disposisi');
       setAttachments(suratToEdit.attachments || []);
     } else {
       const today = new Date().toISOString().slice(0, 10);
@@ -112,7 +114,6 @@ export default function SuratMasukInlineForm({
       setSifat('biasa');
       setKategori(KATEGORI_SURAT_MASUK[0]);
       setRingkasan('');
-      setStatus('menunggu_disposisi');
       setAttachments([]);
     }
     setError('');
@@ -128,9 +129,8 @@ export default function SuratMasukInlineForm({
     setKodeArsip(auto);
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0 || !user) return;
+  const uploadFiles = async (files: File[]) => {
+    if (files.length === 0 || !user || busy) return;
 
     const initial = { nomorSurat, tanggalSurat, pengirim, penerima, perihal, ringkasan };
     let firstUploaded: File | null = null;
@@ -188,14 +188,26 @@ export default function SuratMasukInlineForm({
           setAnalysisMessage(`Berkas sudah diunggah, tetapi analisis gagal: ${err instanceof Error ? err.message : 'Silakan isi data secara manual.'}`);
         } finally {
           setAnalyzing(false);
+          setFieldsRevealed(true);
         }
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Gagal mengunggah berkas.');
     } finally {
       setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    void uploadFiles(files);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    setDragActive(false);
+    void uploadFiles(Array.from(e.dataTransfer.files));
   };
 
   const handleRemoveAttachment = (attId: string) => {
@@ -248,7 +260,6 @@ export default function SuratMasukInlineForm({
         sifat,
         kategori,
         ringkasan: ringkasan.trim(),
-        status,
         attachments,
         ...(targetSatkerId ? { satkerId: targetSatkerId } : {}),
       };
@@ -275,7 +286,6 @@ export default function SuratMasukInlineForm({
     }
   };
 
-  const statusLabel = STATUS_SURAT_MASUK_OPTIONS.find((opt) => opt.value === status)?.label || 'Menunggu Disposisi';
 
   return (
     <form
@@ -295,7 +305,7 @@ export default function SuratMasukInlineForm({
             <p className="text-[11px] text-slate-400">
               {isEdit
                 ? 'Perbarui data naskah masuk dan kelengkapan arsip'
-                : 'Pencatatan agenda surat masuk dan penomoran kode klasifikasi kearsipan'}
+                : 'Unggah surat yang dipindai, data agenda terisi otomatis oleh AI'}
             </p>
           </div>
         </div>
@@ -318,6 +328,64 @@ export default function SuratMasukInlineForm({
       )}
       {analysisMessage && <div role="status" className="rounded-sm border border-sky-200 bg-sky-50 p-2.5 text-xs text-sky-800">{analysisMessage}</div>}
 
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={UPLOAD_ACCEPT}
+        multiple
+        onChange={handleFileInputChange}
+        className="hidden"
+        id="file-upload-masuk"
+      />
+
+      {!showFields && (
+        <div>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => fileInputRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); if (!busy) setDragActive(true); }}
+            onDragLeave={() => setDragActive(false)}
+            onDrop={handleDrop}
+            className={`flex w-full flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed px-6 py-16 text-center transition-colors cursor-pointer disabled:cursor-wait ${
+              dragActive
+                ? 'border-sky-500 bg-sky-50'
+                : 'border-slate-300 bg-slate-50/60 hover:border-sky-400 hover:bg-sky-50/50'
+            }`}
+          >
+            {busy ? (
+              <>
+                <Loader2 className="size-10 animate-spin text-sky-600" />
+                <span className="text-base font-semibold text-slate-800">
+                  {analyzing ? 'Membaca surat dengan AI...' : 'Mengunggah surat...'}
+                </span>
+                <span className="text-xs text-slate-500">Data surat akan terisi otomatis. Mohon tunggu sebentar.</span>
+              </>
+            ) : (
+              <>
+                <span className="flex size-14 items-center justify-center rounded-full bg-sky-100 text-sky-600">
+                  <Upload className="size-7" />
+                </span>
+                <span className="text-base font-semibold text-slate-800">Unggah Surat</span>
+                <span className="text-xs text-slate-500">
+                  Klik atau tarik berkas surat ke sini. AI akan membaca surat dan mengisi data secara otomatis.
+                </span>
+                <span className="text-[11px] text-slate-400">Format: {UPLOAD_TYPES_TEXT} (Maks 10MB)</span>
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setFieldsRevealed(true)}
+            className="mx-auto mt-3 block text-xs font-semibold text-sky-700 hover:underline disabled:opacity-50 cursor-pointer"
+          >
+            Isi data secara manual
+          </button>
+        </div>
+      )}
+
+      {showFields && (<>
       {/* Agenda & Klasifikasi Strip */}
       <div className={`p-4 bg-slate-50 border border-slate-200 rounded-sm grid grid-cols-1 sm:grid-cols-2 ${isEdit ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-4`}>
         {isEdit && <div>
@@ -416,48 +484,27 @@ export default function SuratMasukInlineForm({
         </div>
 
         <div>
-          <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Tanggal Surat *</Label>
-          <Input
-            type="date"
+          <Label htmlFor="masuk-tanggal-surat" className="text-xs font-semibold text-slate-700 block mb-1.5">Tanggal Surat *</Label>
+          <IndonesianDatePicker
+            id="masuk-tanggal-surat"
+            label="Tanggal Surat"
             value={tanggalSurat}
-            onChange={(e) => setTanggalSurat(e.target.value)}
-            className="rounded-sm bg-white border-slate-200 text-xs h-9"
+            onValueChange={setTanggalSurat}
             required
           />
         </div>
 
         <div>
-          <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Tanggal Diterima *</Label>
-          <Input
-            type="date"
+          <Label htmlFor="masuk-tanggal-diterima" className="text-xs font-semibold text-slate-700 block mb-1.5">Tanggal Diterima *</Label>
+          <IndonesianDatePicker
+            id="masuk-tanggal-diterima"
+            label="Tanggal Diterima"
             value={tanggalDiterima}
-            onChange={(e) => setTanggalDiterima(e.target.value)}
-            className="rounded-sm bg-white border-slate-200 text-xs h-9"
+            onValueChange={setTanggalDiterima}
             required
           />
         </div>
 
-        {isEdit && (
-          <div>
-            <Label className="text-xs font-semibold text-slate-700 block mb-1.5">Status Penanganan</Label>
-            <Select value={status} onValueChange={(val) => val && setStatus(val as StatusSuratMasuk)}>
-              <SelectTrigger className="w-full rounded-sm bg-white border-slate-200 text-xs h-9">
-                <SelectValue>{statusLabel}</SelectValue>
-              </SelectTrigger>
-              <SelectContent className="rounded-md border border-slate-200 bg-white p-1 shadow-xl">
-                {STATUS_SURAT_MASUK_OPTIONS.map((opt) => (
-                  <SelectItem
-                    key={opt.value}
-                    value={opt.value}
-                    className="rounded-sm py-2 pr-8 pl-3 text-xs font-medium text-slate-700 focus:bg-indigo-50 focus:text-indigo-900"
-                  >
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
       </div>
 
       {/* Row 2: Pengirim & Penerima */}
@@ -551,19 +598,10 @@ export default function SuratMasukInlineForm({
         )}
 
         <div className="flex items-center gap-2">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept={UPLOAD_ACCEPT}
-            multiple
-            onChange={handleFileUpload}
-            className="hidden"
-            id="file-upload-masuk"
-          />
           <Button
             type="button"
             variant="outline"
-            disabled={uploading || analyzing}
+            disabled={busy}
             onClick={() => fileInputRef.current?.click()}
             className="rounded-sm border-dashed border-slate-300 text-slate-600 hover:bg-slate-50 text-xs h-9 flex items-center gap-2 shadow-xs cursor-pointer"
           >
@@ -582,8 +620,9 @@ export default function SuratMasukInlineForm({
             )}
           </Button>
         </div>
-        <p className="mt-2 text-[11px] text-slate-500">Berkas surat pertama dianalisis dengan Gemini untuk mengisi data. Periksa hasilnya sebelum menyimpan.</p>
+        <p className="mt-2 text-[11px] text-slate-500">Surat yang baru diunggah dibaca otomatis oleh AI untuk mengisi kolom yang masih kosong. Periksa hasilnya sebelum menyimpan.</p>
       </div>
+      </>)}
 
       {/* Footer Actions */}
       <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
@@ -596,9 +635,9 @@ export default function SuratMasukInlineForm({
         >
           Batal
         </Button>
-        <Button
+        {showFields && <Button
           type="submit"
-          disabled={saving || uploading || analyzing}
+          disabled={saving || busy}
           className="rounded-sm bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold h-9 flex items-center gap-2 shadow-sm cursor-pointer"
         >
           {saving ? (
@@ -609,7 +648,7 @@ export default function SuratMasukInlineForm({
           ) : (
             isEdit ? 'Simpan Perubahan' : 'Catat Surat Masuk'
           )}
-        </Button>
+        </Button>}
       </div>
     </form>
   );

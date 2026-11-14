@@ -1,4 +1,4 @@
-import { InstitutionScope, SifatSurat, StatusSuratMasuk, StatusSuratKeluar, TemplateType } from './types';
+import { InstitutionScope, SifatSurat, TemplateType } from './types';
 
 export const SURAT_MENYURAT_PATH = '/dashboard/surat-menyurat';
 
@@ -46,27 +46,13 @@ export const SIFAT_SURAT_OPTIONS: { value: SifatSurat; label: string; tone: stri
   { value: 'rahasia', label: 'Rahasia', tone: 'bg-purple-50 text-purple-700 border-purple-200' },
 ];
 
-export const STATUS_SURAT_MASUK_OPTIONS: { value: StatusSuratMasuk; label: string; tone: string }[] = [
-  { value: 'menunggu_disposisi', label: 'Menunggu Disposisi', tone: 'bg-amber-50 text-amber-700 border-amber-200' },
-  { value: 'diproses', label: 'Sedang Diproses', tone: 'bg-sky-50 text-sky-700 border-sky-200' },
-  { value: 'selesai', label: 'Selesai', tone: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  { value: 'diarsipkan', label: 'Diarsipkan', tone: 'bg-slate-100 text-slate-600 border-slate-200' },
-];
-
-export const STATUS_SURAT_KELUAR_OPTIONS: { value: StatusSuratKeluar; label: string; tone: string }[] = [
-  { value: 'draft', label: 'Draft', tone: 'bg-slate-100 text-slate-600 border-slate-200' },
-  { value: 'disetujui', label: 'Disetujui', tone: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
-  { value: 'terkirim', label: 'Terkirim', tone: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  { value: 'diarsipkan', label: 'Diarsipkan', tone: 'bg-slate-100 text-slate-600 border-slate-200' },
-];
-
 export const KATEGORI_SURAT_MASUK = [
   'Undangan / Rapat',
   'Pemberitahuan / Informasi',
   'Permohonan / Pengajuan',
   'Surat Edaran (SE)',
   'Surat Keputusan (SK)',
-  'Instruksi / Disposisi Rektorat',
+  'Instruksi Rektorat',
   'Kerjasama / MoU',
   'Laporan / Evaluasi',
   'Lainnya',
@@ -82,43 +68,6 @@ export const KATEGORI_SURAT_KELUAR = [
   'Surat Rekomendasi',
   'Surat Balasan',
   'Lainnya',
-];
-
-export const INSTRUKSI_DISPOSISI_PRESETS = [
-  'Tindak lanjuti segera',
-  'Hadiri dan wakili',
-  'Koordinasikan dengan tim / pihak terkait',
-  'Pelajari & siapkan bahan pertimbangan',
-  'Siapkan balasan / tanggapan surat',
-  'Jadwalkan rapat / pertemuan',
-  'Untuk diketahui & dipedomani',
-  'Arsipkan',
-];
-
-export const DISPOSISI_DESTINATIONS = [
-  'Wakil Rektor I (Akademik & Kemahasiswaan)',
-  'Wakil Rektor II (SDM & Keuangan)',
-  'Sekretariat Rektorat',
-  'Fakultas Agama Islam (FAI)',
-  'Fakultas Bahasa dan Sastra (FBS)',
-  'Fakultas Sains & Teknologi (FST / FT / FMIPA)',
-  'Fakultas Ilmu Kesehatan (FIK)',
-  'Fakultas Bisnis dan Informatika (FIA)',
-  'Lembaga Penelitian & Pengabdian Masyarakat (LPPM)',
-  'Badan Penjaminan Mutu (BPM / PJM)',
-  'Biro Administrasi Akademik (BAAK)',
-  'Biro Administrasi Keuangan (BAK)',
-  'Perpustakaan Universitas',
-  'Bagian Umum & Sarana Prasarana',
-];
-
-export const DISPOSISI_ACTIONS = [
-  'Tanggapan dan Saran',
-  'Proses lebih lanjut',
-  'Koordinasi / Konfirmasikan',
-  'Jadwalkan rapat / Pertemuan',
-  'Untuk diketahui / Dipedomani',
-  'Arsipkan',
 ];
 
 export const KLASIFIKASI_KEARSIPAN_POPULAR: { code: string; name: string }[] = [
