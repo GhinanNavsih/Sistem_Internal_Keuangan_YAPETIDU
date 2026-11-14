@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable, { RowInput, Styles } from 'jspdf-autotable';
 import { LOGO_UNIPDU_BASE64 } from './logoConstants';
-import { renderFileToCanvas } from './ocrParser';
+import { renderFileToCanvas } from './renderFileToCanvas';
 import { getPrintableProposalSignatures } from '@/lib/payroll/proposalSignatures';
 import {
   ExpenseReport,

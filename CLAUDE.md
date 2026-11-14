@@ -62,7 +62,6 @@ Read the linked doc before changing the area.
 - SatKer finance books: `docs/features/satker-finance.md`
 - Koperasi page and loans: `docs/features/koperasi.md`
 - Account switching (Ganti Peran): `docs/features/account-switching.md`
-- Uraian OCR (`/api/parse-rekap`): `docs/features/uraian-ocr.md`
 - Tugas Loyalis (to-do tasks for individual Loyalis), `/dashboard/tugas` and `/employee/tugas`: `docs/features/loyalis-tasks.md`
 
 ## Agent skills

@@ -296,7 +296,7 @@ export default function LoginPage() {
 
           {/* Feature pills */}
           <div className="flex flex-wrap justify-center gap-3">
-            {['Penggajian Otomatis', 'Scan AI Rekap', 'Cetak Slip Gaji', 'Laporan XLSX / PDF'].map((feat) => (
+            {['Penggajian Otomatis', 'Cetak Slip Gaji', 'Laporan XLSX / PDF'].map((feat) => (
               <span
                 key={feat}
                 className="px-4 py-2 rounded-full bg-white/10 border border-white/20 text-white/90 text-xs font-semibold backdrop-blur-sm"

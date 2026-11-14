@@ -21,8 +21,8 @@ import {
   SelectValue
 } from '@/components/ui/select';
 import {
-  Upload, Loader2, FileText, AlertCircle, ImageIcon, Trash2, Eye,
-  RotateCw, Sparkles, X, Crop, Building2, Code2, ShieldCheck, FileDown, Plus, Save,
+  Loader2, FileText, AlertCircle, ImageIcon,
+  X, Building2, Code2, ShieldCheck, FileDown, Plus, Save,
   Unlock
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
@@ -55,9 +55,6 @@ import {
   isSatpamLegacyBonusColumn,
   normalizeSatpamUraianEntry,
 } from '@/lib/payroll/satpamCompensation';
-import {
-  renderFileToCanvas, runOcr, parseRekapRows, matchEmployee, cropCanvas,
-} from '@/utils/ocrParser';
 import type {
   BlueCollarEmployee, UraianEntry, RekapColumn
 } from '@/types';
@@ -143,10 +140,7 @@ export default function RekapPekaryaPage() {
   const docId = `${year}_${String(month).padStart(2, '0')}_${category}`;
 
   // ── States ──
-  const [imageStats, setImageStats] = useState<{ w: number, h: number, size: number, type: string } | null>(null);
   const [loadingEmps, setLoadingEmps] = useState(false);
-  const [lastScanResult, setLastScanResult] = useState<any>(null);
-  const [showDebugModal, setShowDebugModal] = useState(false);
   const [showSavePreview, setShowSavePreview] = useState(false);
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
   const [tableData, setTableData] = useState<Record<string, Record<string, number>>>({});
@@ -154,13 +148,7 @@ export default function RekapPekaryaPage() {
   const [satpamDutySources, setSatpamDutySources] = useState<
     Record<string, UraianEntry['satpamDutySource']>
   >({});
-  const [rowBounds, setRowBounds] = useState<Record<string, { top: number, bottom: number }>>({});
-  const [detectedColumnOrder, setDetectedColumnOrder] = useState<string[] | null>(null);
-  const [scanImgDims, setScanImgDims] = useState<{ w: number, h: number } | null>(null);
 
-  const [scanning, setScanning] = useState(false);
-  const [scanProgress, setScanProgress] = useState(0);
-  const [showScanPanel, setShowScanPanel] = useState(false);
   const [saving, setSaving] = useState(false);
   const isSavingRef = useRef(false);
   const [saved, setSaved] = useState(false);
@@ -713,22 +701,6 @@ export default function RekapPekaryaPage() {
       : counts;
   }, [year, month, driverPiketSchedules, periodPremiumDates]);
 
-  // ── File states ──
-  const [file, setFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [rotation, setRotation] = useState(0);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const [crop, setCrop] = useState({ x: 0, y: 0, w: 100, h: 100 });
-  const [croppedPreviewUrl, setCroppedPreviewUrl] = useState<string | null>(null);
-  const [isCropping, setIsCropping] = useState(false);
-
-  const [dragMode, setDragMode] = useState<'none' | 'move' | 't' | 'b' | 'l' | 'r' | 'tl' | 'tr' | 'bl' | 'br'>('none');
-  const [startPos, setStartPos] = useState({ x: 0, y: 0 });
-  const [startCrop, setStartCrop] = useState({ x: 0, y: 0, w: 100, h: 100 });
-  const containerRef = useRef<HTMLDivElement>(null);
-
   // ── Fetch Employees & Uraian Presensi Data ──
   useEffect(() => {
     if (!category) return;
@@ -747,7 +719,6 @@ export default function RekapPekaryaPage() {
       return;
     }
 
-    setDetectedColumnOrder(null);
     setMessage(null);
     setSaved(false);
     setHistoricalSpjCorrectionMode(false);
@@ -882,164 +853,6 @@ export default function RekapPekaryaPage() {
     // re-run when they arrive — the guard above is what keeps that re-run from
     // wiping in-progress edits.
   }, [category, month, year, period, docId, profile, ketuaShiftIds, employees, satpamRekapSyncs]);
-
-  const handleFileUpload = useCallback(async (newFile: File, rot: number = rotation) => {
-    setFile(newFile); setDetectedColumnOrder(null);
-    const url = URL.createObjectURL(newFile); setPreviewUrl(url);
-    const img = new Image();
-    img.onload = () => setImageStats({ w: img.width, h: img.height, size: newFile.size, type: newFile.type });
-    img.src = url;
-    try {
-      const canvas = await renderFileToCanvas(newFile, rot);
-      canvasRef.current = canvas; setPreviewUrl(canvas.toDataURL('image/png'));
-      setCroppedPreviewUrl(null); setCrop({ x: 0, y: 0, w: 100, h: 100 });
-    } catch (err) { setMessage({ type: 'error', text: 'Gagal memproses file.' }); }
-  }, [rotation]);
-
-  useEffect(() => {
-    const handlePaste = (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].type.indexOf('image') !== -1) {
-          const blob = items[i].getAsFile(); if (blob) handleFileUpload(blob);
-        }
-      }
-    };
-    window.addEventListener('paste', handlePaste);
-    return () => window.removeEventListener('paste', handlePaste);
-  }, [handleFileUpload]);
-
-  const handleRotate = () => {
-    const nextRot = (rotation + 90) % 360;
-    setRotation(nextRot); if (file) handleFileUpload(file, nextRot);
-  };
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault(); const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile) handleFileUpload(droppedFile);
-  }, [handleFileUpload]);
-
-  const handleClearFile = () => {
-    setFile(null); setPreviewUrl(null); setCroppedPreviewUrl(null);
-    setRowBounds({}); setCrop({ x: 0, y: 0, w: 100, h: 100 }); setDetectedColumnOrder(null);
-  };
-
-  const handleDoneCropping = () => {
-    setIsCropping(false);
-    if (canvasRef.current) {
-      const cropped = cropCanvas(canvasRef.current, crop);
-      setCroppedPreviewUrl(cropped.toDataURL('image/png'));
-    }
-  };
-
-  const getDisplayRect = () => {
-    if (!containerRef.current || !canvasRef.current) return { x: 0, y: 0, w: 1, h: 1 };
-    const container = containerRef.current.getBoundingClientRect();
-    const canvas = canvasRef.current;
-    const containerRatio = container.width / container.height;
-    const canvasRatio = canvas.width / canvas.height;
-    let w, h, x, y;
-    if (canvasRatio > containerRatio) { w = container.width; h = container.width / canvasRatio; x = 0; y = (container.height - h) / 2; }
-    else { h = container.height; w = container.height * canvasRatio; y = 0; x = (container.width - w) / 2; }
-    return { x, y, w, h };
-  };
-
-  const onMouseDown = (e: React.MouseEvent, mode: typeof dragMode) => {
-    if (!isCropping) return;
-    e.stopPropagation(); setDragMode(mode);
-    setStartPos({ x: e.clientX, y: e.clientY }); setStartCrop({ ...crop });
-  };
-
-  const onMouseMove = (e: React.MouseEvent) => {
-    if (dragMode === 'none' || !containerRef.current) return;
-    const display = getDisplayRect();
-    const dx = ((e.clientX - startPos.x) / display.w) * 100;
-    const dy = ((e.clientY - startPos.y) / display.h) * 100;
-    setCrop(prev => {
-      let next = { ...prev };
-      if (dragMode === 'move') {
-        next.x = Math.max(0, Math.min(100 - prev.w, startCrop.x + dx));
-        next.y = Math.max(0, Math.min(100 - prev.h, startCrop.y + dy));
-      } else {
-        if (dragMode.includes('t')) { const newY = Math.max(0, Math.min(startCrop.y + startCrop.h - 5, startCrop.y + dy)); next.h = startCrop.h - (newY - startCrop.y); next.y = newY; }
-        else if (dragMode.includes('b')) { next.h = Math.max(5, Math.min(100 - prev.y, startCrop.h + dy)); }
-        if (dragMode.includes('l')) { const newX = Math.max(0, Math.min(startCrop.x + startCrop.w - 5, startCrop.x + dx)); next.w = startCrop.w - (newX - startCrop.x); next.x = newX; }
-        else if (dragMode.includes('r')) { next.w = Math.max(5, Math.min(100 - prev.x, startCrop.w + dx)); }
-      }
-      return next;
-    });
-    return;
-  };
-
-  const sanitizeAiValue = (val: any): number => {
-    if (typeof val === 'number') return val;
-    if (!val || val === '-' || val === 'Rp -') return 0;
-    let clean = String(val).replace(/Rp|\s/gi, '');
-    clean = clean.replace(/[,\.]00$/, '');
-    const parts = clean.split(/[,\.]/);
-    if (parts.length > 1) {
-      if (parts[parts.length - 1].length === 3) {
-        clean = parts.join('');
-      } else {
-        const lastPart = parts.pop();
-        clean = parts.join('') + '.' + lastPart;
-      }
-    }
-    const parsed = parseFloat(clean);
-    return isNaN(parsed) ? 0 : Math.round(parsed);
-  };
-
-  const handleAiScan = async () => {
-    if (!file || !canvasRef.current) return;
-    setScanning(true); setScanProgress(30);
-    try {
-      const targetCanvas = cropCanvas(canvasRef.current, crop);
-      const blob = await new Promise<Blob>((resolve) => targetCanvas.toBlob((b) => resolve(b!), 'image/png'));
-      const formData = new FormData();
-      formData.append('file', blob, 'cropped.png');
-      const baseCols = getRekapColumns(category, period);
-      formData.append('columns', JSON.stringify(baseCols.map(c => ({ key: c.key, label: c.label }))));
-      if (!user) throw new Error('Sesi tidak ditemukan.');
-      const token = await user.getIdToken();
-      const res = await fetch('/api/parse-rekap', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-      if (!res.ok) throw new Error('AI Scan failed');
-      const { data } = await res.json();
-      setLastScanResult(data);
-      const structured = data?.structured;
-      const aiDetectedOrder = data?.detected_column_order;
-
-      if (structured && structured.length > 0) {
-        const empList = employees.map(e => ({ employeeId: e.employeeId, name: e.name }));
-        let matchedCount = 0;
-        const newTableData = { ...tableData };
-        const newRowBounds: Record<string, { top: number, bottom: number }> = {};
-        for (const entry of structured) {
-          const match = matchEmployee(entry.name, empList);
-          if (match) {
-            matchedCount++;
-            const sanitized: Record<string, number> = {};
-            Object.entries(entry.values).forEach(([k, v]) => {
-              if (isAttendanceDerivedRekapColumn(category, period, k)) return;
-              sanitized[k] = sanitizeAiValue(v);
-            });
-            newTableData[match.employeeId] = { ...newTableData[match.employeeId], ...sanitized };
-            if (entry.y_top !== undefined && entry.y_bottom !== undefined) newRowBounds[match.employeeId] = { top: entry.y_top, bottom: entry.y_bottom };
-          }
-        }
-        hasUnsavedEdits.current = true;
-        setTableData(newTableData); setRowBounds(newRowBounds);
-        if (Array.isArray(aiDetectedOrder) && aiDetectedOrder.length > 0) setDetectedColumnOrder(aiDetectedOrder);
-        if (data.img_w && data.img_h) setScanImgDims({ w: data.img_w, h: data.img_h });
-        setMessage({ type: 'success', text: `AI Scan selesai — ${matchedCount} karyawan terdeteksi.` });
-      } else throw new Error('AI tidak menemukan data.');
-    } catch (err: any) { setMessage({ type: 'error', text: `AI Scan gagal: ${err.message}` }); }
-    finally { setScanning(false); setScanProgress(0); }
-  };
 
   const updateCell = (employeeId: string, key: string, value: string) => {
     const isHistoricalSpjCell =
@@ -1450,9 +1263,6 @@ export default function RekapPekaryaPage() {
     }).filter(row => row.fields.length > 0);
   };
 
-  const display = getDisplayRect();
-  const hasScanData = Object.keys(rowBounds).length > 0;
-
   const handleExportPdf = async () => {
     if (!category || employees.length === 0) return;
 
@@ -1607,13 +1417,8 @@ export default function RekapPekaryaPage() {
         (col) => category !== 'SATPAM' || !isSatpamLegacyBonusColumn(col),
       ),
     ];
-    if (detectedColumnOrder) {
-      return detectedColumnOrder
-        .map(key => allCols.find(c => c.key === key))
-        .filter((c): c is RekapColumn => !!c);
-    }
     return allCols;
-  }, [category, period, detectedColumnOrder, customColumns]);
+  }, [category, period, customColumns]);
 
   const spjDiscrepancies = useMemo(() => {
     // A manual entry is the intended source for the paper-based period, so a
@@ -1717,80 +1522,12 @@ export default function RekapPekaryaPage() {
             Ekspor Templat Kosong
           </Button>
         )}
-        <Button
-          variant="outline"
-          onClick={() => setShowScanPanel(!showScanPanel)}
-          disabled={!category || employees.length === 0}
-          className="rounded-sm border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer ml-auto disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Sparkles className="w-4 h-4 text-indigo-600" />
-          {showScanPanel ? 'Sembunyikan Panel Scan' : 'Buka Panel Scan'}
-        </Button>
       </div>
 
       <FloatingSnackbar message={message} />
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
-        {showScanPanel && (
-          <div className="xl:col-span-4 space-y-6">
-            <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6">
-              <div className={`relative p-4 border-2 border-dashed rounded-md transition-all duration-300 ${file ? 'border-indigo-100 bg-indigo-50/20' : 'border-slate-200 hover:border-indigo-300'}`} onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
-                {file ? (
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-xs text-slate-600"><FileText className="w-3.5 h-3.5 text-indigo-500" /><span className="truncate max-w-[120px] font-medium">{file.name}</span></div>
-                      <div className="flex gap-1">
-                        {lastScanResult && <Button variant="ghost" size="icon" onClick={() => setShowDebugModal(true)} className="h-7 w-7 rounded-sm text-indigo-500"><Code2 className="w-3.5 h-3.5" /></Button>}
-                        <Button variant={isCropping ? "secondary" : "ghost"} size="icon" onClick={() => setIsCropping(!isCropping)} className="h-7 w-7 rounded-sm"><Crop className={`w-3.5 h-3.5 ${isCropping ? 'text-indigo-600' : 'text-slate-400'}`} /></Button>
-                        <Button variant="ghost" size="icon" onClick={handleRotate} className="h-7 w-7 rounded-sm"><RotateCw className="w-3.5 h-3.5" /></Button>
-                        <Button variant="ghost" size="icon" onClick={handleClearFile} className="h-7 w-7 rounded-sm text-red-500"><Trash2 className="w-3.5 h-3.5" /></Button>
-                      </div>
-                    </div>
-                    <div ref={containerRef} onMouseMove={onMouseMove} onMouseUp={() => setDragMode('none')} onMouseLeave={() => setDragMode('none')} className="relative aspect-[3/4] w-full bg-white rounded-md border border-slate-200 overflow-hidden select-none cursor-crosshair">
-                      {previewUrl ? (
-                        <>
-                          <img src={isCropping ? previewUrl : (croppedPreviewUrl || previewUrl)} alt="Preview" className="w-full h-full object-contain pointer-events-none" />
-                          {isCropping && (
-                            <div className="absolute pointer-events-auto" style={{ left: display.x, top: display.y, width: display.w, height: display.h }}>
-                              <div className="absolute top-0 left-0 w-full bg-slate-900/60" style={{ height: `${crop.y}%` }} />
-                              <div className="absolute bottom-0 left-0 w-full bg-slate-900/60" style={{ height: `${100 - crop.y - crop.h}%` }} />
-                              <div className="absolute top-0 left-0 h-full bg-slate-900/60" style={{ top: `${crop.y}%`, height: `${crop.h}%`, width: `${crop.x}%` }} />
-                              <div className="absolute top-0 right-0 h-full bg-slate-900/60" style={{ top: `${crop.y}%`, height: `${crop.h}%`, width: `${100 - crop.x - crop.w}%` }} />
-                              <div onMouseDown={(e) => onMouseDown(e, 'move')} className="absolute border-2 border-indigo-400 shadow-[0_0_0_1px_rgba(255,255,255,0.3)] cursor-move" style={{ left: `${crop.x}%`, top: `${crop.y}%`, width: `${crop.w}%`, height: `${crop.h}%` }}>
-                                <div onMouseDown={(e) => onMouseDown(e, 't')} className="absolute -top-1 left-0 w-full h-2 cursor-ns-resize" />
-                                <div onMouseDown={(e) => onMouseDown(e, 'b')} className="absolute -bottom-1 left-0 w-full h-2 cursor-ns-resize" />
-                                <div onMouseDown={(e) => onMouseDown(e, 'l')} className="absolute top-0 -left-1 h-full w-2 cursor-ew-resize" />
-                                <div onMouseDown={(e) => onMouseDown(e, 'r')} className="absolute top-0 -right-1 h-full w-2 cursor-ew-resize" />
-                                <div onMouseDown={(e) => onMouseDown(e, 'tl')} className="absolute -top-2 -left-2 w-4 h-4 cursor-nwse-resize" />
-                                <div onMouseDown={(e) => onMouseDown(e, 'tr')} className="absolute -top-2 -right-2 w-4 h-4 cursor-nesw-resize" />
-                                <div onMouseDown={(e) => onMouseDown(e, 'bl')} className="absolute -bottom-2 -left-2 w-4 h-4 cursor-nesw-resize" />
-                                <div onMouseDown={(e) => onMouseDown(e, 'br')} className="absolute -bottom-2 -right-2 w-4 h-4 cursor-nwse-resize" />
-                              </div>
-                            </div>
-                          )}
-                          {isCropping && (<div className="absolute bottom-4 left-4 right-4 bg-white/95 backdrop-blur-md p-2 rounded-md border border-indigo-100 shadow-2xl z-50 animate-in fade-in slide-in-from-bottom-2"><Button size="sm" className="rounded-sm w-full h-8 text-xs bg-indigo-600 text-white font-bold" onClick={handleDoneCropping}>Confirm Crop</Button></div>)}
-                        </>
-                      ) : <div className="aspect-[3/4] w-full flex items-center justify-center bg-slate-50 rounded-md animate-pulse"><Loader2 className="w-6 h-6 animate-spin text-slate-200" /></div>}
-                    </div>
-                    <div className="pt-2">
-                      <Button onClick={handleAiScan} disabled={scanning || !file || !category} className="w-full rounded-sm bg-indigo-600 text-white font-semibold shadow-md shadow-indigo-100 hover:bg-indigo-700 transition-all"><Sparkles className="w-4 h-4 mr-2" /> Scan AI</Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-12 text-center cursor-pointer group" onClick={() => fileInputRef.current?.click()}>
-                    <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-sm flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300"><Upload className="w-8 h-8" /></div>
-                    <h3 className="text-slate-900 font-semibold mb-1 text-sm">Upload Rekap</h3>
-                    <p className="text-slate-500 text-xs mb-6 px-4">Tempel gambar atau tarik file rekap (PDF/PNG/JPG) ke sini.</p>
-                    <input type="file" className="hidden" ref={fileInputRef} onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0])} accept=".pdf,image/*" />
-                    <Button variant="outline" className="rounded-sm border-slate-200 text-xs font-semibold group-hover:border-indigo-300 group-hover:text-indigo-600 transition-colors">Pilih File</Button>
-                  </div>
-                )}
-              </div>
-            </Card>
-          </div>
-        )}
-
-        <Card className={`${showScanPanel ? 'xl:col-span-8' : 'xl:col-span-12'} bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none overflow-hidden min-h-[500px] flex flex-col transition-all`}>
+        <Card className="xl:col-span-12 bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none overflow-hidden min-h-[500px] flex flex-col transition-all">
           <div className="p-5 flex items-center justify-between border-b border-slate-100 bg-white/50 backdrop-blur-sm z-10">
             <div className="flex items-center gap-3">
               <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2"><ImageIcon className="w-4 h-4 text-indigo-500" /> Preview Uraian Gaji — {MONTHS_ID[month - 1]} {year}</h2>
@@ -1831,18 +1568,18 @@ export default function RekapPekaryaPage() {
                 </span>
               </div>
             )}
-            <div className={`overflow-x-auto max-h-[700px] overflow-y-auto ${hasScanData ? 'bg-slate-50/50 p-6' : ''} transition-all duration-500`}>
-              <table className={`w-full text-left ${hasScanData ? 'border-separate border-spacing-y-4' : 'border-collapse'}`}>
+            <div className="overflow-x-auto max-h-[700px] overflow-y-auto transition-all duration-500">
+              <table className="w-full text-left border-collapse">
                 <thead className="sticky top-0 z-20 bg-[#F8FAFC]">
                   <tr>
-                    <th className={`px-6 py-4 text-[10px] font-bold uppercase text-slate-950 tracking-wider sticky top-0 left-0 z-30 bg-[#F8FAFC] ${!hasScanData ? 'border-b border-r border-slate-300' : ''}`} style={{ width: '220px', minWidth: '220px' }}>Nama Pegawai</th>
+                    <th className={`px-6 py-4 text-[10px] font-bold uppercase text-slate-950 tracking-wider sticky top-0 left-0 z-30 bg-[#F8FAFC] border-b border-r border-slate-300`} style={{ width: '220px', minWidth: '220px' }}>Nama Pegawai</th>
                     {columns.map(col => {
                       const isCustom = col.key.startsWith('custom_');
                       const hasMultiplier = !!col.multiplier;
                       return (
                         <th
                           key={col.key}
-                          className={`px-4 py-4 text-[10px] font-bold uppercase text-center tracking-wider sticky top-0 z-20 bg-[#F8FAFC] ${!hasScanData ? 'border-b border-slate-300' : ''}`}
+                          className={`px-4 py-4 text-[10px] font-bold uppercase text-center tracking-wider sticky top-0 z-20 bg-[#F8FAFC] border-b border-slate-300`}
                           style={{ width: '160px', minWidth: '160px' }}
                         >
                           <div className="flex flex-col items-center justify-center gap-0.5 relative group/header">
@@ -1867,38 +1604,18 @@ export default function RekapPekaryaPage() {
                         </th>
                       );
                     })}
-                    {hasScanData && <th className="w-10 sticky top-0 z-20 bg-[#F8FAFC]"></th>}
                   </tr>
                 </thead>
                 {employees.map((emp, empIdx) => {
-                  const bounds = rowBounds[emp.employeeId];
                   const satpamAttendanceComparison =
                     category === 'SATPAM'
                       ? getSatpamMonthlyAttendanceComparison(emp.employeeId)
                       : null;
                   const content = (
                     <>
-                      {hasScanData && bounds && (croppedPreviewUrl || previewUrl) && scanImgDims && (
-                        <tr className="animate-in fade-in slide-in-from-top-4 duration-500">
-                          <td colSpan={columns.length + 2} className="p-0">
-                            <div className="mx-2 border-x-2 border-t-2 border-slate-400 rounded-t-md overflow-hidden bg-white shadow-sm ring-1 ring-black/15">
-                              <div className="px-4 py-1.5 bg-slate-50 flex items-center justify-between border-b border-slate-300">
-                                <div className="flex items-center gap-2">
-                                  <div className="w-5 h-5 rounded-sm bg-indigo-600 text-white text-[10px] flex items-center justify-center font-bold shadow-sm">{empIdx + 1}</div>
-                                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Source Image Row</span>
-                                </div>
-                                <div className="text-[10px] text-indigo-600 font-bold opacity-70 flex items-center gap-1"><Eye className="w-3 h-3" /> REF: {emp.name}</div>
-                              </div>
-                              <div className="relative w-full overflow-hidden bg-white" style={{ aspectRatio: `${scanImgDims.w} / ${bounds.bottom - bounds.top + 20}` }}>
-                                <img src={croppedPreviewUrl || previewUrl || ''} alt="Slice" className="absolute left-0 w-full max-w-none" style={{ transform: `translateY(-${((bounds.top - 10) / scanImgDims.h) * 100}%)`, filter: 'contrast(1.1) brightness(1.02)' }} />
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                      <tr className={`group ${hasScanData ? 'group-hover/row:bg-indigo-50/30' : 'hover:bg-slate-50'} transition-all duration-200`}>
+                      <tr className="group hover:bg-slate-50 transition-all duration-200">
                         <td
-                          className={`px-6 py-5 sticky left-0 z-10 ${hasScanData ? `mx-2 border-l-2 border-y-2 border-slate-400 ${!bounds ? 'rounded-l-sm' : ''} bg-white shadow-sm ring-1 ring-black/15 group-hover/row:bg-indigo-50/30` : 'border-b border-r border-slate-300 bg-white group-hover:bg-slate-50'}`}
+                          className="px-6 py-5 sticky left-0 z-10 border-b border-r border-slate-300 bg-white group-hover:bg-slate-50"
                           style={{ width: '220px', minWidth: '220px' }}
                         >
                           <div className="text-sm font-bold text-slate-800 leading-none">{emp.name}</div>
@@ -1979,7 +1696,7 @@ export default function RekapPekaryaPage() {
                           return (
                             <td
                               key={col.key}
-                              className={`px-3 py-5 ${hasScanData ? 'border-y-2 border-slate-400 bg-white shadow-sm ring-1 ring-black/15' : 'border-b border-slate-300'}`}
+                              className="px-3 py-5 border-b border-slate-300"
                               style={{ width: '160px', minWidth: '160px' }}
                             >
                               <Input
@@ -2020,9 +1737,7 @@ export default function RekapPekaryaPage() {
                                   ? 'bg-indigo-50 border-indigo-200 text-indigo-800 disabled:opacity-100 cursor-not-allowed'
                                   : isManualSatpamBonus || (isSpj && canEditThisHistoricalSpj) || isSatpamShift || (isTunjanganJabatan && ketuaShiftIds.has(emp.employeeId))
                                     ? 'bg-indigo-50/30 border-indigo-200 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'
-                                    : hasScanData
-                                      ? 'rounded-sm border-slate-400 bg-slate-50/50 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'
-                                      : 'bg-white border-slate-400 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10'
+                                    : 'bg-white border-slate-400 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10'
                                   }`}
                                 onKeyDown={(e) => {
                                   let nextRow = empIdx, nextCol = colIdx, shouldMove = false;
@@ -2040,11 +1755,10 @@ export default function RekapPekaryaPage() {
                             </td>
                           );
                         })}
-                        {hasScanData && <td className="p-0 border-r-2 border-y-2 border-slate-400 rounded-r-sm bg-white shadow-sm ring-1 ring-black/15" />}
                       </tr>
                     </>
                   );
-                  return hasScanData ? (<tbody key={emp.employeeId} className="group/row">{content}</tbody>) : (<tbody key={emp.employeeId}>{content}</tbody>);
+                  return (<tbody key={emp.employeeId}>{content}</tbody>);
                 })}
               </table>
             </div>
