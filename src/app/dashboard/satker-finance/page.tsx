@@ -87,7 +87,9 @@ export default function SatkerFinancePage() {
   const [yearStart, setYearStart] = useState(Number(initialYear.slice(0, 4)));
   const academicYear = `${yearStart}-${yearStart + 1}`;
   const [month, setMonth] = useState<number | 'ANNUAL'>(new Date().getMonth() + 1);
-  const [unitId, setUnitId] = useState('');
+  // Null means the picker is initializing. An empty string is an explicit clear.
+  const [unitSelection, setUnitSelection] = useState<string | null>(null);
+  const unitId = unitSelection ?? '';
   const [tab, setTab] = useState<Tab>('ringkasan');
   const [data, setData] = useState<ResponseData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -142,7 +144,7 @@ export default function SatkerFinancePage() {
   const postable = useMemo(() => (data?.accounts.filter((account) => account.postable) || []).sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })), [data?.accounts]);
   const amountNumber = (value: string) => Number(value.replace(/[^0-9]/g, '')) || 0;
   const amountText = (value: number) => (value ? String(value) : '');
-  const canPost = unitId !== 'ALL' && canEdit;
+  const canPost = !!unitId && unitId !== 'ALL' && canEdit;
   const draftDebit = lines.reduce((sum, line) => sum + amountNumber(line.debit), 0);
   const draftCredit = lines.reduce((sum, line) => sum + amountNumber(line.credit), 0);
   const oneSided = (line: DraftLine) => (amountNumber(line.debit) > 0) !== (amountNumber(line.credit) > 0);
@@ -189,7 +191,8 @@ export default function SatkerFinancePage() {
       setCashFlowSignatures(cashFlowSignaturesFrom(body.cashFlowSignatures, defaultCashFlowSignatures(body.unit?.headName, body.signatureEmployees)));
       setOpeningDraft(body.year?.openingBalances || {});
       if (body.unit && body.unit.id !== 'ALL') setUnitDraft({ id: body.unit.id, name: body.unit.name, headName: body.unit.headName || '', adminName: body.unit.adminName || '', editorUids: body.unit.editorUids || [], expectedRevision: body.unit.revision || 0 });
-      if (!unitId && body.units?.length) setUnitId(body.units[0].id);
+      const firstUnit = body.units?.[0];
+      if (!unitId && firstUnit) setUnitSelection((current) => current ?? firstUnit.id);
     } catch (cause) { if (sequence === loadSequence.current) setError(cause instanceof Error ? cause.message : 'Gagal memuat buku SatKer.'); }
     finally { if (sequence === loadSequence.current) setLoading(false); }
   }, [user, unitId, academicYear, month]);
@@ -287,7 +290,7 @@ export default function SatkerFinancePage() {
     setUnitAccountId('');
     setCreatingUnitAccount(false);
     if (id === 'ALL') setTab('ringkasan');
-    setUnitId(id);
+    setUnitSelection(id);
   };
 
   // Loads a posted journal into the form in its own row. Journals posted with one uraian for the whole entry get it on every line.
@@ -520,9 +523,11 @@ export default function SatkerFinancePage() {
       {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
       {success && <div role="status" className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{success}</div>}
       {loading && <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Memuat data keuangan...</div>}
-      {!unitId && !loading && <Section title="Belum ada SatKer"><p className="text-sm text-slate-600">{isAdmin ? 'Buat SatKer pada tab Pengaturan untuk mulai menggunakan buku keuangan.' : 'BAK belum memberikan akses ke buku keuangan SatKer. Hubungi administrator.'}</p><button className={`${lightButton} mt-3`} onClick={() => setTab('pengaturan')}>Pengaturan</button></Section>}
-      {data?.unit && <>
-      <nav className="flex gap-6 overflow-x-auto border-b border-slate-200" aria-label="Bagian pelaporan keuangan">{tabs.filter((item) => (item.id !== 'pengaturan' || isAdmin) && (item.id !== 'akun' || canEdit) && (!unitOnlyTabs.includes(item.id) || (!!unitId && unitId !== 'ALL'))).map((item) => <button key={item.id} onClick={() => setTab(item.id)} aria-current={tab === item.id ? 'page' : undefined} className={`-mb-px shrink-0 border-b-2 px-1 py-2.5 text-sm ${tab === item.id ? 'border-accent-600 font-medium text-accent-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>{item.label}</button>)}</nav>
+      {!unitId && !loading && data && (data.units.length > 0
+        ? <p className="text-sm text-slate-600">Pilih SatKer untuk membuka buku keuangan.</p>
+        : <Section title="Belum ada SatKer"><p className="text-sm text-slate-600">{isAdmin ? 'Buat SatKer pada tab Pengaturan untuk mulai menggunakan buku keuangan.' : 'BAK belum memberikan akses ke buku keuangan SatKer. Hubungi administrator.'}</p><button className={`${lightButton} mt-3`} onClick={() => setTab('pengaturan')}>Pengaturan</button></Section>)}
+      {data?.unit && data.unit.id === unitId && <>
+      <nav className="flex gap-6 overflow-x-auto border-b border-slate-200" aria-label="Bagian pelaporan keuangan">{tabs.filter((item) => item.id === 'pengaturan' ? isAdmin : !!unitId && (item.id !== 'akun' || canEdit) && (unitId !== 'ALL' || !unitOnlyTabs.includes(item.id))).map((item) => <button key={item.id} onClick={() => setTab(item.id)} aria-current={tab === item.id ? 'page' : undefined} className={`-mb-px shrink-0 border-b-2 px-1 py-2.5 text-sm ${tab === item.id ? 'border-accent-600 font-medium text-accent-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>{item.label}</button>)}</nav>
         {tab === 'ringkasan' && statement && <div className="space-y-5">
           <dl className="grid grid-cols-2 gap-y-4 border-b border-slate-200 pb-5 xl:grid-cols-4 xl:divide-x xl:divide-slate-200">{[
             { label: 'Penerimaan', value: statement.incomeStatement.income }, { label: 'Pengeluaran', value: statement.incomeStatement.expense },
@@ -536,7 +541,7 @@ export default function SatkerFinancePage() {
           <Section title={month === 'ANNUAL' ? 'Perkembangan 12 bulan' : 'Bulan terpilih'}><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>Bulan</th><th className={cell}>Penerimaan</th><th className={cell}>Pengeluaran</th><th className={cell}>Surplus / Defisit</th><th className={cell}>Kas akhir</th></tr></thead><tbody>{(data.annualStatements || statement).monthlyIncome.filter((item) => month === 'ANNUAL' || item.monthIndex === month).map((item) => <tr key={item.period}><td className={leftCell}>{monthNames[item.monthIndex - 1]} {item.year}</td><td className={cell}>{money(item.income)}</td><td className={cell}>{money(item.expense)}</td><td className={cell}>{money(item.surplus)}</td><td className={cell}>{money(item.endingCash)}</td></tr>)}</tbody></table></div></Section>
           {unitId !== 'ALL' && <p className="text-sm text-slate-600">Cetak laporan pada tab Arus Kas dan serahkan salinan cetaknya ke kantor BAK. Pencatatan dan koreksi tetap dapat dilakukan untuk setiap bulan dan tahun buku.</p>}
         </div>}
-        {tab === 'jurnal' && <div className="space-y-5"><Section title="Riwayat jurnal"><div className="overflow-x-auto"><table className="w-full min-w-[960px] text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={`${leftCell} w-40`}>Tanggal</th><th className={`${leftCell} w-96 min-w-52`}>Akun</th><th className={`${leftCell} min-w-56`}>Uraian</th><th className={`${cell} w-44`}>Debet</th><th className={`${cell} w-44`}>Kredit</th><th className={`${leftCell} w-60 min-w-60`}>Aksi</th></tr></thead>
+        {tab === 'jurnal' && unitId && <div className="space-y-5"><Section title="Riwayat jurnal"><div className="overflow-x-auto"><table className="w-full min-w-[960px] text-sm"><thead><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={`${leftCell} w-40`}>Tanggal</th><th className={`${leftCell} w-96 min-w-52`}>Akun</th><th className={`${leftCell} min-w-56`}>Uraian</th><th className={`${cell} w-44`}>Debet</th><th className={`${cell} w-44`}>Kredit</th><th className={`${leftCell} w-60 min-w-60`}>Aksi</th></tr></thead>
             {!editingEntry && journalComposer}
             {/* A specific month lists its own journals; every period remains editable. */}
             {data.entries?.filter((entry) => month === 'ANNUAL' || entry.monthIndex === month).map((entry) => {
@@ -568,7 +573,7 @@ export default function SatkerFinancePage() {
             </tr>;
           })}{user && expandedReceipts.has(entry.id) && (entry.receiptCount ?? 0) > 0 && <tr className="bg-slate-50"><td colSpan={6} className="border-b border-slate-100 px-3 pb-4"><EntryReceipts user={user} unitId={unitId} academicYear={academicYear} entryId={entry.id} count={entry.receiptCount ?? 0} /></td></tr>}</tbody>; })}</table>{!data.entries?.length && !canPost && <p className="p-4 text-sm text-slate-500">Belum ada transaksi.</p>}</div></Section>
         </div>}
-        {tab === 'buku_besar' && unitId !== 'ALL' && <Section title="Buku Besar"><div className="mb-4 max-w-lg text-xs font-medium text-slate-500"><span id="ledger-account-label">Akun</span><Select items={accountItems} value={ledgerCode} onValueChange={(value) => value && setLedgerCode(value)}><SelectTrigger aria-labelledby="ledger-account-label" className={selectTrigger}><SelectValue /></SelectTrigger><SelectContent className={selectContent}>{postable.map((account) => <SelectItem className={selectItem} key={financialAccountId(account)} value={financialAccountId(account)}>{account.code} · {account.name}</SelectItem>)}</SelectContent></Select></div><div className="mb-4 flex flex-wrap items-center gap-3">
+        {tab === 'buku_besar' && unitId && unitId !== 'ALL' && <Section title="Buku Besar"><div className="mb-4 max-w-lg text-xs font-medium text-slate-500"><span id="ledger-account-label">Akun</span><Select items={accountItems} value={ledgerCode} onValueChange={(value) => value && setLedgerCode(value)}><SelectTrigger aria-labelledby="ledger-account-label" className={selectTrigger}><SelectValue /></SelectTrigger><SelectContent className={selectContent}>{postable.map((account) => <SelectItem className={selectItem} key={financialAccountId(account)} value={financialAccountId(account)}>{account.code} · {account.name}</SelectItem>)}</SelectContent></Select></div><div className="mb-4 flex flex-wrap items-center gap-3">
           <button type="button" className={button} disabled={ledgerPrint || loading || busy || data.unit?.id !== unitId || !selectedLedger} onClick={() => void downloadLedgerReport('ACCOUNT')}>{ledgerPrint ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Unduh PDF akun ini</button>
           <button type="button" className={lightButton} disabled={ledgerPrint || loading || busy || data.unit?.id !== unitId} onClick={() => void downloadLedgerReport('ALL')}><Download className="h-4 w-4" />Unduh PDF semua akun</button>
           <span className="text-xs text-slate-500">Periode {month === 'ANNUAL' ? 'tahunan' : monthNames[month - 1]}.</span>

@@ -10,11 +10,13 @@ process.env.NODE_PATH = path.join(rootDir, 'node_modules');
 require('node:module').Module._initPaths();
 const { JSDOM } = require('jsdom');
 const { build } = require('esbuild');
-const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost' });
+const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost', pretendToBeVisual: true });
 Object.assign(globalThis, {
   window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement,
-  Element: dom.window.Element, Node: dom.window.Node, MutationObserver: dom.window.MutationObserver,
+  Element: dom.window.Element, Node: dom.window.Node, NodeFilter: dom.window.NodeFilter, MutationObserver: dom.window.MutationObserver,
   getComputedStyle: dom.window.getComputedStyle.bind(dom.window), IS_REACT_ACT_ENVIRONMENT: true,
+  requestAnimationFrame: dom.window.requestAnimationFrame.bind(dom.window),
+  cancelAnimationFrame: dom.window.cancelAnimationFrame.bind(dom.window),
 });
 window.requestAnimationFrame = callback => { callback(); return 0; };
 HTMLElement.prototype.scrollIntoView = () => {};
@@ -45,7 +47,10 @@ before(async () => {
             onChange:e=>onValueChange(e.target.value)},
             ...(Array.isArray(items)?items:Object.entries(items).map(([value,label])=>({value,label}))).map(i=>React.createElement('option',{key:i.value,value:i.value},i.label)));
           for(const n of ['SelectTrigger','SelectValue','SelectContent','SelectItem'])exports[n]=()=>null;`,
-        '@/components/ui/search-select': `const React=require('react'); exports.SearchSelect=({options,value,onValueChange,disabled,...props})=>React.createElement('select',{'aria-label':props['aria-label'],value,disabled,onChange:e=>onValueChange(e.target.value)},React.createElement('option',{value:''},'Pilih'),...options.map(i=>React.createElement('option',{key:i.value,value:i.value},i.label)));`,
+        '@/components/ui/search-select': `const React=require('react'); const {SearchSelect}=require('./src/components/ui/search-select.tsx');
+          exports.SearchSelect=({options,value,onValueChange,disabled,...props})=>globalThis.__satkerPageTest.realUnitPicker && props['aria-label']==='Satuan Kerja'
+            ? React.createElement(SearchSelect,{options,value,onValueChange,disabled,...props})
+            : React.createElement('select',{'aria-label':props['aria-label'],value,disabled,onChange:e=>onValueChange(e.target.value)},React.createElement('option',{value:''},'Pilih'),...options.map(i=>React.createElement('option',{key:i.value,value:i.value},i.label)));`,
         '@/components/ui/dialog': `const React=require('react');exports.Dialog=({open,children})=>open?React.createElement('section',null,children):null;
           for(const n of ['DialogContent','DialogFooter','DialogHeader'])exports[n]=({children})=>React.createElement('div',null,children);
           exports.DialogTitle=({children})=>React.createElement('h2',null,children);exports.DialogDescription=({children})=>React.createElement('p',null,children);`,
@@ -63,6 +68,8 @@ function response(params) {
   const monthIndex = params.get('month') === 'ANNUAL' ? 'ANNUAL' : Number(params.get('month'));
   const unit = { id: 'test-unit', name: 'Test SatKer', headName: 'Kepala Unit', adminName: '', editorUids: ['head'], revision: 1 };
   const accounts = T.accounts || core.DEFAULT_ACCOUNTS;
+  const unitId = params.get('unitId');
+  if (!unitId) return { units: [unit], accounts, academicYear, unit: T.role === 'super_admin' ? { ...unit, id: '' } : undefined };
   const fiscalMonth = core.fiscalMonths(academicYear).find(m => m.monthIndex === (monthIndex === 'ANNUAL' ? 9 : monthIndex));
   const entry = { ...core.buildVoucher({ kind: 'EXPENSE', date: `${fiscalMonth.year}-${String(fiscalMonth.monthIndex).padStart(2, '0')}-02`, description: 'Biaya kantor', accountCode: '52101', paymentAccountCode: '10000', amount: 100 }, accounts),
     id: 'test-journal', satkerId: unit.id, academicYear, monthIndex: fiscalMonth.monthIndex, revision: 2, isBalanced: true, createdBy: 'head' };
@@ -182,6 +189,40 @@ test('consolidated monitoring has no submission-status columns', async () => {
     assert.equal([...document.querySelectorAll('th')].some(th => th.textContent === 'Status'), false);
     noWorkflow();
   } finally { await unmount(); }
+});
+
+test('a superadmin can clear the selected SatKer and choose a book again', async () => {
+  T.realUnitPicker = true;
+  try {
+    await mount('super_admin');
+    const picker = document.querySelector('input[aria-label="Satuan Kerja"]');
+    const type = async (text, inputType) => {
+      await act(async () => {
+        picker.focus();
+        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(picker, text);
+        picker.dispatchEvent(new window.InputEvent('input', { bubbles: true, inputType }));
+      });
+      await settle();
+    };
+    assert.equal(picker.value, 'Test SatKer');
+    await click('Jurnal');
+    await type('', 'deleteContentBackward');
+    assert.equal(picker.value, '');
+    assert.match(document.body.textContent, /Pilih SatKer/);
+    assert.doesNotMatch(document.body.textContent, /Riwayat jurnal|Belum ada SatKer/);
+    await select('satker-period-label', '9');
+    assert.equal(picker.value, '');
+    await type('Test Sat', 'insertText');
+    const result = [...document.querySelectorAll('[role="option"]')].find(option => option.textContent.trim() === 'Test SatKer');
+    assert.ok(result);
+    await act(async () => result.click());
+    await settle();
+    assert.equal(picker.value, 'Test SatKer');
+    assert.match(document.body.textContent, /Riwayat jurnal/);
+    await type('', 'deleteContentBackward');
+    await click('Pengaturan');
+    assert.match(document.body.textContent, /Unit SatKer & pengelola/);
+  } finally { await unmount(); T.realUnitPicker = false; }
 });
 
 test('Loyalis selection updates both signer fields, persists per SatKer, and reaches the PDF', async () => {
