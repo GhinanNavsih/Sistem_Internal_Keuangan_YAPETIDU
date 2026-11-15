@@ -35,13 +35,14 @@ import { POST as propagateVakasiRoute } from '@/app/api/payroll/vakasi-propagati
 
 export const dynamic = 'force-dynamic';
 
-type VakasiAction = 'save' | 'submit' | 'review' | 'unapprove';
+type VakasiAction = 'save' | 'submit' | 'review' | 'unapprove' | 'delete';
 type VakasiStatus =
   | 'draft'
   | 'pending_review'
   | 'approved'
   | 'revision_needed'
-  | 'declined';
+  | 'declined'
+  | 'voided';
 
 interface VakasiWorkerInput {
   employeeId: string;
@@ -163,7 +164,7 @@ function parseCommand(raw: unknown): VakasiCommand {
     );
   }
   const action = value.action;
-  if (action !== 'save' && action !== 'submit' && action !== 'review' && action !== 'unapprove') {
+  if (action !== 'save' && action !== 'submit' && action !== 'review' && action !== 'unapprove' && action !== 'delete') {
     throw new HttpError(400, 'Tindakan kegiatan Vakasi tidak valid.');
   }
   const eventId = typeof value.eventId === 'string' ? value.eventId : undefined;
@@ -200,7 +201,7 @@ function parseCommand(raw: unknown): VakasiCommand {
   if ((reviewAction === 'revision_needed' || reviewAction === 'declined') && !reviewNote) {
     throw new HttpError(400, 'Catatan review wajib diisi.');
   }
-  if ((action === 'review' || action === 'unapprove') && !eventId) {
+  if ((action === 'review' || action === 'unapprove' || action === 'delete') && !eventId) {
     throw new HttpError(400, 'ID kegiatan Vakasi wajib diisi.');
   }
   if (action === 'review' && !reviewAction) {
@@ -224,6 +225,9 @@ function parseCommand(raw: unknown): VakasiCommand {
 
 function assertActionAllowed(actor: AuthenticatedProfile, command: VakasiCommand): void {
   requireRole(actor, URAIAN_EDITOR_ROLES);
+  if (command.action === 'delete') {
+    requireRole(actor, ['super_admin', 'satker_head_loyalis']);
+  }
   if (command.action === 'save') {
     requireRole(actor, ['super_admin', 'finance_verifier', 'satker_head_loyalis']);
   }
@@ -368,6 +372,7 @@ function statusForCommand(
   command: VakasiCommand,
   before: Record<string, unknown> | null,
 ): VakasiStatus {
+  if (command.action === 'delete') return 'voided';
   if (command.action === 'submit') return 'pending_review';
   if (command.action === 'review') return command.reviewAction!;
   if (command.action === 'unapprove') return 'pending_review';
@@ -378,6 +383,7 @@ function statusForCommand(
 }
 
 function reasonForCommand(command: VakasiCommand, status: VakasiStatus): string {
+  if (command.action === 'delete') return 'Kegiatan Vakasi dihapus';
   if (command.action === 'submit') return 'Kegiatan Vakasi diajukan untuk review';
   if (command.action === 'unapprove') return 'Persetujuan kegiatan Vakasi dibatalkan';
   if (command.action === 'review') return `Review kegiatan Vakasi: ${status}`;
@@ -459,8 +465,11 @@ export async function POST(request: NextRequest) {
       const beforeStatus = before
         ? (typeof before.status === 'string' ? before.status : 'approved')
         : null;
-      if (!before && (command.action === 'review' || command.action === 'unapprove')) {
+      if (!before && (command.action === 'review' || command.action === 'unapprove' || command.action === 'delete')) {
         throw new HttpError(404, 'Kegiatan Vakasi tidak ditemukan.');
+      }
+      if (beforeStatus === 'voided') {
+        throw new HttpError(409, 'Kegiatan Vakasi sudah dihapus.');
       }
       if (before && command.expectedRevision === undefined) {
         throw new HttpError(409, 'Revisi kegiatan wajib dikirim. Muat ulang data sebelum menyimpan.');
@@ -474,7 +483,7 @@ export async function POST(request: NextRequest) {
       if (
         before &&
         actor.role === 'satker_head_loyalis' &&
-        before.submittedBy &&
+        (command.action === 'delete' || before.submittedBy) &&
         before.submittedBy !== actor.uid
       ) {
         throw new HttpError(403, 'Anda hanya dapat mengubah kegiatan yang Anda buat.');
@@ -520,10 +529,10 @@ export async function POST(request: NextRequest) {
       }
 
       const currentInputs = snapshot?.workers || workersFromEvent(before);
-      if (currentInputs.length < 1 || currentInputs.length > 200) {
+      if (command.action !== 'delete' && (currentInputs.length < 1 || currentInputs.length > 200)) {
         throw new HttpError(400, 'Kegiatan Vakasi harus memiliki penerima.');
       }
-      currentInputs.forEach((worker) => {
+      if (command.action !== 'delete') currentInputs.forEach((worker) => {
         if (
           !SAFE_EMPLOYEE_ID.test(worker.employeeId) ||
           !Number.isSafeInteger(worker.payGiven) ||
@@ -564,7 +573,9 @@ export async function POST(request: NextRequest) {
         );
       });
 
-      const currentWorkers = currentInputs.map((worker) =>
+      const currentWorkers = currentInputs.map((worker) => command.action === 'delete'
+        ? historicalWorker(worker, eventWorkerMetadata(before, worker.employeeId))
+        :
         resolvedWorker(
           worker,
           directories.get(worker.employeeId) || null,
@@ -670,6 +681,10 @@ export async function POST(request: NextRequest) {
       if (command.action === 'unapprove') {
         after.unapprovedAt = now;
         after.unapprovedBy = actor.uid;
+      }
+      if (command.action === 'delete') {
+        after.voidedAt = now;
+        after.voidedBy = actor.uid;
       }
 
       const pekaryaProjectionIds = writeVakasiPekaryaProjections(transaction, {

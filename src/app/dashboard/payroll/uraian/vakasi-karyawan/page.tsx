@@ -254,7 +254,7 @@ export default function VakasiKaryawanPage() {
           id: d.id,
           ...d.data()
         }))
-        .filter((event) => !isProposalLpjSandboxSource(event) && !('sourceKind' in event && event.sourceKind === 'kjm_import')) as any[];
+        .filter((event) => !isProposalLpjSandboxSource(event) && !('sourceKind' in event && event.sourceKind === 'kjm_import') && !('status' in event && event.status === 'voided')) as any[];
 
       if (profile.role === 'satker_head_loyalis') {
         list = list.filter(evt => evt.submittedBy === profile.uid);
@@ -620,11 +620,45 @@ export default function VakasiKaryawanPage() {
   };
 
   const handleDeleteEvent = async (eventId: string) => {
-    void eventId;
-    setMessage({
-      type: 'error',
-      text: 'Penghapusan event dinonaktifkan agar riwayat tetap utuh. Gunakan koreksi atau status pembatalan beralasan.',
-    });
+    if (isSavingRef.current || uploadingReportRef.current) return;
+    if (!confirm('Hapus kegiatan ini? Nominal kegiatan yang sudah disetujui akan dikeluarkan dari payroll yang masih dapat diubah.')) return;
+    isSavingRef.current = true;
+    setSaving(true);
+    try {
+      await cancelPendingAutosaveAndWait();
+      const result = await authenticatedJson<VakasiMutationResult>('/api/payroll/vakasi-events', {
+        method: 'POST',
+        body: JSON.stringify({
+          requestId: mutationRequestId(`vakasi_delete_${eventId}`),
+          action: 'delete',
+          eventId,
+          expectedRevision: currentEventRevision,
+        }),
+      });
+      mutationRequestRef.current = null;
+      setSelectedEventId(null);
+      setEventName('');
+      setIsEndOfMonth(false);
+      setSelectedDept('');
+      setWorkerRows([createEmptyWorkerRow()]);
+      setReportFile(null);
+      setReportFileUrl(null);
+      setReportFileName(null);
+      setReportFileError(null);
+      setCurrentEventStatus(null);
+      setCurrentEventReviewNote(null);
+      setCurrentEventSubmittedBy(null);
+      setCurrentEventSubmittedByName(null);
+      setCurrentEventSubmittedByEmail(null);
+      setCurrentEventRevision(0);
+      setAutosaveMessage('');
+      setMessage({ type: 'success', text: `Kegiatan berhasil dihapus.${propagationNote(result)}` });
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Gagal menghapus kegiatan.' });
+    } finally {
+      isSavingRef.current = false;
+      setSaving(false);
+    }
   };
 
   const buildAutosaveSnapshot = (): AutosaveSnapshot => ({
@@ -1515,10 +1549,10 @@ export default function VakasiKaryawanPage() {
 
             {/* Footer Buttons */}
             <div className="flex justify-end items-center gap-3 pt-4 border-t border-slate-100">
-              {selectedEventId && (!isReadOnly || profile?.role === 'super_admin') && (
+              {selectedEventId && (profile?.role === 'super_admin' || profile?.role === 'satker_head_loyalis') && (
                 <Button
                   onClick={() => handleDeleteEvent(selectedEventId)}
-                  disabled={uploadingReport}
+                  disabled={saving || uploadingReport}
                   variant="ghost"
                   className="rounded-sm text-rose-500 hover:text-rose-700 hover:bg-rose-50 font-bold px-5 text-xs h-10 flex items-center gap-1.5"
                 >
