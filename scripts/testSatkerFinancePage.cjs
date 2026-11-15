@@ -109,6 +109,9 @@ test('past periods expose journal and opening actions without report status or c
     noWorkflow();
     await select('satker-period-label', '9');
     await click('Jurnal');
+    const journalAccounts = document.querySelector('select[aria-label="Akun baris 1"]');
+    assert.equal(journalAccounts.querySelector('option[value="40000"]').textContent, '40000 · PENDAPATAN');
+    assert.equal(journalAccounts.querySelector('option[value="11004"]'), null);
     await click('Edit jurnal');
     await click('Simpan perubahan');
     assert.equal(T.writes[0].action, 'UPDATE_ENTRY');

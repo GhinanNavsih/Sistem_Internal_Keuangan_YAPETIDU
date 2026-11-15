@@ -29,6 +29,16 @@ test('catalog faithfully includes 129 workbook codes and rejects empty placehold
   assert.throws(() => entry('invalid', '2026-09-02', { kind: 'EXPENSE', accountCode: '11002', paymentAccountCode: '10000', amount: 1 }), /tidak dapat diposting|memerlukan/);
 });
 
+test('named catalog accounts can be posted using their group defaults', () => {
+  const income = entry('income', '2026-09-02', { kind: 'INFLOW', accountCode: '40000', paymentAccountCode: '10000', amount: 100 });
+  assert.equal(income.lines[1].accountCode, '40000');
+  assert.equal(income.cashFlows?.OPERATING, 100);
+  const account = DEFAULT_ACCOUNTS.find(item => item.code === '40000');
+  assert.equal(account?.normalBalance, 'CREDIT');
+  assert.equal(account?.reportTarget, 'INCOME_STATEMENT');
+  assert.ok(DEFAULT_ACCOUNTS.filter(item => item.name.trim()).every(item => item.postable));
+});
+
 test('a pengeluaran may debit any postable account except the cash account it is paid from', () => {
   const toBank = entry('to-bank', '2026-09-02', { kind: 'EXPENSE', accountCode: '11001', paymentAccountCode: '10000', amount: 750_000 });
   assert.deepEqual(toBank.lines.map((line) => [line.accountCode, line.debit, line.credit]), [['11001', 750_000, 0], ['10000', 0, 750_000]]);

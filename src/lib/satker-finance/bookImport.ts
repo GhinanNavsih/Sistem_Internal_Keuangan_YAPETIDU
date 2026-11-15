@@ -1,4 +1,4 @@
-import { defaultCashFlowSection, groupNormalBalance, type AccountType, type FinancialAccount } from './core';
+import { accountId as financialAccountId, defaultCashFlowSection, groupNormalBalance, groupReportTarget, type AccountType, type FinancialAccount } from './core';
 
 /** One account of a workbook's Akun sheet. `contra` marks the side opposite its group's normal balance. */
 export type BookImportAccount = { code: string; name: string; type: AccountType; contra: boolean };
@@ -76,8 +76,7 @@ export type PlannedAccount = {
 };
 
 /**
- * Turns the workbook's accounts into the unit's catalog entries, using the same rules as a manual save: a code of the
- * shared catalog becomes a unit override (`base_<code>`), any other code a unit account of its own.
+ * A workbook row matching a base account keeps that account's ledger identity. New codes get their own identity.
  */
 export function planBookAccounts(accounts: BookImportAccount[], unitId: string, catalog: FinancialAccount[]): PlannedAccount[] {
   const catalogByCode = new Map(catalog.map((account) => [account.code, account]));
@@ -90,10 +89,10 @@ export function planBookAccounts(accounts: BookImportAccount[], unitId: string, 
     const type = input.type;
     const cashEquivalent = type === 'AKTIVA' && (input.code === '10000' || input.code.startsWith('11'));
     const normalBalance = groupNormalBalance(type, input.contra);
-    const reportTarget = type === 'TERIMA' || type === 'KELUAR' ? 'INCOME_STATEMENT' : 'BALANCE_SHEET';
+    const reportTarget = groupReportTarget(type);
     const cashFlowSection = cashEquivalent ? null : shared?.cashFlowSection ?? defaultCashFlowSection(type, input.code);
-    const docId = shared ? `base_${input.code}` : `custom_${unitId}_${input.code.replace('.', '_')}`;
-    const accountId = shared ? input.code : docId;
+    const docId = shared ? shared.localAccountId ?? `base_${input.code}` : `custom_${unitId}_${input.code.replace('.', '_')}`;
+    const accountId = shared ? financialAccountId(shared) : docId;
     const data = shared
       ? { baseCode: input.code, code: input.code, name: input.name, normalBalance, reportTarget, cashEquivalent, cashFlowSection, postable: true }
       : { code: input.code, name: input.name, type, normalBalance, reportTarget, postable: true, cashEquivalent, cashFlowSection };

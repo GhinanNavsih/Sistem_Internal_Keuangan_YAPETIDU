@@ -471,6 +471,37 @@ async function main() {
   assert.deepEqual(cashLedger.rows.map((row) => row.balance), [1250, 950, 850]);
   const printedCash = printableLedgers({ ...ledgerArgs, accounts: orderedView.accounts }).find((item) => item.code === '10000')!;
   assert.deepEqual(printedCash.rows.map((row) => row.balance), [1250, 950, 850]);
+
+  const incomeVoucher = { ...orderBase, entryId: 'named-income', kind: 'INFLOW', accountCode: '40000', amount: 250, description: 'Pendapatan' };
+  await succeeds(await invoke(secretary, incomeVoucher));
+  await succeeds(await invoke(secretary, { ...incomeVoucher, action: 'UPDATE_ENTRY', expectedRevision: 0, lines: [
+    { accountCode: '10000', debit: 300, credit: 0 }, { accountCode: '40000', debit: 0, credit: 300 },
+  ] }));
+  const incomeView = await succeeds(await read(secretary, { ...secondUnit, month: '11' }));
+  const incomeAccount = incomeView.accounts.find((account: { code: string }) => account.code === '40000');
+  assert.equal(incomeAccount.postable, true);
+  assert.equal(incomeAccount.normalBalance, 'CREDIT');
+  assert.equal(incomeAccount.reportTarget, 'INCOME_STATEMENT');
+  assert.equal(incomeView.statements.incomeStatement.income, 1300);
+  assert.equal(incomeView.statements.trialBalance.difference, 0);
+
+  const { BIRO_UMUM_ACCOUNT_UNIT_ID, PSQ_ACCOUNT_UNIT_ID, loadAccounts } = await import('../src/lib/server/satkerFinance');
+  assert.ok((await loadAccounts(PSQ_ACCOUNT_UNIT_ID)).every(account => account.postable));
+  const biroBase = { ...base, unitId: BIRO_UMUM_ACCOUNT_UNIT_ID };
+  await succeeds(await invoke(bak, { action: 'SAVE_UNIT', id: biroBase.unitId, name: 'Biro Umum', editorUids: [head.uid] }));
+  await succeeds(await invoke(head, { ...biroBase, action: 'IMPORT_BOOK', accounts: [
+    { code: '10000', name: 'KAS', type: 'AKTIVA' }, { code: '51100', name: 'BBM', type: 'KELUAR' },
+  ], opening: {}, vouchers: [{ id: 'imported-bbm-entry', date: '2026-09-02', description: 'BBM', lines: [
+    { code: '51100', debit: 50, credit: 0 }, { code: '10000', debit: 0, credit: 50 },
+  ] }] }));
+  const biroView = await succeeds(await read(head, { ...biroBase, month: '9' }));
+  const bbmAccounts = biroView.accounts.filter((account: { code: string }) => account.code === '51100');
+  assert.equal(bbmAccounts.length, 1);
+  assert.equal(bbmAccounts[0].postable, true);
+  assert.equal(bbmAccounts[0].localAccountId, 'base_51100');
+  assert.equal(biroView.entries[0].lines[0].accountCode, bbmAccounts[0].id);
+  assert.ok(biroView.accounts.every((account: { postable: boolean }) => account.postable));
+
   console.log('SatKer finance emulator workflow passed.');
   await admin.app().delete();
 }

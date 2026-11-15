@@ -1,7 +1,7 @@
 import admin, { adminDb } from '@/lib/firebase-admin';
 import type { DocumentReference, Transaction } from 'firebase-admin/firestore';
 import { AuthenticatedProfile, HttpError } from '@/lib/server/auth';
-import { DEFAULT_ACCOUNTS, defaultCashFlowSection, FinancialAccount, groupNormalBalance, OpeningBalances } from '@/lib/satker-finance/core';
+import { DEFAULT_ACCOUNTS, FinancialAccount, isCashAccount, OpeningBalances, withAccountPostingDefaults } from '@/lib/satker-finance/core';
 import type { CashFlowSignatures, SignatureEmployee } from '@/lib/satker-finance/signatures';
 import type { FixedAsset } from '@/lib/satker-finance/depreciation';
 import biroUmumAkunData from '@/lib/satker-finance/biro-umum-26-27-akun.json';
@@ -196,15 +196,6 @@ type ImportedAkun = {
   reportTarget: FinancialAccount['reportTarget'];
 };
 
-// Payables (Hutang) count as operating cash flow; see defaultCashFlowSection in core.
-function inferredCashFlowSection(account: ImportedAkun): FinancialAccount['cashFlowSection'] {
-  if (account.type === 'TERIMA' || account.type === 'KELUAR' || account.type === 'HUTANG') return 'OPERATING';
-  if (account.type === 'MODAL') return 'FINANCING';
-  if (account.type === 'AKTIVA' && account.code.startsWith('13')) return 'INVESTING';
-  if (account.type === 'AKTIVA' && account.code.startsWith('12')) return 'OPERATING';
-  return null;
-}
-
 function accountsForUnit(unitId: string, globalAccounts: FinancialAccount[]): FinancialAccount[] {
   let importedAccounts: ImportedAkun[] | null = null;
   if (unitId === BIRO_UMUM_ACCOUNT_UNIT_ID) {
@@ -218,19 +209,17 @@ function accountsForUnit(unitId: string, globalAccounts: FinancialAccount[]): Fi
     const existing = globalByCode.get(source.code);
     const normalBalance = source.normalBalance !== undefined ? source.normalBalance : (existing?.normalBalance ?? null);
     const reportTarget = source.reportTarget !== undefined ? source.reportTarget : (existing?.reportTarget ?? null);
-    const postable = !!source.name && !!normalBalance && !!reportTarget;
-    return {
-      ...(existing || {}),
+    return withAccountPostingDefaults({
+      ...existing,
       id: existing ? source.code : `${unitId}_${source.code}`,
       code: source.code,
       name: source.name,
       type: source.type,
       normalBalance,
       reportTarget,
-      postable,
-      cashEquivalent: (source.type === 'AKTIVA' && (source.code.startsWith('10') || source.code.startsWith('11'))) || (existing?.cashEquivalent === true) || (postable && (source.code === '10000' || /^11\d{3}$/.test(source.code))),
-      cashFlowSection: (source.type === 'AKTIVA' && (source.code.startsWith('10') || source.code.startsWith('11'))) ? null : (existing?.cashFlowSection ?? inferredCashFlowSection(source)),
-    };
+      cashEquivalent: isCashAccount(source) || existing?.cashEquivalent === true,
+      cashFlowSection: existing?.cashFlowSection ?? null,
+    });
   });
 }
 
@@ -240,17 +229,15 @@ export async function loadAccounts(unitId?: string): Promise<FinancialAccount[]>
   const globalAccounts = DEFAULT_ACCOUNTS.map((defaultAccount) => {
     const override = overrides.get(defaultAccount.code);
     if (!override) return { ...defaultAccount, id: defaultAccount.code };
-    const account = { ...defaultAccount,
+    return withAccountPostingDefaults({ ...defaultAccount,
       id: defaultAccount.code,
       name: String(override.name || ''),
-      normalBalance: override.normalBalance,
-      reportTarget: override.reportTarget,
-      cashEquivalent: (defaultAccount.type === 'AKTIVA' && (defaultAccount.code.startsWith('10') || defaultAccount.code.startsWith('11'))) || override.cashEquivalent === true,
-      cashFlowSection: ((defaultAccount.type === 'AKTIVA' && (defaultAccount.code.startsWith('10') || defaultAccount.code.startsWith('11'))) || override.cashEquivalent === true) ? null : override.cashFlowSection,
+      normalBalance: override.normalBalance ?? defaultAccount.normalBalance,
+      reportTarget: override.reportTarget ?? defaultAccount.reportTarget,
+      cashEquivalent: isCashAccount({ ...defaultAccount, cashEquivalent: override.cashEquivalent === true }),
+      cashFlowSection: override.cashFlowSection ?? defaultAccount.cashFlowSection,
       revision: typeof override.revision === 'number' ? override.revision : 0,
-    } as FinancialAccount;
-    account.postable = !!account.name && !!account.normalBalance && !!account.reportTarget;
-    return account;
+    });
   });
   if (!unitId) return globalAccounts;
 
@@ -263,18 +250,12 @@ export async function loadAccounts(unitId?: string): Promise<FinancialAccount[]>
     if (!local) return { ...account, localAccountId, revision: 0 };
     const code = typeof local.code === 'string' ? local.code : account.code;
     const name = typeof local.name === 'string' ? local.name : account.name;
-    const isCashBank = (account.type === 'AKTIVA' && (code.startsWith('10') || code.startsWith('11')))
-      || local.cashEquivalent === true
-      || account.cashEquivalent === true;
-    const cashEquivalent = isCashBank;
+    const cashEquivalent = isCashAccount({ ...account, code }) || local.cashEquivalent === true;
     const normalBalance: FinancialAccount['normalBalance'] = (local.normalBalance === 'DEBIT' || local.normalBalance === 'CREDIT' ? local.normalBalance : null)
-      ?? account.normalBalance
-      ?? groupNormalBalance(account.type);
+      ?? account.normalBalance;
     const reportTarget: FinancialAccount['reportTarget'] = (local.reportTarget === 'BALANCE_SHEET' || local.reportTarget === 'INCOME_STATEMENT' ? local.reportTarget : null)
-      ?? account.reportTarget
-      ?? (['TERIMA', 'KELUAR'].includes(account.type) ? 'INCOME_STATEMENT' : 'BALANCE_SHEET');
-    const cashFlowSection = cashEquivalent ? null : (local.cashFlowSection as FinancialAccount['cashFlowSection'] ?? account.cashFlowSection ?? defaultCashFlowSection(account.type, code));
-    return {
+      ?? account.reportTarget;
+    return withAccountPostingDefaults({
       ...account,
       id: account.id || account.code,
       code,
@@ -283,25 +264,24 @@ export async function loadAccounts(unitId?: string): Promise<FinancialAccount[]>
       normalBalance,
       reportTarget,
       cashEquivalent,
-      cashFlowSection,
+      cashFlowSection: local.cashFlowSection ?? account.cashFlowSection,
       revision: Number(local.revision || 0),
-      postable: !!name && !!normalBalance && !!reportTarget,
-    };
+    });
   });
   for (const doc of localSnapshot.docs) {
     if (doc.id === '_meta' || doc.id.startsWith('base_')) continue;
     const local = doc.data();
     if (typeof local.code !== 'string' || typeof local.name !== 'string') continue;
-    unitAccounts.push({
+    const type = local.type as FinancialAccount['type'];
+    unitAccounts.push(withAccountPostingDefaults({
       id: doc.id, localAccountId: doc.id, code: local.code, name: local.name,
-      type: local.type as FinancialAccount['type'],
-      normalBalance: local.normalBalance as FinancialAccount['normalBalance'],
-      reportTarget: local.reportTarget as FinancialAccount['reportTarget'],
-      postable: local.postable === true,
-      cashEquivalent: (local.type === 'AKTIVA' && (local.code.startsWith('10') || local.code.startsWith('11'))) || local.cashEquivalent === true,
-      cashFlowSection: ((local.type === 'AKTIVA' && (local.code.startsWith('10') || local.code.startsWith('11'))) || local.cashEquivalent === true) ? null : local.cashFlowSection as FinancialAccount['cashFlowSection'],
+      type,
+      normalBalance: local.normalBalance,
+      reportTarget: local.reportTarget,
+      cashEquivalent: isCashAccount({ type, code: local.code, cashEquivalent: local.cashEquivalent === true }),
+      cashFlowSection: local.cashFlowSection,
       revision: Number(local.revision || 0),
-    });
+    }));
   }
   return unitAccounts.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
 }

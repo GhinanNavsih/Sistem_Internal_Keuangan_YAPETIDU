@@ -19,7 +19,7 @@ export async function importUnitBook({ actor, unitId, academicYear, raw }: {
   let book: ReturnType<typeof bookImportFrom>;
   try { book = bookImportFrom(raw); } catch (error) { invalid(error); }
   let planned: ReturnType<typeof planBookAccounts>;
-  try { planned = planBookAccounts(book.accounts, unitId, await loadAccounts()); } catch (error) { invalid(error); }
+  try { planned = planBookAccounts(book.accounts, unitId, await loadAccounts(unitId)); } catch (error) { invalid(error); }
   const accountIdByCode = new Map(planned.map((item) => [item.code, item.accountId]));
   const accounts = planned.map((item) => item.account);
   const opening: OpeningBalances = {};

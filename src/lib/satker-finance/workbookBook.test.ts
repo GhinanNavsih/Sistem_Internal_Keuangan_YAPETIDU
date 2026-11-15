@@ -35,7 +35,7 @@ function journalRow(row: number, day: number | null, code: number | null, descri
 
 const journalSheet = (rows: Cells[]) => sheetOf({ ...journalHeader, ...Object.assign({}, ...rows) }, 'G200');
 
-test('reads postable accounts with their side, group and opening balance, skipping headings', () => {
+test('reads named accounts and defaults missing classifications to their group', () => {
   const sheet = sheetOf({
     'D5': { v: 'POS SALDO' }, 'E5': { v: 'POS LAPORAN' },
     ...akunRow(8, 'AKTIVA', 10000, 'KAS', 'DEBET', 'NERACA', [500000]),
@@ -44,15 +44,21 @@ test('reads postable accounts with their side, group and opening balance, skippi
     ...akunRow(11, 'AKTIVA', 11005, 'AKUM. PENYUSUTAN', 'KREDIT', 'NERACA'),
     ...akunRow(12, 'MODAL', 30000, 'MODAL', 'KREDIT', 'NERACA', [undefined, 501000]),
     ...akunRow(13, 'TERIMA', 41000, 'DROPING', 'KREDIT', 'LABA RUGI'),
+    ...akunRow(14, 'TERIMA', 40000, 'PENDAPATAN', '', ''),
+    ...akunRow(15, 'AKTIVA', 13000, 'AKTIVA TETAP', 'KREDIT', ''),
+    ...akunRow(16, 'TERIMA', 41001, '', 'KREDIT', 'LABA RUGI'),
   });
   const read = readAkunSheet(sheet, 'Akun Uji');
   assert.deepEqual(read.problems, []);
   assert.deepEqual(read.accounts, [
     { code: '10000', name: 'KAS', type: 'AKTIVA', contra: false },
+    { code: '11000', name: 'BANK', type: 'AKTIVA', contra: false },
     { code: '11001', name: 'BANK UNIPDU UJI', type: 'AKTIVA', contra: false },
     { code: '11005', name: 'AKUM. PENYUSUTAN', type: 'AKTIVA', contra: true },
     { code: '30000', name: 'MODAL', type: 'MODAL', contra: false },
     { code: '41000', name: 'DROPING', type: 'TERIMA', contra: false },
+    { code: '40000', name: 'PENDAPATAN', type: 'TERIMA', contra: false },
+    { code: '13000', name: 'AKTIVA TETAP', type: 'AKTIVA', contra: true },
   ]);
   assert.deepEqual(read.opening, {
     '10000': { debit: 500000, credit: 0 },

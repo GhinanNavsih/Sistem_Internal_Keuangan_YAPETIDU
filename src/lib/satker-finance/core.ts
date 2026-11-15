@@ -57,7 +57,7 @@ export function entryReceiptPaths(entry: Pick<JournalEntry, 'receiptPath' | 'rec
   return entry.receiptPath ? [entry.receiptPath] : [];
 }
 
-export const DEFAULT_ACCOUNTS: FinancialAccount[] = workbookAccounts as FinancialAccount[];
+export const DEFAULT_ACCOUNTS = (workbookAccounts as FinancialAccount[]).map(withAccountPostingDefaults);
 export const CASH_FLOW_SECTIONS: CashFlowSection[] = ['OPERATING', 'INVESTING', 'FINANCING'];
 export const accountId = (account: FinancialAccount) => account.id || account.code;
 
@@ -94,6 +94,22 @@ export function lastDateOfMonth(academicYear: string, monthIndex: number) {
 /** The normal side of a new account in a group; a contra account (akun pengurang, such as accumulated depreciation) takes the other side. */
 export function groupNormalBalance(type: AccountType, contra = false): 'DEBIT' | 'CREDIT' {
   return (type === 'HUTANG' || type === 'MODAL' || type === 'TERIMA') !== contra ? 'CREDIT' : 'DEBIT';
+}
+
+export function groupReportTarget(type: AccountType): NonNullable<FinancialAccount['reportTarget']> {
+  return type === 'TERIMA' || type === 'KELUAR' ? 'INCOME_STATEMENT' : 'BALANCE_SHEET';
+}
+
+/** Named rows are accounts. Older catalogs may omit their posting classifications. */
+export function withAccountPostingDefaults(account: Omit<FinancialAccount, 'postable'>): FinancialAccount {
+  if (!account.name.trim()) return { ...account, postable: false };
+  return {
+    ...account,
+    normalBalance: account.normalBalance ?? groupNormalBalance(account.type),
+    reportTarget: account.reportTarget ?? groupReportTarget(account.type),
+    cashFlowSection: isCashAccount(account) ? null : account.cashFlowSection ?? defaultCashFlowSection(account.type, account.code),
+    postable: true,
+  };
 }
 
 /**

@@ -1,5 +1,5 @@
 import type { CellObject, WorkSheet } from 'xlsx';
-import { fiscalMonths, groupNormalBalance, type AccountType } from './core';
+import { fiscalMonths, groupNormalBalance, groupReportTarget, type AccountType } from './core';
 import { ACCOUNT_TYPE_LIST, type BookImport, type BookImportAccount, type BookImportLine, type BookImportVoucher } from './bookImport';
 
 /**
@@ -129,9 +129,8 @@ function lastRowOf(sheet: WorkSheet) {
 export type AkunRead = { accounts: BookImportAccount[]; opening: BookImport['opening']; problems: string[]; unnamed: Set<string> };
 
 /**
- * The accounts a unit posts to and their opening balances. Headings are skipped; a row with a number but no name is a
- * placeholder, which is imported only if no journal uses it. A sheet without POS columns (the group decides the side
- * and the report line) is read from its group alone.
+ * Named accounts and their opening balances. Their group supplies any missing classification in the POS columns.
+ * A numbered row without a name is kept in `unnamed` for journal validation.
  */
 export function readAkunSheet(sheet: WorkSheet, label: string): AkunRead {
   const accounts: BookImportAccount[] = [];
@@ -167,16 +166,17 @@ export function readAkunSheet(sheet: WorkSheet, label: string): AkunRead {
         continue;
       }
       if (!ACCOUNT_TYPE_LIST.includes(type)) { problems.push(`${label} baris ${row}: kelompok akun "${type}" tidak dikenali.`); continue; }
-      const expectedReport = type === 'TERIMA' || type === 'KELUAR' ? 'LABA RUGI' : 'NERACA';
-      if (hasPositions) {
-        const postable = (position === 'DEBET' || position === 'KREDIT') && (report === 'NERACA' || report === 'LABA RUGI');
-        if (!postable) {
-          if (debitValue || creditValue) problems.push(`${label} baris ${row}: akun ${code} bukan akun posting tetapi memiliki saldo awal.`);
-          continue;
-        }
-        if (report !== expectedReport) { problems.push(`${label} baris ${row}: pos laporan akun ${code} harus ${expectedReport}.`); continue; }
+      const expectedReport = groupReportTarget(type) === 'INCOME_STATEMENT' ? 'LABA RUGI' : 'NERACA';
+      const hasPosition = hasPositions && !/^[-–—]*$/.test(position);
+      if (hasPosition && position !== 'DEBET' && position !== 'KREDIT') {
+        problems.push(`${label} baris ${row}: pos saldo akun ${code} harus DEBET atau KREDIT.`);
+        continue;
       }
-      const contra = hasPositions && (position === 'DEBET' ? 'DEBIT' : 'CREDIT') !== groupNormalBalance(type);
+      if (hasPositions && !/^[-–—]*$/.test(report) && report !== expectedReport) {
+        problems.push(`${label} baris ${row}: pos laporan akun ${code} harus ${expectedReport}.`);
+        continue;
+      }
+      const contra = hasPosition && (position === 'DEBET' ? 'DEBIT' : 'CREDIT') !== groupNormalBalance(type);
       accounts.push({ code, name, type, contra });
       const debit = debitValue === null ? 0 : debitValue;
       const credit = creditValue === null ? 0 : creditValue;
