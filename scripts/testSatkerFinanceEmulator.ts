@@ -502,6 +502,23 @@ async function main() {
   assert.equal(biroView.entries[0].lines[0].accountCode, bbmAccounts[0].id);
   assert.ok(biroView.accounts.every((account: { postable: boolean }) => account.postable));
 
+  // Journals imported before unit-scoped catalogs used this persistent account ID.
+  const legacyId = 'legacy-bbm-journal';
+  await adminDb.collection('SatkerFinancialYears').doc(`${BIRO_UMUM_ACCOUNT_UNIT_ID}_2026-2027`).collection('entries').doc(legacyId).set({
+    academicYear: '2026-2027', date: '2026-09-29', monthIndex: 9, kind: 'ADVANCED', description: 'BBM LGX',
+    lines: [{ accountCode: 'biro_umum_52130', accountNumber: '52130', accountName: 'BBM LGX', debit: 300000, credit: 0, description: 'BBM LGX' },
+      { accountCode: '10000', accountNumber: '10000', accountName: 'KAS', debit: 0, credit: 300000 }],
+    totalAmount: 300000, isBalanced: true, revision: 0,
+  });
+  const biroLegacyView = await succeeds(await read(head, { ...biroBase, month: '9' }));
+  assert.equal(biroLegacyView.accounts.find((account: { code: string }) => account.code === '52130').id, 'biro_umum_52130');
+  assert.ok(biroLegacyView.statements.rows.some((row: { account: { code: string }; debitMovement: number }) => row.account.code === '52130' && row.debitMovement === 300000));
+  await succeeds(await invoke(head, { ...biroBase, action: 'UPDATE_ENTRY', entryId: legacyId, expectedRevision: 0, monthIndex: 9,
+    date: '2026-09-29', description: 'BBM LGX dikoreksi', lines: [
+      { accountCode: 'biro_umum_52130', debit: 300000, credit: 0, description: 'BBM LGX dikoreksi' },
+      { accountCode: '10000', debit: 0, credit: 300000 },
+    ] }));
+
   console.log('SatKer finance emulator workflow passed.');
   await admin.app().delete();
 }

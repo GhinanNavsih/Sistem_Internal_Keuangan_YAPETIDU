@@ -211,7 +211,8 @@ function accountsForUnit(unitId: string, globalAccounts: FinancialAccount[]): Fi
     const reportTarget = source.reportTarget !== undefined ? source.reportTarget : (existing?.reportTarget ?? null);
     return withAccountPostingDefaults({
       ...existing,
-      id: existing ? source.code : `${unitId}_${source.code}`,
+      // Biro Umum journals predate unit-scoped catalogs and already store this ID.
+      id: existing ? source.code : `${unitId === BIRO_UMUM_ACCOUNT_UNIT_ID ? 'biro_umum' : unitId}_${source.code}`,
       code: source.code,
       name: source.name,
       type: source.type,
