@@ -1,4 +1,5 @@
 import { InstitutionScope, SifatSurat, SuratAttachment } from './types';
+import { TUJUAN_MAX_LENGTH } from './templates';
 
 const VALID_SIFAT: readonly SifatSurat[] = ['biasa', 'penting', 'segera', 'rahasia'];
 const VALID_SCOPES: readonly InstitutionScope[] = ['UNIPDU', 'YAPETIDU', 'SATKER'];
@@ -116,7 +117,7 @@ export function validateSuratKeluarInput(raw: Record<string, unknown>): {
   const tanggalSurat = sanitizeText(raw.tanggalSurat, 10);
   if (!ISO_DATE_REGEX.test(tanggalSurat)) return { ok: false, error: 'Tanggal surat tidak valid (YYYY-MM-DD).' };
 
-  const tujuan = sanitizeText(raw.tujuan, 150);
+  const tujuan = sanitizeText(raw.tujuan, TUJUAN_MAX_LENGTH);
   if (!tujuan) return { ok: false, error: 'Tujuan surat wajib diisi.' };
 
   const perihal = sanitizeText(raw.perihal, 250);

@@ -208,18 +208,26 @@ test('recorded and legacy letters reopen with their actual agenda data and text'
   assert.equal(legacy.tujuanNama, 'Fatmah');
   assert.equal(legacy.isiParagraf2, surat.contentBody);
   assert.equal(legacy.isiParagraf1, '');
-  const saved = { ...legacy, tujuanJabatanInstansi: 'BAK', tujuanAlamatKota: 'di Jombang', penandatanganNipy: '123', isiParagraf1: 'Pembuka' };
+  const saved = { ...legacy, tujuanNama: 'Fatmah\nBAK', tujuanAlamatKota: 'di Jombang', penandatanganNipy: '123', isiParagraf1: 'Pembuka' };
   assert.deepEqual(parseLetterDraft(saved), saved);
   const reopened = draftFromSurat({ ...surat, tujuan: draftRecipient(saved), letterDraft: saved }, 'Lain');
-  assert.equal(reopened.tujuanJabatanInstansi, 'BAK');
+  assert.equal(reopened.tujuanNama, 'Fatmah\nBAK');
+  assert.equal(draftRecipient(saved), 'Fatmah - BAK');
   assert.equal(reopened.penandatanganNipy, '123');
   assert.equal(reopened.isiParagraf1, 'Pembuka');
   const agendaChanged = draftFromSurat({ ...surat, tujuan: 'Penerima Baru', perihal: 'Hal Baru', letterDraft: saved }, 'Lain');
   assert.equal(agendaChanged.tujuanNama, 'Penerima Baru');
-  assert.equal(agendaChanged.tujuanJabatanInstansi, '');
   assert.equal(agendaChanged.perihal, 'Hal Baru');
   assert.equal(agendaChanged.isiParagraf1, 'Pembuka');
   assert.equal(parseLetterDraft({ ...saved, isiParagraf1: 'x'.repeat(10001) }), null);
+
+  // Drafts saved before the recipient became multi-line merge the old institution field into its own line
+  const oldDraft = { ...saved, tujuanNama: 'Fatmah', tujuanJabatanInstansi: 'BAK' };
+  const migrated = parseLetterDraft(oldDraft);
+  assert.equal(migrated?.tujuanNama, 'Fatmah\nBAK');
+  assert.equal(Object.hasOwn(migrated!, 'tujuanJabatanInstansi'), false);
+  assert.equal(draftFromSurat({ ...surat, tujuan: 'Fatmah - BAK', letterDraft: oldDraft }, 'Lain').tujuanNama, 'Fatmah\nBAK');
+  assert.equal(draftRecipient({ ...saved, tujuanNama: ' Bapak A \n\n Jabatan B ' }), 'Bapak A - Jabatan B');
 
   // Draft with SatKer head contact details
   const withContacts = {
@@ -239,13 +247,22 @@ test('recorded and legacy letters reopen with their actual agenda data and text'
   assert.equal(reopenedWithContacts.satkerHeadEmail, 'bak@unipdu.ac.id');
   assert.equal(reopenedWithContacts.satkerHeadPhone, '081234567890');
 
-  // Verify formatPenandatanganJabatan prevents repeating SatKer name
-  assert.equal(formatPenandatanganJabatan('Kepala Pusat Komputer Net', 'Pusat Komputer Net'), 'Kepala Pusat Komputer Net');
-  assert.equal(formatPenandatanganJabatan('Kepala Pusat Komputer Net Pusat Komputer Net', 'Pusat Komputer Net'), 'Kepala Pusat Komputer Net');
-  assert.equal(formatPenandatanganJabatan('Kepala', 'Pusat Komputer Net'), 'Kepala Pusat Komputer Net');
-  assert.equal(formatPenandatanganJabatan('Kepala Satuan Kerja', 'Pusat Komputer Net'), 'Kepala Pusat Komputer Net');
-  assert.equal(formatPenandatanganJabatan('Dekan Fakultas Agama Islam', 'Fakultas Agama Islam'), 'Dekan Fakultas Agama Islam');
-  assert.equal(getDefaultDraft('Pusat Komputer Net', 'Ahmad', 'Kepala Pusat Komputer Net').penandatanganJabatan, 'Kepala Pusat Komputer Net');
+  // The signature title never carries the SatKer name, including names saved by older letters
+  assert.equal(formatPenandatanganJabatan('Kepala', 'Pusat Komputer Net'), 'Kepala');
+  assert.equal(formatPenandatanganJabatan('Kepala Pusat Komputer Net', 'Pusat Komputer Net'), 'Kepala');
+  assert.equal(formatPenandatanganJabatan('Kepala Pusat Komputer Net Pusat Komputer Net', 'Pusat Komputer Net'), 'Kepala');
+  assert.equal(formatPenandatanganJabatan('Dekan Fakultas Agama Islam', 'Fakultas Agama Islam'), 'Dekan');
+  assert.equal(
+    formatPenandatanganJabatan('Wakil Rektor Bidang Akademik dan Kemahasiswaan Biro Administrasi Akademik Badan Administrasi Keuangan (BAK)', 'Biro Administrasi Akademik Badan Administrasi Keuangan (BAK)'),
+    'Wakil Rektor Bidang Akademik dan Kemahasiswaan',
+  );
+  assert.equal(formatPenandatanganJabatan('Wakil Rektor Bidang Akademik dan Kemahasiswaan', 'BAK'), 'Wakil Rektor Bidang Akademik dan Kemahasiswaan');
+  assert.equal(formatPenandatanganJabatan('Pusat Komputer Net', 'Pusat Komputer Net'), 'Pusat Komputer Net');
+  assert.equal(getDefaultDraft('Pusat Komputer Net', 'Ahmad', 'Kepala').penandatanganJabatan, 'Kepala');
+
+  // Body sentences that name the signer still carry the SatKer name
+  assert.match(applyTemplateDefaults(getDefaultDraft('BAK'), 'keterangan', 'BAK', 'Ahmad', 'Kepala').isiParagraf1, /^Yang bertanda tangan di bawah ini, Kepala BAK Universitas/);
+  assert.match(applyTemplateDefaults(getDefaultDraft('BAK'), 'rekomendasi', 'BAK', 'Ahmad', 'Kepala').isiParagraf1, /^Yang bertanda tangan di bawah ini, Kepala BAK, dengan/);
 });
 
 test('formatNomorSuratKeluarTemplate formats UNIPDU and YAPETIDU single & batch letter numbers matching Excel', () => {

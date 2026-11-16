@@ -81,7 +81,7 @@ async function main() {
   const originalCount = (await adminDb.collection('SatkerLetters').get()).size;
   const attachment = { id: 'a', name: 'scan.pdf', url: 'https://example.test/scan.pdf', contentType: 'application/pdf', size: 100, uploadedAt: '2026-11-10' };
   await adminDb.doc(`SatkerLetters/${existing.id}`).update({ attachments: [attachment], status: 'terkirim', ringkasan: 'Catatan agenda' });
-  const draft = { ...draftFromSurat(existing, 'BAK'), tujuanNama: 'Pembina Tilawah', tujuanJabatanInstansi: 'Unit A',
+  const draft = { ...draftFromSurat(existing, 'BAK'), tujuanNama: 'Pembina Tilawah\nUnit A',
     tujuanAlamatKota: 'di Jombang', isiParagraf1: 'Undangan rapat', isiParagraf2: 'Hari: Selasa\nWaktu: 09.00',
     penandatanganNipy: '123', lampiranKeterangan: 'Satu berkas' };
   const update = (body: unknown) => PUT(new NextRequest('http://localhost/api/satker-surat', { method: 'PUT', headers, body: JSON.stringify(body) }));
@@ -95,7 +95,7 @@ async function main() {
   assert.deepEqual(stored.attachments, [attachment]);
   const reopened = draftFromSurat({ ...stored, id: existing.id } as typeof existing, 'BAK');
   assert.equal(reopened.isiParagraf2, 'Hari: Selasa\nWaktu: 09.00');
-  assert.equal(reopened.tujuanJabatanInstansi, 'Unit A');
+  assert.equal(reopened.tujuanNama, 'Pembina Tilawah\nUnit A');
   assert.equal(reopened.penandatanganNipy, '123');
   response = await update({ id: existing.id, letterDraft: { ...draft, isiParagraf2: 'Waktu: 10.00' }, contentBody: 'Waktu: 10.00' });
   assert.equal(response.status, 200);

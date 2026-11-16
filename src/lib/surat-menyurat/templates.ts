@@ -7,8 +7,8 @@ export interface LetterDraftPayload {
   lampiranKeterangan: string;
   perihal: string;
   tanggalSurat: string; // YYYY-MM-DD
+  /** Recipient lines (name, title, institution); one per line. */
   tujuanNama: string;
-  tujuanJabatanInstansi: string;
   tujuanAlamatKota: string;
   salamPembuka: string;
   isiParagraf1: string;
@@ -25,10 +25,13 @@ export interface LetterDraftPayload {
   taskAssigner?: AssignedPerson;
 }
 
+/** Longest recipient text; also fits older letters whose name and institution are merged into one. */
+export const TUJUAN_MAX_LENGTH = 400;
+
 const templateTypes: TemplateType[] = ['tugas', 'keterangan', 'undangan', 'pengantar', 'permohonan', 'edaran', 'rekomendasi', 'balasan', 'custom'];
 const draftFieldLimits: Record<Exclude<keyof LetterDraftPayload, 'templateType' | 'satkerHeadEmail' | 'satkerHeadPhone' | 'assignedPeople' | 'taskAssigner'>, number> = {
   nomorSurat: 100, lampiranKeterangan: 150, perihal: 250, tanggalSurat: 10,
-  tujuanNama: 150, tujuanJabatanInstansi: 150, tujuanAlamatKota: 150,
+  tujuanNama: TUJUAN_MAX_LENGTH, tujuanAlamatKota: 150,
   salamPembuka: 1000, isiParagraf1: 10000, isiParagraf2: 10000,
   isiParagraf3: 10000, salamPenutup: 1000, penandatanganNama: 100,
   penandatanganJabatan: 100, penandatanganNipy: 100, satkerName: 150,
@@ -41,9 +44,14 @@ const optionalDraftFieldLimits: Record<string, number> = {
 /** Reject invalid or oversized drafts rather than silently losing edited text. */
 export function parseLetterDraft(value: unknown): LetterDraftPayload | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const raw = value as Record<string, unknown>;
+  let raw = value as Record<string, unknown>;
   if (!templateTypes.includes(raw.templateType as TemplateType)) return null;
   const result: Record<string, unknown> = { templateType: raw.templateType as string };
+  // Older drafts kept the title / institution in a separate field; it is now another line of the recipient.
+  const legacyInstansi = typeof raw.tujuanJabatanInstansi === 'string' ? raw.tujuanJabatanInstansi.trim() : '';
+  if (legacyInstansi && typeof raw.tujuanNama === 'string') {
+    raw = { ...raw, tujuanNama: [raw.tujuanNama.trim(), legacyInstansi].filter(Boolean).join('\n') };
+  }
   for (const [key, limit] of Object.entries(draftFieldLimits)) {
     if (typeof raw[key] !== 'string' || raw[key].length > limit) return null;
     result[key] = raw[key];
@@ -72,11 +80,26 @@ export function parseLetterDraft(value: unknown): LetterDraftPayload | null {
   return result as unknown as LetterDraftPayload;
 }
 
+/** One-line recipient for the agenda book: the recipient lines joined with " - ". */
 export function draftRecipient(draft: LetterDraftPayload): string {
-  return [draft.tujuanNama.trim(), draft.tujuanJabatanInstansi.trim()].filter(Boolean).join(' - ');
+  return draft.tujuanNama.split('\n').map((line) => line.trim()).filter(Boolean).join(' - ');
 }
 
+/**
+ * Signature title without the SatKer name (the letterhead already shows it).
+ * Also strips a SatKer name that older letters saved as a suffix of the title.
+ */
 export function formatPenandatanganJabatan(jabatan?: string, satkerName?: string): string {
+  const title = (jabatan || 'Kepala').trim();
+  const cleanSatker = (satkerName || '').trim();
+  if (!cleanSatker) return title;
+  const escapedSatker = cleanSatker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const stripped = title.replace(new RegExp(`(?:\\s+${escapedSatker})+$`, 'i'), '').trim();
+  return stripped || title;
+}
+
+/** Title with the SatKer name appended, for sentences in the letter body ("Yang bertanda tangan di bawah ini, ..."). */
+function jabatanWithSatker(jabatan?: string, satkerName?: string): string {
   const cleanSatker = (satkerName || '').trim();
   let title = (jabatan || 'Kepala').trim();
 
@@ -108,13 +131,12 @@ export function draftFromSurat(surat: SuratKeluar, fallbackSatker: string): Lett
   const draft = saved || {
     ...getDefaultDraft(targetSatker),
     templateType: (templateTypes.includes(surat.templateType as TemplateType) ? surat.templateType : 'custom') as TemplateType,
-    tujuanNama: surat.tujuan || '', tujuanJabatanInstansi: '', tujuanAlamatKota: 'di Tempat',
+    tujuanNama: surat.tujuan || '', tujuanAlamatKota: 'di Tempat',
     salamPembuka: '', isiParagraf1: '', isiParagraf2: surat.contentBody || '', isiParagraf3: '', salamPenutup: '',
     penandatanganNipy: '',
   };
   if (saved && draftRecipient(saved) !== surat.tujuan) {
     draft.tujuanNama = surat.tujuan || '';
-    draft.tujuanJabatanInstansi = '';
   }
   return {
     ...draft, nomorSurat: surat.nomorSurat || '', tanggalSurat: surat.tanggalSurat || '',
@@ -141,8 +163,7 @@ export function getDefaultDraft(
     lampiranKeterangan: '-',
     perihal: 'Surat Tugas Pelaksanaan Kegiatan',
     tanggalSurat: today,
-    tujuanNama: 'Bapak / Ibu Dosen & Tenaga Kependidikan',
-    tujuanJabatanInstansi: satkerName || 'Universitas Pesantren Tinggi Darul \'Ulum',
+    tujuanNama: `Bapak / Ibu Dosen & Tenaga Kependidikan\n${satkerName || 'Universitas Pesantren Tinggi Darul \'Ulum'}`,
     tujuanAlamatKota: 'di Tempat',
     salamPembuka: 'Assalamu\'alaikum Wr. Wb.',
     isiParagraf1: 'Dengan ini memberikan tugas kepada:',
@@ -195,10 +216,9 @@ export function applyTemplateDefaults(
         perihal: 'Surat Keterangan',
         lampiranKeterangan: '-',
         tujuanNama: 'Yang Berkepentingan',
-        tujuanJabatanInstansi: '',
         tujuanAlamatKota: 'di Tempat',
         salamPembuka: 'Assalamu\'alaikum Wr. Wb.',
-        isiParagraf1: `Yang bertanda tangan di bawah ini, ${base.penandatanganJabatan || 'Kepala SatKer'} Universitas Pesantren Tinggi Darul 'Ulum (UNIPDU) Jombang menerangkan bahwa:`,
+        isiParagraf1: `Yang bertanda tangan di bawah ini, ${jabatanWithSatker(base.penandatanganJabatan, targetSatker) || 'Kepala SatKer'} Universitas Pesantren Tinggi Darul 'Ulum (UNIPDU) Jombang menerangkan bahwa:`,
         isiParagraf2: 'Nama:\nNIPY / NIM:\nUnit / Prodi:\nAdalah benar aktif dan terdaftar pada unit kami.',
         isiParagraf3: 'Demikian surat keterangan ini kami buat dengan sebenarnya untuk dapat dipergunakan sebagaimana mestinya.',
         salamPenutup: 'Wassalamu\'alaikum Wr. Wb.',
@@ -209,8 +229,7 @@ export function applyTemplateDefaults(
         ...base,
         perihal: 'Undangan Rapat Koordinasi SatKer',
         lampiranKeterangan: '1 (satu) lembar agenda',
-        tujuanNama: 'Bapak / Ibu / Saudara Pengurus & Anggota SatKer',
-        tujuanJabatanInstansi: satkerName,
+        tujuanNama: `Bapak / Ibu / Saudara Pengurus & Anggota SatKer\n${satkerName}`.trim(),
         tujuanAlamatKota: 'di Tempat',
         salamPembuka: 'Assalamu\'alaikum Wr. Wb.',
         isiParagraf1: `Puji syukur kita panjatkan ke hadirat Allah SWT atas limpahan rahmat-Nya. Sehubungan dengan program kerja ${satkerName}, kami mengharap kehadiran Bapak/Ibu pada rapat koordinasi yang akan diselenggarakan pada:`,
@@ -224,8 +243,7 @@ export function applyTemplateDefaults(
         ...base,
         perihal: 'Surat Pengantar Dokumen / Laporan',
         lampiranKeterangan: '1 (satu) Berkas',
-        tujuanNama: 'Rektor Universitas Pesantren Tinggi Darul \'Ulum',
-        tujuanJabatanInstansi: 'c.q. Bagian Administrasi / BAK',
+        tujuanNama: 'Rektor Universitas Pesantren Tinggi Darul \'Ulum\nc.q. Bagian Administrasi / BAK',
         tujuanAlamatKota: 'di Jombang',
         salamPembuka: 'Assalamu\'alaikum Wr. Wb.',
         isiParagraf1: 'Dengan hormat, bersama ini kami sampaikan berkas dokumen dari satuan kerja kami sebagaimana tercantum di bawah ini:',
@@ -239,8 +257,7 @@ export function applyTemplateDefaults(
         ...base,
         perihal: 'Permohonan Fasilitas / Dukungan Kegiatan',
         lampiranKeterangan: '1 (satu) Proposal',
-        tujuanNama: 'Kepala Biro Umum / Pejabat Terkait',
-        tujuanJabatanInstansi: 'Universitas Pesantren Tinggi Darul \'Ulum',
+        tujuanNama: 'Kepala Biro Umum / Pejabat Terkait\nUniversitas Pesantren Tinggi Darul \'Ulum',
         tujuanAlamatKota: 'di Jombang',
         salamPembuka: 'Assalamu\'alaikum Wr. Wb.',
         isiParagraf1: `Semoga Allah SWT senantiasa melimpahkan taufiq dan hidayah-Nya dalam menjalankan tugas sehari-hari. Sehubungan dengan kegiatan yang diselenggarakan oleh ${satkerName}, bersama ini kami mengajukan permohonan:`,
@@ -254,8 +271,7 @@ export function applyTemplateDefaults(
         ...base,
         perihal: 'Pemberitahuan Internal',
         lampiranKeterangan: '-',
-        tujuanNama: 'Bapak / Ibu di Lingkungan Satuan Kerja',
-        tujuanJabatanInstansi: targetSatker,
+        tujuanNama: `Bapak / Ibu di Lingkungan Satuan Kerja\n${targetSatker}`.trim(),
         tujuanAlamatKota: 'di Tempat',
         salamPembuka: 'Assalamu\'alaikum Wr. Wb.',
         isiParagraf1: 'Bersama ini kami sampaikan pemberitahuan sebagai berikut:',
@@ -270,10 +286,9 @@ export function applyTemplateDefaults(
         perihal: 'Surat Rekomendasi',
         lampiranKeterangan: '-',
         tujuanNama: 'Pihak yang Berkepentingan',
-        tujuanJabatanInstansi: '',
         tujuanAlamatKota: 'di Tempat',
         salamPembuka: 'Assalamu\'alaikum Wr. Wb.',
-        isiParagraf1: `Yang bertanda tangan di bawah ini, ${base.penandatanganJabatan}, dengan ini memberikan rekomendasi kepada:`,
+        isiParagraf1: `Yang bertanda tangan di bawah ini, ${jabatanWithSatker(base.penandatanganJabatan, targetSatker)}, dengan ini memberikan rekomendasi kepada:`,
         isiParagraf2: 'Nama:\nNIPY / NIM:\nJabatan / Unit:\nUntuk keperluan:\nDasar pertimbangan:',
         isiParagraf3: 'Demikian surat rekomendasi ini diberikan untuk dipergunakan sesuai dengan keperluan tersebut. Atas perhatian dan kerja samanya, kami ucapkan terima kasih.',
         salamPenutup: 'Wassalamu\'alaikum Wr. Wb.',
@@ -284,8 +299,7 @@ export function applyTemplateDefaults(
         ...base,
         perihal: 'Tanggapan atas Surat',
         lampiranKeterangan: '-',
-        tujuanNama: 'Bapak / Ibu Pimpinan',
-        tujuanJabatanInstansi: 'Instansi Pengirim',
+        tujuanNama: 'Bapak / Ibu Pimpinan\nInstansi Pengirim',
         tujuanAlamatKota: 'di Tempat',
         salamPembuka: 'Assalamu\'alaikum Wr. Wb.',
         isiParagraf1: 'Menindaklanjuti surat Bapak/Ibu, bersama ini kami sampaikan tanggapan sebagai berikut:',

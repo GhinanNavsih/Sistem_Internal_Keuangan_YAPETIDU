@@ -17,7 +17,7 @@ import { AutoResizeTextarea } from '@/components/ui/auto-resize-textarea';
 import { useAuth } from '@/lib/AuthContext';
 import { TEMPLATE_OPTIONS } from '@/lib/surat-menyurat/constants';
 import { formatNomorSuratKeluar, satkerCodeFor } from '@/lib/surat-menyurat/numbering';
-import { applyTemplateDefaults, draftFromSurat, draftRecipient, getDefaultDraft, LetterDraftPayload, AssignedPerson } from '@/lib/surat-menyurat/templates';
+import { applyTemplateDefaults, draftFromSurat, draftRecipient, getDefaultDraft, LetterDraftPayload, AssignedPerson, TUJUAN_MAX_LENGTH } from '@/lib/surat-menyurat/templates';
 import { SuratKeluar, TemplateType } from '@/lib/surat-menyurat/types';
 import LetterPaper, { type LetterField } from './LetterPaper';
 import IndonesianDatePicker from './IndonesianDatePicker';
@@ -102,7 +102,7 @@ export default function SuratComposerModal({
         next.isiParagraf1 = next.isiParagraf1.replace("Universitas Pesantren Tinggi Darul 'Ulum (UNIPDU) Jombang", "Yayasan Pesantren Tinggi Darul 'Ulum Jombang");
       }
       return savedId ? { ...next, perihal: prev.perihal, tujuanNama: prev.tujuanNama,
-        tujuanJabatanInstansi: prev.tujuanJabatanInstansi, tujuanAlamatKota: prev.tujuanAlamatKota,
+        tujuanAlamatKota: prev.tujuanAlamatKota,
         penandatanganNama: prev.penandatanganNama, penandatanganJabatan: prev.penandatanganJabatan } : next;
     });
   };
@@ -293,8 +293,8 @@ export default function SuratComposerModal({
       return false;
     }
     const tujuan = draftRecipient(draft);
-    if (!tujuan || tujuan.length > 150) {
-      setError('Tujuan surat wajib diisi dan maksimal 150 karakter.');
+    if (!tujuan || tujuan.length > TUJUAN_MAX_LENGTH) {
+      setError(`Tujuan surat wajib diisi dan maksimal ${TUJUAN_MAX_LENGTH} karakter.`);
       return false;
     }
 
@@ -460,20 +460,14 @@ export default function SuratComposerModal({
       {/* Penerima Surat Block */}
       <div className="p-3 bg-slate-50 border border-slate-200 rounded-sm space-y-2">
         <span className="text-xs font-bold text-slate-700 block">Tujuan Surat (Kepada Yth.)</span>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <Input
-            value={draft.tujuanNama}
-            onChange={(e) => setDraft((prev) => ({ ...prev, tujuanNama: e.target.value }))}
-            placeholder="Nama / Pihak yang dituju"
-            className="text-xs font-semibold bg-white rounded-sm border-slate-200"
-          />
-          <Input
-            value={draft.tujuanJabatanInstansi}
-            onChange={(e) => setDraft((prev) => ({ ...prev, tujuanJabatanInstansi: e.target.value }))}
-            placeholder="Jabatan / Unit / Instansi"
-            className="text-xs font-semibold bg-white rounded-sm border-slate-200"
-          />
-        </div>
+        <AutoResizeTextarea
+          minRows={1}
+          value={draft.tujuanNama}
+          onChange={(e) => setDraft((prev) => ({ ...prev, tujuanNama: e.target.value }))}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) e.preventDefault(); }}
+          placeholder="Nama / Pihak yang dituju (Shift + Enter untuk baris baru)"
+          className="text-xs font-semibold bg-white rounded-sm border-slate-200 text-slate-900"
+        />
         <Input
           value={draft.tujuanAlamatKota}
           onChange={(e) => setDraft((prev) => ({ ...prev, tujuanAlamatKota: e.target.value }))}
@@ -604,6 +598,7 @@ export default function SuratComposerModal({
         onBlur: () => setEditingPreview(null),
         onKeyDown: (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
           if (event.key === 'Escape' || (!multiline && event.key === 'Enter')) event.currentTarget.blur();
+          if (field === 'tujuanNama' && event.key === 'Enter' && !event.shiftKey) event.currentTarget.blur();
         },
         className: field === 'perihal'
           ? 'block w-full min-w-0 resize-none border-0 bg-transparent p-0 font-inherit text-inherit underline outline outline-1 outline-indigo-400 focus:outline-2'

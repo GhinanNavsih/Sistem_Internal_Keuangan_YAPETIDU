@@ -106,8 +106,7 @@ export default function LetterPaper({
       {/* Kepada Yth */}
       <div className="destination-block mb-6 text-xs">
         <p className="m-0">Kepada Yth.</p>
-        <p className="font-bold m-0">{field('tujuanNama', draft.tujuanNama || 'Bapak / Ibu', 'nama penerima')}</p>
-        {(draft.tujuanJabatanInstansi || editing('tujuanJabatanInstansi')) && <p className="m-0">{field('tujuanJabatanInstansi', draft.tujuanJabatanInstansi, 'instansi penerima')}</p>}
+        <p className="font-bold m-0 whitespace-pre-line">{field('tujuanNama', draft.tujuanNama || 'Bapak / Ibu', 'nama penerima', true)}</p>
         <p className="m-0 italic">{field('tujuanAlamatKota', draft.tujuanAlamatKota || 'di Tempat', 'alamat penerima')}</p>
       </div>
 
