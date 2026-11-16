@@ -110,6 +110,28 @@ async function select(label, value) {
 }
 const noWorkflow = () => assert.doesNotMatch(document.body.textContent, /Draf|Kirim laporan|Pengajuan & persetujuan|Menunggu BAK|Minta revisi|Legacy approval notice|Penutupan tahun buku|Riwayat versi laporan/);
 
+test('duplicate account numbers show a floating error and cannot be submitted', async () => {
+  try {
+    await mount(); await click('Akun'); await click('Buat akun baru');
+    const code = document.querySelector('input[placeholder="contoh: 52199 atau 52199.1"]');
+    const name = [...document.querySelectorAll('label')].find(label => label.textContent.startsWith('Nama akun')).querySelector('input');
+    const setValue = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    await act(async () => { setValue.call(name, 'Akun baru'); name.dispatchEvent(new window.Event('input', { bubbles: true }));
+      setValue.call(code, '10000'); code.dispatchEvent(new window.Event('input', { bubbles: true })); });
+    await settle();
+    const alert = document.querySelector('[role="alert"]');
+    assert.match(alert.textContent, /Nomor akun sudah digunakan/);
+    assert.match(alert.className, /fixed/);
+    assert.equal([...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'Buat akun').disabled, true);
+    assert.equal(T.writes.length, 0);
+    await act(async () => { setValue.call(code, '99999'); code.dispatchEvent(new window.Event('input', { bubbles: true })); });
+    await settle();
+    assert.equal(document.querySelector('[role="alert"]'), null);
+    await click('Buat akun');
+    assert.equal(T.writes.at(-1).code, '99999');
+  } finally { await unmount(); }
+});
+
 test('past periods expose journal and opening actions without report status or closing locks', async () => {
   try {
     await mount();

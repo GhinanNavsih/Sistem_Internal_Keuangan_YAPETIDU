@@ -100,6 +100,7 @@ export default function SatkerFinancePage() {
   const [cashFlowPrint, setCashFlowPrint] = useState<{ loaded: number; total: number } | null>(null);
   const [ledgerPrint, setLedgerPrint] = useState(false);
   const [error, setError] = useState('');
+  const [dismissedErrors, setDismissedErrors] = useState('');
   const [success, setSuccess] = useState('');
   const [voucherDate, setVoucherDate] = useState(localToday);
   const [voucherId, setVoucherId] = useState(() => crypto.randomUUID());
@@ -211,7 +212,7 @@ export default function SatkerFinancePage() {
 
   const post = async (action: string, extra: Record<string, unknown> = {}) => {
     if (!user) return false;
-    setBusy(true); setError(''); setSuccess('');
+    setBusy(true); setError(''); setDismissedErrors(''); setSuccess('');
     try {
       const response = await fetch('/api/satker-finance', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await user.getIdToken()}` },
         body: JSON.stringify({ action, unitId, academicYear, ...extra }) });
@@ -226,6 +227,11 @@ export default function SatkerFinancePage() {
 
   const saveUnitAccount = async () => {
     const existing = data?.accounts.find((account) => account.localAccountId === unitAccountId);
+    if (data?.accounts.some((account) => account.code === unitAccountDraft.code.trim() && account.localAccountId !== unitAccountId)) {
+      setDismissedErrors('');
+      setError('Nomor akun sudah digunakan di SatKer ini.');
+      return;
+    }
     const saved = await post('SAVE_UNIT_ACCOUNT', {
       ...(unitAccountId ? { accountId: unitAccountId } : {}),
       ...unitAccountDraft,
@@ -440,6 +446,21 @@ export default function SatkerFinancePage() {
   let openingError = '';
   try { validateOpeningBalances(openingDraft, data?.accounts || []); }
   catch (cause) { openingError = cause instanceof Error ? cause.message : 'Saldo awal tidak valid.'; }
+  const duplicateAccount = (creatingUnitAccount || !!unitAccountId) && !!unitAccountDraft.code.trim() &&
+    !!data?.accounts.some((account) => account.code === unitAccountDraft.code.trim() && account.localAccountId !== unitAccountId);
+  const visibleErrors = [
+    error,
+    tab === 'akun' && duplicateAccount ? 'Nomor akun sudah digunakan di SatKer ini.' : '',
+    tab === 'akun' && !openingDisabled ? openingError : '',
+    tab === 'jurnal' && canPost ? draftCashFlows.error : '',
+    ...(tab === 'akun' && bookCheck ? bookCheck.problems.slice(0, 50) : []),
+    tab === 'akun' && bookCheck && bookCheck.problems.length > 50 ? `…dan ${bookCheck.problems.length - 50} masalah lain` : '',
+  ].filter((message, index, all): message is string => !!message && all.indexOf(message) === index);
+  const errorKey = JSON.stringify(visibleErrors);
+  const errorCard = visibleErrors.length > 0 && errorKey !== dismissedErrors && <div role="alert" className="fixed bottom-4 right-4 z-[120] flex max-h-[40vh] w-[min(28rem,calc(100vw-2rem))] gap-3 overflow-auto rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 shadow-lg">
+    <ul className="min-w-0 flex-1 space-y-1">{visibleErrors.map((message, index) => <li key={index}>{message}</li>)}</ul>
+    <button type="button" aria-label="Tutup pesan kesalahan" className="h-fit shrink-0 rounded p-1 hover:bg-red-100" onClick={() => setDismissedErrors(errorKey)}><X className="h-4 w-4" /></button>
+  </div>;
   const changeOpening = (account: FinancialAccount, side: 'debit' | 'credit', value: number) => {
     const id = financialAccountId(account);
     setOpeningDraft((current) => {
@@ -455,7 +476,7 @@ export default function SatkerFinancePage() {
 
   // The journal form. A new journal is posted from the top; an edit takes the place of that journal's own rows, highlighted yellow.
   const journalComposer = canPost ? <tbody key={editingEntry?.id ?? 'composer'} ref={composerRef} className={`align-top ${editingEntry ? 'bg-amber-50' : 'bg-slate-50'}`}>
-      {editingEntry && <tr><td colSpan={6} className="border-b border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Mengedit jurnal {editingEntry.date} · {editingEntry.description}. Simpan perubahan, atau batalkan untuk kembali.{error && <span role="alert" className="mt-1 block text-red-700">{error}</span>}</td></tr>}
+      {editingEntry && <tr><td colSpan={6} className="border-b border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Mengedit jurnal {editingEntry.date} · {editingEntry.description}. Simpan perubahan, atau batalkan untuk kembali.</td></tr>}
       {lines.map((line, index) => <tr key={index}>
         {index === 0 && <td rowSpan={lines.length + 1} className="border-b border-slate-200 px-3 py-2"><input type="date" aria-label="Tanggal transaksi" className={field} value={voucherDate} onChange={(event) => setVoucherDate(event.target.value)} /></td>}
         <td className="px-3 py-1.5"><div className="flex items-center gap-1">
@@ -499,7 +520,6 @@ export default function SatkerFinancePage() {
         <td className="border-b border-slate-200 px-3 py-1.5 text-xs text-slate-500">
           {/* Classified by the counter accounts in the catalog, not chosen per journal. */}
           {!!draftCashFlowParts.length && <p className="font-medium text-slate-600" title="Mengikuti klasifikasi arus kas akun lawan di katalog akun">Arus kas: {draftCashFlowParts.join(' · ')}</p>}
-          {draftCashFlows.error && <p className="text-amber-700">{draftCashFlows.error}</p>}
           {draftDebit !== draftCredit && <p className="mt-1 text-amber-700">Belum seimbang · selisih {money(Math.abs(draftDebit - draftCredit))}</p>}
           {draftNegativeCash.map((dip) => <p key={dip.accountCode} role="status" className="mt-1 text-amber-700">Saldo {dip.accountName} jadi minus {money(-dip.lowest)} mulai {dip.firstDate}. Catat dulu uang masuknya (mis. Tarik Tunai dari bank). Jurnal tetap bisa diposting.</p>)}
         </td>
@@ -520,7 +540,6 @@ export default function SatkerFinancePage() {
         <label className="w-40 text-xs font-medium text-slate-500">Awal tahun akademik<input className={`${field} mt-1`} type="number" min="2020" max="2100" value={yearStart} onChange={(event) => { cancelEdit(); const start = Number(event.target.value); setYearStart(start); if (month !== 'ANNUAL') setVoucherDate(`${month >= 9 ? start : start + 1}-${String(month).padStart(2, '0')}-01`); }} /></label>
         <div className="w-52 text-xs font-medium text-slate-500"><span id="satker-period-label">Periode</span><Select items={periodItems} value={String(month)} onValueChange={(value) => { if (!value) return; cancelEdit(); const selected = value === 'ANNUAL' ? 'ANNUAL' : Number(value); setMonth(selected); if (selected !== 'ANNUAL') { const period = months.find((item) => item.monthIndex === selected); if (period) setVoucherDate(`${period.year}-${String(selected).padStart(2, '0')}-01`); } }}><SelectTrigger aria-labelledby="satker-period-label" className={selectTrigger}><SelectValue /></SelectTrigger><SelectContent className={selectContent}><SelectItem className={selectItem} value="ANNUAL">Tahunan (Sep–Agu)</SelectItem>{months.map((item) => <SelectItem className={selectItem} key={item.period} value={String(item.monthIndex)}>{monthNames[item.monthIndex - 1]} {item.year}</SelectItem>)}</SelectContent></Select></div>
       </div>
-      {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
       {success && <div role="status" className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{success}</div>}
       {loading && <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Memuat data keuangan...</div>}
       {!unitId && !loading && data && (data.units.length > 0
@@ -683,10 +702,6 @@ export default function SatkerFinancePage() {
             </div>}
             {bookCheck && <div className="mt-4 space-y-3 text-sm">
               <p className="text-slate-700">{bookCheck.summary.accounts} akun ({bookCheck.summary.openingAccounts} dengan saldo awal, debet {money(bookCheck.summary.openingDebit)}) · {bookCheck.summary.vouchers} jurnal · {bookCheck.summary.lines} baris · total debet {money(bookCheck.summary.debit)}</p>
-              {bookCheck.problems.length > 0 && <ul className="list-disc space-y-1 pl-5 text-amber-700">
-                {bookCheck.problems.slice(0, 50).map((problem, index) => <li key={index}>{problem}</li>)}
-                {bookCheck.problems.length > 50 && <li>…dan {bookCheck.problems.length - 50} masalah lain</li>}
-              </ul>}
               <div className="flex flex-wrap items-center gap-3">
                 <button type="button" className={button} disabled={busy || !bookCheck.book} onClick={() => void importBook()}>
                   {bookCheck.book ? `Impor ${bookCheck.summary.accounts} akun dan ${bookCheck.summary.vouchers} jurnal` : 'Perbaiki berkas dahulu'}
@@ -705,6 +720,7 @@ export default function SatkerFinancePage() {
                 const sanitized = event.target.value.replace(',', '.').replace(/[^0-9.]/g, '');
                 const parts = sanitized.split('.');
                 const code = (parts.length > 1 ? `${parts[0]}.${parts.slice(1).join('')}` : parts[0]).slice(0, 20);
+                setDismissedErrors('');
                 setUnitAccountDraft((current) => ({ ...current, code }));
               }} placeholder="contoh: 52199 atau 52199.1" /></label>
               <label className="text-xs font-medium text-slate-500">Nama akun<input className={`${field} mt-1`} maxLength={150} value={unitAccountDraft.name} onChange={(event) => setUnitAccountDraft((current) => ({ ...current, name: event.target.value }))} /></label>
@@ -716,7 +732,7 @@ export default function SatkerFinancePage() {
               </>}
             </div>
             <p className="mt-3 text-xs text-slate-500">Nomor akun dapat berupa angka atau desimal (misalnya 52199 atau 52199.1). Kelompok akun ditetapkan saat akun baru dibuat. Akun pengurang mengurangi kelompoknya, misalnya akumulasi penyusutan (Aktiva bersaldo Kredit). Klasifikasi arus kas menentukan ke bagian mana kas yang dibayar atau diterima lewat akun ini dicatat; perubahannya hanya berlaku untuk jurnal berikutnya.</p>
-            <div className="mt-4 flex gap-2"><button type="button" className={button} disabled={busy || !/^\d+(\.\d+)?$/.test(unitAccountDraft.code.trim()) || !unitAccountDraft.name.trim()} onClick={() => void saveUnitAccount()}>{creatingUnitAccount ? 'Buat akun' : 'Simpan perubahan'}</button><button type="button" className={lightButton} onClick={() => { setUnitAccountId(''); setCreatingUnitAccount(false); }}>Batal</button></div>
+            <div className="mt-4 flex gap-2"><button type="button" className={button} disabled={busy || duplicateAccount || !/^\d+(\.\d+)?$/.test(unitAccountDraft.code.trim()) || !unitAccountDraft.name.trim()} onClick={() => void saveUnitAccount()}>{creatingUnitAccount ? 'Buat akun' : 'Simpan perubahan'}</button><button type="button" className={lightButton} onClick={() => { setUnitAccountId(''); setCreatingUnitAccount(false); }}>Batal</button></div>
           </div>}
           <div className="mb-4 space-y-3 border-y border-slate-200 py-4">
             <h3 className="text-sm font-semibold text-slate-900">Saldo awal · 1 September {yearStart}</h3>
@@ -731,7 +747,6 @@ export default function SatkerFinancePage() {
                 <button type="button" className={button} disabled={openingDisabled || !!openingError} onClick={() => void post('SAVE_OPENING', { openingBalances: openingDraft, expectedRevision: data.year?.revision || 0 })}>Simpan saldo awal</button>
               </div>
             </div>
-            {openingError && <p role="status" className="text-sm text-amber-700">{openingError}</p>}
           </div>
           <div className="max-h-[32rem] overflow-auto"><table className="w-full text-sm"><thead className="sticky top-0 bg-white"><tr className="text-xs text-slate-500 [&_th]:font-medium"><th className={leftCell}>Nomor</th><th className={leftCell}>Nama akun</th><th className={cell}>Saldo awal Debet</th><th className={cell}>Saldo awal Kredit</th><th className={leftCell}>Kelompok</th><th className={leftCell}>Pos saldo</th><th className={leftCell}>Arus kas</th><th className={leftCell}>Aksi</th></tr></thead><tbody>{[...(data.accounts)].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })).map((account) => <tr key={account.localAccountId || financialAccountId(account)}><td className={leftCell}>{account.code}</td><td className={leftCell}>{account.name || '—'}</td>
             {(['debit', 'credit'] as const).map((side) => <td key={side} className={cell}>{account.postable && account.reportTarget === 'BALANCE_SHEET'
@@ -759,7 +774,7 @@ export default function SatkerFinancePage() {
       </>}
     </div>
     <Dialog open={deletingEntry !== null} onOpenChange={(open) => { if (!open && !busy) closeDelete(); }}>
-      <DialogContent showCloseButton={false} className="rounded-md sm:max-w-md">
+      <DialogContent showCloseButton={false} className="!inset-0 !m-auto !h-fit !translate-none rounded-md sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-base font-semibold text-slate-900">Hapus jurnal ini?</DialogTitle>
           <DialogDescription render={<div />} className="space-y-2 text-sm leading-relaxed text-slate-600">
@@ -768,13 +783,14 @@ export default function SatkerFinancePage() {
           </DialogDescription>
         </DialogHeader>
         <label className="text-xs font-medium text-slate-500">Alasan penghapusan<textarea className={`${field} mt-1`} rows={3} maxLength={500} value={deleteReason} onChange={(event) => setDeleteReason(event.target.value)} placeholder="Contoh: salah input nominal" /></label>
-        {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+        {errorCard}
         <DialogFooter className="rounded-b-md">
           <Button className="rounded-sm" type="button" variant="outline" size="lg" disabled={busy} onClick={closeDelete}>Kembali</Button>
           <Button className="rounded-sm" type="button" variant="danger" size="lg" disabled={busy || deleteReason.trim().length < 3} onClick={() => void deleteEntry()}>{busy ? <Loader2 className="animate-spin" /> : null}Hapus jurnal</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    {!deletingEntry && errorCard}
     {receiptPreview && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4" onClick={() => { URL.revokeObjectURL(receiptPreview); setReceiptPreview(''); }}>
       <button className="absolute right-5 top-5 rounded-md bg-white px-3 py-2 text-sm font-semibold">Tutup</button>
       {receiptPreviewType?.mime === 'application/pdf' ? <iframe title="Bukti transaksi" src={receiptPreview} className="h-[90vh] w-full max-w-4xl rounded-md bg-white" onClick={(event) => event.stopPropagation()} />
