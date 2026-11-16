@@ -139,7 +139,7 @@ export function draftFromSurat(surat: SuratKeluar, fallbackSatker: string): Lett
     draft.tujuanNama = surat.tujuan || '';
   }
   return {
-    ...draft, nomorSurat: surat.nomorSurat || '', tanggalSurat: surat.tanggalSurat || '',
+    ...draft, satkerName: draft.satkerName.trim() ? draft.satkerName : targetSatker, nomorSurat: surat.nomorSurat || '', tanggalSurat: surat.tanggalSurat || '',
     perihal: surat.perihal || '', penandatanganNama: surat.penandatanganNama || '',
     penandatanganJabatan: saved?.templateType === 'tugas' && saved.taskAssigner ? (surat.penandatanganJabatan || draft.penandatanganJabatan) : formatPenandatanganJabatan(surat.penandatanganJabatan || draft.penandatanganJabatan, targetSatker),
     lampiranKeterangan: surat.lampiranKeterangan ?? draft.lampiranKeterangan,

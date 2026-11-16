@@ -221,6 +221,10 @@ test('recorded and legacy letters reopen with their actual agenda data and text'
   assert.equal(agendaChanged.isiParagraf1, 'Pembuka');
   assert.equal(parseLetterDraft({ ...saved, isiParagraf1: 'x'.repeat(10001) }), null);
 
+  // The SatKer name box shows the name the letterhead shows, even for drafts saved without one
+  assert.equal(draftFromSurat({ ...surat, letterDraft: { ...saved, satkerName: '' } }, 'Lain').satkerName, 'BAK');
+  assert.equal(draftFromSurat({ ...surat, satkerName: '', letterDraft: { ...saved, satkerName: '' } }, 'Lain').satkerName, 'Lain');
+
   // Drafts saved before the recipient became multi-line merge the old institution field into its own line
   const oldDraft = { ...saved, tujuanNama: 'Fatmah', tujuanJabatanInstansi: 'BAK' };
   const migrated = parseLetterDraft(oldDraft);

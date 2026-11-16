@@ -376,6 +376,7 @@ export default function SuratComposerModal({
           <Input
             value={draft.satkerName}
             onChange={(e) => setDraft((prev) => ({ ...prev, satkerName: e.target.value }))}
+            onBlur={() => setDraft((prev) => (prev.satkerName.trim() ? prev : { ...prev, satkerName: defaultSatkerName }))}
             placeholder="Contoh: BIRO ADMINISTRASI KEUANGAN (BAK)"
             className="text-xs font-semibold bg-white rounded-sm border-slate-200 uppercase"
           />
