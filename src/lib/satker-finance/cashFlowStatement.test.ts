@@ -67,3 +67,34 @@ test('accounts with no movement that month can be left out without changing any 
   assert.equal(moved.OPERATING.receiptTotal, sections.OPERATING.receiptTotal);
   assert.equal(moved.OPERATING.net, sections.OPERATING.net);
 });
+
+test('money received and passed on through the same bank is shown gross, not dropped for a zero net change', () => {
+  // Biro Sumber Daya Manusia, Oct 2026: a 3.150.000 Dropping BAK came into BANK and went out to UPT Perpustakaan the same day.
+  const passOn = entry('pass-on', '2026-10-05', {
+    kind: 'ADVANCED',
+    lines: [
+      { accountCode: '10000', debit: 3_150_000, credit: 0 },
+      { accountCode: '41000', debit: 0, credit: 3_150_000 },
+      { accountCode: '52000', debit: 3_150_000, credit: 0 },
+      { accountCode: '10000', debit: 0, credit: 3_150_000 },
+    ],
+  });
+  const dropping = entry('dropping', '2026-10-12', { kind: 'INFLOW', accountCode: '41000', paymentAccountCode: '10000', amount: 5_000_000 });
+  // Owed rather than paid: the journal touches no cash, so it must not appear.
+  const accrual = entry('accrual', '2026-10-13', {
+    kind: 'ADVANCED',
+    lines: [
+      { accountCode: '52000', debit: 500, credit: 0 },
+      { accountCode: '20001', debit: 0, credit: 500 },
+    ],
+  });
+  const entries = [passOn, dropping, accrual];
+  const sections = cashFlowStatementSections({ entries, accounts: DEFAULT_ACCOUNTS, academicYear, monthIndex: 10 });
+
+  assert.deepEqual(sections.OPERATING.receipts.filter((row) => row.amount).map((row) => [row.code, row.amount]), [['41000', 8_150_000]]);
+  assert.deepEqual(sections.OPERATING.payments.filter((row) => row.amount).map((row) => [row.code, row.amount]), [['52000', 3_150_000]]);
+  assert.equal(sections.OPERATING.net, 8_150_000 - 3_150_000);
+
+  const statement = buildFinancialStatements({ accounts: DEFAULT_ACCOUNTS, opening: {}, entries, academicYear, monthIndex: 10 });
+  assert.equal(sections.OPERATING.net + sections.INVESTING.net + sections.FINANCING.net, statement.cashFlow.netChange);
+});

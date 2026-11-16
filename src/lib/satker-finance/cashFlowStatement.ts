@@ -29,7 +29,8 @@ export function cashFlowStatementSections(args: { entries: JournalEntry[]; accou
   for (const entry of args.entries) {
     if (entry.academicYear !== args.academicYear || !entry.date.startsWith(prefix)) continue;
     const cashChange = entry.lines.reduce((sum, line) => sum + (isCashAccount(byId.get(line.accountCode)) ? line.debit - line.credit : 0), 0);
-    if (!cashChange) continue;
+    // A journal that touches no cash moves nothing. One that both receives and pays cash (money received and passed on through the same bank) keeps each gross movement, even when its net change is zero.
+    if (!entry.lines.some((line) => isCashAccount(byId.get(line.accountCode)))) continue;
     // Older journals have only one section; retain that assignment while showing their known account lines.
     if (!entry.cashFlows) {
       if (entry.cashFlowSection) {
