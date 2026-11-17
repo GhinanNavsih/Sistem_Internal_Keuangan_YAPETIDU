@@ -20,6 +20,7 @@ import { formatNomorSuratKeluar, satkerCodeFor } from '@/lib/surat-menyurat/numb
 import { applyTemplateDefaults, draftFromSurat, draftRecipient, getDefaultDraft, LetterDraftPayload, AssignedPerson, TUJUAN_MAX_LENGTH } from '@/lib/surat-menyurat/templates';
 import { SuratKeluar, TemplateType } from '@/lib/surat-menyurat/types';
 import LetterPaper, { type LetterField } from './LetterPaper';
+import { LETTER_PRINT_CSS } from './letterPaperCss';
 import IndonesianDatePicker from './IndonesianDatePicker';
 import { Loader2, Printer, Save, Sparkles, Wand2, Trash2 } from 'lucide-react';
 
@@ -122,7 +123,10 @@ export default function SuratComposerModal({
     if (savingRef.current) return;
     const printContent = document.getElementById('printable-official-letter');
     if (!printContent) return;
-    const letterHtml = printContent.innerHTML;
+    // The preview's own page guides and spacing do not belong in the printout.
+    const printCopy = printContent.cloneNode(true) as HTMLElement;
+    printCopy.querySelectorAll('[data-letter-screen-only]').forEach((node) => node.remove());
+    const letterHtml = printCopy.innerHTML;
     const numberPart = draft.nomorSurat.trim().split('/')[0].trim().replace(/[\\<>:"|?*\x00-\x1f]/g, '-');
     const orderNumber = /^\d+$/.test(numberPart) ? numberPart.padStart(3, '0') : numberPart;
     const templateTitle = TEMPLATE_OPTIONS.find((option) => option.id === draft.templateType)?.title || 'Surat';
@@ -145,122 +149,12 @@ export default function SuratComposerModal({
       <!DOCTYPE html>
       <html>
         <head>
+          <meta charset="utf-8">
           <title></title>
-          <style>
-            @page {
-              size: A4 portrait;
-              margin: 20mm 20mm 20mm 20mm;
-            }
-            body {
-              font-family: 'Times New Roman', Times, serif;
-              color: #111;
-              line-height: 1.5;
-              font-size: 12pt;
-              margin: 0;
-              padding: 0;
-            }
-            .kop-container {
-              display: flex;
-              align-items: center;
-              justify-content: space-between;
-              border-bottom: 3px double #111;
-              padding-bottom: 8px;
-              margin-bottom: 20px;
-            }
-            .kop-text {
-              flex: 1;
-              text-align: center;
-              padding: 0 10px;
-              min-width: 0;
-            }
-            .kop-instansi {
-              font-size: 13.5pt;
-              font-weight: 800;
-              text-transform: uppercase;
-              letter-spacing: 0.2px;
-              line-height: 1.2;
-              margin: 0;
-              white-space: nowrap;
-            }
-            .kop-satker {
-              font-size: 11pt;
-              font-weight: bold;
-              text-transform: uppercase;
-              letter-spacing: 0.2px;
-              line-height: 1.25;
-              margin: 3px 0;
-              white-space: nowrap;
-            }
-            .kop-alamat {
-              font-size: 8.5pt;
-              margin: 2px 0 0 0;
-              line-height: 1.3;
-              white-space: nowrap;
-            }
-            .kop-kontak {
-              font-size: 8.5pt;
-              margin: 1px 0 0 0;
-              line-height: 1.3;
-              white-space: nowrap;
-            }
-            .kop-container img { width: 56px; height: 56px; object-fit: contain; }
-            .letter-meta {
-              display: flex;
-              justify-content: space-between;
-              margin-bottom: 16px;
-              font-size: 11pt;
-            }
-            .meta-left table {
-              border-collapse: collapse;
-            }
-            .meta-left > div { display: flex; }
-            .meta-left > div > span:first-child { width: 65px; flex-shrink: 0; }
-            .meta-left > div > span:nth-child(2) { width: 12px; flex-shrink: 0; }
-            .kop-container img { width: 56px; height: 56px; object-fit: contain; }
-            .meta-left td {
-              padding: 1px 4px;
-              vertical-align: top;
-            }
-            .destination-block {
-              margin: 16px 0;
-              font-size: 11pt;
-            }
-            .letter-content {
-              margin: 20px 0;
-              text-align: justify;
-              font-size: 11.5pt;
-            }
-            .letter-content p {
-              margin-bottom: 12px;
-              text-indent: 28px;
-              white-space: pre-line;
-            }
-            .letter-content .raw-block {
-              white-space: pre-wrap;
-              margin: 10px 0 10px 28px;
-              font-family: inherit;
-            }
-            .signature-block {
-              margin-top: 36px;
-              float: right;
-              width: 250px;
-              text-align: center;
-              font-size: 11pt;
-            }
-            .signature-date {
-              margin: 0 0 4px 0;
-            }
-            .sign-space {
-              height: 75px;
-            }
-            .sign-name {
-              font-weight: bold;
-              text-decoration: underline;
-            }
-          </style>
+          <style>${LETTER_PRINT_CSS}</style>
         </head>
         <body>
-          ${letterHtml}
+          <div class="letter-sheet">${letterHtml}</div>
           <script>
             window.onload = function() {
               window.print();
