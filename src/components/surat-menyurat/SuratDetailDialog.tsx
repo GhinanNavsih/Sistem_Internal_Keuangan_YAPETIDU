@@ -101,14 +101,7 @@ export default function SuratDetailDialog({ open, onOpenChange, surat, type }: P
           )}
 
           {current?.kind === 'naskah' && naskahDraft && (
-            <LetterPaper
-              draft={naskahDraft}
-              defaultSatkerName={surat.satkerName}
-              isYapetidu={surat.institutionScope === 'YAPETIDU'}
-              email={naskahDraft.satkerHeadEmail || ''}
-              phone={naskahDraft.satkerHeadPhone || ''}
-              readOnly
-            />
+            <LetterPaper draft={naskahDraft} isYapetidu={surat.institutionScope === 'YAPETIDU'} />
           )}
 
           {current?.kind === 'file' && (() => {

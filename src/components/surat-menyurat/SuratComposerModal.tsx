@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEditor } from '@tiptap/react';
 import {
   Dialog,
   DialogContent,
@@ -10,19 +11,22 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { OptionSelect } from '@/components/ui/option-select';
-import { AutoResizeTextarea } from '@/components/ui/auto-resize-textarea';
 import { useAuth } from '@/lib/AuthContext';
 import { TEMPLATE_OPTIONS } from '@/lib/surat-menyurat/constants';
 import { formatNomorSuratKeluar, satkerCodeFor } from '@/lib/surat-menyurat/numbering';
 import { applyTemplateDefaults, draftFromSurat, draftRecipient, getDefaultDraft, LetterDraftPayload, AssignedPerson, TUJUAN_MAX_LENGTH } from '@/lib/surat-menyurat/templates';
 import { SuratKeluar, TemplateType } from '@/lib/surat-menyurat/types';
-import LetterPaper, { type LetterField } from './LetterPaper';
+import { extractLetterFields, letterDocText, type LetterDoc } from '@/lib/surat-menyurat/letterDoc';
+import { buildLetterDoc } from '@/lib/surat-menyurat/letterDocBuild';
+import LetterPaper from './LetterPaper';
+import LetterToolbar from './LetterToolbar';
+import { letterDocExtensions, LetterEditorContext, type LetterEditorControls } from './letterDocExtensions';
 import { LETTER_PRINT_CSS } from './letterPaperCss';
-import IndonesianDatePicker from './IndonesianDatePicker';
-import { Loader2, Printer, Save, Sparkles, Wand2, Trash2 } from 'lucide-react';
+import { Loader2, Printer, Save, Sparkles, Wand2 } from 'lucide-react';
+
+const NO_PEOPLE: AssignedPerson[] = [];
 
 interface Props {
   open: boolean;
@@ -56,8 +60,10 @@ export default function SuratComposerModal({
 }: Props) {
   const { user, profile } = useAuth();
   const isYapetidu = surat?.institutionScope === 'YAPETIDU';
+  /** The editor works on the whole letter; an older letter, or a fresh template, is laid out from its fields first. */
+  const withDoc = (value: LetterDraftPayload): LetterDraftPayload => (value.letterDoc ? value : { ...value, letterDoc: buildLetterDoc(value, { isYapetidu }) });
   const [draft, setDraft] = useState<LetterDraftPayload>(() => {
-    if (surat) return draftFromSurat(surat, defaultSatkerName);
+    if (surat) return withDoc(draftFromSurat(surat, defaultSatkerName));
     const initial = getDefaultDraft(
       defaultSatkerName,
       defaultKepalaName,
@@ -66,7 +72,7 @@ export default function SuratComposerModal({
       defaultKepalaPhone || profile?.phoneNumber || profile?.phone || '',
     );
     initial.nomorSurat = formatNomorSuratKeluar({ sequenceNumber: nextSequence, satkerCode: satkerCodeFor(defaultSatkerInitials, defaultSatkerName), date: new Date() });
-    return initial;
+    return withDoc(initial);
   });
   const [savedId, setSavedId] = useState<string | null>(surat?.id || null);
   const savedTemplateType = useRef(draft.templateType);
@@ -75,16 +81,11 @@ export default function SuratComposerModal({
   const savingRef = useRef(false);
   const [saveSuccess, setSaveSuccess] = useState('');
   const [error, setError] = useState('');
-  const [editingPreview, setEditingPreview] = useState<Exclude<keyof LetterDraftPayload, 'templateType' | 'assignedPeople' | 'taskAssigner'> | null>(null);
   const [people, setPeople] = useState<AssignedPerson[]>([]);
   const [peopleLoaded, setPeopleLoaded] = useState(false);
   const [peopleError, setPeopleError] = useState('');
   const [peopleRetry, setPeopleRetry] = useState(0);
   const peopleLoading = !peopleLoaded && !peopleError;
-  const [personSearch, setPersonSearch] = useState('');
-  const [personSearchOpen, setPersonSearchOpen] = useState(false);
-  const [assignerSearch, setAssignerSearch] = useState('');
-  const [assignerSearchOpen, setAssignerSearchOpen] = useState(false);
 
   useEffect(() => {
     if (draft.templateType !== 'tugas' || !user || peopleLoaded) return;
@@ -96,15 +97,39 @@ export default function SuratComposerModal({
     return () => { cancelled = true; };
   }, [draft.templateType, user, peopleLoaded, peopleRetry]);
 
+  const lastDoc = useRef<LetterDoc | undefined>(draft.letterDoc);
+  const extensions = useMemo(() => letterDocExtensions(), []);
+  const editor = useEditor({
+    extensions,
+    content: draft.letterDoc,
+    immediatelyRender: false,
+    editorProps: { attributes: { 'aria-label': 'Isi surat', lang: 'id', spellcheck: 'true' } },
+    onUpdate: ({ editor: current }) => {
+      const letterDoc = current.getJSON() as LetterDoc;
+      lastDoc.current = letterDoc;
+      // The number, subject, date, recipient and signer are read back from what is written on the paper.
+      const fields = extractLetterFields(letterDoc);
+      setDraft((prev) => ({ ...prev, ...fields, letterDoc }));
+    },
+  });
+  // A new letter from outside the editor (choosing another template) replaces what it shows.
+  useEffect(() => {
+    if (!editor || !draft.letterDoc || draft.letterDoc === lastDoc.current) return;
+    lastDoc.current = draft.letterDoc;
+    editor.commands.setContent(draft.letterDoc, { emitUpdate: false });
+  }, [editor, draft.letterDoc]);
+
   const handleTemplateChange = (newType: TemplateType) => {
     setDraft((prev) => {
       const next = applyTemplateDefaults(prev, newType, prev.satkerName, prev.penandatanganNama, prev.penandatanganJabatan);
       if (isYapetidu) {
         next.isiParagraf1 = next.isiParagraf1.replace("Universitas Pesantren Tinggi Darul 'Ulum (UNIPDU) Jombang", "Yayasan Pesantren Tinggi Darul 'Ulum Jombang");
       }
-      return savedId ? { ...next, perihal: prev.perihal, tujuanNama: prev.tujuanNama,
+      const result = savedId ? { ...next, perihal: prev.perihal, tujuanNama: prev.tujuanNama,
         tujuanAlamatKota: prev.tujuanAlamatKota,
         penandatanganNama: prev.penandatanganNama, penandatanganJabatan: prev.penandatanganJabatan } : next;
+      delete result.letterDoc;
+      return withDoc(result);
     });
   };
 
@@ -116,7 +141,8 @@ export default function SuratComposerModal({
       satkerCode: code,
       date,
     });
-    setDraft((prev) => ({ ...prev, nomorSurat: autoNo }));
+    if (editor) editor.commands.setLetterField('nomorSurat', autoNo);
+    else setDraft((prev) => ({ ...prev, nomorSurat: autoNo }));
   };
 
   const handlePrint = async () => {
@@ -126,6 +152,9 @@ export default function SuratComposerModal({
     // The preview's own page guides and spacing do not belong in the printout.
     const printCopy = printContent.cloneNode(true) as HTMLElement;
     printCopy.querySelectorAll('[data-letter-screen-only]').forEach((node) => node.remove());
+    printCopy.querySelectorAll('[contenteditable]').forEach((node) => node.removeAttribute('contenteditable'));
+    // The preview pushes the closing block down by itself when a page break would split it; the printer does that on its own.
+    printCopy.querySelectorAll<HTMLElement>('.letter-closing').forEach((node) => node.style.removeProperty('margin-top'));
     const letterHtml = printCopy.innerHTML;
     const numberPart = draft.nomorSurat.trim().split('/')[0].trim().replace(/[\\<>:"|?*\x00-\x1f]/g, '-');
     const orderNumber = /^\d+$/.test(numberPart) ? numberPart.padStart(3, '0') : numberPart;
@@ -154,7 +183,7 @@ export default function SuratComposerModal({
           <style>${LETTER_PRINT_CSS}</style>
         </head>
         <body>
-          <div class="letter-sheet">${letterHtml}</div>
+          <div class="letter-sheet"><div class="letter-doc">${letterHtml}</div></div>
           <script>
             window.onload = function() {
               window.print();
@@ -200,13 +229,8 @@ export default function SuratComposerModal({
       const idToken = await user.getIdToken();
 
       const combinedBody = [
-        draft.salamPembuka,
         ...(draft.templateType === 'tugas' && draft.taskAssigner ? [`Pemberi tugas:\nNama: ${draft.penandatanganNama}\nJabatan: ${draft.penandatanganJabatan || '-'}`] : []),
-        draft.isiParagraf1,
-        ...(draft.templateType === 'tugas' ? [(draft.assignedPeople || []).map((person, index) => `${index + 1}. ${person.name}${person.role ? ` — ${person.role}` : ''}`).join('\n')] : []),
-        draft.isiParagraf2,
-        draft.isiParagraf3,
-        draft.salamPenutup,
+        letterDocText(draft.letterDoc, draft.assignedPeople),
       ].filter(Boolean).join('\n\n');
 
       const kategori = draft.templateType === 'custom' ? 'Lainnya' : TEMPLATE_OPTIONS.find((option) => option.id === draft.templateType)?.title || 'Lainnya';
@@ -224,7 +248,8 @@ export default function SuratComposerModal({
         templateType: draft.templateType,
         contentBody: combinedBody.slice(0, 10000),
         lampiranKeterangan: draft.lampiranKeterangan,
-        letterDraft: draft,
+        // The written letter replaces the fields older letters used for greetings and body.
+        letterDraft: { ...draft, salamPembuka: '', salamPenutup: '', isiParagraf1: '', isiParagraf2: '', isiParagraf3: '' },
       };
 
       const res = await fetch('/api/satker-surat', {
@@ -256,268 +281,26 @@ export default function SuratComposerModal({
     }
   };
 
-  // Shared Form Fields JSX
-  const renderEditorForm = () => (
-    <div className="space-y-4">
-      {/* Pengaturan Kop SatKer */}
-      <div className="p-3 bg-slate-50 border border-slate-200 rounded-sm space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-bold text-slate-700 block">Kop Surat & Identitas SatKer</span>
-          <span className="text-[10px] text-slate-500 font-medium">Header resmi surat dinas</span>
-        </div>
-        <div className="space-y-1">
-          <Label className="text-[11px] font-semibold text-slate-600">Nama Satuan Kerja (SatKer)</Label>
-          <Input
-            value={draft.satkerName}
-            onChange={(e) => setDraft((prev) => ({ ...prev, satkerName: e.target.value }))}
-            onBlur={() => setDraft((prev) => (prev.satkerName.trim() ? prev : { ...prev, satkerName: defaultSatkerName }))}
-            placeholder="Contoh: BIRO ADMINISTRASI KEUANGAN (BAK)"
-            className="text-xs font-semibold bg-white rounded-sm border-slate-200 uppercase"
-          />
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <div className="space-y-1">
-            <Label className="text-[11px] font-semibold text-slate-600">Email SatKer / Kepala</Label>
-            <Input
-              type="text"
-              value={draft.satkerHeadEmail || ''}
-              onChange={(e) => setDraft((prev) => ({ ...prev, satkerHeadEmail: e.target.value }))}
-              placeholder="email:{satker_head_email}"
-              className="text-xs font-semibold bg-white rounded-sm border-slate-200"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-[11px] font-semibold text-slate-600">No. Telp Kepala SatKer</Label>
-            <Input
-              type="text"
-              value={draft.satkerHeadPhone || ''}
-              onChange={(e) => setDraft((prev) => ({ ...prev, satkerHeadPhone: e.target.value }))}
-              placeholder="Telp. {satker_head_phone_number}"
-              className="text-xs font-semibold bg-white rounded-sm border-slate-200"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Nomor Surat & Tanggal */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs font-semibold text-slate-700">Nomor Surat</Label>
-            <button
-              type="button"
-              onClick={handleGenerateNumber}
-              className="text-[10px] text-indigo-600 font-bold flex items-center gap-1 cursor-pointer hover:underline"
-            >
-              <Sparkles className="w-2.5 h-2.5" /> Auto No
-            </button>
-          </div>
-          <Input
-            value={draft.nomorSurat}
-            onChange={(e) => setDraft((prev) => ({ ...prev, nomorSurat: e.target.value }))}
-            className="text-xs font-semibold bg-white rounded-sm border-slate-200"
-          />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="composer-tanggal-surat" className="text-xs font-semibold text-slate-700">Tanggal Surat</Label>
-          <IndonesianDatePicker
-            id="composer-tanggal-surat"
-            label="Tanggal Surat"
-            value={draft.tanggalSurat}
-            onValueChange={(value) => setDraft((prev) => ({ ...prev, tanggalSurat: value }))}
-          />
-        </div>
-      </div>
-
-      {/* Lampiran & Perihal */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <Label className="text-xs font-semibold text-slate-700">Lampiran</Label>
-          <Input
-            value={draft.lampiranKeterangan}
-            onChange={(e) => setDraft((prev) => ({ ...prev, lampiranKeterangan: e.target.value }))}
-            placeholder="Contoh: - atau 1 (satu) Berkas"
-            className="text-xs font-semibold bg-white rounded-sm border-slate-200"
-          />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs font-semibold text-slate-700">Perihal / Hal</Label>
-          <AutoResizeTextarea
-            minRows={1}
-            value={draft.perihal}
-            onChange={(e) => setDraft((prev) => ({ ...prev, perihal: e.target.value }))}
-            placeholder="Perihal naskah dinas..."
-            className="text-xs font-semibold bg-white rounded-sm border-slate-200 text-slate-900"
-          />
-        </div>
-      </div>
-
-      {/* Penerima Surat Block */}
-      <div className="p-3 bg-slate-50 border border-slate-200 rounded-sm space-y-2">
-        <span className="text-xs font-bold text-slate-700 block">Tujuan Surat (Kepada Yth.)</span>
-        <AutoResizeTextarea
-          minRows={1}
-          value={draft.tujuanNama}
-          onChange={(e) => setDraft((prev) => ({ ...prev, tujuanNama: e.target.value }))}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) e.preventDefault(); }}
-          placeholder="Nama / Pihak yang dituju (Shift + Enter untuk baris baru)"
-          className="text-xs font-semibold bg-white rounded-sm border-slate-200 text-slate-900"
-        />
-        <Input
-          value={draft.tujuanAlamatKota}
-          onChange={(e) => setDraft((prev) => ({ ...prev, tujuanAlamatKota: e.target.value }))}
-          placeholder="Kota / Lokasi (contoh: di Jombang / di Tempat)"
-          className="text-xs font-semibold bg-white rounded-sm border-slate-200"
-        />
-      </div>
-
-      {/* Isi Surat */}
-      <div className="space-y-2">
-        <Label className="text-xs font-bold text-slate-700">Isi Naskah Surat</Label>
-        {draft.templateType === 'tugas' && <div className="space-y-2 rounded-sm border border-slate-200 bg-slate-50 p-3">
-          <span className="block text-xs font-bold text-slate-700">Pemberi Tugas / Penandatangan</span>
-          {draft.taskAssigner && <div className="flex items-center gap-2"><div className="flex-1 rounded-sm border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800">{draft.taskAssigner.name} <span className="text-slate-500">· {draft.taskAssigner.collection === 'Employees_Loyalis' ? 'Loyalis' : 'Pekarya'}{draft.taskAssigner.role ? ` · ${draft.taskAssigner.role}` : ''}</span></div><button type="button" aria-label="Hapus pemberi tugas" onClick={() => setDraft((prev) => { const next = { ...prev }; delete next.taskAssigner; next.penandatanganNama = ''; next.penandatanganJabatan = ''; next.penandatanganNipy = ''; return next; })} className="p-2 text-rose-600"><Trash2 className="h-4 w-4" /></button></div>}
-          <div className="relative">
-            <Input aria-label="Cari pemberi tugas" placeholder={draft.taskAssigner ? 'Ganti pemberi tugas...' : 'Cari pemberi tugas...'} value={assignerSearch} autoComplete="off" onFocus={() => setAssignerSearchOpen(true)} onChange={(e) => { setAssignerSearch(e.target.value); setAssignerSearchOpen(true); }} onBlur={() => window.setTimeout(() => setAssignerSearchOpen(false), 200)} onKeyDown={(e) => { if (e.key === 'Escape') setAssignerSearchOpen(false); }} className="rounded-sm border-slate-200 bg-white text-xs" />
-            {assignerSearchOpen && <div className="absolute left-0 right-0 top-full z-50 max-h-48 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-xl">
-              {peopleLoading ? <div className="p-3 text-xs text-slate-500">Memuat pegawai...</div> : peopleError ? <div className="p-3 text-xs text-rose-600">{peopleError} <button type="button" className="underline" onClick={() => { setPeopleError(''); setPeopleRetry((count) => count + 1); }}>Coba lagi</button></div> : (['Employees_Loyalis', 'Employees_BlueCollar'] as const).map((collection) => {
-                const matches = people.filter((person) => person.collection === collection && `${person.name} ${person.role}`.toLocaleLowerCase('id').includes(assignerSearch.trim().toLocaleLowerCase('id')));
-                return matches.length ? <div key={collection}><div className="sticky top-0 bg-slate-50 px-4 py-1.5 text-[9px] font-bold uppercase text-slate-500">{collection === 'Employees_Loyalis' ? 'Loyalis' : 'Pekarya'}</div>{matches.map((person) => <button key={person.id} type="button" onClick={() => { setDraft((prev) => ({ ...prev, taskAssigner: person, penandatanganNama: person.name.slice(0, 100), penandatanganJabatan: person.role.slice(0, 100), penandatanganNipy: '' })); setAssignerSearch(''); setAssignerSearchOpen(false); }} className="flex w-full justify-between gap-3 px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"><span>{person.name}</span><span className="text-[10px] text-slate-400">{person.role}</span></button>)}</div> : null;
-              })}
-              {!peopleLoading && !peopleError && !people.some((person) => `${person.name} ${person.role}`.toLocaleLowerCase('id').includes(assignerSearch.trim().toLocaleLowerCase('id'))) && <div className="p-3 text-xs text-slate-500">Pegawai tidak ditemukan.</div>}
-            </div>}
-          </div>
-          <p className="text-[11px] text-slate-500">Nama dan jabatan pemberi tugas digunakan sebagai penandatangan dan dapat disunting di bawah.</p>
-        </div>}
-        {draft.templateType === 'tugas' && <div className="space-y-2 rounded-sm border border-slate-200 bg-slate-50 p-3">
-          <span className="block text-xs font-bold text-slate-700">Pegawai yang Ditugaskan</span>
-          {(draft.assignedPeople || []).map((person) => <div key={`${person.collection}:${person.id}`} className="flex items-center gap-2">
-            <div className="flex-1 rounded-sm border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800">{person.name} <span className="text-slate-500">· {person.collection === 'Employees_Loyalis' ? 'Loyalis' : 'Pekarya'}{person.role ? ` · ${person.role}` : ''}</span></div>
-            <button type="button" aria-label={`Hapus ${person.name}`} onClick={() => setDraft((prev) => ({ ...prev, assignedPeople: (prev.assignedPeople || []).filter((item) => item.id !== person.id || item.collection !== person.collection) }))} className="p-2 text-rose-600"><Trash2 className="h-4 w-4" /></button>
-          </div>)}
-          <div className="relative">
-            <Input placeholder={(draft.assignedPeople || []).length >= 100 ? "Maksimal 100 pegawai" : "Cari Pegawai..."} disabled={(draft.assignedPeople || []).length >= 100} value={personSearch} autoComplete="off" onFocus={() => setPersonSearchOpen(true)} onChange={(e) => { setPersonSearch(e.target.value); setPersonSearchOpen(true); }} onBlur={() => window.setTimeout(() => setPersonSearchOpen(false), 200)} onKeyDown={(e) => { if (e.key === 'Escape') setPersonSearchOpen(false); }} className="rounded-sm border-slate-200 bg-white text-xs" />
-            {personSearchOpen && <div className="absolute left-0 right-0 top-full z-50 max-h-48 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-xl">
-              {peopleLoading ? <div className="p-3 text-xs text-slate-500">Memuat pegawai...</div> : peopleError ? <div className="p-3 text-xs text-rose-600">{peopleError} <button type="button" className="underline" onClick={() => { setPeopleError(''); setPeopleRetry((count) => count + 1); }}>Coba lagi</button></div> : (['Employees_Loyalis', 'Employees_BlueCollar'] as const).map((collection) => {
-                const matches = people.filter((person) => person.collection === collection && `${person.name} ${person.role}`.toLocaleLowerCase('id').includes(personSearch.trim().toLocaleLowerCase('id')) && !(draft.assignedPeople || []).some((selected) => selected.id === person.id && selected.collection === person.collection));
-                return matches.length ? <div key={collection}><div className="sticky top-0 bg-slate-50 px-4 py-1.5 text-[9px] font-bold uppercase text-slate-500">{collection === 'Employees_Loyalis' ? 'Loyalis' : 'Pekarya'}</div>{matches.map((person) => <button key={person.id} type="button" onClick={() => { setDraft((prev) => ({ ...prev, assignedPeople: [...(prev.assignedPeople || []), person] })); setPersonSearch(''); setPersonSearchOpen(false); }} className="flex w-full justify-between gap-3 px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"><span>{person.name}</span><span className="text-[10px] text-slate-400">{person.role}</span></button>)}</div> : null;
-              })}
-              {!peopleLoading && !peopleError && !people.some((person) => `${person.name} ${person.role}`.toLocaleLowerCase('id').includes(personSearch.trim().toLocaleLowerCase('id')) && !(draft.assignedPeople || []).some((selected) => selected.id === person.id && selected.collection === person.collection)) && <div className="p-3 text-xs text-slate-500">Pegawai tidak ditemukan atau sudah dipilih.</div>}
-            </div>}
-          </div>
-        </div>}
-        <AutoResizeTextarea
-          minRows={1}
-          value={draft.salamPembuka}
-          onChange={(e) => setDraft((prev) => ({ ...prev, salamPembuka: e.target.value }))}
-          placeholder="Salam Pembuka"
-          className="text-xs font-semibold bg-white rounded-sm border-slate-200"
-        />
-
-        <AutoResizeTextarea
-          minRows={2}
-          value={draft.isiParagraf1}
-          onChange={(e) => setDraft((prev) => ({ ...prev, isiParagraf1: e.target.value }))}
-          placeholder="Paragraf pembuka..."
-          className="w-full text-xs font-medium p-2.5 rounded-sm border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all bg-white"
-        />
-
-        <AutoResizeTextarea
-          minRows={3}
-          value={draft.isiParagraf2}
-          onChange={(e) => setDraft((prev) => ({ ...prev, isiParagraf2: e.target.value }))}
-          placeholder="Isi utama / rincian kegiatan / poin penting..."
-          className="w-full text-xs p-2.5 rounded-sm border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all bg-white font-mono"
-        />
-
-        <AutoResizeTextarea
-          minRows={2}
-          value={draft.isiParagraf3}
-          onChange={(e) => setDraft((prev) => ({ ...prev, isiParagraf3: e.target.value }))}
-          placeholder="Paragraf penutup..."
-          className="w-full text-xs font-medium p-2.5 rounded-sm border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all bg-white"
-        />
-
-        <AutoResizeTextarea
-          minRows={1}
-          value={draft.salamPenutup}
-          onChange={(e) => setDraft((prev) => ({ ...prev, salamPenutup: e.target.value }))}
-          placeholder="Salam Penutup"
-          className="text-xs font-semibold bg-white rounded-sm border-slate-200"
-        />
-      </div>
-
-      {/* Penandatangan Block */}
-      <div className="p-3 bg-slate-50 border border-slate-200 rounded-sm space-y-2">
-        <span className="text-xs font-bold text-slate-700 block">Penandatangan Surat</span>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <Input
-            value={draft.penandatanganNama}
-            onChange={(e) => setDraft((prev) => ({ ...prev, penandatanganNama: e.target.value }))}
-            placeholder="Nama Lengkap & Gelar"
-            className="text-xs font-semibold bg-white rounded-sm border-slate-200"
-          />
-          <Input
-            value={draft.penandatanganJabatan}
-            onChange={(e) => setDraft((prev) => ({ ...prev, penandatanganJabatan: e.target.value }))}
-            placeholder="Jabatan Resmi"
-            className="text-xs font-semibold bg-white rounded-sm border-slate-200"
-          />
-        </div>
-        <Input
-          value={draft.penandatanganNipy}
-          onChange={(e) => setDraft((prev) => ({ ...prev, penandatanganNipy: e.target.value }))}
-          placeholder="NIPY / NIDN (Opsional)"
-          className="text-xs font-semibold bg-white rounded-sm border-slate-200"
-        />
-      </div>
-    </div>
-  );
-
-  const previewField = (
-    field: LetterField,
-    display: string,
-    label: string,
-    multiline = false,
-  ) => {
-    if (editingPreview === field) {
-      if (field === 'tanggalSurat') {
-        return <IndonesianDatePicker value={draft.tanggalSurat} label="Tanggal surat" initiallyOpen onValueChange={(value) => setDraft((prev) => ({ ...prev, tanggalSurat: value }))} onClose={() => setEditingPreview(null)} />;
-      }
-      const props = {
-        autoFocus: true,
-        'aria-label': label,
-        value: draft[field] || '',
-        onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-          setDraft((prev) => ({ ...prev, [field]: event.target.value })),
-        onBlur: () => setEditingPreview(null),
-        onKeyDown: (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-          if (event.key === 'Escape' || (!multiline && event.key === 'Enter')) event.currentTarget.blur();
-          if (field === 'tujuanNama' && event.key === 'Enter' && !event.shiftKey) event.currentTarget.blur();
-        },
-        className: field === 'perihal'
-          ? 'block w-full min-w-0 resize-none border-0 bg-transparent p-0 font-inherit text-inherit underline outline outline-1 outline-indigo-400 focus:outline-2'
-          : 'w-full min-w-0 rounded border border-indigo-400 bg-white px-1 text-inherit font-inherit text-slate-900 outline-none focus:ring-2 focus:ring-indigo-200',
-        ...(field === 'perihal' ? { style: { fieldSizing: 'content' as const, fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', lineHeight: 'inherit' } } : {}),
-      };
-      return multiline ? <textarea {...props} rows={field === 'perihal' ? 1 : Math.max(2, (draft[field] || '').split('\n').length)} /> : <input {...props} type="text" />;
-    }
-    return <span role="button" tabIndex={0} title={`Klik dua kali untuk mengedit ${label}`} className="cursor-text rounded-sm hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500" onDoubleClick={() => setEditingPreview(field)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setEditingPreview(field); } }}>{display}</span>;
+  const directory = { people, loading: peopleLoading, error: peopleError, retry: () => { setPeopleError(''); setPeopleRetry((count) => count + 1); } };
+  const pickAssigner = (person: AssignedPerson) => {
+    setDraft((prev) => ({ ...prev, taskAssigner: person }));
+    // The task giver signs the letter, so the signature takes their name and title (and no NIPY).
+    editor?.chain().setLetterField('penandatanganNama', person.name.slice(0, 100)).setLetterField('penandatanganJabatan', `${person.role.slice(0, 100)},`).setLetterField('penandatanganNipy', '').run();
   };
-
-  // Shared Preview Paper JSX
-  const renderPreviewPaper = () => (
-    <LetterPaper
-      id="printable-official-letter"
-      draft={draft}
-      defaultSatkerName={defaultSatkerName}
-      isYapetidu={isYapetidu}
-      email={draft.satkerHeadEmail || defaultKepalaEmail || profile?.email || user?.email || ''}
-      phone={draft.satkerHeadPhone || defaultKepalaPhone || profile?.phoneNumber || profile?.phone || ''}
-      renderField={previewField}
-      isEditing={(field) => editingPreview === field}
-    />
-  );
+  const controls: LetterEditorControls = {
+    assigned: draft.assignedPeople ?? NO_PEOPLE,
+    directory,
+    onAddPerson: (person) => setDraft((prev) => ((prev.assignedPeople || []).length >= 100 ? prev : { ...prev, assignedPeople: [...(prev.assignedPeople || []), person] })),
+    onRemovePerson: (person) => setDraft((prev) => ({ ...prev, assignedPeople: (prev.assignedPeople || []).filter((item) => item.id !== person.id || item.collection !== person.collection) })),
+    assigner: draft.taskAssigner,
+    signerName: draft.penandatanganNama,
+    signerTitle: draft.penandatanganJabatan,
+    onPickAssigner: pickAssigner,
+    onClearAssigner: () => {
+      setDraft((prev) => { const next = { ...prev }; delete next.taskAssigner; return next; });
+      editor?.chain().setLetterField('penandatanganNama', '').setLetterField('penandatanganJabatan', '').setLetterField('penandatanganNipy', '').run();
+    },
+  };
 
   const content = (
       <div className={inline ? 'bg-white rounded-md p-6 border border-slate-200 shadow-sm flex flex-col' : 'h-full flex flex-col overflow-hidden'}>
@@ -529,7 +312,7 @@ export default function SuratComposerModal({
                 <Wand2 className="w-5 h-5" />
               </div>
               <div>
-                {inline ? <><h2 className="text-xl font-bold tracking-tight text-slate-900">{surat ? 'Edit Surat Keluar' : 'Catat Surat Keluar'}</h2><p className="text-xs text-slate-500">{surat ? 'Ubah isi surat dan lihat hasilnya secara langsung.' : 'Susun surat dinas dan lihat hasilnya secara langsung.'}</p></> : <><DialogTitle className="text-xl font-bold tracking-tight text-slate-900">Pembuat Surat Resmi SatKer</DialogTitle><DialogDescription className="text-xs text-slate-500">Susun surat dinas resmi dengan kop SatKer, format standar, dan cetak langsung ke PDF.</DialogDescription></>}
+                {inline ? <><h2 className="text-xl font-bold tracking-tight text-slate-900">{surat ? 'Edit Surat Keluar' : 'Catat Surat Keluar'}</h2><p className="text-xs text-slate-500">Tulis dan ubah langsung pada kertas, seperti di Word atau Google Docs.</p></> : <><DialogTitle className="text-xl font-bold tracking-tight text-slate-900">Pembuat Surat Resmi SatKer</DialogTitle><DialogDescription className="text-xs text-slate-500">Susun surat dinas resmi dengan kop SatKer, format standar, dan cetak langsung ke PDF.</DialogDescription></>}
               </div>
             </div>
           </div>
@@ -564,6 +347,14 @@ export default function SuratComposerModal({
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <button
               type="button"
+              onClick={handleGenerateNumber}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-sm border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 transition-all shadow-sm cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+              Nomor Otomatis
+            </button>
+            <button
+              type="button"
               onClick={handlePrint}
               disabled={saving}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-sm border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 transition-all shadow-sm cursor-pointer disabled:opacity-50"
@@ -584,19 +375,18 @@ export default function SuratComposerModal({
           </div>
         </div>
 
-        {/* Content Body */}
-        <div className={inline ? 'py-3 overflow-x-auto' : 'flex-1 min-h-0 py-3 overflow-x-auto overflow-y-hidden'}>
-            <div className="h-full min-w-[900px] flex flex-row gap-6 min-h-0">
-              {/* Left Column: Form Fields */}
-              <div className={inline ? 'w-[45%] xl:w-[42%] pr-3' : 'w-[45%] xl:w-[42%] h-full overflow-y-auto pr-3'}>
-                {renderEditorForm()}
-              </div>
-
-              {/* Right Column: Live A4 Visual Preview */}
-              <div className={`w-[55%] xl:w-[58%] ${inline ? '' : 'h-full'} bg-slate-100/90 rounded-md p-4 sm:p-6 overflow-auto flex justify-center items-start border border-slate-200`}>
-                {renderPreviewPaper()}
-              </div>
+        {/* Content Body: the letter itself, written in place */}
+        <div className={inline ? 'py-3' : 'flex-1 min-h-0 py-3'}>
+          <div className={`bg-slate-100/90 rounded-md overflow-auto border border-slate-200 ${inline ? 'max-h-[calc(100dvh-12rem)] min-h-[32rem]' : 'h-full'}`}>
+            <div className="sticky top-0 z-10 flex justify-center bg-slate-100/90 px-4 pt-3 pb-2 backdrop-blur-sm">
+              <LetterToolbar editor={editor} onError={setError} />
             </div>
+            <div className="flex items-start justify-center px-4 pb-4 pt-2 sm:px-6 sm:pb-6">
+              <LetterEditorContext.Provider value={controls}>
+                <LetterPaper id="printable-official-letter" draft={draft} isYapetidu={isYapetidu} editor={editor} />
+              </LetterEditorContext.Provider>
+            </div>
+          </div>
         </div>
 
         {/* Footer */}

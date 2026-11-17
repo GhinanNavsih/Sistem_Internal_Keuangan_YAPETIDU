@@ -1,4 +1,5 @@
 import type { SuratKeluar, TemplateType } from './types';
+import { sanitizeLetterDoc, type LetterDoc } from './letterDoc';
 
 export interface AssignedPerson { id: string; collection: 'Employees_Loyalis' | 'Employees_BlueCollar'; name: string; role: string }
 export interface LetterDraftPayload {
@@ -14,6 +15,8 @@ export interface LetterDraftPayload {
   isiParagraf1: string;
   isiParagraf2: string;
   isiParagraf3: string;
+  /** The whole letter as written in the editor. When present it replaces the fields above that older letters used for the body and layout. */
+  letterDoc?: LetterDoc;
   salamPenutup: string;
   penandatanganNama: string;
   penandatanganJabatan: string;
@@ -29,7 +32,7 @@ export interface LetterDraftPayload {
 export const TUJUAN_MAX_LENGTH = 400;
 
 const templateTypes: TemplateType[] = ['tugas', 'keterangan', 'undangan', 'pengantar', 'permohonan', 'edaran', 'rekomendasi', 'balasan', 'custom'];
-const draftFieldLimits: Record<Exclude<keyof LetterDraftPayload, 'templateType' | 'satkerHeadEmail' | 'satkerHeadPhone' | 'assignedPeople' | 'taskAssigner'>, number> = {
+const draftFieldLimits: Record<Exclude<keyof LetterDraftPayload, 'templateType' | 'satkerHeadEmail' | 'satkerHeadPhone' | 'assignedPeople' | 'taskAssigner' | 'letterDoc'>, number> = {
   nomorSurat: 100, lampiranKeterangan: 150, perihal: 250, tanggalSurat: 10,
   tujuanNama: TUJUAN_MAX_LENGTH, tujuanAlamatKota: 150,
   salamPembuka: 1000, isiParagraf1: 10000, isiParagraf2: 10000,
@@ -61,6 +64,11 @@ export function parseLetterDraft(value: unknown): LetterDraftPayload | null {
       if (typeof raw[key] !== 'string' || raw[key].length > limit) return null;
       result[key] = raw[key];
     }
+  }
+  if (raw.letterDoc !== undefined && raw.letterDoc !== null) {
+    const letterDoc = sanitizeLetterDoc(raw.letterDoc);
+    if (!letterDoc) return null;
+    result.letterDoc = letterDoc;
   }
   if (raw.assignedPeople !== undefined) {
     if (!Array.isArray(raw.assignedPeople) || raw.assignedPeople.length > 100) return null;
