@@ -327,9 +327,9 @@ export default function Sidebar() {
 
   const getLinkStyle = (isActive: boolean) => {
     if (isActive) {
-      return "flex items-center gap-3 px-4 py-3 rounded-xl bg-indigo-50 border-l-4 border-indigo-500 text-indigo-600 font-bold transition-all shadow-[0_2px_10px_rgba(99,102,241,0.05)] cursor-pointer";
+      return "flex items-center gap-2.5 px-3 py-2.5 text-sm rounded-xl bg-indigo-50 border-l-4 border-indigo-500 text-indigo-600 font-bold transition-all shadow-[0_2px_10px_rgba(99,102,241,0.05)] cursor-pointer";
     }
-    return "flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:text-indigo-600 hover:bg-slate-50/80 hover:translate-x-1 transition-all duration-200 cursor-pointer font-semibold";
+    return "flex items-center gap-2.5 px-3 py-2.5 text-sm rounded-xl text-slate-600 hover:text-indigo-600 hover:bg-slate-50/80 hover:translate-x-1 transition-all duration-200 cursor-pointer font-semibold";
   };
 
   const getCollapsedLinkStyle = (isActive: boolean) => {
@@ -341,7 +341,7 @@ export default function Sidebar() {
 
   // Reusable Navigation Link List (expanded)
   const NavigationLinks = ({ onLinkClick }: { onLinkClick?: () => void }) => (
-    <nav className="flex flex-col gap-1.5 py-4">
+    <nav className="flex flex-col gap-1 py-3">
       {menuItems.map((item, index) => {
         const isActive = getIsActive(item);
         const Icon = item.icon;
@@ -355,11 +355,11 @@ export default function Sidebar() {
               onClick={onLinkClick}
               className={getLinkStyle(isActive)}
             >
-              <Icon className={`w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110 ${isActive ? 'text-indigo-500' : 'text-slate-400 group-hover:text-indigo-500'}`} />
+              <Icon className={`w-[18px] h-[18px] shrink-0 transition-transform duration-200 group-hover:scale-110 ${isActive ? 'text-indigo-500' : 'text-slate-400 group-hover:text-indigo-500'}`} />
               <span className="flex-1 text-left">{item.name}</span>
               {typeof item.badge === 'number' && item.badge > 0 && (
                 <span
-                  className="ml-auto inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-bold shadow-sm leading-none tabular-nums shrink-0"
+                  className="ml-auto inline-flex items-center justify-center min-w-4.5 h-4.5 px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-bold shadow-sm leading-none tabular-nums shrink-0"
                   title={`${item.badge} laporan menunggu`}
                 >
                   {item.badge > 99 ? '99+' : item.badge}
@@ -425,10 +425,10 @@ export default function Sidebar() {
       {/* ======================================================== */}
       <aside
         className={`hidden md:flex flex-col justify-between shrink-0 border-r border-slate-200/80 bg-white/80 backdrop-blur-md sticky top-0 h-dvh overflow-y-auto overscroll-y-contain z-40 transition-all duration-300 ease-in-out ${
-          isCollapsed ? 'w-[76px] p-3' : 'w-72 p-6'
+          isCollapsed ? 'w-[76px] p-3' : 'w-60 p-4'
         }`}
       >
-        <div className="flex shrink-0 flex-col gap-8">
+        <div className="flex shrink-0 flex-col gap-6">
           {/* Brand Header */}
           {isCollapsed ? (
             <div className="flex items-center justify-center pt-1">
@@ -442,20 +442,20 @@ export default function Sidebar() {
               />
             </div>
           ) : (
-            <div className="flex items-center gap-3 px-2">
+            <div className="flex items-center gap-2.5 px-1.5">
               <Image
                 src="/Logo YAPETIDU (Transparent bg).png"
                 alt="Logo YAPETIDU"
                 width={512}
                 height={474}
                 priority
-                className="w-10 h-10 object-contain"
+                className="w-12 h-12 object-contain"
               />
               <div>
-                <h2 className="bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent font-extrabold text-xl tracking-tight leading-none">
+                <h2 className="bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent font-extrabold text-2xl tracking-tight leading-none">
                   YAPETIDU
                 </h2>
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5 block">
+                <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-1 block">
                   Sistem Keuangan
                 </span>
               </div>
@@ -472,15 +472,15 @@ export default function Sidebar() {
           <div className={`flex ${isCollapsed ? 'justify-center' : 'justify-end'} mb-3`}>
             <button
               onClick={toggleCollapsed}
-              className="flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all duration-200 cursor-pointer"
+              className={`flex items-center justify-center gap-1.5 h-8 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all duration-200 cursor-pointer ${isCollapsed ? 'w-8' : 'w-full px-2.5 text-xs font-semibold'}`}
               title={isCollapsed ? 'Perluas sidebar' : 'Ciutkan sidebar'}
             >
-              {isCollapsed ? <ChevronsRight className="w-4 h-4" /> : <ChevronsLeft className="w-4 h-4" />}
+              {isCollapsed ? <ChevronsRight className="w-4 h-4" /> : <><ChevronsLeft className="w-4 h-4" />Tutup</>}
             </button>
           </div>
 
           {/* User Profile Footer */}
-          <div className="border-t border-slate-200/80 pt-4">
+          <div className="border-t border-slate-200/80 pt-3">
             {isCollapsed ? (
               /* Collapsed: avatar + logout icon */
               <div className="flex flex-col items-center gap-3">
@@ -512,15 +512,15 @@ export default function Sidebar() {
             ) : (
               /* Expanded: full user info + logout button */
               <>
-                <div className="flex items-center gap-3 mb-4 px-2">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold shadow-md shadow-indigo-100 uppercase text-sm">
+                <div className="flex items-center gap-2.5 mb-3 px-1.5">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold shadow-md shadow-indigo-100 uppercase text-xs">
                     {currentProfile?.displayName ? currentProfile.displayName.substring(0, 2) : 'AD'}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-slate-800 truncate leading-tight">
+                    <p className="text-[13px] font-bold text-slate-800 truncate leading-tight">
                       {currentProfile?.displayName || 'Administrator'}
                     </p>
-                    <p className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md w-fit mt-1">
+                    <p className="text-[9px] font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-md w-fit mt-1">
                       {roleLabel}
                     </p>
                   </div>
@@ -529,12 +529,12 @@ export default function Sidebar() {
                   label="always"
                   side="top"
                   align="start"
-                  className="w-full h-10 mb-2 rounded-xl border-slate-200 bg-white text-slate-700 shadow-sm font-bold"
+                  className="w-full h-9 mb-2 rounded-xl border-slate-200 bg-white text-slate-700 shadow-sm text-[13px] font-bold"
                 />
                 <Button
                   variant="outline"
                   onClick={requestLogout}
-                  className="w-full rounded-xl shadow-sm bg-white border-slate-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-100 transition-all cursor-pointer flex items-center justify-center gap-2 h-10 font-bold"
+                  className="w-full rounded-xl shadow-sm bg-white border-slate-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-100 transition-all cursor-pointer flex items-center justify-center gap-2 h-9 text-[13px] font-bold"
                 >
                   <LogOut className="w-4 h-4" />
                   Keluar
