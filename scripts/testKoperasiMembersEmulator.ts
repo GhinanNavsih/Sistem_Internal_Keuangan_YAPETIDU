@@ -228,7 +228,7 @@ async function main() {
   const redirected = redirect(new NextRequest('http://localhost/dashboard/payroll/simpan-pinjam?period=2026-09&filter=a&filter=b&view=koperasi'));
   assert.equal(redirected.status, 308);
   const location = redirected.headers.get('location');
-  assert(location?.startsWith('/dashboard/payroll/koperasi?'));
+  assert(location && location.startsWith('/dashboard/payroll/koperasi?'));
   const destination = new URL(location, 'https://saku.example');
   assert.equal(destination.pathname, '/dashboard/payroll/koperasi');
   assert.equal(destination.searchParams.get('view'), 'simpan-pinjam');
