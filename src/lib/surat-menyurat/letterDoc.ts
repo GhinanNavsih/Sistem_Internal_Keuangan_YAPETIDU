@@ -21,6 +21,7 @@ export interface LetterDoc {
   content: LetterNode[];
 }
 
+export const SIGNATURE_PLACES = ['left', 'center', 'right', 'full'] as const;
 export const LETTER_ALIGNMENTS = ['left', 'center', 'right', 'justify'] as const;
 export const LETTER_MAX_INDENT = 6;
 /** Space after a paragraph (pt) and the other paragraph settings the editor starts from. */
@@ -30,6 +31,8 @@ export const LETTER_FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36] 
 /** The text size of an unmarked letter, in pt. */
 export const LETTER_BASE_PT = 11;
 const FONT_SIZE_RANGE = [6, 96] as const;
+/** The writing area of an A4 page (170mm) in letter units, where one unit is 12pt. */
+export const LETTER_CONTENT_WIDTH_U = (170 * 72) / 25.4 / 12;
 
 /** Paragraph tags that let the letter's record (number, subject, recipient, signer) be read back from the document. */
 export const PARAGRAPH_FIELDS = ['tujuanLabel', 'tujuanNama', 'tujuanAlamatKota', 'penandatanganNama', 'penandatanganJabatan', 'penandatanganNipy'] as const;
@@ -44,23 +47,30 @@ const MAX_NODES = 8000;
 const MAX_DEPTH = 12;
 
 const MARKS = new Set(['bold', 'italic', 'underline', 'textStyle']);
-const BLOCKS = ['paragraph', 'bulletList', 'orderedList', 'table', 'image'] as const;
 const LEAF = new Set(['text', 'hardBreak', 'letterDate', 'signSpace', 'image', 'taskAssigner', 'taskPeople']);
+/**
+ * Everything the editor treats as a block. Where the editor allows any block (the page, the closing, table
+ * cells), so does this check: a letter the editor can make must never be refused when it is saved.
+ */
+const ALL_BLOCKS = ['paragraph', 'bulletList', 'orderedList', 'table', 'image', 'kop', 'labelRow', 'closing', 'signatureBlock', 'signSpace', 'taskAssigner', 'taskPeople'];
 /** Which nodes may sit inside which; an unknown node makes the whole letter invalid rather than losing text. */
 const CHILDREN: Record<string, ReadonlySet<string>> = {
-  doc: new Set([...BLOCKS, 'kop', 'labelRow', 'closing', 'taskAssigner', 'taskPeople']),
+  doc: new Set(ALL_BLOCKS),
   paragraph: new Set(['text', 'hardBreak', 'letterDate']),
-  labelRow: new Set(['text', 'hardBreak']),
+  labelRow: new Set(['rowLabel', 'rowSep', 'rowValue']),
+  rowLabel: new Set(['text', 'hardBreak']),
+  rowSep: new Set(['text', 'hardBreak']),
+  rowValue: new Set(['text', 'hardBreak']),
   kop: new Set(['paragraph']),
-  closing: new Set(['paragraph', 'bulletList', 'orderedList', 'signatureBlock']),
-  signatureBlock: new Set(['paragraph', 'signSpace']),
+  closing: new Set(ALL_BLOCKS),
+  signatureBlock: new Set(['paragraph', 'signSpace', 'image']),
   bulletList: new Set(['listItem']),
   orderedList: new Set(['listItem']),
-  listItem: new Set(['paragraph', 'bulletList', 'orderedList']),
+  listItem: new Set(ALL_BLOCKS),
   table: new Set(['tableRow']),
   tableRow: new Set(['tableCell', 'tableHeader']),
-  tableCell: new Set(['paragraph', 'bulletList', 'orderedList', 'image']),
-  tableHeader: new Set(['paragraph', 'bulletList', 'orderedList', 'image']),
+  tableCell: new Set(ALL_BLOCKS),
+  tableHeader: new Set(ALL_BLOCKS),
 };
 for (const type of LEAF) CHILDREN[type] = new Set();
 
@@ -92,12 +102,17 @@ function sanitizeAttrs(type: string, value: unknown): Record<string, unknown> | 
     case 'tableHeader':
       if (isInt(raw.colspan, 2, 20)) result.colspan = raw.colspan;
       if (isInt(raw.rowspan, 2, 20)) result.rowspan = raw.rowspan;
+      // Column widths are shares of the table, in percent.
+      if (Array.isArray(raw.colwidth) && raw.colwidth.length >= 1 && raw.colwidth.length <= 20 && raw.colwidth.every((w) => typeof w === 'number' && w >= 1 && w <= 100)) {
+        result.colwidth = (raw.colwidth as number[]).map((w) => Math.round(w * 10) / 10);
+      }
       break;
     case 'labelRow':
-      if (typeof raw.label !== 'string' || !raw.label || raw.label.length > 40) return null;
       if (typeof raw.field !== 'string' || !(ROW_FIELDS as readonly string[]).includes(raw.field)) return null;
-      result.label = raw.label;
       result.field = raw.field;
+      break;
+    case 'signatureBlock':
+      if (typeof raw.place === 'string' && raw.place !== 'right' && (SIGNATURE_PLACES as readonly string[]).includes(raw.place)) result.place = raw.place;
       break;
     case 'kop':
       result.logo = raw.logo === 'yapetidu' ? 'yapetidu' : 'unipdu';
@@ -110,8 +125,18 @@ function sanitizeAttrs(type: string, value: unknown): Record<string, unknown> | 
       if (typeof raw.src !== 'string' || raw.src.length > LETTER_MAX_IMAGE_CHARS || !DATA_IMAGE.test(raw.src)) return null;
       result.src = raw.src;
       if (typeof raw.alt === 'string' && raw.alt) result.alt = raw.alt.slice(0, 200);
-      if (isInt(raw.width, 5, 99)) result.width = raw.width;
+      if (typeof raw.width === 'number' && raw.width >= 5 && raw.width < 99.5) result.width = Math.round(raw.width * 10) / 10;
       if (raw.align === 'left' || raw.align === 'right') result.align = raw.align;
+      if (raw.wrap === true) result.wrap = true;
+      if (typeof raw.rotate === 'number' && raw.rotate !== 0 && Math.abs(raw.rotate) <= 360) result.rotate = Math.round(raw.rotate * 10) / 10;
+      // A floating picture needs its spot; without a valid one it stays in the text.
+      if (raw.float === true && typeof raw.x === 'number' && typeof raw.y === 'number' && raw.x >= -10 && raw.x <= 60 && raw.y >= -10 && raw.y <= 800) {
+        result.float = true;
+        if (raw.behind === true) result.behind = true;
+        delete result.wrap;
+        result.x = Math.round(raw.x * 10) / 10;
+        result.y = Math.round(raw.y * 10) / 10;
+      }
       break;
     default:
       break;
@@ -134,6 +159,25 @@ function sanitizeMark(value: unknown): LetterMark | null | undefined {
 }
 
 /**
+ * Letters saved earlier kept a row's label ("Nomor") as a fixed setting and only its value as text. The label
+ * and the colon are now text too, so such a row is rewritten to the current layout.
+ */
+function upgradeRow(node: unknown): unknown {
+  const raw = record(node);
+  const attrs = record(raw.attrs);
+  if (raw.type !== 'labelRow' || typeof attrs.label !== 'string') return node;
+  const value = Array.isArray(raw.content) ? raw.content : [];
+  if (!value.every((child) => ['text', 'hardBreak'].includes(String(record(child).type)))) return node;
+  const text = (content: string) => (content ? [{ type: 'text', text: content }] : undefined);
+  const part = (type: string, content?: unknown[]) => ({ type, ...(content?.length ? { content } : {}) });
+  return {
+    type: 'labelRow',
+    attrs: { field: attrs.field },
+    content: [part('rowLabel', text(attrs.label)), part('rowSep', text(':')), part('rowValue', value)],
+  };
+}
+
+/**
  * Checks a stored or submitted letter against the small set of things the editor can make, and returns a
  * clean copy (only known nodes, marks and settings). Returns null when anything else is found or it is too large.
  */
@@ -145,7 +189,7 @@ export function sanitizeLetterDoc(value: unknown): LetterDoc | null {
   let imageChars = 0;
 
   const clean = (node: unknown, parentType: string, depth: number): LetterNode | null => {
-    const raw = record(node);
+    const raw = record(upgradeRow(node));
     const type = raw.type;
     if (typeof type !== 'string' || depth > MAX_DEPTH || !CHILDREN[parentType]?.has(type)) return null;
     nodes += 1;
@@ -191,8 +235,10 @@ export function sanitizeLetterDoc(value: unknown): LetterDoc | null {
     }
     // Containers the editor cannot open when empty or when they start with the wrong thing.
     if (type === 'listItem' && result.content?.[0]?.type !== 'paragraph') return null;
+    // A numbered row is always its label, its colon and its value, in that order.
+    if (type === 'labelRow' && result.content?.map((child) => child.type).join() !== 'rowLabel,rowSep,rowValue') return null;
     if (['bulletList', 'orderedList', 'table', 'tableRow', 'kop', 'closing', 'signatureBlock'].includes(type) && !result.content?.length) return null;
-    if ((type === 'tableCell' || type === 'tableHeader') && result.content?.[0]?.type !== 'paragraph') return null;
+    if ((type === 'tableCell' || type === 'tableHeader') && !result.content?.length) return null;
     return result;
   };
 
@@ -232,7 +278,8 @@ export function extractLetterFields(doc: LetterDoc): LetterFields {
 
   const visit = (node: LetterNode) => {
     if (node.type === 'labelRow' && typeof node.attrs?.field === 'string' && !(node.attrs.field in rows)) {
-      rows[node.attrs.field as LetterRowField] = inlineText(node).trim();
+      const value = node.content?.find((child) => child.type === 'rowValue');
+      rows[node.attrs.field as LetterRowField] = value ? inlineText(value).trim() : '';
     } else if (node.type === 'paragraph' && typeof node.attrs?.field === 'string') {
       const field = node.attrs.field as (typeof PARAGRAPH_FIELDS)[number];
       (lines[field] ||= []).push(inlineText(node).trim());

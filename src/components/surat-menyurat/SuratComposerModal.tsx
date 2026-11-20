@@ -18,7 +18,7 @@ import { TEMPLATE_OPTIONS } from '@/lib/surat-menyurat/constants';
 import { formatNomorSuratKeluar, satkerCodeFor } from '@/lib/surat-menyurat/numbering';
 import { applyTemplateDefaults, draftFromSurat, draftRecipient, getDefaultDraft, LetterDraftPayload, AssignedPerson, TUJUAN_MAX_LENGTH } from '@/lib/surat-menyurat/templates';
 import { SuratKeluar, TemplateType } from '@/lib/surat-menyurat/types';
-import { extractLetterFields, letterDocText, type LetterDoc } from '@/lib/surat-menyurat/letterDoc';
+import { extractLetterFields, letterDocText, sanitizeLetterDoc, type LetterDoc } from '@/lib/surat-menyurat/letterDoc';
 import { buildLetterDoc } from '@/lib/surat-menyurat/letterDocBuild';
 import LetterPaper from './LetterPaper';
 import LetterToolbar from './LetterToolbar';
@@ -213,6 +213,11 @@ export default function SuratComposerModal({
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.tanggalSurat)) {
       setError('Tanggal surat wajib diisi.');
+      return false;
+    }
+    // Say so here when the letter itself is the problem, instead of the server's general refusal.
+    if (draft.letterDoc && !sanitizeLetterDoc(draft.letterDoc)) {
+      setError('Isi surat memuat bagian yang tidak dapat disimpan atau gambar/teks terlalu besar. Perkecil atau hapus gambar, lalu coba lagi.');
       return false;
     }
     const tujuan = draftRecipient(draft);

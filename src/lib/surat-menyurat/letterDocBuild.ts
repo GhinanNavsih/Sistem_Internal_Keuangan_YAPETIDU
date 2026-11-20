@@ -53,10 +53,19 @@ export function buildLetterDoc(draft: LetterDraftPayload, { isYapetidu }: Letter
   content.push({ type: 'kop', attrs: { logo: isYapetidu ? 'yapetidu' : 'unipdu' }, content: kopLines });
 
   // Nomor, Lampiran, Hal
+  const row = (label: string, field: string, value: LetterNode[]): LetterNode => ({
+    type: 'labelRow',
+    attrs: { field },
+    content: [
+      { type: 'rowLabel', content: inline(label) },
+      { type: 'rowSep', content: inline(':') },
+      { type: 'rowValue', ...(value.length ? { content: value } : {}) },
+    ],
+  });
   content.push(
-    { type: 'labelRow', attrs: { label: 'Nomor', field: 'nomorSurat' }, ...(draft.nomorSurat ? { content: inline(draft.nomorSurat, [bold]) } : {}) },
-    { type: 'labelRow', attrs: { label: 'Lampiran', field: 'lampiranKeterangan' }, content: inline(draft.lampiranKeterangan || '-') },
-    { type: 'labelRow', attrs: { label: 'Hal', field: 'perihal' }, content: inline(draft.perihal || 'Surat Dinas', [bold, underline]) },
+    row('Nomor', 'nomorSurat', inline(draft.nomorSurat, [bold])),
+    row('Lampiran', 'lampiranKeterangan', inline(draft.lampiranKeterangan || '-')),
+    row('Hal', 'perihal', inline(draft.perihal || 'Surat Dinas', [bold, underline])),
   );
 
   // Kepada Yth.

@@ -7,7 +7,13 @@ import type { JSONContent } from '@tiptap/core';
 import type { LetterDraftPayload } from '@/lib/surat-menyurat/templates';
 import { buildLetterDoc } from '@/lib/surat-menyurat/letterDocBuild';
 import { letterDocExtensions, setPageBreakSpacer } from './letterDocExtensions';
+import TableContextMenu from './TableContextMenu';
+import ImageBar from './ImageBar';
+import SignatureBar from './SignatureBar';
 import { LETTER_CSS, LETTER_MARGIN_U, LETTER_PAGE_CONTENT_U, LETTER_SCREEN_CSS } from './letterPaperCss';
+
+/** React keeps one copy of a stylesheet per `href`, so the name changes whenever the styles do. */
+const STYLE_VERSION = [...(LETTER_CSS + LETTER_SCREEN_CSS)].reduce((hash, char) => (Math.imul(hash, 31) + char.charCodeAt(0)) | 0, 7).toString(36);
 
 interface Props {
   draft: LetterDraftPayload;
@@ -81,6 +87,7 @@ function useLetterPages(flowRef: React.RefObject<HTMLDivElement | null>) {
 /** The official letter on an A4 sheet. With an `editor` it is written in place, like a word processor. */
 export default function LetterPaper({ draft, isYapetidu, id, editor }: Props) {
   const flowRef = useRef<HTMLDivElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
   const { pages, spacer } = useLetterPages(flowRef);
   const unit = (n: number) => `calc(var(--u) * ${n})`;
 
@@ -90,8 +97,9 @@ export default function LetterPaper({ draft, isYapetidu, id, editor }: Props) {
 
   return (
     <div className="letter-frame">
-      <style href="letter-paper" precedence="default">{LETTER_CSS + LETTER_SCREEN_CSS}</style>
+      <style href={`letter-paper-${STYLE_VERSION}`} precedence="default">{LETTER_CSS + LETTER_SCREEN_CSS}</style>
       <div
+        ref={sheetRef}
         className="letter-sheet letter-sheet--screen bg-white shadow-xl ring-1 ring-slate-200 rounded-xs select-text"
         style={{ minHeight: unit(pages * LETTER_PAGE_CONTENT_U + 2 * LETTER_MARGIN_U) }}
       >
@@ -107,9 +115,18 @@ export default function LetterPaper({ draft, isYapetidu, id, editor }: Props) {
           </div>
         ))}
 
+        {editor && <ImageBar editor={editor} sheetRef={sheetRef} />}
+        {editor && <SignatureBar editor={editor} sheetRef={sheetRef} />}
+
         {/* `id` marks the part that is printed: everything but the page guides. */}
         <div id={id} ref={flowRef} className="letter-doc">
-          {editor === undefined ? <LetterDocHtml draft={draft} isYapetidu={isYapetidu} spacer={spacer} /> : <EditorContent editor={editor} />}
+          {editor === undefined ? (
+            <LetterDocHtml draft={draft} isYapetidu={isYapetidu} spacer={spacer} />
+          ) : (
+            <TableContextMenu editor={editor}>
+              <EditorContent editor={editor} />
+            </TableContextMenu>
+          )}
         </div>
       </div>
     </div>

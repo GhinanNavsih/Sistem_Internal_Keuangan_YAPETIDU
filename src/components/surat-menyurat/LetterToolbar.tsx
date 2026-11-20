@@ -22,16 +22,17 @@ import {
   Plus,
   Redo2,
   Table as TableIcon,
-  Trash2,
   Underline,
   Undo2,
   X,
   type LucideIcon,
 } from 'lucide-react';
+import { extraSelections } from './letterDocExtensions';
 import { LETTER_BASE_PT, LETTER_FONT_FAMILIES, LETTER_FONT_SIZES, LETTER_MAX_IMAGES_CHARS } from '@/lib/surat-menyurat/letterDoc';
 import { imageToDataUrl, LETTER_IMAGE_ACCEPT } from '@/lib/surat-menyurat/imageData';
 
 const DEFAULT_FONT = 'Times New Roman';
+type Chain = ReturnType<Editor['chain']>;
 
 function ToolButton({
   label,
@@ -150,7 +151,6 @@ const RESTING_STATE = {
   color: null as string | null,
   background: null as string | null,
   inTable: false,
-  image: null as { width: number; align: string } | null,
 };
 
 /** The formatting bar of the letter editor, in the manner of a word processor's. */
@@ -162,7 +162,6 @@ export default function LetterToolbar({ editor, onError }: { editor: Editor | nu
       if (!current) return null;
       const paragraph = current.state.selection.$from.parent;
       const style = current.getAttributes('textStyle');
-      const image = current.isActive('image') ? current.getAttributes('image') : null;
       return {
         canUndo: current.can().undo(),
         canRedo: current.can().redo(),
@@ -178,7 +177,6 @@ export default function LetterToolbar({ editor, onError }: { editor: Editor | nu
         color: (style.color as string | null) || null,
         background: (style.backgroundColor as string | null) || null,
         inTable: current.isActive('table'),
-        image: image ? { width: (image.width as number | null) || 100, align: (image.align as string) || 'center' } : null,
       };
     },
   });
@@ -186,10 +184,30 @@ export default function LetterToolbar({ editor, onError }: { editor: Editor | nu
   // Until the editor reports its first selection, the controls show their resting state.
   const state = read ?? RESTING_STATE;
   const disabled = !editor;
-  const run = (command: (chain: ReturnType<Editor['chain']>) => ReturnType<Editor['chain']>) => () => {
+  const run = (command: (chain: Chain) => Chain) => () => {
     if (editor) command(editor.chain().focus()).run();
   };
-  const setStyle = (attrs: Record<string, unknown>) => run((c) => c.setMark('textStyle', attrs).removeEmptyTextStyle())();
+  /** Like `run`, but also on every extra passage chosen with Ctrl/Cmd held. Only for changes that do not shift positions. */
+  const runAll = (command: (chain: Chain) => Chain) => () => {
+    if (!editor) return;
+    const extra = extraSelections(editor);
+    if (!extra.length) return run(command)();
+    const { from, to } = editor.state.selection;
+    const chain = editor.chain().focus();
+    [...extra, ...(to > from ? [{ from, to }] : [])].forEach((range) => command(chain.setTextSelection(range)));
+    chain.setTextSelection({ from, to }).run();
+  };
+  /** Bold, italic, underline: on if the first passage lacks the mark, off if it has it, the same for every passage. */
+  const toggleAll = (mark: 'bold' | 'italic' | 'underline') => () => {
+    if (!editor) return;
+    const extra = extraSelections(editor);
+    if (!extra.length) return run((c) => (mark === 'bold' ? c.toggleBold() : mark === 'italic' ? c.toggleItalic() : c.toggleUnderline()))();
+    const first = extra[0];
+    const on = !editor.state.doc.rangeHasMark(first.from, first.to, editor.schema.marks[mark]);
+    const set = (c: Chain) => (mark === 'bold' ? (on ? c.setBold() : c.unsetBold()) : mark === 'italic' ? (on ? c.setItalic() : c.unsetItalic()) : on ? c.setUnderline() : c.unsetUnderline());
+    runAll(set)();
+  };
+  const setStyle = (attrs: Record<string, unknown>) => runAll((c) => c.setMark('textStyle', attrs).removeEmptyTextStyle())();
   const sizes: number[] = !(LETTER_FONT_SIZES as readonly number[]).includes(state.fontSize) ? [...LETTER_FONT_SIZES, state.fontSize].sort((a, b) => a - b) : [...LETTER_FONT_SIZES];
   const stepSize = (direction: 1 | -1) => {
     const index = sizes.indexOf(state.fontSize);
@@ -233,21 +251,21 @@ export default function LetterToolbar({ editor, onError }: { editor: Editor | nu
         </select>
         <ToolButton label="Perbesar huruf" icon={Plus} disabled={disabled} onClick={() => stepSize(1)} />
         <Divider />
-        <ToolButton label="Tebal (Ctrl+B)" icon={Bold} active={state.bold} disabled={disabled} onClick={run((c) => c.toggleBold())} />
-        <ToolButton label="Miring (Ctrl+I)" icon={Italic} active={state.italic} disabled={disabled} onClick={run((c) => c.toggleItalic())} />
-        <ToolButton label="Garis bawah (Ctrl+U)" icon={Underline} active={state.underline} disabled={disabled} onClick={run((c) => c.toggleUnderline())} />
+        <ToolButton label="Tebal (Ctrl+B)" icon={Bold} active={state.bold} disabled={disabled} onClick={toggleAll('bold')} />
+        <ToolButton label="Miring (Ctrl+I)" icon={Italic} active={state.italic} disabled={disabled} onClick={toggleAll('italic')} />
+        <ToolButton label="Garis bawah (Ctrl+U)" icon={Underline} active={state.underline} disabled={disabled} onClick={toggleAll('underline')} />
         <ColorTool label="Warna teks" icon={Baseline} value={state.color ?? null} fallback="#111111" disabled={disabled} onChange={(color) => setStyle({ color })} onClear={() => setStyle({ color: null })} />
         <ColorTool label="Warna sorot" icon={Highlighter} value={state.background ?? null} fallback="#fde047" disabled={disabled} onChange={(backgroundColor) => setStyle({ backgroundColor })} onClear={() => setStyle({ backgroundColor: null })} />
         <Divider />
-        <ToolButton label="Rata kiri" icon={AlignLeft} active={state.align === 'left'} disabled={disabled} onClick={run((c) => c.setTextAlign('left'))} />
-        <ToolButton label="Rata tengah" icon={AlignCenter} active={state.align === 'center'} disabled={disabled} onClick={run((c) => c.setTextAlign('center'))} />
-        <ToolButton label="Rata kanan" icon={AlignRight} active={state.align === 'right'} disabled={disabled} onClick={run((c) => c.setTextAlign('right'))} />
-        <ToolButton label="Rata kiri dan kanan" icon={AlignJustify} active={state.align === 'justify'} disabled={disabled} onClick={run((c) => c.setTextAlign('justify'))} />
+        <ToolButton label="Rata kiri" icon={AlignLeft} active={state.align === 'left'} disabled={disabled} onClick={runAll((c) => c.setTextAlign('left'))} />
+        <ToolButton label="Rata tengah" icon={AlignCenter} active={state.align === 'center'} disabled={disabled} onClick={runAll((c) => c.setTextAlign('center'))} />
+        <ToolButton label="Rata kanan" icon={AlignRight} active={state.align === 'right'} disabled={disabled} onClick={runAll((c) => c.setTextAlign('right'))} />
+        <ToolButton label="Rata kiri dan kanan" icon={AlignJustify} active={state.align === 'justify'} disabled={disabled} onClick={runAll((c) => c.setTextAlign('justify'))} />
         <Divider />
         <ToolButton label="Daftar berpoin" icon={List} active={state.bulletList} disabled={disabled} onClick={run((c) => c.toggleBulletList())} />
         <ToolButton label="Daftar bernomor" icon={ListOrdered} active={state.orderedList} disabled={disabled} onClick={run((c) => c.toggleOrderedList())} />
         <ToolButton label="Kurangi menjorok (Shift+Tab)" icon={IndentDecrease} disabled={disabled} onClick={run((c) => c.changeIndent(-1))} />
-        <ToolButton label="Tambah menjorok (Tab)" icon={IndentIncrease} disabled={disabled} onClick={run((c) => c.changeIndent(1))} />
+        <ToolButton label="Tambah menjorok (Tab di awal baris)" icon={IndentIncrease} disabled={disabled} onClick={run((c) => c.changeIndent(1))} />
         <ToolButton label="Baris pertama menjorok" icon={PilcrowRight} active={state.firstLine} disabled={disabled} onClick={run((c) => c.toggleFirstLine())} />
         <Divider />
         <ToolButton label="Sisipkan tabel" icon={TableIcon} active={state.inTable} disabled={disabled} onClick={run((c) => c.insertTable({ rows: 3, cols: 3, withHeaderRow: true }))} />
@@ -280,19 +298,6 @@ export default function LetterToolbar({ editor, onError }: { editor: Editor | nu
         </div>
       )}
 
-      {state.image && (
-        <div className="mt-1 flex flex-wrap items-center gap-0.5 border-t border-slate-100 pt-1">
-          <span className="px-1.5 text-[11px] font-semibold text-slate-400">Gambar</span>
-          {[25, 50, 75, 100].map((width) => (
-            <TextButton key={width} label={`${width}%`} active={state.image?.width === width} onClick={run((c) => c.setImageLayout({ width: width === 100 ? null : width }))} />
-          ))}
-          <Divider />
-          <ToolButton label="Gambar rata kiri" icon={AlignLeft} active={state.image.align === 'left'} onClick={run((c) => c.setImageLayout({ align: 'left' }))} />
-          <ToolButton label="Gambar rata tengah" icon={AlignCenter} active={state.image.align === 'center'} onClick={run((c) => c.setImageLayout({ align: 'center' }))} />
-          <ToolButton label="Gambar rata kanan" icon={AlignRight} active={state.image.align === 'right'} onClick={run((c) => c.setImageLayout({ align: 'right' }))} />
-          <ToolButton label="Hapus gambar" icon={Trash2} onClick={run((c) => c.deleteSelection())} />
-        </div>
-      )}
     </div>
   );
 }
