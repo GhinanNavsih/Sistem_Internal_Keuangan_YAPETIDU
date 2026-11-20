@@ -1424,14 +1424,14 @@
     },
     {
       "code": "52133",
-      "name": "BBL Inova hitam",
+      "name": "BBM Inova hitam",
       "type": "KELUAR",
       "normalBalance": "DEBIT",
       "reportTarget": "INCOME_STATEMENT"
     },
     {
       "code": "52134",
-      "name": "BBM Iniva matic",
+      "name": "BBM Inova matic",
       "type": "KELUAR",
       "normalBalance": "DEBIT",
       "reportTarget": "INCOME_STATEMENT"
