@@ -24,7 +24,8 @@ import LetterPaper from './LetterPaper';
 import LetterToolbar from './LetterToolbar';
 import { letterDocExtensions, LetterEditorContext, type LetterEditorControls } from './letterDocExtensions';
 import { LETTER_PRINT_CSS } from './letterPaperCss';
-import { Loader2, Printer, Save, Sparkles, Wand2 } from 'lucide-react';
+import { Loader2, Printer, Save, Upload, Wand2 } from 'lucide-react';
+import SuratKeluarUploadForm from './SuratKeluarUploadForm';
 
 const NO_PEOPLE: AssignedPerson[] = [];
 
@@ -81,6 +82,8 @@ export default function SuratComposerModal({
   const savingRef = useRef(false);
   const [saveSuccess, setSaveSuccess] = useState('');
   const [error, setError] = useState('');
+  // A letter recorded from a scan has no written text to edit, so it reopens on the upload form.
+  const [uploadMode, setUploadMode] = useState(() => Boolean(surat && !surat.letterDraft && !surat.contentBody && (surat.attachments?.length ?? 0) > 0));
   const [people, setPeople] = useState<AssignedPerson[]>([]);
   const [peopleLoaded, setPeopleLoaded] = useState(false);
   const [peopleError, setPeopleError] = useState('');
@@ -131,18 +134,6 @@ export default function SuratComposerModal({
       delete result.letterDoc;
       return withDoc(result);
     });
-  };
-
-  const handleGenerateNumber = () => {
-    const code = satkerCodeFor(defaultSatkerInitials, defaultSatkerName);
-    const date = draft.tanggalSurat ? new Date(draft.tanggalSurat) : new Date();
-    const autoNo = formatNomorSuratKeluar({
-      sequenceNumber: nextSequence,
-      satkerCode: code,
-      date,
-    });
-    if (editor) editor.commands.setLetterField('nomorSurat', autoNo);
-    else setDraft((prev) => ({ ...prev, nomorSurat: autoNo }));
   };
 
   const handlePrint = async () => {
@@ -307,7 +298,7 @@ export default function SuratComposerModal({
     },
   };
 
-  const content = (
+  const editorContent = (
       <div className={inline ? 'bg-white rounded-md p-6 border border-slate-200 shadow-sm flex flex-col' : 'h-full flex flex-col overflow-hidden'}>
         {/* Header Bar */}
         <DialogHeader className="space-y-1 pb-3 border-b border-slate-100 shrink-0">
@@ -352,11 +343,15 @@ export default function SuratComposerModal({
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={handleGenerateNumber}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-sm border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 transition-all shadow-sm cursor-pointer"
+              onClick={() => {
+                setError('');
+                setUploadMode(true);
+              }}
+              disabled={saving}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-sm border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 transition-all shadow-sm cursor-pointer disabled:opacity-50"
             >
-              <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-              Nomor Otomatis
+              <Upload className="w-3.5 h-3.5 text-indigo-600" />
+              Unggah Surat
             </button>
             <button
               type="button"
@@ -406,6 +401,22 @@ export default function SuratComposerModal({
         </DialogFooter>
       </div>
   );
+  const uploadForm = (
+    <SuratKeluarUploadForm
+      surat={surat && !surat.letterDraft && !surat.contentBody ? surat : null}
+      targetSatkerId={targetSatkerId}
+      onBack={surat && !surat.letterDraft && !surat.contentBody ? undefined : () => setUploadMode(false)}
+      onClose={() => onOpenChange(false)}
+      onSaved={(data) => {
+        if (onSavedToSuratKeluar) onSavedToSuratKeluar(data);
+      }}
+    />
+  );
+  const content = uploadMode
+    ? inline
+      ? uploadForm
+      : <div className="h-full overflow-y-auto"><DialogHeader className="sr-only"><DialogTitle>Unggah Surat Keluar</DialogTitle><DialogDescription>Catat surat keluar dari hasil pindai</DialogDescription></DialogHeader>{uploadForm}</div>
+    : editorContent;
   if (inline) return content;
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="w-[96vw] max-w-[96vw] sm:max-w-[96vw] lg:max-w-7xl h-[94vh] max-h-[94vh] bg-white rounded-md p-6 border border-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.1)] overflow-hidden">{content}</DialogContent></Dialog>;
 }
