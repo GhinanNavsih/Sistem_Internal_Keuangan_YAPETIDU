@@ -207,7 +207,7 @@ function amount(value: unknown, allowZero = false) {
   return value;
 }
 
-export function validateOpeningBalances(opening: OpeningBalances, accounts: FinancialAccount[]) {
+export function validateOpeningBalances(opening: OpeningBalances, accounts: FinancialAccount[], requireBalanced = true) {
   const byCode = new Map(accounts.map((account) => [accountId(account), account]));
   let debit = 0;
   let credit = 0;
@@ -220,7 +220,7 @@ export function validateOpeningBalances(opening: OpeningBalances, accounts: Fina
     debit += balance.debit;
     credit += balance.credit;
   }
-  if (debit !== credit) throw new Error(`Saldo awal belum seimbang: debit ${debit}, kredit ${credit}.`);
+  if (requireBalanced && debit !== credit) throw new Error(`Saldo awal belum seimbang: debit ${debit}, kredit ${credit}.`);
   return { debit, credit };
 }
 
@@ -285,7 +285,7 @@ export function buildFinancialStatements(args: {
   const targetPeriod = args.monthIndex === 'ANNUAL' ? 12 : months.find((month) => month.monthIndex === args.monthIndex)?.period;
   if (!targetPeriod) throw new Error('Bulan laporan tidak valid.');
   const accountMap = new Map(args.accounts.map((account) => [accountId(account), account]));
-  validateOpeningBalances(args.opening, args.accounts);
+  validateOpeningBalances(args.opening, args.accounts, false);
   const openingSigned = new Map<string, number>();
   for (const account of args.accounts) {
     const id = accountId(account);
