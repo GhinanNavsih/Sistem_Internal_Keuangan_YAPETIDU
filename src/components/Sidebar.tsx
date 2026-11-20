@@ -314,7 +314,7 @@ export default function Sidebar() {
         ? employeeAdminMenuItems
         : adminMenuItems.filter(item => {
           if (currentProfile.role === 'super_admin') return true;
-          return isFinancePayrollPath(item.path);
+          return item.path !== PAYROLL_MASTER_PATH && isFinancePayrollPath(item.path);
         });
 
   const getIsActive = (item: SidebarMenuItem) => {
