@@ -126,10 +126,11 @@ export default function Sidebar() {
     item.trim().toUpperCase(),
   );
   const withPeriod = (query: string) => {
-    const periodQuery = monthParam && yearParam
-      ? `month=${encodeURIComponent(monthParam)}&year=${encodeURIComponent(yearParam)}`
-      : '';
-    const mergedQuery = [periodQuery, query].filter(Boolean).join('&');
+    const mergedQuery = [
+      monthParam ? `month=${encodeURIComponent(monthParam)}` : '',
+      yearParam ? `year=${encodeURIComponent(yearParam)}` : '',
+      query,
+    ].filter(Boolean).join('&');
     return mergedQuery ? `?${mergedQuery}` : '';
   };
   const canSeeFacility =
