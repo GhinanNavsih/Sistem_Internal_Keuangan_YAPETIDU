@@ -227,7 +227,9 @@ async function main() {
   assert.equal((await clientWrite(loyalisAdmin.authorization, 'Employees_Loyalis/Loyalis_002', { koperasiUserId: { nullValue: null } })).status, 403, 'existing links cannot be cleared by a client');
   const redirected = redirect(new NextRequest('http://localhost/dashboard/payroll/simpan-pinjam?period=2026-09&filter=a&filter=b&view=koperasi'));
   assert.equal(redirected.status, 308);
-  const destination = new URL(redirected.headers.get('location')!);
+  const location = redirected.headers.get('location');
+  assert(location?.startsWith('/dashboard/payroll/koperasi?'));
+  const destination = new URL(location, 'https://saku.example');
   assert.equal(destination.pathname, '/dashboard/payroll/koperasi');
   assert.equal(destination.searchParams.get('view'), 'simpan-pinjam');
   assert.deepEqual(destination.searchParams.getAll('filter'), ['a', 'b']);

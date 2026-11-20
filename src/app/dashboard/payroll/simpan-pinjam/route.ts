@@ -1,8 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 
 export function GET(request: NextRequest) {
-  const destination = request.nextUrl.clone();
-  destination.pathname = '/dashboard/payroll/koperasi';
-  destination.searchParams.set('view', 'simpan-pinjam');
-  return NextResponse.redirect(destination, 308);
+  const params = new URLSearchParams(request.nextUrl.searchParams);
+  params.set('view', 'simpan-pinjam');
+
+  // Keep the browser on the public origin when App Hosting forwards an internal host.
+  return new Response(null, {
+    status: 308,
+    headers: { Location: `/dashboard/payroll/koperasi?${params}` },
+  });
 }
