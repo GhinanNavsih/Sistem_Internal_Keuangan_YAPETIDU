@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import SimpanPinjamAuditView, { type SimpanPinjamDoc } from '@/components/koperasi/SimpanPinjamAuditView';
 import KoperasiMembersView from '@/components/koperasi/KoperasiMembersView';
 import { useAuth } from '@/lib/AuthContext';
+import { canVerifyPayroll } from '@/lib/payroll/roles';
 import { db, secondaryDb } from '@/lib/firebase';
 import { isConvertedAway } from '@/lib/employeeConversion';
 import { toKoperasiEmployee, type KoperasiMember } from '@/lib/koperasiMembers';
@@ -20,14 +21,17 @@ function Loading() {
 }
 
 function KoperasiPageContent() {
-  const { profile, loading: authLoading } = useAuth();
+  const { profile, activeProfile, loading: authLoading } = useAuth();
+  const role = (activeProfile || profile)?.role;
+  const canView = canVerifyPayroll(role);
+  const readOnly = role !== 'super_admin';
   const searchParams = useSearchParams();
   const router = useRouter();
   const view = searchParams.get('view') === 'simpan-pinjam' ? 'simpan-pinjam' : 'koperasi';
   const { invalidateKoperasi, invalidateEmployees } = usePayrollCacheInvalidation();
   const { data, error, isFetching: loading, refetch } = useQuery({
     queryKey: ['koperasi-member-management', profile?.uid],
-    enabled: !authLoading && profile?.role === 'super_admin',
+    enabled: !authLoading && canView,
     queryFn: async () => {
       const [loans, users, loyalis, pekarya] = await Promise.all([
         getDocsFromServer(collection(secondaryDb, 'simpanPinjam')),
@@ -46,12 +50,12 @@ function KoperasiPageContent() {
     },
   });
   const reload = useCallback(async () => {
-    if (profile?.role !== 'super_admin') return;
+    if (!canView) return;
     await Promise.all([refetch(), invalidateKoperasi(), invalidateEmployees()]);
-  }, [profile?.role, refetch, invalidateKoperasi, invalidateEmployees]);
+  }, [canView, refetch, invalidateKoperasi, invalidateEmployees]);
 
   if (authLoading) return <Loading />;
-  if (profile?.role !== 'super_admin') return <div className="p-10 text-center"><h1 className="text-xl font-bold">Akses Ditolak</h1><p>Halaman Koperasi hanya untuk Super Admin.</p></div>;
+  if (!canView) return <div className="p-10 text-center"><h1 className="text-xl font-bold">Akses Ditolak</h1><p>Halaman Koperasi tersedia untuk Badan Keuangan dan Super Admin.</p></div>;
 
   const navigation = <div className="mb-6 space-y-3">
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -66,10 +70,10 @@ function KoperasiPageContent() {
     {error && <p role="alert" className="rounded-md bg-rose-50 p-3 text-sm text-rose-700">{error.message} Gunakan Muat ulang sebelum mengubah data.</p>}
   </div>;
 
-  if (data && view === 'simpan-pinjam') return <SimpanPinjamAuditView loans={data.loans} kopUsers={data.members.map(member => ({ ...member, uid: member.uid || undefined, nama: member.nama || '', nik: member.nik || '', email: member.email || '' }))} employees={data.employees.filter(employee => employee.name)} navigation={navigation} reload={reload} disabled={loading || Boolean(error)} />;
+  if (data && view === 'simpan-pinjam') return <SimpanPinjamAuditView loans={data.loans} kopUsers={data.members.map(member => ({ ...member, uid: member.uid || undefined, nama: member.nama || '', nik: member.nik || '', email: member.email || '' }))} employees={data.employees.filter(employee => employee.name)} navigation={navigation} reload={reload} disabled={loading || Boolean(error)} readOnly={readOnly} />;
   return <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-50/80 via-slate-50 to-slate-100 p-4 text-slate-800 md:p-8">
     <div className="relative mx-auto w-full"><GlobalHeader />{navigation}
-      {data ? <KoperasiMembersView members={data.members} employees={data.employees} reload={reload} disabled={loading || Boolean(error)} /> : loading ? <Loading /> : null}
+      {data ? <KoperasiMembersView members={data.members} employees={data.employees} reload={reload} disabled={loading || Boolean(error)} readOnly={readOnly} /> : loading ? <Loading /> : null}
     </div>
   </div>;
 }

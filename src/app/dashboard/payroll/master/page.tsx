@@ -27,6 +27,7 @@ import {
 import { doc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/AuthContext';
+import { canVerifyPayroll } from '@/lib/payroll/roles';
 import {
   useMatrixActiveVersion,
   useMatrixGradeCodes,
@@ -146,7 +147,7 @@ function cloneDefaultExcessAttendanceRows(): ExcessAttendanceRateRow[] {
 
 export default function SalaryMasterPage() {
   const { profile, activeProfile } = useAuth();
-  const canEdit = (activeProfile || profile)?.role === 'super_admin';
+  const canEdit = canVerifyPayroll((activeProfile || profile)?.role);
   const [saving, setSaving] = useState(false);
   const isSavingRef = useRef(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);

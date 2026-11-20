@@ -69,7 +69,7 @@ function parseExpectedRevision(value: unknown): number {
 export async function GET(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, BALANCE_REVIEWER_ROLES);
+    requireRole(actor, [...BALANCE_REVIEWER_ROLES, 'finance_verifier']);
     const year = parseYear(request.nextUrl.searchParams.get('year'));
     const asOfDate = jakartaToday();
     const balanceReferenceDate = annualPaidLeaveBalanceReferenceDate(year, asOfDate);
@@ -110,7 +110,7 @@ export async function GET(request: NextRequest) {
           !employee.active ||
           !employee.category ||
           entitlementDays < 1 ||
-          !reviewerCanAccessAnnualPaidLeaveBalance(actor, employee)
+          (actor.role !== 'finance_verifier' && !reviewerCanAccessAnnualPaidLeaveBalance(actor, employee))
         ) {
           return [];
         }

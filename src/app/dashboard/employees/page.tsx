@@ -650,6 +650,8 @@ export default function EmployeesPage() {
   const { user, profile, loading: authLoading} = useAuth();
   const { employeesLoyalis, employeesBlueCollar, gradeCodesBlue, gradeCodesWhite, loading: contextLoading, refreshData, kepangkatanAllowanceMap } = useDashboardData();
   const isLoyalisAdmin = profile?.role === 'loyalis_admin';
+  const canEditEmployees = profile?.role === 'super_admin' || isLoyalisAdmin;
+  const canViewEmployees = canEditEmployees || profile?.role === 'finance_verifier';
   const loyalisAdminLoyalisQuery = useEmployeesLoyalis(isLoyalisAdmin);
   const loyalisAdminBlueCollarQuery = useEmployeesBlueCollar(isLoyalisAdmin);
   const pageEmployeesLoyalis = isLoyalisAdmin
@@ -944,10 +946,10 @@ export default function EmployeesPage() {
 
   // Redirect if unauthorized
   useEffect(() => {
-    if (!authLoading && (!user || (profile?.role !== 'super_admin' && profile?.role !== 'loyalis_admin'))) {
+    if (!authLoading && (!user || !canViewEmployees)) {
       router.replace('/login');
     }
-  }, [user, profile, authLoading, router]);
+  }, [user, canViewEmployees, authLoading, router]);
 
   // Load pending edits on mount
   useEffect(() => {
@@ -975,7 +977,7 @@ export default function EmployeesPage() {
   }, []);
 
   const currentTab = COLLAR_TABS.find(t => t.key === activeTab)!;
-  const canEditNipy = profile?.role === 'super_admin' || profile?.role === 'loyalis_admin';
+  const canEditNipy = canEditEmployees;
 
   const resetForm = (tab: string): any => {
     if (tab === 'loyalis') {
@@ -2183,6 +2185,14 @@ export default function EmployeesPage() {
     XLSX.writeFile(workbook, `Master_Pegawai_YAPETIDU_${fileLabel}_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
+  const dataColumnCount = {
+    default: isLoyalisAdmin ? 6 : 7,
+    debug: isLoyalisAdmin ? 3 : 4,
+    constant: activeTab === 'loyalis' ? (isLoyalisAdmin ? 11 : 12) : 4,
+    cuti: 6,
+  }[tableViewMode];
+  const tableColumnCount = dataColumnCount + (canEditEmployees && tableViewMode !== 'cuti' ? 1 : 0);
+
   const showFamilyAllowanceReview =
     activeTab === 'loyalis' && (isLoyalisAdmin || profile?.role === 'super_admin');
 
@@ -2204,7 +2214,7 @@ export default function EmployeesPage() {
       icon: <GraduationCap className="w-5 h-5" />,
       color: 'amber',
       highlight: activeTab === 'loyalis' && pendingGraduations.length > 0,
-      onClick: activeTab === 'loyalis' ? () => setIsGraduationDialogOpen(true) : undefined,
+      onClick: canEditEmployees && activeTab === 'loyalis' ? () => setIsGraduationDialogOpen(true) : undefined,
     },
   ];
 
@@ -2232,7 +2242,7 @@ export default function EmployeesPage() {
             <Button onClick={handleExportExcel} variant="outline" className="rounded-sm border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm px-4 cursor-pointer">
               <FileSpreadsheet className="w-4 h-4 mr-2 text-emerald-600" /> Export Excel
             </Button>
-            {activeTab === 'blue' && (
+            {canEditEmployees && activeTab === 'blue' && (
               <Button
                 onClick={handleOpenNipyGenerator}
                 variant="outline"
@@ -2250,9 +2260,9 @@ export default function EmployeesPage() {
                 </Button>
               </Link>
             )}
-            <Button onClick={handleOpenAdd} className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-200 px-6 cursor-pointer">
+            {canEditEmployees && <Button onClick={handleOpenAdd} className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-200 px-6 cursor-pointer">
               <UserPlus className="w-4 h-4 mr-2" /> Tambah Pegawai
-            </Button>
+            </Button>}
           </div>
         </div>
 
@@ -2467,7 +2477,7 @@ export default function EmployeesPage() {
                     <TableHead onClick={() => handleSort('recognizedDate')} className="w-[130px] font-semibold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors whitespace-nowrap">
                       <div className="flex items-center">Tanggal Diakui <SortIcon active={sortConfig.key === 'recognizedDate'} direction={sortConfig.direction} /></div>
                     </TableHead>
-                    <TableHead className="w-[150px] font-semibold text-slate-900 text-right pr-8 select-none">Aksi</TableHead>
+                    {canEditEmployees && <TableHead className="w-[150px] font-semibold text-slate-900 text-right pr-8 select-none">Aksi</TableHead>}
                   </TableRow>
                 )}
                 {tableViewMode === 'debug' && (
@@ -2486,7 +2496,7 @@ export default function EmployeesPage() {
                         <div className="flex items-center justify-end">Tunjangan Jabatan <SortIcon active={sortConfig.key === 'debugTunjangan'} direction={sortConfig.direction} /></div>
                       </TableHead>
                     )}
-                    <TableHead className="w-[120px] font-semibold text-slate-900 text-right pr-8 select-none">Aksi</TableHead>
+                    {canEditEmployees && <TableHead className="w-[120px] font-semibold text-slate-900 text-right pr-8 select-none">Aksi</TableHead>}
                   </TableRow>
                 )}
                 {tableViewMode === 'cuti' && (
@@ -2552,7 +2562,7 @@ export default function EmployeesPage() {
                       <TableHead onClick={() => handleSort('pot_pinlu')} className="w-[170px] font-semibold text-rose-800 bg-rose-50/40 text-right cursor-pointer hover:text-rose-900 transition-colors">
                         <div className="flex items-center justify-end">Pot. Pinlu/Tagihan <SortIcon active={sortConfig.key === 'pot_pinlu'} direction={sortConfig.direction} /></div>
                       </TableHead>
-                      <TableHead className="w-[120px] font-semibold text-slate-900 text-right pr-8 select-none">Aksi</TableHead>
+                      {canEditEmployees && <TableHead className="w-[120px] font-semibold text-slate-900 text-right pr-8 select-none">Aksi</TableHead>}
                     </TableRow>
                   ) : (
                     <TableRow className="border-slate-100">
@@ -2568,7 +2578,7 @@ export default function EmployeesPage() {
                       <TableHead onClick={() => handleSort('pot_bpjs')} className="w-[130px] font-semibold text-rose-800 bg-rose-50/40 text-right cursor-pointer hover:text-rose-900 transition-colors">
                         <div className="flex items-center justify-end">Pot. BPJS <SortIcon active={sortConfig.key === 'pot_bpjs'} direction={sortConfig.direction} /></div>
                       </TableHead>
-                      <TableHead className="w-[120px] font-semibold text-slate-900 text-right pr-8 select-none">Aksi</TableHead>
+                      {canEditEmployees && <TableHead className="w-[120px] font-semibold text-slate-900 text-right pr-8 select-none">Aksi</TableHead>}
                     </TableRow>
                   )
                 )}
@@ -2576,7 +2586,7 @@ export default function EmployeesPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={tableViewMode === 'default' ? (isLoyalisAdmin ? 7 : 8) : tableViewMode === 'debug' ? (isLoyalisAdmin ? 4 : 5) : tableViewMode === 'cuti' ? 6 : (activeTab === 'loyalis' ? (isLoyalisAdmin ? 12 : 13) : 5)} className="h-64 text-center">
+                    <TableCell colSpan={tableColumnCount} className="h-64 text-center">
                       <div className="flex flex-col items-center gap-3 text-slate-400">
                         <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
                         <p>Memuat data pegawai...</p>
@@ -2585,7 +2595,7 @@ export default function EmployeesPage() {
                   </TableRow>
                 ) : filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={tableViewMode === 'default' ? (isLoyalisAdmin ? 7 : 8) : tableViewMode === 'debug' ? (isLoyalisAdmin ? 4 : 5) : tableViewMode === 'cuti' ? 6 : (activeTab === 'loyalis' ? (isLoyalisAdmin ? 12 : 13) : 5)} className="h-64 text-center">
+                    <TableCell colSpan={tableColumnCount} className="h-64 text-center">
                       <p className="text-slate-400">Tidak ada pegawai yang ditemukan.</p>
                     </TableCell>
                   </TableRow>
@@ -2645,7 +2655,7 @@ export default function EmployeesPage() {
                           ? new Date(getEmpRecognizedDate(emp)).toLocaleDateString('id-ID', { year: 'numeric', month: 'short' })
                           : '-'}
                       </TableCell>
-                      <TableCell className="text-right pr-8">
+                      {canEditEmployees && <TableCell className="text-right pr-8">
                         <div className="flex justify-end gap-1">
                           {activeTab === 'blue' && getEmpIsActive(emp) && !readConversionToLink(emp) && (
                             <Button
@@ -2671,7 +2681,7 @@ export default function EmployeesPage() {
                             <Trash2 className="w-4 h-4" />
                           </Button>
                         </div>
-                      </TableCell>
+                      </TableCell>}
                     </TableRow>
                   ))
                 ) : tableViewMode === 'cuti' ? (
@@ -2717,6 +2727,7 @@ export default function EmployeesPage() {
                                 <span className="text-slate-300">-</span>
                               );
                             }
+                            if (!canEditEmployees) return <span>{balanceRow.availableDays} hari</span>;
                             const pending = pendingLeaveById.get(empId);
                             const draftValue = leaveBalanceDrafts[empId] ?? String(balanceRow.availableDays);
                             return (
@@ -2778,7 +2789,7 @@ export default function EmployeesPage() {
                           {empRow.debugTunjanganLabel}
                         </TableCell>
                       )}
-                      <TableCell className="text-right pr-8">
+                      {canEditEmployees && <TableCell className="text-right pr-8">
                         <div className="flex justify-end gap-1">
                           <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(empRow)} className="h-8 w-8 text-slate-400 hover:text-indigo-600 rounded-sm">
                             <Pencil className="w-4 h-4" />
@@ -2787,7 +2798,7 @@ export default function EmployeesPage() {
                             <Trash2 className="w-4 h-4" />
                           </Button>
                         </div>
-                      </TableCell>
+                      </TableCell>}
                     </TableRow>
                   ))
                 ) : (
@@ -2826,7 +2837,7 @@ export default function EmployeesPage() {
                           <TableCell className="text-right font-medium text-slate-700 text-sm bg-rose-50/10">{formatIDR(emp.bpjs?.deductionAmount || 0)}</TableCell>
                         </>
                       )}
-                      <TableCell className="text-right pr-8">
+                      {canEditEmployees && <TableCell className="text-right pr-8">
                         <div className="flex justify-end gap-1">
                           <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(emp)} className="h-8 w-8 text-slate-400 hover:text-indigo-600 rounded-sm">
                             <Pencil className="w-4 h-4" />
@@ -2835,7 +2846,7 @@ export default function EmployeesPage() {
                             <Trash2 className="w-4 h-4" />
                           </Button>
                         </div>
-                      </TableCell>
+                      </TableCell>}
                     </TableRow>
                   ))
                 )}
@@ -4096,7 +4107,7 @@ export default function EmployeesPage() {
       </Dialog>
 
       {/* Sticky floating change log banner */}
-      {pendingEdits.length > 0 && (
+      {canEditEmployees && pendingEdits.length > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 text-white backdrop-blur-md rounded-md shadow-2xl border border-slate-800 px-6 py-4.5 flex items-center justify-between gap-8 max-w-xl w-[90vw] animate-in slide-in-from-bottom-5 duration-300">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-sm bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">

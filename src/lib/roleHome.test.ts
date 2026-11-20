@@ -24,6 +24,9 @@ test('Badan Keuangan is confined to payslips and their supporting payroll pages'
   assert.equal(isFinancePayrollPath(getRoleHomePath({ role: 'finance_verifier' })), true);
   for (const path of [
     '/dashboard/payroll/master',
+    '/dashboard/employees',
+    '/dashboard/payroll/koperasi',
+    '/dashboard/payroll/simpan-pinjam',
     '/dashboard/payroll/uraian/rekap-pekarya',
     '/dashboard/payroll/uraian/presensi-loyalis-raw',
     '/dashboard/payroll/uraian/kjm',
@@ -31,14 +34,12 @@ test('Badan Keuangan is confined to payslips and their supporting payroll pages'
 
   for (const path of [
     '/dashboard/users',
-    '/dashboard/employees',
     '/dashboard/satker-finance',
     '/dashboard/surat-menyurat',
     '/dashboard/reservasi-ruang',
     '/dashboard/pemeriksaan-ruang',
     '/dashboard/payroll/facility-reports',
     '/dashboard/payroll/driver-journeys',
-    '/dashboard/payroll/koperasi',
     '/dashboard/payroll/uraian/tugas',
     '/dashboard/payroll/uraian/simulasi-perjalanan',
     '/employee/payslip',

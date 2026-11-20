@@ -240,55 +240,55 @@ service cloud.firestore {
 
     match /SalaryMatrix/{version} {
       allow read: if isFinanceRole() || isLoyalisAdmin() || isSatkerRole();
-      allow create, update: if isSuperAdmin();
+      allow create, update: if isFinanceRole();
       allow delete: if false;
       match /rows/{rowId} {
         allow read: if isFinanceRole() || isLoyalisAdmin() || isSatkerRole();
-        allow create, update: if isSuperAdmin();
+        allow create, update: if isFinanceRole();
         allow delete: if false;
       }
     }
 
     match /SalaryMatrix_WhiteCollar/{version} {
       allow read: if isFinanceRole() || isLoyalisAdmin() || roleIs('satker_head_loyalis');
-      allow create, update: if isSuperAdmin();
+      allow create, update: if isFinanceRole();
       allow delete: if false;
       match /rows/{rowId} {
         allow read: if isFinanceRole() || isLoyalisAdmin() || roleIs('satker_head_loyalis');
-        allow create, update: if isSuperAdmin();
+        allow create, update: if isFinanceRole();
         allow delete: if false;
       }
     }
 
     match /SalaryMatrix_Functional/{version} {
       allow read: if isFinanceRole() || isLoyalisAdmin() || roleIs('satker_head_loyalis');
-      allow create, update: if isSuperAdmin();
+      allow create, update: if isFinanceRole();
       allow delete: if false;
       match /rows/{rowId} {
         allow read: if isFinanceRole() || isLoyalisAdmin() || roleIs('satker_head_loyalis');
-        allow create, update: if isSuperAdmin();
+        allow create, update: if isFinanceRole();
         allow delete: if false;
       }
     }
 
     match /SalaryMatrix_Kepangkatan/{version} {
       allow read: if isFinanceRole() || isLoyalisAdmin() || roleIs('satker_head_loyalis');
-      allow create, update: if isSuperAdmin();
+      allow create, update: if isFinanceRole();
       allow delete: if false;
       match /rows/{rowId} {
         allow read: if isFinanceRole() || isLoyalisAdmin() || roleIs('satker_head_loyalis');
-        allow create, update: if isSuperAdmin();
+        allow create, update: if isFinanceRole();
         allow delete: if false;
       }
     }
 
     match /SalaryMatrix_ExcessAttendance/{version} {
       allow read: if isFinanceRole() || isLoyalisAdmin() || roleIs('satker_head_loyalis');
-      allow create, update: if isSuperAdmin();
+      allow create, update: if isFinanceRole();
       allow delete: if false;
       match /rows/{rowId} {
         allow read: if isFinanceRole() || isLoyalisAdmin() || roleIs('satker_head_loyalis');
-        allow create, update: if isSuperAdmin();
+        allow create, update: if isFinanceRole();
         allow delete: if false;
       }
     }
