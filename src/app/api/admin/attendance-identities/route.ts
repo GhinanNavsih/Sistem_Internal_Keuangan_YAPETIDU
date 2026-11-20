@@ -1,3 +1,4 @@
+import { EMPLOYEE_PROFILE_EDITOR_ROLES } from '@/lib/payroll/roles';
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
@@ -51,7 +52,7 @@ function parseCommand(value: unknown) {
 export async function PATCH(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin', 'loyalis_admin']);
+    requireRole(actor, EMPLOYEE_PROFILE_EDITOR_ROLES);
     const command = parseCommand(await request.json());
     if (command.employeeCollection === 'Employees_BlueCollar') {
       throw new HttpError(

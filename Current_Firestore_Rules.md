@@ -144,12 +144,12 @@ service cloud.firestore {
     // Golongan (salary grade — academic_and_tier.level_code / salaryProfile.
     // salaryGradeCode) is base-salary-sensitive: Loyalis Admin keeps full
     // write access to these collections but may never set or change it, only
-    // super_admin may. Reads stay whole-document (Firestore rules cannot
+    // the payroll roles may. Reads stay whole-document (Firestore rules cannot
     // redact one field), so this pins the write side only.
     match /Employees_BlueCollar/{employeeId} {
       allow read: if hasProfile();
       allow create: if (
-        isSuperAdmin() ||
+        isFinanceRole() ||
         (isLoyalisAdmin() &&
           request.resource.data.get('salaryProfile', {}).get('salaryGradeCode', '') == '')
       ) &&
@@ -160,7 +160,7 @@ service cloud.firestore {
       // record converted to Loyalis stays closed: reactivating it would put
       // the same person on payroll twice.
       allow update: if (
-        isSuperAdmin() ||
+        isFinanceRole() ||
         (isLoyalisAdmin() &&
           request.resource.data.get('salaryProfile', {}).get('salaryGradeCode', null) ==
             resource.data.get('salaryProfile', {}).get('salaryGradeCode', null))
@@ -210,7 +210,7 @@ service cloud.firestore {
     match /Employees_Loyalis/{employeeId} {
       allow read: if hasProfile();
       allow create: if (
-        isSuperAdmin() ||
+        isFinanceRole() ||
         (isLoyalisAdmin() &&
           request.resource.data.get('academic_and_tier', {}).get('level_code', '') == '')
       ) &&
@@ -222,7 +222,7 @@ service cloud.firestore {
       // `conversion` (the link back to a converted Pekarya record) is written
       // only by /api/admin/employee-conversions.
       allow update: if (
-        isSuperAdmin() ||
+        isFinanceRole() ||
         (isLoyalisAdmin() &&
           request.resource.data.get('academic_and_tier', {}).get('level_code', null) ==
             resource.data.get('academic_and_tier', {}).get('level_code', null))
@@ -539,8 +539,8 @@ service cloud.firestore {
     }
 
     match /EmpEditLog/{docId} {
-      allow read: if isSuperAdmin() || isLoyalisAdmin();
-      allow create: if isSuperAdmin() || isLoyalisAdmin();
+      allow read: if isFinanceRole() || isLoyalisAdmin();
+      allow create: if isFinanceRole() || isLoyalisAdmin();
       allow update, delete: if false;
     }
 
@@ -636,7 +636,8 @@ service cloud.firestore {
     match /Settings/{docId} {
       allow read: if isFinanceRole() || isLoyalisAdmin() || isSatkerRole() ||
         isLoyalisAdmin();
-      allow create, update: if isSuperAdmin() || isLoyalisAdmin();
+      allow create, update: if isSuperAdmin() || isLoyalisAdmin() ||
+        (isFinanceVerifier() && docId in ['departments', 'signatures']);
       allow delete: if false;
     }
 

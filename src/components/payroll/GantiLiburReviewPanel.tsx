@@ -1,5 +1,6 @@
 "use client";
 
+import { canVerifyPayroll } from '@/lib/payroll/roles';
 import { useCallback, useEffect, useState } from 'react';
 import { CalendarClock, Check, Loader2, RefreshCw, X } from 'lucide-react';
 import { GantiLiburAttachmentLinks } from '@/components/GantiLiburAttachmentLinks';
@@ -93,7 +94,7 @@ export default function GantiLiburReviewPanel() {
 
   const role = profile?.role || '';
   const allowed = ['super_admin', 'loyalis_admin', 'satker_head_loyalis', 'satker_head', 'finance_verifier'].includes(role);
-  const canDecide = role === 'super_admin' || role === 'loyalis_admin' || role === 'satker_head';
+  const canDecide = canVerifyPayroll(role) || role === 'loyalis_admin' || role === 'satker_head';
 
   const load = useCallback(async () => {
     if (!allowed) return;

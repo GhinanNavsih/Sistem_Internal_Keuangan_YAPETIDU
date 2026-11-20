@@ -1,3 +1,4 @@
+import { EMPLOYEE_PROFILE_EDITOR_ROLES, canVerifyPayroll } from '@/lib/payroll/roles';
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
@@ -54,7 +55,7 @@ function parseCommand(raw: unknown): Command {
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin', 'loyalis_admin']);
+    requireRole(actor, EMPLOYEE_PROFILE_EDITOR_ROLES);
     const command = parseCommand(await request.json());
     const effectivePeriod = command.effectiveFrom.slice(0, 7);
     const requestHash = createHash('sha256').update(JSON.stringify(command)).digest('hex');
@@ -126,8 +127,8 @@ export async function POST(request: NextRequest) {
       }
       const teamSnapshot = containingTeams[0];
       if (teamSnapshot && command.toCategory !== 'SATPAM') {
-        if (actor.role !== 'super_admin') {
-          throw new HttpError(403, 'Perpindahan anggota regu Satpam memerlukan Super Admin.');
+        if (!canVerifyPayroll(actor.role)) {
+          throw new HttpError(403, 'Perpindahan anggota regu Satpam memerlukan Badan Keuangan atau Super Admin.');
         }
         if (!replacementSnapshot?.exists || !command.replacementEmployeeId ||
             command.replacementEmployeeId === command.employeeId) {

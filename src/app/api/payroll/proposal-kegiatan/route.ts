@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
       const payroll = financialAction && before && (action === 'delete' || status === 'lpj_approved')
         ? await prepareProposalPayroll(tx, { proposalId, proposal: before, approved: false, revision: revision + 1, actor, requestId, payoutPeriod: before.payoutPeriod || before.period }) : null;
       if (action === 'delete') {
-        if (actor.role !== 'super_admin' && !(actor.role === 'satker_head_loyalis' && before?.submittedBy === actor.uid))
+        if (!isFinance && !(actor.role === 'satker_head_loyalis' && before?.submittedBy === actor.uid))
           throw new HttpError(403, 'Akun ini tidak dapat menghapus proposal.');
         const deleted = { proposalId, revision: revision + 1, status: 'deleted' };
         payroll?.write();

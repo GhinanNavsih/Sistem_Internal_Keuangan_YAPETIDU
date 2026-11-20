@@ -582,7 +582,7 @@ export default function VakasiKaryawanPage() {
       const snapshot = buildAutosaveSnapshot();
       const workers = validateExplicitSnapshot(snapshot, false);
       if (!workers) return;
-      const financeSave = profile?.role === 'super_admin' || profile?.role === 'finance_verifier';
+      const financeSave = canVerifyPayroll(profile?.role);
       const result = await authenticatedJson<VakasiMutationResult>(
         '/api/payroll/vakasi-events',
         {
@@ -1040,7 +1040,7 @@ export default function VakasiKaryawanPage() {
           <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-bold text-slate-800 text-sm">Daftar Kegiatan Vakasi Pegawai</h3>
-              {(!isReadOnly || profile?.role === 'super_admin') && (
+              {(!isReadOnly || canVerifyPayroll(profile?.role)) && (
                 <Button
                   disabled={uploadingReport}
                   onClick={() => {
@@ -1151,7 +1151,7 @@ export default function VakasiKaryawanPage() {
 
         {/* Right side form */}
         <div className="xl:col-span-8">
-          <ReferralFinancePanel canManage={profile?.role === 'super_admin' || profile?.role === 'finance_verifier'} />
+          <ReferralFinancePanel canManage={canVerifyPayroll(profile?.role)} />
           {selectedLpjEvent ? (
             <Card className="space-y-5 rounded-md border-slate-200 bg-white p-5 md:p-6">
               <div className="flex items-start justify-between gap-3">
@@ -1425,7 +1425,7 @@ export default function VakasiKaryawanPage() {
                         className="rounded-sm border-slate-200 font-bold text-slate-800 text-xs h-9 bg-white text-right"
                       />
                     </div>
-                    {(!isReadOnly || profile?.role === 'super_admin') && (
+                    {(!isReadOnly || canVerifyPayroll(profile?.role)) && (
                       <Button
                         type="button"
                         variant="ghost"
@@ -1443,7 +1443,7 @@ export default function VakasiKaryawanPage() {
                     )}
                   </div>
                 ))}
-                {(!isReadOnly || profile?.role === 'super_admin') && (
+                {(!isReadOnly || canVerifyPayroll(profile?.role)) && (
                   <Button
                     type="button"
                     onClick={handleAddRow}
@@ -1549,7 +1549,7 @@ export default function VakasiKaryawanPage() {
 
             {/* Footer Buttons */}
             <div className="flex justify-end items-center gap-3 pt-4 border-t border-slate-100">
-              {selectedEventId && (profile?.role === 'super_admin' || profile?.role === 'satker_head_loyalis') && (
+              {selectedEventId && (canVerifyPayroll(profile?.role) || profile?.role === 'satker_head_loyalis') && (
                 <Button
                   onClick={() => handleDeleteEvent(selectedEventId)}
                   disabled={saving || uploadingReport}
@@ -1573,7 +1573,7 @@ export default function VakasiKaryawanPage() {
               )}
 
               {/* Save Event (Admin or editable states) */}
-              {(!isReadOnly || profile?.role === 'super_admin') && (
+              {(!isReadOnly || canVerifyPayroll(profile?.role)) && (
                 <Button
                   onClick={handleSaveEvent}
                   disabled={saving || uploadingReport}

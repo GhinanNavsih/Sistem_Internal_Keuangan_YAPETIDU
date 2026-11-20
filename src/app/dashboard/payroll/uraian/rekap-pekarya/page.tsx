@@ -282,7 +282,7 @@ export default function RekapPekaryaPage() {
   // rekap then simply stays as saved. After a sync the saved rekap is read
   // again, which the load effect skips while there are unsaved edits.
   const canSyncSatpamRekap =
-    profile?.role === 'super_admin' || profile?.role === 'satker_head';
+    canVerifyPayroll(profile?.role) || profile?.role === 'satker_head';
   useEffect(() => {
     let active = true;
 
@@ -555,7 +555,7 @@ export default function RekapPekaryaPage() {
   const canEditSatpamMonthlyBonus =
     category === 'SATPAM' &&
     period === '2026-07' &&
-    (profile?.role === 'super_admin' ||
+    (canVerifyPayroll(profile?.role) ||
       (profile?.role === 'satker_head' &&
         profile.permittedCategories?.includes('SATPAM')));
 
@@ -563,7 +563,7 @@ export default function RekapPekaryaPage() {
   // a Super Admin's audited paper-SPJ correction for the two affected legacy
   // Pekarya rows; it never reopens the ordinary rekap editor.
   const canCorrectHistoricalSpj =
-    profile?.role === 'super_admin' &&
+    canVerifyPayroll(profile?.role) &&
     period === '2026-07' &&
     category === 'KEBERSIHAN';
   const historicalSpjEditEnabled =

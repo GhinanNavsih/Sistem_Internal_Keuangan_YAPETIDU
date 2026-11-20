@@ -132,7 +132,7 @@ export function canReadGantiLibur(
   actor: { role: string; permittedCategories: readonly string[] },
   request: Pick<GantiLiburRequest, 'employeeKind' | 'category'>,
 ): boolean {
-  return canReviewGantiLibur(actor, request) || actor.role === 'finance_verifier' ||
+  return canReviewGantiLibur(actor, request) ||
     (actor.role === 'satker_head_loyalis' && gantiLiburEmployeeKind(request) === 'loyalis');
 }
 

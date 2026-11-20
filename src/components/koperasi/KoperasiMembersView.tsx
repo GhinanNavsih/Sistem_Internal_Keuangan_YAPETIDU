@@ -37,8 +37,8 @@ const MEMBERSHIP_TONES: Record<string, string> = {
 const memberName = (member: KoperasiMember) => member.nama || member.name || member.fullName || member.displayName || 'Nama belum tersedia';
 const memberNumber = (member: KoperasiMember) => member.nomorAnggota || member.memberNumber;
 
-export default function KoperasiMembersView({ members, employees, reload, disabled, readOnly = false }: {
-  members: KoperasiMember[]; employees: KoperasiEmployee[]; reload: () => Promise<void>; disabled: boolean; readOnly?: boolean;
+export default function KoperasiMembersView({ members, employees, reload, disabled }: {
+  members: KoperasiMember[]; employees: KoperasiEmployee[]; reload: () => Promise<void>; disabled: boolean;
 }) {
   const [filter, setFilter] = useState<Filter>('Semua');
   const [search, setSearch] = useState('');
@@ -90,7 +90,7 @@ export default function KoperasiMembersView({ members, employees, reload, disabl
   return <div className="space-y-7 pb-10">
     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <h1 className="text-3xl font-bold tracking-tight text-slate-900">Anggota Koperasi</h1>
-      {!readOnly && <div className="flex flex-wrap gap-2"><Button disabled={disabled} onClick={() => setEnrolling(true)}>Daftarkan pegawai</Button><Button variant="outline" className="h-10 shrink-0 rounded-sm border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900" disabled={disabled || bankRows.length === 0} onClick={() => setSyncing(true)}><Landmark className="size-4 text-indigo-600" />Samakan rekening <span className="rounded-sm bg-slate-100 px-1.5 py-0.5 tabular-nums text-slate-600">{syncCount}</span></Button></div>}
+      <div className="flex flex-wrap gap-2"><Button disabled={disabled} onClick={() => setEnrolling(true)}>Daftarkan pegawai</Button><Button variant="outline" className="h-10 shrink-0 rounded-sm border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900" disabled={disabled || bankRows.length === 0} onClick={() => setSyncing(true)}><Landmark className="size-4 text-indigo-600" />Samakan rekening <span className="rounded-sm bg-slate-100 px-1.5 py-0.5 tabular-nums text-slate-600">{syncCount}</span></Button></div>
     </div>
     {message && <p role="status" className="flex items-start gap-2 rounded-md border border-indigo-100 bg-indigo-50 p-4 text-sm leading-relaxed text-indigo-800"><BadgeCheck className="mt-0.5 size-4 shrink-0" />{message}</p>}
     <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">{stats.map(stat => <Card key={stat.label} className="gap-0 rounded-md border-0 bg-white p-4 shadow-[0_8px_30px_rgb(15,23,42,0.04)] ring-1 ring-slate-200/70 sm:p-5"><div className="flex items-start justify-between gap-2"><div><p className="text-xs font-semibold text-slate-500">{stat.label}</p><p className="mt-2 text-2xl font-extrabold tabular-nums tracking-tight text-slate-900">{stat.count}</p></div><div className={`flex size-9 shrink-0 items-center justify-center rounded-sm ${stat.iconStyle}`}><stat.icon className="size-[18px]" /></div></div><p className="mt-3 hidden text-[11px] text-slate-400 sm:block">{stat.detail}</p></Card>)}</div>
@@ -110,7 +110,7 @@ export default function KoperasiMembersView({ members, employees, reload, disabl
         </div>
       </div>
       <div className="max-w-full overflow-x-auto"><Table className="min-w-[960px]"><TableHeader className="bg-slate-50/75"><TableRow className="border-slate-100 hover:bg-transparent">
-      {['Nama / No. Anggota', 'Kantor / SatKer', 'Status keanggotaan', 'Status Pembayaran', 'Iuran Pokok / Wajib', 'Rekening', ...(!readOnly ? [''] : [])].map((label, index) => <TableHead key={index} className={index === 0 ? 'pl-6' : index === 6 ? 'pr-6 text-right' : ''}>{label}</TableHead>)}
+      {['Nama / No. Anggota', 'Kantor / SatKer', 'Status keanggotaan', 'Status Pembayaran', 'Iuran Pokok / Wajib', 'Rekening', ''].map((label, index) => <TableHead key={index} className={index === 0 ? 'pl-6' : index === 6 ? 'pr-6 text-right' : ''}>{label}</TableHead>)}
     </TableRow></TableHeader><TableBody>
       {filtered.map(({ member, employee, bank, different }) => {
         const membershipStatus = member.membershipStatus ?? member.status;
@@ -131,9 +131,9 @@ export default function KoperasiMembersView({ members, employees, reload, disabl
               <span className="flex items-center gap-1 text-xs text-slate-400">
                 <Link2Off className="size-3" />Belum tertaut SAKU
               </span>
-              {!readOnly && <Button size="sm" variant="outline" className="h-6 rounded-sm border-indigo-200 bg-white px-2 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50" disabled={disabled} onClick={() => setLinking(member)}>
+              <Button size="sm" variant="outline" className="h-6 rounded-sm border-indigo-200 bg-white px-2 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50" disabled={disabled} onClick={() => setLinking(member)}>
                 Tautkan <ArrowUpRight className="size-3" />
-              </Button>}
+              </Button>
             </div>
           )}
           <p className="mt-1 text-xs text-slate-400">No. Anggota {memberNumber(member) || '—'}</p>
@@ -143,10 +143,10 @@ export default function KoperasiMembersView({ members, employees, reload, disabl
         <TableCell>{member.paymentStatus ? <Badge variant="outline" className={`rounded-sm px-2.5 py-1 text-[11px] font-semibold ${PAYMENT_TONES[member.paymentStatus] || 'border-slate-200 bg-slate-50 text-slate-600'}`}>{KOPERASI_PAYMENT_LABELS[member.paymentStatus] || member.paymentStatus}</Badge> : <span className="text-xs font-medium text-slate-400">Belum diatur</span>}</TableCell>
         <TableCell><div className="space-y-1"><p className="text-xs text-slate-500">Pokok <span className="font-medium tabular-nums text-slate-700">{rupiah(member.iuranPokok)}</span></p><p className="text-xs text-slate-500">Wajib <span className="font-semibold tabular-nums text-slate-800">{rupiah(member.iuranWajib)}</span></p></div></TableCell>
         <TableCell>{!employee || !bank || (!hasSakuBank(bank) && !different) ? <span className="text-xs text-slate-300">—</span> : <Badge variant="outline" className={`rounded-sm px-2.5 py-1 text-[11px] font-semibold ${different ? 'border-amber-100 bg-amber-50 text-amber-700' : 'border-emerald-100 bg-emerald-50 text-emerald-700'}`}><span className={`mr-1.5 size-1.5 rounded-full ${different ? 'bg-amber-500' : 'bg-emerald-500'}`} />{different ? 'Berbeda' : 'Sama'}</Badge>}</TableCell>
-        {!readOnly && <TableCell className="pr-6 text-right"><Button size="sm" variant="outline" className="h-8 rounded-sm border-indigo-200 bg-white px-3 text-xs font-semibold text-indigo-700 hover:bg-indigo-50" disabled={disabled} onClick={() => setEditing(member)}>Ubah</Button></TableCell>}
+        <TableCell className="pr-6 text-right"><Button size="sm" variant="outline" className="h-8 rounded-sm border-indigo-200 bg-white px-3 text-xs font-semibold text-indigo-700 hover:bg-indigo-50" disabled={disabled} onClick={() => setEditing(member)}>Ubah</Button></TableCell>
       </TableRow>;
       })}
-      {!filtered.length && <TableRow><TableCell colSpan={readOnly ? 6 : 7} className="py-16 text-center"><div className="mx-auto flex max-w-xs flex-col items-center"><div className="mb-3 flex size-11 items-center justify-center rounded-sm bg-slate-100 text-slate-400"><UsersRound className="size-5" /></div><p className="font-semibold text-slate-700">Tidak ada anggota yang cocok</p><p className="mt-1 text-xs text-slate-500">Ubah pencarian atau pilih filter lain untuk melihat akun.</p></div></TableCell></TableRow>}
+      {!filtered.length && <TableRow><TableCell colSpan={7} className="py-16 text-center"><div className="mx-auto flex max-w-xs flex-col items-center"><div className="mb-3 flex size-11 items-center justify-center rounded-sm bg-slate-100 text-slate-400"><UsersRound className="size-5" /></div><p className="font-semibold text-slate-700">Tidak ada anggota yang cocok</p><p className="mt-1 text-xs text-slate-500">Ubah pencarian atau pilih filter lain untuk melihat akun.</p></div></TableCell></TableRow>}
     </TableBody></Table></div>
     </section>
     {enrolling && <KoperasiEnrollmentDialog employees={employees} members={members} onClose={() => setEnrolling(false)} onSaved={saved} />}

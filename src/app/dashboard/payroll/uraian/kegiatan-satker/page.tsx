@@ -1,5 +1,6 @@
 "use client"
 
+import { canVerifyPayroll } from '@/lib/payroll/roles';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import Image from 'next/image';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
@@ -318,10 +319,8 @@ export default function KegiatanSatkerPage() {
   // Qty Parser Utility
   const parseQty = parseProposalQty;
 
-  const canManageProposal = Boolean(
-    profile && ['super_admin', 'finance_verifier', 'satker_head_loyalis'].includes(profile.role),
-  );
-  const isFinanceReviewer = profile?.role === 'super_admin' || profile?.role === 'finance_verifier';
+  const isFinanceReviewer = canVerifyPayroll(profile?.role);
+  const canManageProposal = isFinanceReviewer || profile?.role === 'satker_head_loyalis';
 
   // Period open/closed gate. A missing or unreadable period counts as open,
   // matching the previous behaviour; the server-side rule remains authoritative
@@ -441,13 +440,13 @@ export default function KegiatanSatkerPage() {
 
   const hasLpjAccess = useMemo(() => {
     return Boolean(
-      profile?.role === 'super_admin' ||
+      isFinanceReviewer ||
       currentProposalStatus === 'proposal_approved' ||
       currentProposalStatus?.startsWith('lpj_'),
     );
-  }, [currentProposalStatus, profile]);
+  }, [currentProposalStatus, isFinanceReviewer]);
 
-  // Mirrors the ProposalKegiatan delete rule: Super Admin may delete any
+  // Mirrors the ProposalKegiatan delete rule: payroll reviewers may delete any
   // proposal, Kepala SatKer Loyalis only their own. Unsubmitted drafts can be
   // deleted even in a closed period since they have no financial records.
   const selectedProposal = useMemo(
@@ -456,7 +455,7 @@ export default function KegiatanSatkerPage() {
   );
   const canDeleteProposal = Boolean(
     selectedProposal && (
-      profile?.role === 'super_admin' ||
+      isFinanceReviewer ||
       (profile?.role === 'satker_head_loyalis' && selectedProposal.submittedBy === profile.uid)
     ) && (!periodClosed || selectedProposal.status === 'proposal_draft'),
   );
@@ -600,9 +599,9 @@ export default function KegiatanSatkerPage() {
     return danaOperasionalAnggaran - totalPengeluaranAnggaran;
   }, [danaOperasionalAnggaran, totalPengeluaranAnggaran]);
 
-  const isProposalReadOnly = periodClosed || currentProposalStatus === 'lpj_approved' || (profile?.role !== 'super_admin' && (currentProposalStatus === 'proposal_approved' || currentProposalStatus === 'proposal_submitted' || currentProposalStatus?.startsWith('lpj_')));
+  const isProposalReadOnly = periodClosed || currentProposalStatus === 'lpj_approved' || (!isFinanceReviewer && (currentProposalStatus === 'proposal_approved' || currentProposalStatus === 'proposal_submitted' || currentProposalStatus?.startsWith('lpj_')));
   const isLpjReadOnly = currentProposalStatus === 'lpj_submitted' || currentProposalStatus === 'lpj_approved' ||
-    (profile?.role !== 'super_admin' && currentProposalStatus !== 'proposal_approved' && currentProposalStatus !== 'lpj_draft' && currentProposalStatus !== 'lpj_revision');
+    (!isFinanceReviewer && currentProposalStatus !== 'proposal_approved' && currentProposalStatus !== 'lpj_draft' && currentProposalStatus !== 'lpj_revision');
 
   const draftData = useMemo(() => ({
     reportName, departmentUnit, totalBudget: totalPengeluaranAnggaran || totalPemasukanAnggaran,
@@ -1284,7 +1283,7 @@ export default function KegiatanSatkerPage() {
 
       {/* ── MAIN SECTION: Full-Width Sequential Creation Card ── */}
       <ProposalEditGuard key={`${editorScope}:${selectedProposalId}:${activeStage}`}
-        enabled={profile?.role === 'super_admin' && Boolean(selectedProposal) && selectedProposal.creatorRole !== 'super_admin'}
+        enabled={isFinanceReviewer && Boolean(selectedProposal) && !canVerifyPayroll(selectedProposal.creatorRole)}
         ownerName={currentSubmittedByName}>
       <Card className="bg-white rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-4 md:p-6 space-y-6">
         {/* Header & Stage Selector Tabs */}
@@ -1381,7 +1380,7 @@ export default function KegiatanSatkerPage() {
                   </p>
                 </div>
               </div>
-              {canManageProposal && (profile?.role === 'super_admin' || selectedProposal?.submittedBy === profile?.uid) && (
+              {canManageProposal && (isFinanceReviewer || selectedProposal?.submittedBy === profile?.uid) && (
                 <Button
                   type="button"
                   disabled={movingPeriod}

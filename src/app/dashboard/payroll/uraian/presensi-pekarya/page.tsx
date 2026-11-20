@@ -1,5 +1,6 @@
 "use client";
 
+import { canVerifyPayroll } from '@/lib/payroll/roles';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -982,7 +983,7 @@ function BlueCollarSubmissionsCard({
               </button>
             </div>
             <span className="inline-flex w-fit items-center rounded-sm border border-emerald-100 bg-emerald-50 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
-              {profileRole === 'super_admin' ? 'Review oleh Super Admin' : 'Review oleh Kepala SatKer'}
+              {profileRole === 'super_admin' ? 'Review oleh Super Admin' : profileRole === 'finance_verifier' ? 'Review oleh Badan Keuangan' : 'Review oleh Kepala SatKer'}
             </span>
             {/* Always rendered, hidden when nothing is approvable, so the header
                 keeps its size when the filter changes. */}
@@ -1646,12 +1647,12 @@ export default function PekaryaAttendancePage() {
   const [linkPhase, setLinkPhase] = useState<'form' | 'saving' | 'success' | 'error'>('form');
   const [linkResult, setLinkResult] = useState<{ detail: string } | null>(null);
   const canEdit =
-    profile?.role === 'satker_head' || profile?.role === 'super_admin';
-  // The manual-link endpoint accepts super_admin as well as satker_head (it
+    profile?.role === 'satker_head' || canVerifyPayroll(profile?.role);
+  // The manual-link endpoint accepts payroll reviewers and SatKer heads (it
   // follows this app's usual write-permission pattern), so the button that
   // triggers it must be visible to both, not just to canEdit's satker_head.
   const canLinkAttendance =
-    profile?.role === 'satker_head' || profile?.role === 'super_admin';
+    profile?.role === 'satker_head' || canVerifyPayroll(profile?.role);
   // Same authority as manual linking — the corrections endpoint accepts both.
   const canEditScans = canLinkAttendance;
 

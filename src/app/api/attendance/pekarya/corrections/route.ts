@@ -1,3 +1,4 @@
+import { FINANCE_ROLES, canVerifyPayroll } from '@/lib/payroll/roles';
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { markAutoLeaveDirty, prepareAutomaticLeaveRefund, writeAutomaticLeaveRefund } from '@/lib/server/automaticLeavePosting';
@@ -60,7 +61,7 @@ function optionalTime(body: Record<string, unknown>, key: string) {
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['satker_head', 'super_admin']);
+    requireRole(actor, [...FINANCE_ROLES, 'satker_head']);
     const body = (await request.json()) as Record<string, unknown>;
     const period = String(body.period || '');
     const category = String(body.category || '').trim().toUpperCase();
@@ -90,7 +91,7 @@ export async function POST(request: NextRequest) {
     }
     if (
       !isPekaryaOfficialLeaveCategory(category) ||
-      (actor.role !== 'super_admin' &&
+      (!canVerifyPayroll(actor.role) &&
         !actor.permittedCategories.includes(category))
     ) {
       throw new HttpError(403, 'Kategori koreksi tidak diizinkan.');

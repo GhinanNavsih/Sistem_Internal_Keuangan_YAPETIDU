@@ -132,7 +132,7 @@ async function main() {
     await call(swap.POST, worker, submit('2026-09-25', '2026-09-29', 1), 409);
     const decision = command({ action: 'approve', gantiLiburRequestId: request.id, expectedRevision: 1, reason: '' });
     await call(swapReview.POST, loyalisAdmin, decision, 403);
-    await call(swapReview.POST, finance, decision, 403);
+    await call(swapReview.POST, finance, { ...decision, expectedRevision: 99 }, 409);
     await call(swapReview.POST, fixtures.find((other) => other.category !== category)!.reviewer, decision, 403);
     const reviewList = await call(swapReview.GET, reviewer);
     assert.ok(reviewList.requests.every((item: { category: string }) => item.category === category));
@@ -287,7 +287,6 @@ async function main() {
       confirmation = refreshed.details.attendanceCheck;
     }
     const confirmed = { ...approve, attendanceConfirmation: confirmation };
-    await call(swapReview.POST, finance, confirmed, 403);
     await call(swapReview.POST, loyalisAdmin, { ...confirmed, expectedRevision: 99 }, 409);
     if (verdict === 'absent') {
       await db.doc('PayrollPeriods/2026-10').set({ attendanceStatus: 'closed' });
@@ -304,9 +303,9 @@ async function main() {
       assert.equal(conflict.code, undefined, 'attendance override does not bypass replacement-date conflicts');
       await db.doc('LoyalisPresence/2026_10').update({ [`entries.${employeeId}`]: dayOffEntry });
     }
-    await call(swapReview.POST, loyalisAdmin, confirmed);
-    assert.equal((await call(swapReview.POST, loyalisAdmin, confirmed)).idempotent, true);
-    await call(swapReview.POST, loyalisAdmin, approve, 409);
+    await call(swapReview.POST, finance, confirmed);
+    assert.equal((await call(swapReview.POST, finance, confirmed)).idempotent, true);
+    await call(swapReview.POST, finance, approve, 409);
     const stored = (await db.doc(`GantiLiburRequests/${request.id}`).get()).data()!;
     assert.equal(stored.status, 'approved');
     assert.equal(stored.attendanceCheck.verdict, verdict);

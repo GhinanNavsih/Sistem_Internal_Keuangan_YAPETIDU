@@ -86,14 +86,17 @@ export const FINANCE_ROLES: readonly UserRole[] = [
 
 /**
  * Who may edit an employee profile, and therefore trigger propagation of that
- * profile onto open-period payslips. Narrower than payroll authority: the
- * propagation route derives every amount server-side, so these roles never get
- * to name a figure.
+ * profile onto open-period payslips. The propagation route derives payroll
+ * amounts server-side.
  */
 export const EMPLOYEE_PROFILE_EDITOR_ROLES: readonly UserRole[] = [
-  'super_admin',
+  ...FINANCE_ROLES,
   'loyalis_admin',
 ];
+
+export function canEditEmployeeProfiles(role: unknown): boolean {
+  return isUserRole(role) && EMPLOYEE_PROFILE_EDITOR_ROLES.includes(role);
+}
 
 /**
  * Who may save an Uraian rekap or the Loyalis presence calculator, and can
@@ -223,8 +226,8 @@ export function getUserRoleLabel(role: unknown): string {
   return normalized ? USER_ROLE_LABELS[normalized] : 'Pengguna';
 }
 
-export function canVerifyPayroll(role: UserRole | null | undefined): boolean {
-  return !!role && FINANCE_ROLES.includes(role);
+export function canVerifyPayroll(role: unknown): boolean {
+  return isUserRole(role) && FINANCE_ROLES.includes(role);
 }
 
 export function canOperatePayments(role: UserRole | null | undefined): boolean {

@@ -1,3 +1,4 @@
+import { FINANCE_ROLES, canVerifyPayroll } from '@/lib/payroll/roles';
 import { NextRequest } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { ATTENDANCE_PAYROLL_START_PERIOD } from '@/lib/payroll/attendance';
@@ -22,7 +23,7 @@ export const maxDuration = 300;
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['satker_head', 'super_admin']);
+    requireRole(actor, [...FINANCE_ROLES, 'satker_head']);
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const period = String(body.period || '');
     const category = String(body.category || '').trim().toUpperCase();
@@ -33,11 +34,11 @@ export async function POST(request: NextRequest) {
     let categories: string[] = [];
     if (category === ALL_BLUE_COLLAR_CATEGORY) {
       const active = await listActivePekaryaAttendanceCategories(period);
-      categories = actor.role === 'super_admin' ? active : active.filter((item) => permitted.has(item));
+      categories = canVerifyPayroll(actor.role) ? active : active.filter((item) => permitted.has(item));
     } else if (
       category &&
       category !== 'SATPAM' &&
-      (actor.role === 'super_admin' || permitted.has(category))
+      (canVerifyPayroll(actor.role) || permitted.has(category))
     ) {
       categories = [category];
     }

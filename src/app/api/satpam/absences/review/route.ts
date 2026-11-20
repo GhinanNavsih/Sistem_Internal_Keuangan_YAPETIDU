@@ -1,3 +1,4 @@
+import { FINANCE_ROLES } from '@/lib/payroll/roles';
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { prepareAutomaticLeaveRefund, writeAutomaticLeaveRefund } from '@/lib/server/automaticLeavePosting';
@@ -75,7 +76,7 @@ function stableHash(value: unknown) {
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin', 'satker_head']);
+    requireRole(actor, [...FINANCE_ROLES, 'satker_head']);
     const body = await request.json();
     const absenceRequestId = String(body.absenceRequestId || '');
     const action = String(body.action || '');

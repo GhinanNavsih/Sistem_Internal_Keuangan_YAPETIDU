@@ -125,14 +125,13 @@ interface ProcessedLoan extends SimpanPinjamDoc {
   monthlyInstallment: number;
 }
 
-export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navigation, reload, disabled, readOnly = false }: {
+export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navigation, reload, disabled }: {
   loans: SimpanPinjamDoc[];
   kopUsers: KoperasiUser[];
   employees: InternalEmployee[];
   navigation: React.ReactNode;
   reload: () => Promise<void>;
   disabled: boolean;
-  readOnly?: boolean;
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   // 'all' | 'active' | 'warnings' | `status:<exact loan status>`
@@ -560,7 +559,7 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
                           >
                             Audit Details
                           </Button>
-                          {!readOnly && canAdminDeclineKoperasiLoan(loan) && (
+                          {canAdminDeclineKoperasiLoan(loan) && (
                             <Button
                               type="button"
                               variant="outline"
@@ -949,7 +948,7 @@ export default function SimpanPinjamAuditView({ loans, kopUsers, employees, navi
             </div>
 
             <div className="mt-8 pt-4 border-t border-slate-100 flex justify-end gap-3">
-              {!readOnly && canAdminDeclineKoperasiLoan(selectedLoan) && (
+              {canAdminDeclineKoperasiLoan(selectedLoan) && (
                 <Button
                   type="button"
                   variant="outline"

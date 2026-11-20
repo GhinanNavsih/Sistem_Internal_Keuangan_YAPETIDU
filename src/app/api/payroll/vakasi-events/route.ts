@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { assertRequestId } from '@/lib/payroll/domain';
-import { FINANCE_ROLES, URAIAN_EDITOR_ROLES } from '@/lib/payroll/roles';
+import { FINANCE_ROLES, canVerifyPayroll } from '@/lib/payroll/roles';
 import { BANSOS_EVENT_SOURCE_KIND, isBansosEventId } from '@/lib/payroll/santunan';
 import { BONUS_TRIWULAN_SOURCE_KIND, isBonusTriwulanEventId } from '@/lib/payroll/bonusTriwulan';
 import {
@@ -224,24 +224,15 @@ function parseCommand(raw: unknown): VakasiCommand {
 }
 
 function assertActionAllowed(actor: AuthenticatedProfile, command: VakasiCommand): void {
-  requireRole(actor, URAIAN_EDITOR_ROLES);
-  if (command.action === 'delete') {
-    requireRole(actor, ['super_admin', 'satker_head_loyalis']);
-  }
-  if (command.action === 'save') {
-    requireRole(actor, ['super_admin', 'finance_verifier', 'satker_head_loyalis']);
-  }
   if (command.action === 'review' || command.action === 'unapprove') {
     requireRole(actor, FINANCE_ROLES);
-  }
-  if (command.action === 'submit') {
-    requireRole(actor, ['satker_head_loyalis', 'super_admin']);
+  } else {
+    requireRole(actor, [...FINANCE_ROLES, 'satker_head_loyalis']);
   }
   if (
     command.action === 'save' &&
     command.desiredStatus === 'approved' &&
-    actor.role !== 'super_admin' &&
-    actor.role !== 'finance_verifier'
+    !canVerifyPayroll(actor.role)
   ) {
     throw new HttpError(403, 'Hanya Badan Keuangan yang dapat menyimpan Vakasi sebagai disetujui.');
   }
@@ -376,7 +367,7 @@ function statusForCommand(
   if (command.action === 'submit') return 'pending_review';
   if (command.action === 'review') return command.reviewAction!;
   if (command.action === 'unapprove') return 'pending_review';
-  if (actor.role === 'super_admin' || actor.role === 'finance_verifier') {
+  if (canVerifyPayroll(actor.role)) {
     return command.desiredStatus || 'approved';
   }
   return before?.status === 'revision_needed' ? 'revision_needed' : 'draft';

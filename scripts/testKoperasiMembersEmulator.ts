@@ -49,7 +49,7 @@ async function main() {
   await initial.set({ ...base, uid: 'uid-1', bankDetails: { bank: 'Old', nomorRekening: '123' } });
   const input = { paymentStatus: 'Transfer', membershipStatus: 'inactive', iuranPokok: 250000, iuranWajib: 75000, role: 'Member', note: 'Uji edit', confirmStaffRole: false };
   const command = { memberId: 'member-1', input, expected: koperasiMemberSnapshot(base), requestId: key() };
-  for (const actor of [worker, finance, loyalisAdmin]) {
+  for (const actor of [worker, loyalisAdmin]) {
     assert.equal((await invoke(PATCH, command, actor.authorization, 'PATCH')).status, 403);
     assert.equal((await invoke(DELETE, { memberId: 'member-1' }, actor.authorization, 'DELETE')).status, 403);
     assert.equal((await invoke(link, {}, actor.authorization)).status, 403);
@@ -58,21 +58,21 @@ async function main() {
   assert.equal((await invoke(PATCH, command, '', 'PATCH')).status, 401);
   assert.equal((await invoke(PATCH, { ...command, input: { ...input, role: 'Admin' } }, undefined, 'PATCH')).status, 400);
   assert.equal((await invoke(PATCH, { ...command, input: { ...input, iuranWajib: 0 } }, undefined, 'PATCH')).status, 400);
-  await succeeds(await invoke(PATCH, command, undefined, 'PATCH'));
+  await succeeds(await invoke(PATCH, command, finance.authorization, 'PATCH'));
   const edited = (await initial.get()).data()!;
   assert.equal(edited.membershipStatus, 'inactive');
   assert.equal(edited.status, 'inactive');
   assert.equal(edited.iuranWajib, 75000);
-  assert.equal(edited.updatedBy, `internal-bak:${superAdmin.uid}`);
+  assert.equal(edited.updatedBy, `internal-bak:${finance.uid}`);
   assert.ok(edited.updatedAt);
   const audits = () => adminDb.collection('FinancialAuditLogs').get();
   let log = (await audits()).docs[0].data();
   assert.equal(log.action, 'KOPERASI_MEMBER_UPDATED');
   assert.equal(log.before.paymentStatus, 'Payroll Deduction');
   assert.equal(log.after.paymentStatus, 'Transfer');
-  assert.equal((await succeeds(await invoke(PATCH, command, undefined, 'PATCH'))).idempotent, true);
+  assert.equal((await succeeds(await invoke(PATCH, command, finance.authorization, 'PATCH'))).idempotent, true);
   assert.equal((await audits()).size, 1, 'lost HTTP response replays without a second audit');
-  assert.equal((await invoke(PATCH, { ...command, input: { ...input, iuranWajib: 80000 } }, undefined, 'PATCH')).status, 409, 'request id cannot be reused');
+  assert.equal((await invoke(PATCH, { ...command, input: { ...input, iuranWajib: 80000 } }, finance.authorization, 'PATCH')).status, 409, 'request id cannot be reused');
   assert.equal((await invoke(PATCH, { ...command, requestId: key(), input: { ...input, paymentStatus: 'Payroll Deduction' } }, undefined, 'PATCH')).status, 409, 'stale expected is rejected');
 
   // Lost cross-project response: Koperasi applied, SAKU receipt not yet written.
@@ -102,12 +102,12 @@ async function main() {
   await pekarya.set({ name: 'Pegawai Pekarya', employment: { status: 'active' }, flags: { isActive: true }, bankAccount: { bankName: 'BSI', accountNumber: '0098765' } });
   await koperasi.doc('users/no-uid').set(base);
   const linkCommand = { memberId: 'no-uid', employeeId: 'Loyalis_001', employeeCollection: 'Employees_Loyalis', expectedEmployeeId: null, expectedEmployeeCollection: null, action: 'link', requestId: key() };
-  await succeeds(await invoke(link, linkCommand));
+  await succeeds(await invoke(link, linkCommand, finance.authorization));
   assert.equal((await loyalis.get()).data()?.koperasiAuthUid, 'no-uid', 'doc id fallback for missing uid');
   assert.equal((await loyalis.get()).data()?.koperasiUserId, 'no-uid');
   assert.deepEqual((await koperasi.doc('users/no-uid').get()).data()?.bankDetails, { bank: 'BRIS', nomorRekening: '0012345' });
   let auditCount = (await audits()).size;
-  assert.equal((await succeeds(await invoke(link, linkCommand))).idempotent, true);
+  assert.equal((await succeeds(await invoke(link, linkCommand, finance.authorization))).idempotent, true);
   assert.equal((await audits()).size, auditCount);
   assert.equal((await invoke(link, { ...linkCommand, memberId: 'member-1', requestId: key() })).status, 409, 'employee already linked');
   assert.equal((await invoke(link, { ...linkCommand, employeeId: 'BC_001', employeeCollection: 'Employees_BlueCollar', requestId: key() })).status, 409, 'member already linked');
@@ -139,18 +139,18 @@ async function main() {
   await adminDb.doc('Employees_Loyalis/Loyalis_002').set({ personal_info: { name: 'Bank Test', status: 'AKTIF' }, banking_info: { bank_name: 'BRIS', account_number: '0012000' }, koperasiUserId: 'bank-1', koperasiAuthUid: 'bank-uid' });
   await adminDb.doc('Employees_Loyalis/Loyalis_003').set({ personal_info: { name: 'Empty', status: 'AKTIF' }, banking_info: { bank_name: 'BSI', account_number: '' }, koperasiUserId: 'empty-bank', koperasiAuthUid: 'empty-bank' });
   const bulkCommand = { memberIds: ['bank-1', 'empty-bank'], requestId: key() };
-  const bulk = await succeeds(await invoke(sync, bulkCommand));
+  const bulk = await succeeds(await invoke(sync, bulkCommand, finance.authorization));
   assert.equal(bulk.synced, 1);
   assert.equal(bulk.skipped.length, 1);
   assert.deepEqual((await koperasi.doc('users/empty-bank').get()).data()?.bankDetails, { bank: 'Keep', nomorRekening: '2' });
   log = (await adminDb.collection('FinancialAuditLogs').where('requestId', '==', bulkCommand.requestId).get()).docs[0].data();
   assert.equal(log.action, 'KOPERASI_BANK_SYNCED');
   assert.equal(log.metadata.members[0].memberId, 'bank-1');
-  assert.equal((await succeeds(await invoke(sync, bulkCommand))).synced, 1);
+  assert.equal((await succeeds(await invoke(sync, bulkCommand, finance.authorization))).synced, 1);
   await adminDb.doc('Employees_Loyalis/Loyalis_002').update({ 'banking_info.account_number': '0055000' });
   await succeeds(await invoke(sync, { employeeId: 'Loyalis_002', requestId: key() }, loyalisAdmin.authorization));
   assert.equal((await koperasi.doc('users/bank-1').get()).data()?.bankDetails.nomorRekening, '0055000');
-  assert.equal((await invoke(sync, { employeeId: 'Loyalis_002' }, finance.authorization)).status, 403);
+  await succeeds(await invoke(sync, { employeeId: 'Loyalis_002', requestId: key() }, finance.authorization));
   assert.equal((await invoke(sync, { employeeId: 'Loyalis_002', bankDetails: { bank: 'Fake' } }, loyalisAdmin.authorization)).status, 400);
 
   // Inject an actual SAKU failure after the Koperasi bank batch commits.
@@ -212,7 +212,7 @@ async function main() {
     `http://${process.env.FIRESTORE_EMULATOR_HOST}/v1/projects/${PROJECT}/databases/(default)/documents/${path}?${Object.keys(fields).map(field => `updateMask.fieldPaths=${field}`).join('&')}`,
     { method: 'PATCH', headers: { authorization, 'content-type': 'application/json' }, body: JSON.stringify({ fields }) },
   );
-  for (const actor of [superAdmin, loyalisAdmin]) {
+  for (const actor of [superAdmin, finance, loyalisAdmin]) {
     for (const collection of ['Employees_Loyalis', 'Employees_BlueCollar']) {
       const path = `${collection}/rules-control`;
       await adminDb.doc(path).set({ name: 'Control' });
@@ -225,6 +225,16 @@ async function main() {
     }
   }
   assert.equal((await clientWrite(loyalisAdmin.authorization, 'Employees_Loyalis/Loyalis_002', { koperasiUserId: { nullValue: null } })).status, 403, 'existing links cannot be cleared by a client');
+  const salaryGrade = { stringValue: 'II-A' };
+  const gradePatch = { academic_and_tier: { mapValue: { fields: { level_code: salaryGrade } } } };
+  assert.equal((await clientWrite(finance.authorization, 'Employees_Loyalis/rules-control', gradePatch)).status, 200);
+  assert.equal((await clientWrite(loyalisAdmin.authorization, 'Employees_Loyalis/rules-control', {
+    academic_and_tier: { mapValue: { fields: { level_code: { stringValue: 'III-A' } } } },
+  })).status, 403);
+  assert.equal((await clientWrite(finance.authorization, 'Settings/signatures', { slots: { nullValue: null } })).status, 200);
+  assert.equal((await clientWrite(finance.authorization, 'Settings/unrelated', { test: { nullValue: null } })).status, 403);
+  assert.equal((await clientWrite(finance.authorization, `users/${finance.uid}`, { role: { stringValue: 'super_admin' } })).status, 403);
+
   const redirected = redirect(new NextRequest('http://localhost/dashboard/payroll/simpan-pinjam?period=2026-09&filter=a&filter=b&view=koperasi'));
   assert.equal(redirected.status, 308);
   const location = redirected.headers.get('location');
@@ -245,11 +255,11 @@ async function main() {
     const loanId = `decline-${index}`;
     await loans.doc(loanId).set({ userId: 'uid-1', status, jumlahPinjaman: 2000000, tenor: 6, history: [{ status, notes: 'Pengajuan pinjaman baru' }] });
     const body = { loanId, expectedStatus: status, reason: 'Dokumen tidak lengkap', requestId: key() };
-    for (const actor of [worker, finance, loyalisAdmin]) {
+    for (const actor of [worker, loyalisAdmin]) {
       assert.equal((await invoke(decline, body, actor.authorization)).status, 403);
     }
     assert.equal((await invoke(decline, { ...body, reason: '  ' })).status, 400, 'reason is required');
-    const declined = await succeeds(await invoke(decline, body));
+    const declined = await succeeds(await invoke(decline, body, finance.authorization));
     assert.equal(declined.status, 'Ditolak BAK');
     assert.equal(declined.idempotent, false);
     const loan = (await loans.doc(loanId).get()).data()!;
@@ -258,10 +268,10 @@ async function main() {
     const lastEntry = loan.history[loan.history.length - 1];
     assert.equal(lastEntry.status, 'Ditolak BAK');
     assert.equal(lastEntry.notes, 'Ditolak dengan alasan: Dokumen tidak lengkap');
-    assert.equal(lastEntry.updatedBy, `internal-bak:${superAdmin.uid}`);
-    assert.equal((await succeeds(await invoke(decline, body))).idempotent, true, 'replay of the same request');
+    assert.equal(lastEntry.updatedBy, `internal-bak:${finance.uid}`);
+    assert.equal((await succeeds(await invoke(decline, body, finance.authorization))).idempotent, true, 'replay of the same request');
     assert.equal((await declineAudits(loanId)).size, 1, 'one audit per decline');
-    assert.equal((await invoke(decline, { ...body, requestId: key() })).status, 409, 'already declined');
+    assert.equal((await invoke(decline, { ...body, requestId: key() }, finance.authorization)).status, 409, 'already declined');
   }
 
   await loans.doc('decline-active').set({ userId: 'uid-1', status: 'Disetujui dan Aktif', jumlahPinjaman: 2000000, tenor: 6 });
@@ -313,10 +323,10 @@ async function main() {
     return { employeeId: id, employeeCollection: collection, email: `${id.toLowerCase()}@example.test`, initialPassword: 'new-member-password', paymentStatus: 'Payroll Deduction', requestId: key() };
   };
   const newPekarya = await enrollEmployee('EnrollPekarya');
-  for (const actor of [worker, finance, loyalisAdmin]) assert.equal((await invoke(enroll, newPekarya, actor.authorization)).status, 403);
+  for (const actor of [worker, loyalisAdmin]) assert.equal((await invoke(enroll, newPekarya, actor.authorization)).status, 403);
   assert.equal((await invoke(enroll, newPekarya, '')).status, 401);
   assert.equal((await invoke(enroll, { ...newPekarya, initialPassword: 'short' })).status, 400);
-  const enrolled = await succeeds(await invoke(enroll, newPekarya));
+  const enrolled = await succeeds(await invoke(enroll, newPekarya, finance.authorization));
   assert.equal(enrolled.firstPayrollPeriod, '2026-11');
   const registered = (await koperasi.doc(`users/${enrolled.memberId}`).get()).data()!;
   assert.equal(registered.uid, enrolled.uid);
@@ -331,9 +341,9 @@ async function main() {
   assert.deepEqual(registered.bankDetails, { bank: 'BRIS', nomorRekening: '001234' });
   assert.equal((await koperasiAdminAuth().getUser(enrolled.uid)).email, newPekarya.email);
   assert.equal((await adminDb.doc('Employees_BlueCollar/EnrollPekarya').get()).data()!.koperasiAuthUid, enrolled.uid);
-  assert.equal((await succeeds(await invoke(enroll, newPekarya))).idempotent, true);
+  assert.equal((await succeeds(await invoke(enroll, newPekarya, finance.authorization))).idempotent, true);
   assert.equal((await succeeds(await invoke(enroll, { ...newPekarya, requestId: key() }))).idempotent, true);
-  const receipt = await adminDb.doc(`FinancialIdempotencyKeys/${superAdmin.uid}__${newPekarya.requestId}`).get();
+  const receipt = await adminDb.doc(`FinancialIdempotencyKeys/${finance.uid}__${newPekarya.requestId}`).get();
   assert.ok(!JSON.stringify(receipt.data()).includes(newPekarya.initialPassword), 'password never enters durable receipt');
   const enrollmentAudit = await adminDb.collection('FinancialAuditLogs').where('action', '==', 'KOPERASI_MEMBER_ENROLLED').where('entityId', '==', enrolled.memberId).get();
   assert.equal(enrollmentAudit.size, 1);

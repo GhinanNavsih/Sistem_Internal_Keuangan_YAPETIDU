@@ -1,3 +1,4 @@
+import { FINANCE_ROLES, canVerifyPayroll } from '@/lib/payroll/roles';
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { markAutoLeaveDirty } from '@/lib/server/automaticLeavePosting';
@@ -120,7 +121,7 @@ async function reconcileLinkedEmployee(
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin', 'satker_head']);
+    requireRole(actor, [...FINANCE_ROLES, 'satker_head']);
     const body = (await request.json()) as Record<string, unknown>;
     const period = String(body.period || '');
     const sourceKey = String(body.sourceKey || '').trim();
@@ -145,7 +146,7 @@ export async function POST(request: NextRequest) {
     const target = await resolveLinkTarget(
       period,
       employeeId,
-      actor.role === 'super_admin' ? null : permittedCategories,
+      canVerifyPayroll(actor.role) ? null : permittedCategories,
     );
 
     // The row must genuinely be unresolved in the active import — otherwise a
@@ -276,7 +277,7 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin', 'satker_head']);
+    requireRole(actor, [...FINANCE_ROLES, 'satker_head']);
     const period = request.nextUrl.searchParams.get('period') || '';
     const sourceKey = request.nextUrl.searchParams.get('sourceKey') || '';
     assertPeriod(period);
@@ -301,7 +302,7 @@ export async function DELETE(request: NextRequest) {
         .trim()
         .toUpperCase();
       if (
-        actor.role !== 'super_admin' &&
+        !canVerifyPayroll(actor.role) &&
         !actor.permittedCategories
           .map((item) => item.trim().toUpperCase())
           .includes(category)

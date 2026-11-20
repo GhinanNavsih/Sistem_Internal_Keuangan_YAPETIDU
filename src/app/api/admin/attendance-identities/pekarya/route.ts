@@ -1,3 +1,4 @@
+import { EMPLOYEE_PROFILE_EDITOR_ROLES, FINANCE_ROLES } from '@/lib/payroll/roles';
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
@@ -188,7 +189,7 @@ function assignmentRecord(
 export async function GET(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin', 'loyalis_admin']);
+    requireRole(actor, EMPLOYEE_PROFILE_EDITOR_ROLES);
     return Response.json(await currentPreview());
   } catch (error) {
     return errorResponse(error);
@@ -198,7 +199,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin', 'loyalis_admin']);
+    requireRole(actor, EMPLOYEE_PROFILE_EDITOR_ROLES);
     const body = (await request.json()) as Record<string, unknown>;
     const operation = String(body.operation || '');
     const requestId = requestIdFrom(body);
@@ -542,7 +543,7 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin']);
+    requireRole(actor, FINANCE_ROLES);
     const body = (await request.json()) as Record<string, unknown>;
     const employeeId = String(body.employeeId || '').trim();
     const expectedNipy = normalizedStoredNipy(body.expectedNipy);

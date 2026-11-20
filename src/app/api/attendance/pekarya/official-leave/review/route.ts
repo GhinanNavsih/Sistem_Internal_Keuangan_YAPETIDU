@@ -1,3 +1,4 @@
+import { FINANCE_ROLES } from '@/lib/payroll/roles';
 import { refreshEmployeeAutoLeaveHistory } from '@/lib/server/pekaryaAutoLeave';
 import { syncPekaryaAttendance } from '@/lib/server/pekaryaAttendanceSync';
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
@@ -71,7 +72,7 @@ function stableHash(value: unknown): string {
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin', 'satker_head']);
+    requireRole(actor, [...FINANCE_ROLES, 'satker_head']);
     const body = (await request.json()) as Record<string, unknown>;
     const officialLeaveRequestId = String(body.officialLeaveRequestId || '');
     const action = String(body.action || '');

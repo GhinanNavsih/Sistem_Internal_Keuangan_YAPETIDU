@@ -1,3 +1,4 @@
+import { EMPLOYEE_PROFILE_EDITOR_ROLES } from '@/lib/payroll/roles';
 import { NextRequest, NextResponse } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
@@ -44,7 +45,7 @@ function parseClockTime(value: unknown, label: string): string {
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin', 'loyalis_admin']);
+    requireRole(actor, EMPLOYEE_PROFILE_EDITOR_ROLES);
 
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== 'object') {

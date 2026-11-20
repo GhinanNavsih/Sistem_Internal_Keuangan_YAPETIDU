@@ -1,3 +1,4 @@
+import { EMPLOYEE_PROFILE_EDITOR_ROLES } from '@/lib/payroll/roles';
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
@@ -43,7 +44,7 @@ function dayCount(value: unknown): number {
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin', 'loyalis_admin']);
+    requireRole(actor, EMPLOYEE_PROFILE_EDITOR_ROLES);
     const body = await request.json().catch(() => null) as Record<string, unknown> | null;
     if (!body || typeof body !== 'object') throw new HttpError(400, 'Payload tidak valid.');
     const kind = String(body.sourceKind) as LoyalisSubmissionKind;

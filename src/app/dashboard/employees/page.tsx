@@ -1,5 +1,6 @@
 "use client";
 
+import { canEditEmployeeProfiles, canVerifyPayroll } from '@/lib/payroll/roles';
 import { bankDetailsDiffer, sakuBankDetails, type KoperasiEmployeeCollection } from '@/lib/koperasiMembers';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
@@ -650,8 +651,7 @@ export default function EmployeesPage() {
   const { user, profile, loading: authLoading} = useAuth();
   const { employeesLoyalis, employeesBlueCollar, gradeCodesBlue, gradeCodesWhite, loading: contextLoading, refreshData, kepangkatanAllowanceMap } = useDashboardData();
   const isLoyalisAdmin = profile?.role === 'loyalis_admin';
-  const canEditEmployees = profile?.role === 'super_admin' || isLoyalisAdmin;
-  const canViewEmployees = canEditEmployees || profile?.role === 'finance_verifier';
+  const canEditEmployees = canEditEmployeeProfiles(profile?.role);
   const loyalisAdminLoyalisQuery = useEmployeesLoyalis(isLoyalisAdmin);
   const loyalisAdminBlueCollarQuery = useEmployeesBlueCollar(isLoyalisAdmin);
   const pageEmployeesLoyalis = isLoyalisAdmin
@@ -946,10 +946,10 @@ export default function EmployeesPage() {
 
   // Redirect if unauthorized
   useEffect(() => {
-    if (!authLoading && (!user || !canViewEmployees)) {
+    if (!authLoading && (!user || !canEditEmployees)) {
       router.replace('/login');
     }
-  }, [user, canViewEmployees, authLoading, router]);
+  }, [user, canEditEmployees, authLoading, router]);
 
   // Load pending edits on mount
   useEffect(() => {
@@ -2194,7 +2194,7 @@ export default function EmployeesPage() {
   const tableColumnCount = dataColumnCount + (canEditEmployees && tableViewMode !== 'cuti' ? 1 : 0);
 
   const showFamilyAllowanceReview =
-    activeTab === 'loyalis' && (isLoyalisAdmin || profile?.role === 'super_admin');
+    activeTab === 'loyalis' && canEditEmployees;
 
   const statsCards: Array<{
     label: string;
@@ -3433,7 +3433,7 @@ export default function EmployeesPage() {
                           </div>
                         </div>
                       </div>
-                      {/* Golongan is base-salary-grade information: super_admin only, per product decision. */}
+                      {/* Golongan is managed by the payroll roles. */}
                       {!isLoyalisAdmin && (
                         <div className="space-y-2">
                           <Label>Golongan</Label>
@@ -3888,10 +3888,10 @@ export default function EmployeesPage() {
                           <p className="rounded-md bg-amber-50 px-2.5 py-2 text-[11px] font-medium text-amber-800">
                             Kategori atau tanggal mulai telah berubah. NIPY tetap
                             permanen; koreksi penerbitan hanya dapat dilakukan
-                            Superadmin dengan alasan audit.
+                            Badan Keuangan atau Super Admin dengan alasan audit.
                           </p>
                         )}
-                      {profile?.role === 'super_admin' &&
+                      {canVerifyPayroll(profile?.role) &&
                         editingEmployee?.nipy &&
                         editingEmployee?.nipyAssignment &&
                         (editingEmployee.nipyAssignment.sourceStartDate !==
@@ -4037,7 +4037,7 @@ export default function EmployeesPage() {
                         </p>
                       )}
                     </div>
-                    {/* Golongan is base-salary-grade information: super_admin only, per product decision. */}
+                    {/* Golongan is managed by the payroll roles. */}
                     {!isLoyalisAdmin && (
                       <div className="space-y-2">
                         <Label>Golongan (Grade)</Label>

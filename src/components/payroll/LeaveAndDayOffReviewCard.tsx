@@ -1,5 +1,6 @@
 "use client";
 
+import { canVerifyPayroll } from '@/lib/payroll/roles';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarClock, CalendarDays, Check, Loader2, RefreshCw, X } from 'lucide-react';
 import { GantiLiburAttachmentLinks } from '@/components/GantiLiburAttachmentLinks';
@@ -136,7 +137,7 @@ export default function LeaveAndDayOffReviewCard() {
 
   const role = profile?.role || '';
   const canAccessCuti = Boolean(
-    profile && ['super_admin', 'satker_head', 'loyalis_admin'].includes(profile.role),
+    canVerifyPayroll(role) || role === 'satker_head' || role === 'loyalis_admin',
   );
   const canAccessGantiLibur = [
     'super_admin',
@@ -145,7 +146,7 @@ export default function LeaveAndDayOffReviewCard() {
     'satker_head',
     'finance_verifier',
   ].includes(role);
-  const canDecideGantiLibur = role === 'super_admin' || role === 'loyalis_admin' || role === 'satker_head';
+  const canDecideGantiLibur = canVerifyPayroll(role) || role === 'loyalis_admin' || role === 'satker_head';
 
   const [activeTab, setActiveTab] = useState<'cuti' | 'ganti_libur'>(
     canAccessCuti ? 'cuti' : 'ganti_libur',

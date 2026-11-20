@@ -1,3 +1,4 @@
+import { canVerifyPayroll } from '@/lib/payroll/roles';
 import { createHash } from 'node:crypto';
 import { employeeLifecycleAudit } from '@/lib/employeeLifecycle';
 import admin, { adminDb } from '@/lib/firebase-admin';
@@ -333,7 +334,7 @@ export async function previewEmployeeConversion(
         }
       : null,
     prefill: prefillLoyalisConversionInput(employee),
-    canSetLevelCode: actor.role === 'super_admin',
+    canSetLevelCode: canVerifyPayroll(actor.role),
     pekaryaBpjsAllowance: Math.max(0, Math.round(Number(employee.bpjs?.allowanceAmount) || 0)),
   };
 }
@@ -370,7 +371,7 @@ export function parseEmployeeConversionCommand(
   }
   const input = parseLoyalisConversionInput(body.input);
   const errors = validateLoyalisConversionInput(input, {
-    canSetLevelCode: actor.role === 'super_admin',
+    canSetLevelCode: canVerifyPayroll(actor.role),
   });
   const firstError = Object.values(errors)[0];
   if (firstError) throw new HttpError(400, firstError);

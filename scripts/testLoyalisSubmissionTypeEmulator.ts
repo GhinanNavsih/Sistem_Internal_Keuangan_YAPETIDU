@@ -84,13 +84,13 @@ async function main() {
     for (const nextType of nextTypes) {
       const item = await fixture(sourceKind);
       const change = item.change(nextType);
-      await call(transfer.POST, finance, change, 403);
       await call(transfer.POST, worker, change, 403);
       await call(transfer.POST, reviewer, { ...change, expectedRevision: 99 }, 409);
       if (sourceKind === 'correction') await call(transfer.POST, reviewer, { ...change, expectedUpdatedAt: 's2n0' }, 409);
-      const result = await call(transfer.POST, reviewer, change);
-      assert.equal((await call(transfer.POST, reviewer, change)).idempotent, true);
-      await call(transfer.POST, reviewer, { ...change, type: nextType === 'izin_resmi' ? 'cuti_tahunan' : 'izin_resmi' }, 409);
+      const actor = sourceKind === 'correction' ? finance : reviewer;
+      const result = await call(transfer.POST, actor, change);
+      assert.equal((await call(transfer.POST, actor, change)).idempotent, true);
+      await call(transfer.POST, actor, { ...change, type: nextType === 'izin_resmi' ? 'cuti_tahunan' : 'izin_resmi' }, 409);
       const source = (await item.ref.get()).data()!;
       assert.equal(source.typeChangedTo.id, result.target.id);
       assert.equal(source.revision, item.data.revision + 1);
@@ -112,6 +112,7 @@ async function main() {
       assert.equal(audits.size, 1);
       assert.equal(audits.docs[0].data().action, 'LOYALIS_LEAVE_TYPE_CHANGED');
       assert.equal(audits.docs[0].data().metadata.to.type, nextType);
+      assert.equal(audits.docs[0].data().actorRole, sourceKind === 'correction' ? 'finance_verifier' : 'loyalis_admin');
 
       if (nextType === 'izin_resmi') {
         await db.doc(`PayrollSlipStates/2026_09_${item.employeeId}`).set({ status: 'locked' });

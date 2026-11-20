@@ -29,7 +29,7 @@ test('every Pekarya category uses category-scoped review, including Satpam', () 
     assert.equal(canReadGantiLibur({ role: 'satker_head_loyalis', permittedCategories: [] }, request), false);
     assert.equal(canReviewGantiLibur({ role: 'super_admin', permittedCategories: [] }, request), true);
     assert.equal(canReadGantiLibur({ role: 'finance_verifier', permittedCategories: [] }, request), true);
-    assert.equal(canReviewGantiLibur({ role: 'finance_verifier', permittedCategories: [category] }, request), false);
+    assert.equal(canReviewGantiLibur({ role: 'finance_verifier', permittedCategories: [] }, request), true);
   }
 });
 

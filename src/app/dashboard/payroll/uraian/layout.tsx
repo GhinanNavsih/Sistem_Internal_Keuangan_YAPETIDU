@@ -1,5 +1,6 @@
 "use client"
 
+import { canVerifyPayroll } from '@/lib/payroll/roles';
 import React, { useState, useEffect, useMemo, Suspense, useCallback } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
@@ -398,8 +399,8 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
                     // NIPY readiness can be prepared before payroll starts.
                     if (year === currentYear && item.index > currentMonth + 1) return false;
                     if (year > currentYear) return false;
-                    // Hide months before July 2026 for non-super_admins
-                    if (profile?.role !== 'super_admin' && year === 2026 && item.index < 7) return false;
+                    // Historical months are available to the payroll roles.
+                    if (!canVerifyPayroll(profile.role) && year === 2026 && item.index < 7) return false;
                     return true;
                   })
                   .map(({ name: m, index: val }) => {
@@ -437,8 +438,8 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
                   const now = new Date();
                   const currentYear = now.getFullYear();
                   if (y > currentYear) return false;
-                  // Hide years before 2026 for non-super_admins
-                  if (profile?.role !== 'super_admin' && y < 2026) return false;
+                  // Historical years are available to the payroll roles.
+                  if (!canVerifyPayroll(profile.role) && y < 2026) return false;
                   return true;
                 }).map(y => (
                   <SelectItem key={y} value={String(y)}>{y}</SelectItem>

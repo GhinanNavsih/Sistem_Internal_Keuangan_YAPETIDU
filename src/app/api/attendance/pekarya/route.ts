@@ -1,3 +1,4 @@
+import { canVerifyPayroll } from '@/lib/payroll/roles';
 import { NextRequest } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import {
@@ -50,13 +51,14 @@ function restrictUnrouted<T extends UnroutedFields>(
   result: T,
   actor: { role: string; permittedCategories: readonly string[] },
 ): T {
-  const mayLink = actor.role === 'super_admin' || actor.role === 'satker_head';
+  const isFinance = canVerifyPayroll(actor.role);
+  const mayLink = isFinance || actor.role === 'satker_head';
   const permitted = new Set(
     actor.permittedCategories.map((item) => item.trim().toUpperCase()),
   );
   const candidates = (result.unroutedLinkCandidates || []).filter(
     (candidate) =>
-      actor.role === 'super_admin' ||
+      isFinance ||
       (mayLink && permitted.has(candidate.category.toUpperCase())),
   );
   return {

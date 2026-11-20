@@ -1,3 +1,5 @@
+import { canVerifyPayroll } from './roles';
+
 export const PROPOSAL_FIELDS = [
   'reportName',
   'departmentUnit',
@@ -58,6 +60,6 @@ export function proposalContent(data: Record<string, unknown>, stage: ProposalSt
 export function canEditProposalStage(role: string, status: string, stage: ProposalStage): boolean {
   if (status === 'lpj_approved') return false;
   if (stage === 'proposal')
-    return role === 'super_admin' || ['proposal_draft', 'proposal_revision'].includes(status);
+    return canVerifyPayroll(role) || ['proposal_draft', 'proposal_revision'].includes(status);
   return ['proposal_approved', 'lpj_draft', 'lpj_revision'].includes(status);
 }

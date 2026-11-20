@@ -44,7 +44,7 @@ interface CetakPayrollDialogProps {
   getLoyalisPresenceDeduction?: (empId: string) => number;
   getLoyalisPresensiEarning?: (empId: string) => number;
   getLoyalisPresensiDeduction?: (empId: string) => number;
-  isSuperAdmin?: boolean;
+  includeActiveDrafts?: boolean;
   getFreshSlipData?: (emp: EmployeeRow) => { earnings: any[]; deductions: any[]; taxes?: any[] };
 }
 
@@ -67,13 +67,13 @@ export default function CetakPayrollDialog({
   getLoyalisPresenceDeduction,
   getLoyalisPresensiEarning,
   getLoyalisPresensiDeduction,
-  isSuperAdmin,
+  includeActiveDrafts,
   getFreshSlipData,
 }: CetakPayrollDialogProps) {
 
   const handleExportXlsx = () => {
     const activeEmployees = employees.filter(e =>
-      isSuperAdmin ? e.isActive : isTransferEligibleStatus(slipStates?.[e.id]?.status),
+      includeActiveDrafts ? e.isActive : isTransferEligibleStatus(slipStates?.[e.id]?.status),
     );
     if (activeEmployees.length === 0) {
       window.alert('Tidak ada slip karyawan yang dapat diekspor.');

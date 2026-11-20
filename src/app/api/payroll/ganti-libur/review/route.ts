@@ -1,3 +1,4 @@
+import { FINANCE_ROLES } from '@/lib/payroll/roles';
 import { refreshEmployeeAutoLeaveHistory } from '@/lib/server/pekaryaAutoLeave';
 import { syncPekaryaAttendance } from '@/lib/server/pekaryaAttendanceSync';
 import { createHash } from 'node:crypto';
@@ -58,12 +59,11 @@ import { isPeriodClosed } from '@/lib/server/payrollPeriod';
 export const dynamic = 'force-dynamic';
 
 /** The same category-scoped reviewers who decide annual leave. */
-const REVIEWER_ROLES = ['super_admin', 'loyalis_admin', 'satker_head'] as const;
+const REVIEWER_ROLES = [...FINANCE_ROLES, 'loyalis_admin', 'satker_head'] as const;
 /** Readers also include the pages that overlay approved days onto presence. */
 const REVIEW_READER_ROLES = [
   ...REVIEWER_ROLES,
   'satker_head_loyalis',
-  'finance_verifier',
 ] as const;
 
 const STATUSES = ['pending', 'approved', 'declined', 'withdrawn', 'all'] as const;

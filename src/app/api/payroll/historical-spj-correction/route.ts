@@ -1,3 +1,4 @@
+import { FINANCE_ROLES } from '@/lib/payroll/roles';
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
@@ -149,7 +150,7 @@ function correctionId(command: HistoricalSpjCorrectionCommand): string {
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin']);
+    requireRole(actor, FINANCE_ROLES);
     const command = parseCommand(await request.json());
     const requestHash = commandHash(command);
     const periodRef = adminDb.collection('PayrollPeriods').doc(command.period);

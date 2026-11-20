@@ -1297,9 +1297,9 @@ export default function PayrollValidationDashboard() {
 
   const handlePrintPayrollStatement = () => {
     if (!requirePekaryaPreviews()) return;
-    const isSuperAdmin = profile?.role === 'super_admin';
+    const includeActiveDrafts = canVerifyPayroll(profile?.role);
     const activeEmployees = employees.filter(e =>
-      isSuperAdmin ? e.isActive : isTransferEligibleStatus(slipStates[e.id]?.status),
+      includeActiveDrafts ? e.isActive : isTransferEligibleStatus(slipStates[e.id]?.status),
     );
     if (activeEmployees.length === 0) {
       alert('Tidak ada slip karyawan yang dapat dimasukkan ke surat pengantar transfer.');
@@ -4027,7 +4027,7 @@ export default function PayrollValidationDashboard() {
         getLoyalisPresenceDeduction={getLoyalisPresenceDeduction}
         getLoyalisPresensiEarning={getLoyalisPresensiEarning}
         getLoyalisPresensiDeduction={getLoyalisPresensiDeduction}
-        isSuperAdmin={profile?.role === 'super_admin'}
+        includeActiveDrafts={canVerifyPayroll(profile?.role)}
         getFreshSlipData={buildFreshSlipData}
       />
 

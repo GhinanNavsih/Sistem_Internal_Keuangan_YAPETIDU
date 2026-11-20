@@ -415,10 +415,10 @@ async function main() {
     }
     assert.equal((await fetch(`${documentsBase}/ProposalKegiatan/${payrollProposal.id}`, { method: 'DELETE', headers })).status, 403);
   }
-  await expect(await invoke(verifier, { proposalId: payrollProposal.id, period: '2026-10', action: 'delete', expectedRevision: reapproved.revision }), 403);
+  await expect(await invoke(other, { proposalId: payrollProposal.id, period: '2026-10', action: 'delete', expectedRevision: reapproved.revision }), 403);
   const deleteCommand = { proposalId: payrollProposal.id, period: '2026-10', action: 'delete', expectedRevision: reapproved.revision, requestId: 'lpj-delete-one' };
-  await expect(await invoke(finance, deleteCommand));
-  await expect(await invoke(finance, deleteCommand));
+  await expect(await invoke(verifier, deleteCommand));
+  await expect(await invoke(verifier, deleteCommand));
   assert.equal((await payrollProposal.get()).exists, false);
   assert.equal((await sources.docs[0].ref.get()).data()!.status, 'voided');
   assert.deepEqual((await slipRef.get()).data()!.earnings, [{ label: 'Gaji Pokok', amount: 4_000_000 }]);

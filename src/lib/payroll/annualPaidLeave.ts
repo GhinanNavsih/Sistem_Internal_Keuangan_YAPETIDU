@@ -1,3 +1,4 @@
+import { canVerifyPayroll } from './roles';
 import type { GantiLiburAttachment } from './gantiLiburAttachments';
 import type { LeaveTypeChangeHistory } from './loyalisLeaveTypes';
 
@@ -304,7 +305,7 @@ export function canReviewAnnualPaidLeave(
   reviewer: { role: string; permittedCategories: readonly string[] },
   employee: { kind: AnnualPaidLeaveEmployeeKind; category: string },
 ): boolean {
-  if (reviewer.role === 'super_admin') return true;
+  if (canVerifyPayroll(reviewer.role)) return true;
   if (employee.kind === 'loyalis') {
     return reviewer.role === 'loyalis_admin';
   }
@@ -320,7 +321,7 @@ export function canManageAnnualPaidLeaveBalance(
   reviewer: { role: string; permittedCategories?: readonly string[] },
   employee: { kind: AnnualPaidLeaveEmployeeKind; category?: string },
 ): boolean {
-  if (reviewer.role === 'super_admin' || reviewer.role === 'loyalis_admin') return true;
+  if (canVerifyPayroll(reviewer.role) || reviewer.role === 'loyalis_admin') return true;
   if (employee.kind === 'loyalis') return false;
   return (
     reviewer.role === 'satker_head' &&

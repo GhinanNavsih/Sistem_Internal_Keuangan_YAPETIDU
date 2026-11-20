@@ -1,3 +1,4 @@
+import { FINANCE_ROLES } from '@/lib/payroll/roles';
 import { refreshEmployeeAutoLeaveHistory } from '@/lib/server/pekaryaAutoLeave';
 import { syncPekaryaAttendance } from '@/lib/server/pekaryaAttendanceSync';
 import { createHash } from 'node:crypto';
@@ -75,11 +76,11 @@ import { isActiveGantiLiburStatus } from '@/lib/payroll/gantiLibur';
 export const dynamic = 'force-dynamic';
 
 const REVIEWER_ROLES = [
-  'super_admin',
+  ...FINANCE_ROLES,
   'satker_head',
   'loyalis_admin',
 ] as const;
-const REVIEW_READER_ROLES = [...REVIEWER_ROLES, 'satker_head_loyalis', 'finance_verifier'] as const;
+const REVIEW_READER_ROLES = [...REVIEWER_ROLES, 'satker_head_loyalis'] as const;
 
 function stableHash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');

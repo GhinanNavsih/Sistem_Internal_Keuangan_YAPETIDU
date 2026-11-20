@@ -1,3 +1,4 @@
+import { FINANCE_ROLES } from '@/lib/payroll/roles';
 import { refreshEmployeeAutoLeaveHistory } from '@/lib/server/pekaryaAutoLeave';
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
@@ -31,7 +32,7 @@ import { jakartaToday } from '@/lib/server/payrollPeriod';
 export const dynamic = 'force-dynamic';
 
 const BALANCE_REVIEWER_ROLES = [
-  'super_admin',
+  ...FINANCE_ROLES,
   'satker_head',
   'loyalis_admin',
 ] as const;
@@ -69,7 +70,7 @@ function parseExpectedRevision(value: unknown): number {
 export async function GET(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, [...BALANCE_REVIEWER_ROLES, 'finance_verifier']);
+    requireRole(actor, BALANCE_REVIEWER_ROLES);
     const year = parseYear(request.nextUrl.searchParams.get('year'));
     const asOfDate = jakartaToday();
     const balanceReferenceDate = annualPaidLeaveBalanceReferenceDate(year, asOfDate);
@@ -110,7 +111,7 @@ export async function GET(request: NextRequest) {
           !employee.active ||
           !employee.category ||
           entitlementDays < 1 ||
-          (actor.role !== 'finance_verifier' && !reviewerCanAccessAnnualPaidLeaveBalance(actor, employee))
+          !reviewerCanAccessAnnualPaidLeaveBalance(actor, employee)
         ) {
           return [];
         }

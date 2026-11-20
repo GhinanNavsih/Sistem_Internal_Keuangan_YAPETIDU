@@ -1,5 +1,6 @@
 "use client";
 
+import { canEditEmployeeProfiles } from '@/lib/payroll/roles';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { GantiLiburAttachmentLinks } from '@/components/GantiLiburAttachmentLinks';
@@ -340,7 +341,7 @@ export function LoyalisPresenceCorrectionsCard({
   onResolved,
 }: LoyalisPresenceCorrectionsCardProps) {
   const { profile } = useAuth();
-  const canAuditLoyalis = profile?.role === 'super_admin' || profile?.role === 'loyalis_admin';
+  const canAuditLoyalis = canEditEmployeeProfiles(profile?.role);
   const queryClient = useQueryClient();
   const { invalidateLoyalisPresenceCorrections } = usePayrollCacheInvalidation();
 

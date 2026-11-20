@@ -24,7 +24,6 @@ function KoperasiPageContent() {
   const { profile, activeProfile, loading: authLoading } = useAuth();
   const role = (activeProfile || profile)?.role;
   const canView = canVerifyPayroll(role);
-  const readOnly = role !== 'super_admin';
   const searchParams = useSearchParams();
   const router = useRouter();
   const view = searchParams.get('view') === 'simpan-pinjam' ? 'simpan-pinjam' : 'koperasi';
@@ -70,10 +69,10 @@ function KoperasiPageContent() {
     {error && <p role="alert" className="rounded-md bg-rose-50 p-3 text-sm text-rose-700">{error.message} Gunakan Muat ulang sebelum mengubah data.</p>}
   </div>;
 
-  if (data && view === 'simpan-pinjam') return <SimpanPinjamAuditView loans={data.loans} kopUsers={data.members.map(member => ({ ...member, uid: member.uid || undefined, nama: member.nama || '', nik: member.nik || '', email: member.email || '' }))} employees={data.employees.filter(employee => employee.name)} navigation={navigation} reload={reload} disabled={loading || Boolean(error)} readOnly={readOnly} />;
+  if (data && view === 'simpan-pinjam') return <SimpanPinjamAuditView loans={data.loans} kopUsers={data.members.map(member => ({ ...member, uid: member.uid || undefined, nama: member.nama || '', nik: member.nik || '', email: member.email || '' }))} employees={data.employees.filter(employee => employee.name)} navigation={navigation} reload={reload} disabled={loading || Boolean(error)} />;
   return <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-50/80 via-slate-50 to-slate-100 p-4 text-slate-800 md:p-8">
     <div className="relative mx-auto w-full"><GlobalHeader />{navigation}
-      {data ? <KoperasiMembersView members={data.members} employees={data.employees} reload={reload} disabled={loading || Boolean(error)} readOnly={readOnly} /> : loading ? <Loading /> : null}
+      {data ? <KoperasiMembersView members={data.members} employees={data.employees} reload={reload} disabled={loading || Boolean(error)} /> : loading ? <Loading /> : null}
     </div>
   </div>;
 }
