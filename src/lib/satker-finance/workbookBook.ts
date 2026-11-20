@@ -205,6 +205,22 @@ function academicYearHeading(sheet: WorkSheet) {
   return null;
 }
 
+const MONTH_NAMES: Record<string, number> = {
+  jan: 1, januari: 1, january: 1, feb: 2, februari: 2, february: 2, pebruari: 2, mar: 3, maret: 3, march: 3, apr: 4, april: 4,
+  mei: 5, may: 5, jun: 6, juni: 6, june: 6, jul: 7, juli: 7, july: 7, agu: 8, agt: 8, ags: 8, agus: 8, agust: 8, agustus: 8, aug: 8, august: 8,
+  sep: 9, sept: 9, september: 9, okt: 10, oktober: 10, oct: 10, october: 10, nov: 11, nop: 11, nopember: 11, november: 11,
+  des: 12, desember: 12, dec: 12, december: 12,
+};
+
+/** A month typed as text in column A: "2026-10…" or a month name with the year ("Okt 2026", "Oktober-2026"). */
+function monthFromText(text: string) {
+  const iso = /^(\d{4})-(\d{2})/.exec(text.trim());
+  if (iso) return { year: Number(iso[1]), month: Number(iso[2]) };
+  const named = /^([A-Za-z]+)[\s.\-/]*(\d{4})$/.exec(text.trim());
+  const month = named ? MONTH_NAMES[named[1].toLowerCase()] : undefined;
+  return named && month ? { year: Number(named[2]), month } : null;
+}
+
 const dateText = (year: number, month: number, day: number) => `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
 export type JurnalRead = { vouchers: BookImportVoucher[]; problems: string[] };
@@ -280,12 +296,11 @@ export function readJurnalSheet(sheet: WorkSheet, label: string, accountCodes: S
         const day = new Date(EXCEL_EPOCH + Math.round(dateSerial) * 86_400_000);
         year = day.getUTCFullYear();
         month = day.getUTCMonth() + 1;
-      } else if (typeof dateSerial === 'string' && /^\d{4}-\d{2}/.test(dateSerial.trim())) {
-        const match = /^(\d{4})-(\d{2})/.exec(dateSerial.trim());
-        year = Number(match![1]);
-        month = Number(match![2]);
       } else {
-        throw new Error('bulan (kolom A) dan tanggal (kolom B) harus diisi.');
+        const parsed = typeof dateSerial === 'string' ? monthFromText(dateSerial) : null;
+        if (!parsed) throw new Error('bulan (kolom A) dan tanggal (kolom B) harus diisi.');
+        year = parsed.year;
+        month = parsed.month;
       }
       if (typeof dayValue !== 'number' || !Number.isInteger(dayValue)) throw new Error('bulan (kolom A) dan tanggal (kolom B) harus diisi.');
       if (!months.some((item) => item.monthIndex === month && item.year === year)) throw new Error('bulan di luar tahun akademik.');

@@ -126,6 +126,21 @@ test('accepts ISO string dates in column A', () => {
   assert.equal(read.vouchers[0].date, '2026-09-01');
 });
 
+test('accepts a month typed as a name with its year in column A', () => {
+  const sheet = sheetOf({
+    ...journalHeader,
+    'A7': { v: 'Okt 2026' }, 'B7': { v: 4 }, 'C7': { v: 11003 }, 'E7': { v: 'Pendaftaran' }, 'F7': { v: 500000 },
+    'A8': { v: 'Okt 2026' }, 'B8': { v: 4 }, 'C8': { v: 41102 }, 'E8': { v: 'Pendaftaran' }, 'G8': { v: 500000 },
+    'A9': { v: 'Nopember-2026' }, 'B9': { v: 5 }, 'C9': { v: 11003 }, 'E9': { v: 'Terima' }, 'F9': { v: 100 },
+    'A10': { v: 'Nopember-2026' }, 'B10': { v: 5 }, 'C10': { v: 41102 }, 'E10': { v: 'Terima' }, 'G10': { v: 100 },
+  });
+  const read = readJurnalSheet(sheet, 'Jurnal Uji', new Set(['11003', '41102']), '2026-2027');
+  assert.deepEqual(read.problems, []);
+  assert.deepEqual(read.vouchers.map((voucher) => voucher.date), ['2026-10-04', '2026-11-05']);
+  const unknown = readJurnalSheet(sheetOf({ ...journalHeader, 'A7': { v: 'Oktx 2026' }, 'B7': { v: 4 }, 'C7': { v: 11003 }, 'E7': { v: 'x' }, 'F7': { v: 1 } }, 'G200'), 'Jurnal Uji', new Set(['11003']), '2026-2027');
+  assert.match(unknown.problems[0], /bulan \(kolom A\)/);
+});
+
 test('refuses text amounts, a day outside the month, and a line with both sides filled', () => {
   const sheet = journalSheet([
     journalRow(7, 1, 10000, 'Teks', ',', null),
