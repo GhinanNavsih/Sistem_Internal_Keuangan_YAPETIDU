@@ -5,7 +5,6 @@ import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { usePendingFacilityReportsCount } from '@/lib/usePendingFacilityReportsCount';
 import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
-import { canVerifyPayroll } from '@/lib/payroll/roles';
 import { VENUE_RESERVATION_PATH } from '@/lib/venueReservation';
 import { VENUE_INSPECTION_PATH } from '@/lib/venueInspection';
 import {
@@ -26,9 +25,9 @@ import {
 /**
  * Shared navigation toggles for Loyalis & Pekarya uraian-related payroll pages.
  * Renders two rows:
- *   1. Loyalis row – visible to the payroll roles and satker_head_loyalis
- *   2. Pekarya row – visible to super_admin and finance_verifier
- * SatKer Pekarya heads (satker_head) and Admin Karyawan (loyalis_admin) navigate from the sidebar instead.
+ *   1. Loyalis row – visible to super_admin and satker_head_loyalis
+ *   2. Pekarya row – visible to super_admin
+ * Badan Keuangan, SatKer Pekarya heads and Admin Karyawan use the sidebar.
  *
  * This component is self-contained: it reads the current pathname and
  * search params to determine the active tab and builds clean navigation URLs.
@@ -92,7 +91,7 @@ export default function UraianNavToggles() {
 
   // Only render for roles that should see the navigation
   const role = (activeProfile || profile)?.role;
-  const canManagePayroll = canVerifyPayroll(role);
+  const canManagePayroll = role === 'super_admin';
   if (!canManagePayroll && role !== 'satker_head_loyalis') return null;
 
   const btnCls = (isActive: boolean) =>

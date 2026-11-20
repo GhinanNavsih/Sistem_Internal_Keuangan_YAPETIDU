@@ -474,8 +474,8 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
           </div>
         )}
 
-        {/* Tab Switcher for Super Admin & Badan Keuangan; the other roles navigate from the sidebar. */}
-        {profile && profile.role !== 'satker_head' && profile.role !== 'satker_head_loyalis' && profile.role !== 'loyalis_admin' && (
+        {/* The navigation component shows tabs for Super Admin and supported previews. */}
+        {profile.role === 'super_admin' && (
           <UraianNavToggles />
         )}
 

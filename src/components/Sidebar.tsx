@@ -13,6 +13,7 @@ import {
   getUserRoleLabel,
   isFinancePayrollPath,
   PAYROLL_MASTER_PATH,
+  PAYROLL_RECAP_PATH,
   SANTUNAN_REVIEW_PATH,
 } from '@/lib/payroll/roles';
 import { VENUE_RESERVATION_PATH } from '@/lib/venueReservation';
@@ -57,8 +58,21 @@ type SidebarMenuItem = {
   exact?: boolean;
   activePattern?: string;
   startsGroup?: boolean;
+  groupLabel?: string;
   badge?: number;
 };
+
+const financeUraianMenu: SidebarMenuItem[] = [
+  { name: 'Kelebihan Jam Mengajar', path: `${PAYROLL_RECAP_PATH}/kjm`, icon: Banknote, startsGroup: true, groupLabel: 'Loyalis' },
+  { name: 'Kegiatan SatKer', path: `${PAYROLL_RECAP_PATH}/kegiatan-satker`, icon: FileSpreadsheet },
+  { name: 'Vakasi Tambahan (Karyawan)', path: `${PAYROLL_RECAP_PATH}/vakasi-karyawan`, icon: Banknote },
+  { name: 'Presensi Loyalis', path: `${PAYROLL_RECAP_PATH}/presensi-loyalis-raw`, icon: Clock },
+  { name: 'Senam Pagi', path: SENAM_PAGI_PATH, icon: PersonStanding },
+  { name: 'Verifikasi Santunan', path: SANTUNAN_REVIEW_PATH, icon: HandHeart },
+  { name: 'Presensi Pekarya', path: `${PAYROLL_RECAP_PATH}/presensi-pekarya`, icon: Users, startsGroup: true, groupLabel: 'Pekarya' },
+  { name: 'Rekap Uraian (Pekarya)', path: `${PAYROLL_RECAP_PATH}/rekap-pekarya`, icon: ScanLine },
+  { name: 'Kegiatan SPJ', path: `${PAYROLL_RECAP_PATH}/spj-pekarya`, icon: FileSpreadsheet },
+];
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -70,6 +84,7 @@ export default function Sidebar() {
   const now = new Date();
   const monthParam = searchParams.get('month');
   const yearParam = searchParams.get('year');
+  const selectedCategory = searchParams.get('category')?.trim().toUpperCase();
   const currentMonth = monthParam || String(now.getMonth() + 1);
   const currentYear = yearParam || String(now.getFullYear());
 
@@ -312,10 +327,23 @@ export default function Sidebar() {
       ? pekaryaMenuItems
       : currentProfile.role === 'loyalis_admin'
         ? employeeAdminMenuItems
-        : adminMenuItems.filter(item => {
-          if (currentProfile.role === 'super_admin') return true;
-          return item.path !== PAYROLL_MASTER_PATH && isFinancePayrollPath(item.path);
-        });
+        : currentProfile.role === 'finance_verifier'
+          ? [
+              ...adminMenuItems.filter(({ path }) =>
+                path !== PAYROLL_MASTER_PATH && path !== PAYROLL_RECAP_PATH && isFinancePayrollPath(path),
+              ),
+              ...financeUraianMenu.map(item => {
+                const category = item.path.endsWith('/presensi-pekarya')
+                  ? ALL_BLUE_COLLAR_CATEGORY
+                  : (item.path.endsWith('/rekap-pekarya') || item.path.endsWith('/spj-pekarya')) &&
+                      selectedCategory !== ALL_BLUE_COLLAR_CATEGORY
+                    ? selectedCategory
+                    : undefined;
+                const query = category ? `category=${encodeURIComponent(category)}` : '';
+                return { ...item, path: item.path + withPeriod(query), activePattern: item.path };
+              }),
+            ]
+          : adminMenuItems;
 
   const getIsActive = (item: SidebarMenuItem) => {
     if (item.exact) {
@@ -357,6 +385,11 @@ export default function Sidebar() {
           <React.Fragment key={item.name}>
             {item.startsGroup && index > 0 && (
               <div className="my-2 border-t border-slate-200/80" />
+            )}
+            {item.groupLabel && (
+              <span className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                {item.groupLabel}
+              </span>
             )}
             <Link
               href={item.path}
