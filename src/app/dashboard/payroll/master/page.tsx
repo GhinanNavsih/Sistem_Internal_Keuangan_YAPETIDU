@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { doc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { useAuth } from '@/lib/AuthContext';
 import {
   useMatrixActiveVersion,
   useMatrixGradeCodes,
@@ -144,6 +145,8 @@ function cloneDefaultExcessAttendanceRows(): ExcessAttendanceRateRow[] {
 }
 
 export default function SalaryMasterPage() {
+  const { profile, activeProfile } = useAuth();
+  const canEdit = (activeProfile || profile)?.role === 'super_admin';
   const [saving, setSaving] = useState(false);
   const isSavingRef = useRef(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -330,7 +333,7 @@ export default function SalaryMasterPage() {
   };
 
   const saveChanges = async () => {
-    if (isSavingRef.current) return;
+    if (!canEdit || isSavingRef.current) return;
     try {
       isSavingRef.current = true;
       setSaving(true);
@@ -472,7 +475,7 @@ export default function SalaryMasterPage() {
                 <FileSpreadsheet className="w-6 h-6 text-indigo-500" />
                 Master Data Gaji Pokok
               </h1>
-              <p className="text-slate-500 text-sm">Kelola matriks gaji, tunjangan, dan rate Kelebihan Jam Mengajar</p>
+              <p className="text-slate-500 text-sm">{canEdit ? 'Kelola' : 'Lihat'} matriks gaji, tunjangan, dan rate Kelebihan Jam Mengajar</p>
             </div>
           </div>
 
@@ -481,14 +484,14 @@ export default function SalaryMasterPage() {
             <Button variant="outline" className="rounded-xl bg-white border-slate-200 shadow-sm">
               <History className="w-4 h-4 mr-2" /> Riwayat
             </Button>
-            <Button 
+            {canEdit && <Button
               onClick={saveChanges} 
               disabled={saving || loading}
               className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-200 px-6 transition-all"
             >
               {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
               Simpan Perubahan
-            </Button>
+            </Button>}
           </div>
         </div>
 
@@ -604,6 +607,7 @@ export default function SalaryMasterPage() {
                               <div className="flex items-center h-9 rounded-lg bg-white border border-slate-200 px-2.5 focus-within:border-indigo-400 focus-within:ring-1 focus-within:ring-indigo-200 transition-all">
                                 <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
                                 <Input
+                                  readOnly={!canEdit}
                                   type="text"
                                   value={row.rates[field]?.toLocaleString('id-ID') || '0'}
                                   onChange={e => handleExcessAttendanceChange(row.id, field, e.target.value)}
@@ -665,6 +669,7 @@ export default function SalaryMasterPage() {
                         <TableRow key={row.id} className="hover:bg-slate-50/30 transition-colors border-slate-50">
                           <TableCell className="p-2 pl-8 border-r border-slate-100 bg-slate-50/10 min-w-[240px]">
                             <Input
+                              readOnly={!canEdit}
                               type="text"
                               value={row.education_level || ''}
                               onChange={(e) => handleFunctionalEducationLevelChange(row.id, e.target.value)}
@@ -674,6 +679,7 @@ export default function SalaryMasterPage() {
                           </TableCell>
                           <TableCell className="p-2 border-r border-slate-100 min-w-[120px]">
                             <Input
+                              readOnly={!canEdit}
                               type="text"
                               value={row.base_value?.toLocaleString('id-ID') || '0'}
                               onChange={(e) => handleFunctionalChange(row.id, 'base', e.target.value)}
@@ -683,6 +689,7 @@ export default function SalaryMasterPage() {
                           {Array.from({ length: 16 }, (_, idx) => String(idx + 1)).map((tierCode) => (
                             <TableCell key={tierCode} className="p-2 min-w-[100px]">
                               <Input
+                                readOnly={!canEdit}
                                 type="text"
                                 value={row.functional_tiers[tierCode]?.toLocaleString('id-ID') || '0'}
                                 onChange={(e) => handleFunctionalChange(row.id, tierCode, e.target.value)}
@@ -745,6 +752,7 @@ export default function SalaryMasterPage() {
                               <div className="flex items-center h-9 rounded-lg bg-white border border-slate-200 px-2.5 focus-within:border-indigo-400 focus-within:ring-1 focus-within:ring-indigo-200 transition-all max-w-[200px]">
                                 <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
                                 <Input
+                                  readOnly={!canEdit}
                                   type="text"
                                   value={row.allowance?.toLocaleString('id-ID') || '0'}
                                   onChange={(e) => handleKepangkatanChange(row.id, e.target.value)}
@@ -842,6 +850,7 @@ export default function SalaryMasterPage() {
                             }`}
                           >
                             <Input
+                              readOnly={!canEdit}
                               type="text"
                               value={row.salaries[code]?.toLocaleString('id-ID') || '0'}
                               onChange={(e) => handleSalaryChange(row.tahun, code, e.target.value)}

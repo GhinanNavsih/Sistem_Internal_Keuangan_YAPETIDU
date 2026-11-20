@@ -374,7 +374,7 @@ service cloud.firestore {
     }
 
     match /FinancialAuditLogs/{docId} {
-      allow read: if isFinanceRole();
+      allow read: if isSuperAdmin();
       allow write: if false;
     }
 
@@ -468,7 +468,7 @@ service cloud.firestore {
       // Journey mutations are server-only. The API re-checks role, ownership,
       // payroll period, and the journey state inside Admin-SDK transactions.
       function canReadDriverJourney() {
-        return isFinanceRole() ||
+        return isSuperAdmin() ||
           (roleIs('satker_head') && hasCategory('SOPIR')) ||
           (
             roleIs('honorer') &&
@@ -545,7 +545,8 @@ service cloud.firestore {
     }
 
     match /ActivityReports/{reportId} {
-      allow read: if isFinanceRole() ||
+      allow read: if isSuperAdmin() ||
+        (isFinanceVerifier() && resource.data.status == 'approved') ||
         (roleIs('satker_head') && hasCategory(resource.data.jobCategory)) ||
         ownsEmployee(resource.data.employeeId) ||
         (
@@ -559,7 +560,7 @@ service cloud.firestore {
     }
 
     match /ActivityReportRevisions/{revisionId} {
-      allow read: if isFinanceRole() ||
+      allow read: if isSuperAdmin() ||
         (roleIs('satker_head') && hasCategory(resource.data.snapshot.jobCategory)) ||
         ownsEmployee(resource.data.employeeId);
       // Every revision is created once by the submission API and is immutable.
@@ -621,7 +622,7 @@ service cloud.firestore {
     // /api/facility-reports so status transitions and authority stay
     // server-enforced.
     match /FacilityReports/{reportId} {
-      allow read: if isFinanceRole() || roleIs('satker_head') ||
+      allow read: if isSuperAdmin() || roleIs('satker_head') ||
         ownsEmployee(resource.data.employeeId);
       allow write: if false;
     }

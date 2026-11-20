@@ -137,7 +137,7 @@ export default function SatkerFinancePage() {
   const [bookCheck, setBookCheck] = useState<BookReadResult | null>(null);
   const unitAccountEditorRef = useRef<HTMLDivElement>(null);
   const isAdmin = profile?.role === 'super_admin';
-  const canReadAll = !!profile && ['super_admin', 'finance_verifier', 'rector_finance'].includes(profile.role);
+  const canReadAll = profile?.role === 'super_admin' || profile?.role === 'rector_finance';
   const canEdit = !!profile && (isAdmin || (['satker_head_loyalis', 'satker_finance_admin'].includes(profile.role) && data?.unit?.editorUids?.includes(profile.uid)));
   const months = useMemo(() => fiscalMonths(academicYear), [academicYear]);
   const reversedIds = useMemo(() => reversedEntryIds(data?.entries || []), [data?.entries]);

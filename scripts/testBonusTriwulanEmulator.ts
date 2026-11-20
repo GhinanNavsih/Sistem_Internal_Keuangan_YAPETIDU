@@ -114,7 +114,7 @@ async function main() {
   await expectStatus(await get(senamApi, 'senam-pagi', honorer.authorization), 403, 'honorer cannot read');
   const financeView = await expectStatus(await get(senamApi, 'senam-pagi', finance.authorization), 200, 'Badan Keuangan reads');
   assert.equal(financeView.roster.length, 3);
-  await expectStatus(await senamWrite(finance.authorization, { action: 'save_session', date: day1, presentEmployeeIds: [] }), 403, 'Badan Keuangan does not record');
+  await expectStatus(await senamWrite(honorer.authorization, { action: 'save_session', date: day1, presentEmployeeIds: [] }), 403, 'honorer cannot record');
 
   // ── Nothing recorded yet: nobody is paid and the page says why ──
   let bonus = await expectStatus(await get(bonusApi, 'bonus-triwulan', employeeAdmin.authorization), 200);
@@ -135,7 +135,7 @@ async function main() {
     sessions: { [day2]: { presentEmployeeIds: all } },
   });
   let written = await expectStatus(
-    await senamWrite(employeeAdmin.authorization, { action: 'save_session', date: day1, presentEmployeeIds: ['Loyalis_901', 'Loyalis_903'] }),
+    await senamWrite(finance.authorization, { action: 'save_session', date: day1, presentEmployeeIds: ['Loyalis_901', 'Loyalis_903'] }),
     200,
   );
   assert.equal(written.bonusNote, null, 'bonus recalculated with the save');

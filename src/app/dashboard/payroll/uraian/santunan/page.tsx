@@ -5,6 +5,7 @@ import { AlertCircle, HandHeart, Info, Loader2, RefreshCw } from 'lucide-react';
 import SantunanReviewTable, { type BansosDecisionInput } from '@/components/santunan/SantunanReviewTable';
 import { FloatingSnackbar, type SnackbarMessage } from '@/components/ui/floating-snackbar';
 import { useAuth } from '@/lib/AuthContext';
+import { canVerifyPayroll } from '@/lib/payroll/roles';
 import type { BansosRequest, BansosSide } from '@/lib/payroll/santunan';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 
@@ -27,20 +28,21 @@ const TABS: { value: Tab; label: string; empty: string }[] = [
 const DECISION_NOTICES: Record<string, string> = {
   paid: 'Ajuan disetujui dan santunan masuk ke slip/SPJ.',
   awaiting_handover: 'Ajuan disetujui. Serahkan santunan tunai, lalu tandai sudah diserahkan.',
-  awaiting_finance: 'Ajuan diterima. Menunggu keputusan Super Admin.',
+  awaiting_finance: 'Ajuan diterima. Menunggu keputusan Badan Keuangan.',
   awaiting_admin: 'Ajuan diterima. Menunggu verifikasi Admin Karyawan.',
 };
 
 export default function BansosVerificationPage() {
   const { profile } = useAuth();
   const role = profile?.role;
-  const side: BansosSide = role === 'super_admin' ? 'finance' : 'admin';
+  const isFinanceReviewer = canVerifyPayroll(role);
+  const side: BansosSide = isFinanceReviewer ? 'finance' : 'admin';
   const canDecide = role === 'loyalis_admin'
     ? true
-    : role === 'super_admin'
+    : isFinanceReviewer
       ? (request: BansosRequest) => request.kind === 'duka'
       : false;
-  const canHandover = role === 'loyalis_admin' || role === 'super_admin';
+  const canHandover = role === 'loyalis_admin' || isFinanceReviewer;
   const [tab, setTab] = useState<Tab>('waiting');
   const [requests, setRequests] = useState<BansosRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -134,7 +136,7 @@ export default function BansosVerificationPage() {
           </button>
         </div>
 
-        {role === 'super_admin' && (
+        {isFinanceReviewer && (
           <div className="flex items-center gap-2 px-4 py-3 rounded-md text-sm font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">
             <Info className="size-4 shrink-0" />
             Ajuan Duka Anda putuskan di sini. Ajuan Melahirkan tetap diputuskan di halaman Vakasi Tambahan.

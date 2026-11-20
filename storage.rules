@@ -151,7 +151,7 @@ service firebase.storage {
         ).data;
       }
       allow read: if journeyExists() &&
-        (isFinance() || roleIs('satker_head') ||
+        (roleIs('super_admin') || roleIs('satker_head') ||
           (hasActiveProfile() && journey().get('employeeId', '') == profile().get('linkedEmployeeId', '')));
       allow create, update: if false;
       allow delete: if false;
@@ -161,7 +161,7 @@ service firebase.storage {
     // reporting employee because the photo is uploaded before the
     // FacilityReports document exists.
     match /facility_reports/{employeeId}/{filename} {
-      allow read: if isFinance() || roleIs('satker_head') ||
+      allow read: if roleIs('super_admin') || roleIs('satker_head') ||
         (hasActiveProfile() && profile().get('linkedEmployeeId', '') == employeeId);
       allow create, update: if false;
       allow delete: if false;
@@ -171,7 +171,7 @@ service firebase.storage {
     // facility report has been fixed. The repair API checks the same path
     // ownership before attaching the URL to the report.
     match /facility_report_proofs/{employeeId}/{filename} {
-      allow read: if isFinance() || roleIs('satker_head') ||
+      allow read: if roleIs('super_admin') || roleIs('satker_head') ||
         (hasActiveProfile() && profile().get('linkedEmployeeId', '') == employeeId);
       allow create, update: if false;
       allow delete: if false;

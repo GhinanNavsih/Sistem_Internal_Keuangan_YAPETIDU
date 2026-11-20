@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
+import { FINANCE_ROLES } from '@/lib/payroll/roles';
 import { markAutoLeaveDirty } from '@/lib/server/automaticLeavePosting';
 import { PEKARYA_JOB_CATEGORIES } from '@/lib/payroll/pekaryaSpj';
 import { reconcilePekaryaAutoLeave } from '@/lib/server/pekaryaAutoLeave';
@@ -355,7 +356,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin', 'loyalis_admin']);
+    requireRole(actor, [...FINANCE_ROLES, 'loyalis_admin']);
     const form = await request.formData();
     const file = form.get('file');
     const period = String(form.get('period') || '');
@@ -649,7 +650,7 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin', 'loyalis_admin']);
+    requireRole(actor, [...FINANCE_ROLES, 'loyalis_admin']);
     const period = request.nextUrl.searchParams.get('period') || '';
     const revisionId = request.nextUrl.searchParams.get('revisionId') || '';
     assertPeriod(period);

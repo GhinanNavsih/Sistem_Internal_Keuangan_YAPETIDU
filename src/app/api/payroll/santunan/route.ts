@@ -51,13 +51,13 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * One side's decision (Admin Karyawan for the admin side, Super Admin for the
+ * One side's decision (Admin Karyawan for the admin side, payroll reviewers for the
  * finance side), or `action: 'handover'` from either once a Duka's cash is handed over.
  */
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['loyalis_admin', 'super_admin']);
+    requireRole(actor, BANSOS_REVIEW_READER_ROLES);
     const command = parseBansosReviewCommand(await request.json());
     const result = command.action === 'handover'
       ? await markBansosHandedOver(actor, command)

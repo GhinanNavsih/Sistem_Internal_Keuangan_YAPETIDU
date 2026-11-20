@@ -62,6 +62,7 @@ import {
 import { collection, getDocs, getDocsFromServer, doc, getDoc, getDocFromServer, setDoc, query, where, writeBatch } from 'firebase/firestore';
 import { db, secondaryDb } from '@/lib/firebase';
 import { useAuth } from '@/lib/AuthContext';
+import { canVerifyPayroll } from '@/lib/payroll/roles';
 import { useDashboardData } from '@/lib/DashboardDataContext';
 import { usePayrollCacheInvalidation } from '@/lib/queries/hooks';
 import { useBulkEmail, ESTIMATED_SECONDS_PER_EMAIL, type QueueItem } from '@/lib/BulkEmailContext';
@@ -541,7 +542,7 @@ export default function PayrollValidationDashboard() {
   // period, unless it has already been closed permanently.
   useEffect(() => {
     if (defaultPeriodResolvedRef.current) return;
-    if (!profile || !['super_admin', 'finance_verifier'].includes(profile.role)) {
+    if (!canVerifyPayroll(profile?.role)) {
       return;
     }
     const now = new Date();
@@ -586,7 +587,7 @@ export default function PayrollValidationDashboard() {
   }, [profile]);
 
   useEffect(() => {
-    if (!profile || !['super_admin', 'finance_verifier'].includes(profile.role)) {
+    if (!canVerifyPayroll(profile?.role)) {
       return;
     }
     let cancelled = false;
@@ -610,7 +611,7 @@ export default function PayrollValidationDashboard() {
   }, [profile]);
 
   useEffect(() => {
-    if (!profile || !['super_admin', 'finance_verifier'].includes(profile.role)) {
+    if (!canVerifyPayroll(profile?.role)) {
       return;
     }
     let cancelled = false;
@@ -1752,7 +1753,7 @@ export default function PayrollValidationDashboard() {
   });
 
   useEffect(() => {
-    if (!profile || !['super_admin', 'finance_verifier'].includes(profile.role)) return;
+    if (!canVerifyPayroll(profile?.role)) return;
 
     const isLoyalis = payrollCollar === 'loyalis';
     // A Pekarya converted to Loyalis appears in exactly one tab per month:
@@ -1800,7 +1801,7 @@ export default function PayrollValidationDashboard() {
 
   // ─── Fetch UraianGaji & persisted SlipStates for current period ──
   useEffect(() => {
-    if (!profile || !['super_admin', 'finance_verifier'].includes(profile.role)) return;
+    if (!canVerifyPayroll(profile?.role)) return;
     let cancelled = false;
     const fetchPeriodData = async () => {
       setLocalLoading(true);
@@ -1886,7 +1887,7 @@ export default function PayrollValidationDashboard() {
   }, [targetDate]);
 
   useEffect(() => {
-    if (!profile || !['super_admin', 'finance_verifier'].includes(profile.role)) return;
+    if (!canVerifyPayroll(profile?.role)) return;
     // Locked payroll periods already have their final snapshot in
     // PayrollSlipStates. The period-data effect resets preview state before
     // loading a new period, so there is nothing to fetch or clear here.
@@ -1936,7 +1937,7 @@ export default function PayrollValidationDashboard() {
 
   // ─── Fetch VakasiTambahan for current period (Loyalis Only) ───
   useEffect(() => {
-    if (!profile || !['super_admin', 'finance_verifier'].includes(profile.role)) return;
+    if (!canVerifyPayroll(profile?.role)) return;
     const fetchVakasiAndSpj = async () => {
       try {
         const periodToken = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
@@ -3524,7 +3525,7 @@ export default function PayrollValidationDashboard() {
                       >
                         {attendancePeriodStatus === 'closed' ? 'DITUTUP' : 'DIBUKA'}
                       </Badge>
-                      {(profile?.role === 'super_admin' || profile?.role === 'finance_verifier') &&
+                      {canVerifyPayroll(profile?.role) &&
                         attendancePeriodStatus !== 'closed' && (
                           <Button
                             type="button"
@@ -3540,7 +3541,7 @@ export default function PayrollValidationDashboard() {
                             Tutup Permanen
                           </Button>
                         )}
-                      {profile?.role === 'super_admin' &&
+                      {canVerifyPayroll(profile?.role) &&
                         attendancePeriodStatus !== 'closed' && (
                           <Button
                             type="button"

@@ -12,7 +12,10 @@ function coordinate(value: unknown, label: string, min: number, max: number): nu
 
 export async function POST(request: NextRequest) {
   try {
-    await requireAuthenticatedProfile(request);
+    const actor = await requireAuthenticatedProfile(request);
+    if (actor.role === 'finance_verifier') {
+      throw new HttpError(403, 'Anda tidak memiliki akses ke pencarian lokasi.');
+    }
     const body = await request.json().catch(() => null) as Record<string, unknown> | null;
     const latitude = coordinate(body?.latitude, 'Latitude', -90, 90);
     const longitude = coordinate(body?.longitude, 'Longitude', -180, 180);

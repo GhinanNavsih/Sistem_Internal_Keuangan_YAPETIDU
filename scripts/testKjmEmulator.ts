@@ -105,6 +105,8 @@ async function main() {
   assert.equal((await adminDb.doc(`KjmImports/${id}`).get()).exists, false);
   assert.equal((await eventRef.get()).exists, false);
   await adminDb.doc(`users/${identity.localId}`).update({ role: 'finance_verifier' });
+  assert.equal((await GET(new NextRequest('http://localhost/api/payroll/kjm?period=2026-09', { headers: { authorization } }))).status, 200);
+  await adminDb.doc(`users/${identity.localId}`).update({ role: 'satker_head_loyalis' });
   assert.equal((await GET(new NextRequest('http://localhost/api/payroll/kjm?period=2026-09', { headers: { authorization } }))).status, 403);
   console.log('KJM emulator integration passed: upload/save/delete unpaid drafts, auth/rules, stale master/revision, locked/paid slips, idempotency, duplicate semester claims, approval and revocation.');
 }

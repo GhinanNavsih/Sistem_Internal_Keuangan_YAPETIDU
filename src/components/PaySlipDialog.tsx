@@ -45,7 +45,7 @@ import {
   resolveSlipTaxes,
   resolveTaxSelection,
 } from '@/lib/payroll/payrollTax';
-import { UserRole } from '@/lib/payroll/roles';
+import { canOperatePayments, canVerifyPayroll, type UserRole } from '@/lib/payroll/roles';
 import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { synchronizeFamilyAllowanceEarnings } from '@/lib/payroll/familyAllowance';
@@ -428,7 +428,7 @@ export default function PaySlipDialog({
   const effectiveTaxApplied = isTerTax ? terDetails.taxApplied : taxApplied;
   const taxEligible = isTerTax ? terDetails.taxAmount > 0 : isTaxableBase(taxBase);
   const taxIneligibilityReason = isTerTax ? null : describeTaxIneligibility(taxBase);
-  const canManageTax = actorRole === 'super_admin';
+  const canManageTax = canVerifyPayroll(actorRole);
   // Locking reads the tax off the *saved* slip, so an un-saved toggle would be
   // silently discarded at the moment it matters most.
   const savedTaxApplied = resolveTaxSelection(slipState);
@@ -998,7 +998,7 @@ export default function PaySlipDialog({
                       {saving ? 'Menyimpan...' : 'Simpan Perubahan'}
                     </Button>
                   )}
-                  {(actorRole === 'finance_verifier' || actorRole === 'super_admin') && (
+                  {canOperatePayments(actorRole) && (
                     <Button
                       type="button"
                       onClick={handleVerifyAndLock}
@@ -1037,7 +1037,7 @@ export default function PaySlipDialog({
                 </div>
               ) : isImmutablePayrollStatus(localStatus) ? (
                 <div className="flex items-center gap-2">
-                  {localStatus !== 'paid' && (actorRole === 'finance_verifier' || actorRole === 'super_admin') && (
+                  {localStatus !== 'paid' && canOperatePayments(actorRole) && (
                     <Button
                       type="button"
                       onClick={() => {

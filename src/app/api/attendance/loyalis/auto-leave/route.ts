@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { FINANCE_ROLES } from '@/lib/payroll/roles';
 import {
   errorResponse,
   HttpError,
@@ -17,7 +18,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin', 'loyalis_admin']);
+    requireRole(actor, [...FINANCE_ROLES, 'loyalis_admin']);
     const body = (await request.json().catch(() => null)) as { period?: unknown } | null;
     const period = typeof body?.period === 'string' ? body.period.trim() : '';
     if (!period) throw new HttpError(400, 'Periode wajib diisi.');

@@ -11,6 +11,8 @@ import {
   canReserveVenues,
   canSimulateDriverJourneys,
   getUserRoleLabel,
+  isFinancePayrollPath,
+  PAYROLL_MASTER_PATH,
   SANTUNAN_REVIEW_PATH,
 } from '@/lib/payroll/roles';
 import { VENUE_RESERVATION_PATH } from '@/lib/venueReservation';
@@ -144,6 +146,12 @@ export default function Sidebar() {
       path: '/dashboard/payroll/uraian',
       icon: FileSpreadsheet,
       activePattern: '/dashboard/payroll/uraian'
+    },
+    {
+      name: 'Matriks Gaji',
+      path: PAYROLL_MASTER_PATH,
+      icon: FileSpreadsheet,
+      exact: true,
     },
     {
       name: 'Koperasi',
@@ -306,7 +314,7 @@ export default function Sidebar() {
         ? employeeAdminMenuItems
         : adminMenuItems.filter(item => {
           if (currentProfile.role === 'super_admin') return true;
-          return item.path === '/dashboard/payroll' || item.path === '/dashboard/satker-finance';
+          return isFinancePayrollPath(item.path);
         });
 
   const getIsActive = (item: SidebarMenuItem) => {

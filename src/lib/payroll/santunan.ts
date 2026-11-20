@@ -6,7 +6,7 @@ import type { ResolvedVakasiWorker, VakasiEmployeeCollection } from './vakasiTam
  * An employee (Loyalis or Pekarya) submits an ajuan with proof. Two people
  * decide on it in either order: Admin Karyawan (the "admin" side) and Super
  * Admin (the "finance" side). Either may set the amount when accepting, but
- * Admin Karyawan cannot change it once Super Admin has accepted, so Super Admin
+ * Admin Karyawan cannot change it once Badan Keuangan has accepted, so Badan Keuangan
  * has the last word. Once both accept:
  * - Melahirkan is paid on the slip through one VakasiTambahan event per month,
  *   named "Ajuan Melahirkan", which every payroll reader already knows how to pay;
@@ -78,13 +78,13 @@ export type StoredBansosRelationship = BansosRelationship | (typeof BANSOS_RETIR
 
 export const BANSOS_SIDE_LABELS: Readonly<Record<BansosSide, string>> = {
   admin: 'Admin Karyawan',
-  finance: 'Super Admin',
+  finance: 'Badan Keuangan',
 };
 
 export const BANSOS_STATUS_LABELS: Readonly<Record<BansosStatus, string>> = {
   awaiting_both: 'Menunggu pemeriksaan',
   awaiting_admin: 'Menunggu Admin Karyawan',
-  awaiting_finance: 'Menunggu Super Admin',
+  awaiting_finance: 'Menunggu Badan Keuangan',
   paid: 'Disetujui',
   awaiting_handover: 'Menunggu penyerahan',
   handed_over: 'Selesai',
@@ -325,7 +325,7 @@ export interface BansosDecisionPlan {
  * What one side's decision does to an ajuan. Each side changes only its own
  * decision; a decided side must reset before deciding again, and a rejection
  * by either side ends the ajuan for the other until it is reset. Accepting may
- * set the amount, except Admin Karyawan's once Super Admin has accepted. Once a
+ * set the amount, except Admin Karyawan's once Badan Keuangan has accepted. Once a
  * Duka's cash is handed over, nothing changes any more.
  */
 export function planBansosDecision(
@@ -361,7 +361,7 @@ export function planBansosDecision(
         const parsed = parseBansosAmount(input.amount);
         if (parsed === null) throw new Error('Nominal harus berupa rupiah bulat antara Rp 1 dan Rp 100.000.000.');
         if (side === 'admin' && request.financeDecision === 'accepted' && parsed !== request.amount) {
-          throw new Error('Nominal sudah ditetapkan Super Admin.');
+          throw new Error('Nominal sudah ditetapkan Badan Keuangan.');
         }
         amount = parsed;
       }
@@ -387,7 +387,7 @@ export function assertBansosHandover(
   const status = bansosStatus(request);
   if (status === 'handed_over') throw new Error('Santunan ini sudah ditandai diserahkan.');
   if (status !== 'awaiting_handover') {
-    throw new Error('Santunan baru dapat diserahkan setelah Admin Karyawan dan Super Admin sama-sama menerima.');
+    throw new Error('Santunan baru dapat diserahkan setelah Admin Karyawan dan Badan Keuangan sama-sama menerima.');
   }
 }
 

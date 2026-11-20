@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { canVerifyPayroll } from '@/lib/payroll/roles';
 import { auth } from '@/lib/firebase';
 import { authenticatedJson } from '@/lib/payroll/client';
 import { emptyKjmEdits, filterKjmCourses, groupKjmCourses, reviewKjm, type KjmCourse, type KjmEdits, type KjmEmployee, type KjmRate, type KjmReview } from '@/lib/payroll/kjm';
@@ -354,7 +355,7 @@ function KjmContent() {
     setMaster(data); setImports(data.imports); setClosed(data.closed);
   }, [period]);
   useEffect(() => {
-    if (profile?.role !== 'super_admin') return;
+    if (!canVerifyPayroll(profile?.role)) return;
     let cancelled = false;
     const load = async () => {
       setBusy('Memuat data KJM…'); setDraft(null); setConfirm(null); setError(''); setMessage('');
@@ -599,7 +600,7 @@ function KjmContent() {
     });
   };
   if (!profile) return <p className="p-6">Memuat sesi…</p>;
-  if (profile.role !== 'super_admin') return <p className="p-6">Halaman KJM hanya tersedia untuk admin.</p>;
+  if (!canVerifyPayroll(profile.role)) return <p className="p-6">Halaman KJM tersedia untuk Badan Keuangan dan Super Admin.</p>;
   return <div className="space-y-6 p-4 md:p-6">
     <section className="rounded-md border bg-white p-5 space-y-4">
       <h2 className="font-bold text-lg">Upload data mentah KJM</h2>

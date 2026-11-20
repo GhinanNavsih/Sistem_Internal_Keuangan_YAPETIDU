@@ -138,7 +138,7 @@ async function main() {
   assert.deepEqual(ids(await expectStatus(await list(superAdmin.authorization, 'tab=waiting'), 200)), ['bansos_req_dukaA1', 'bansos_req_dukaC1'], 'Super Admin decides only Duka on this page');
   const panel = await expectStatus(await list(finance.authorization, `period=${period}&kind=melahirkan`), 200);
   assert.equal(panel.requests.length, 3, 'Badan Keuangan reads the panel');
-  await expectStatus(await decide(finance.authorization, 'bansos_req_lahirA1', 'accept'), 403, 'Badan Keuangan cannot decide');
+  await expectStatus(await decide(honorer.authorization, 'bansos_req_lahirA1', 'accept'), 403, 'honorer cannot decide');
 
   // ── Melahirkan, Admin Karyawan first (setting the amount), then Super Admin (with the last word) ──
   let body = await expectStatus(await decide(employeeAdmin.authorization, 'bansos_req_lahirA1', 'accept', { amount: 450_000 }), 200);
@@ -151,7 +151,7 @@ async function main() {
     body: JSON.stringify({ requestId: 'bansos_decision_stale1', bansosRequestId: 'bansos_req_lahirA1', action: 'accept', amount: 1, expectedRevision: 1 }),
   }));
   await expectStatus(stale, 409, 'stale revision');
-  body = await expectStatus(await decide(superAdmin.authorization, 'bansos_req_lahirA1', 'accept', { amount: 600_000 }), 200);
+  body = await expectStatus(await decide(finance.authorization, 'bansos_req_lahirA1', 'accept', { amount: 600_000 }), 200);
   assert.equal(body.status, 'paid');
   event = (await adminDb.doc(birthEvent).get()).data()!;
   assert.equal(event.status, 'approved');
@@ -208,7 +208,7 @@ async function main() {
   own = await expectStatus(await ownList(loyalis.authorization), 200);
   assert.equal(own.requests.find((item: { id: string }) => item.id === 'bansos_req_dukaA1').amount, undefined, 'not shown before the cash is handed over');
   assert.deepEqual(ids(await expectStatus(await list(superAdmin.authorization, 'tab=handover'), 200)), ['bansos_req_dukaA1']);
-  await expectStatus(await handover(finance.authorization, 'bansos_req_dukaA1'), 403, 'Badan Keuangan cannot mark it');
+  await expectStatus(await handover(honorer.authorization, 'bansos_req_dukaA1'), 403, 'honorer cannot mark it');
   await expectStatus(await handover(employeeAdmin.authorization, 'bansos_req_dukaA1', 'bansos_handover_stale', 1), 409, 'stale revision');
   body = await expectStatus(await handover(employeeAdmin.authorization, 'bansos_req_dukaA1', 'bansos_handover_A1'), 200);
   assert.equal(body.status, 'handed_over');

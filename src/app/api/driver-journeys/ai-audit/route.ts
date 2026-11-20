@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(req);
-    requireRole(actor, ['super_admin', 'finance_verifier', 'satker_head']);
+    requireRole(actor, ['super_admin', 'satker_head']);
 
     const body = (await req.json()) as JourneyAuditPayload;
 

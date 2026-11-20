@@ -18,7 +18,7 @@ interface Props {
   kind: BansosKind;
   /** The event document's revision; a change (from any reviewer) reloads the list. */
   eventRevision: number;
-  /** Super Admin decides; Badan Keuangan only looks. */
+  /** Badan Keuangan decides; Badan Keuangan only looks. */
   canDecide: boolean;
   onMessage: (message: { type: 'success' | 'error'; text: string }) => void;
 }
@@ -109,7 +109,7 @@ export default function SantunanEventPanel({ period, kind, eventRevision, canDec
             <HandHeart className="size-4 text-indigo-500" /> Rincian Kegiatan · {BANSOS_KIND_LABELS[kind]}
           </h3>
           <p className="text-xs text-slate-500 mt-1">
-            Ajuan BanSos {formatBansosPeriod(period)}. Santunan dibayar setelah Admin Karyawan dan Super Admin sama-sama menerima.
+            Ajuan BanSos {formatBansosPeriod(period)}. Santunan dibayar setelah Admin Karyawan dan Badan Keuangan sama-sama menerima.
             {canDecide ? ' Nominal terisi otomatis dan dapat diubah sebelum menerima.' : ''}
           </p>
         </div>

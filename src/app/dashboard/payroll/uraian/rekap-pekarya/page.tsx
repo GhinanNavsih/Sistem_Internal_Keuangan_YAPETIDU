@@ -26,6 +26,7 @@ import {
   Unlock
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
+import { canVerifyPayroll } from '@/lib/payroll/roles';
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import {
   collection, getDocs, doc, setDoc, getDoc, serverTimestamp, query, where, runTransaction
@@ -705,7 +706,7 @@ export default function RekapPekaryaPage() {
   useEffect(() => {
     if (!category) return;
     // Security Access check: Make sure this category is allowed
-    if (profile && profile.role !== 'super_admin' && !profile.permittedCategories?.includes(category)) {
+    if (!profile || (!canVerifyPayroll(profile.role) && !profile.permittedCategories?.includes(category))) {
       return;
     }
     // A genuine category/period change always reloads; only a cache-driven

@@ -51,6 +51,31 @@ export function isLoyalisAdminPath(pathname: string): boolean {
   return (LOYALIS_ADMIN_PATHS as readonly string[]).includes(pathname);
 }
 
+export const PAYROLL_HOME_PATH = '/dashboard/payroll';
+export const PAYROLL_MASTER_PATH = `${PAYROLL_HOME_PATH}/master`;
+export const PAYROLL_RECAP_PATH = `${PAYROLL_HOME_PATH}/uraian`;
+
+const FINANCE_PAYROLL_PATHS = new Set([
+  PAYROLL_HOME_PATH,
+  PAYROLL_MASTER_PATH,
+  PAYROLL_RECAP_PATH,
+  SANTUNAN_REVIEW_PATH,
+  `${PAYROLL_RECAP_PATH}/kjm`,
+  `${PAYROLL_RECAP_PATH}/kegiatan-satker`,
+  `${PAYROLL_RECAP_PATH}/vakasi-karyawan`,
+  `${PAYROLL_RECAP_PATH}/presensi-loyalis`, // Legacy redirect
+  `${PAYROLL_RECAP_PATH}/presensi-loyalis-raw`,
+  `${PAYROLL_RECAP_PATH}/presence-corrections`, // Legacy redirect
+  `${PAYROLL_RECAP_PATH}/senam-pagi`,
+  `${PAYROLL_RECAP_PATH}/presensi-pekarya`,
+  `${PAYROLL_RECAP_PATH}/rekap-pekarya`,
+  `${PAYROLL_RECAP_PATH}/spj-pekarya`,
+]);
+
+export function isFinancePayrollPath(pathname: string): boolean {
+  return FINANCE_PAYROLL_PATHS.has(pathname.replace(/\/$/, ''));
+}
+
 export const FINANCE_ROLES: readonly UserRole[] = [
   'super_admin',
   'finance_verifier',
@@ -126,11 +151,11 @@ export function canSimulateDriverJourneys(role: UserRole | null | undefined): bo
 
 /**
  * Who may record Senam Pagi attendance, and so move Bonus Triwulan. The page,
- * Admin Karyawan's sidebar, Super Admin's Rekap & Vakasi tabs and
+ * Admin Karyawan's sidebar, the finance Rekap & Vakasi tabs and
  * `/api/payroll/senam-pagi` read this list.
  */
 export const SENAM_PAGI_EDITOR_ROLES: readonly UserRole[] = [
-  'super_admin',
+  ...FINANCE_ROLES,
   'loyalis_admin',
 ];
 
@@ -195,10 +220,10 @@ export function getUserRoleLabel(role: unknown): string {
   return normalized ? USER_ROLE_LABELS[normalized] : 'Pengguna';
 }
 
-export function canVerifyPayroll(role: UserRole): boolean {
-  return role === 'finance_verifier' || role === 'super_admin';
+export function canVerifyPayroll(role: UserRole | null | undefined): boolean {
+  return !!role && FINANCE_ROLES.includes(role);
 }
 
-export function canOperatePayments(role: UserRole): boolean {
-  return role === 'finance_verifier' || role === 'super_admin';
+export function canOperatePayments(role: UserRole | null | undefined): boolean {
+  return canVerifyPayroll(role);
 }

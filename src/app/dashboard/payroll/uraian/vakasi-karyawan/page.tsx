@@ -49,7 +49,7 @@ import { BANSOS_EVENT_SOURCE_KIND, isBansosKind } from '@/lib/payroll/santunan';
 import SantunanEventPanel from '@/components/vakasi/SantunanEventPanel';
 import BonusTriwulanEventPanel from '@/components/vakasi/BonusTriwulanEventPanel';
 import { BONUS_TRIWULAN_SOURCE_KIND } from '@/lib/payroll/bonusTriwulan';
-import { canRecordSenamPagi } from '@/lib/payroll/roles';
+import { canRecordSenamPagi, canVerifyPayroll } from '@/lib/payroll/roles';
 import {
   authenticatedJson,
   createFinancialRequestId,
@@ -1173,7 +1173,7 @@ export default function VakasiKaryawanPage() {
               key={selectedManagedBonusEvent.id}
               period={selectedManagedBonusEvent.period}
               workers={selectedManagedBonusEvent.eventWorkers || {}}
-              showSenamPagiLink={canRecordSenamPagi(profile?.role) || profile?.role === 'finance_verifier'}
+              showSenamPagiLink={canRecordSenamPagi(profile?.role)}
             />
           ) : selectedBansosEvent && isBansosKind(selectedBansosEvent.bansosKind) ? (
             <SantunanEventPanel
@@ -1181,7 +1181,7 @@ export default function VakasiKaryawanPage() {
               period={selectedBansosEvent.period}
               kind={selectedBansosEvent.bansosKind}
               eventRevision={Number(selectedBansosEvent.revision || 0)}
-              canDecide={profile?.role === 'super_admin'}
+              canDecide={canVerifyPayroll(profile?.role)}
               onMessage={setMessage}
             />
           ) : (
@@ -1585,7 +1585,7 @@ export default function VakasiKaryawanPage() {
               )}
 
               {/* Super Admin Action Box */}
-              {profile?.role === 'super_admin' && selectedEventId && currentEventStatus === 'pending_review' && (
+              {canVerifyPayroll(profile?.role) && selectedEventId && currentEventStatus === 'pending_review' && (
                 <div className="flex gap-2">
                   <Button
                     onClick={() => { setReviewAction('approved'); handleReviewEvent(selectedEventId, 'approved', ''); }}
@@ -1612,7 +1612,7 @@ export default function VakasiKaryawanPage() {
               )}
 
               {/* Cancel Approval (Super Admin only) */}
-              {profile?.role === 'super_admin' && selectedEventId && currentEventStatus === 'approved' && (
+              {canVerifyPayroll(profile?.role) && selectedEventId && currentEventStatus === 'approved' && (
                 <Button
                   onClick={() => handleUnverifyEvent(selectedEventId)}
                   disabled={saving}

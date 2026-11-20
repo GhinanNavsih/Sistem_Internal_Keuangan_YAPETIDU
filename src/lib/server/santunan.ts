@@ -43,12 +43,13 @@ import {
 } from './vakasiEventWrite';
 import { propagateVakasiEmployees } from './vakasiPropagation';
 
-/** Who may look at every ajuan; only the first two decide (each on its own side). */
+/** Reviewers may see every ajuan and decide for their own side. */
 export const BANSOS_REVIEW_READER_ROLES = ['loyalis_admin', 'super_admin', 'finance_verifier'] as const;
 
 const SIDE_BY_ROLE: Partial<Record<AuthenticatedProfile['role'], BansosSide>> = {
   loyalis_admin: 'admin',
   super_admin: 'finance',
+  finance_verifier: 'finance',
 };
 
 /** The side a role decides, if any. Both deciders may also mark a Duka handed over. */
@@ -586,8 +587,8 @@ function replayedResult(bansosRequestId: string, previous: FirebaseFirestore.Doc
 }
 
 /**
- * One reviewer's decision. Admin Karyawan decides the "admin" side, Super Admin
- * the "finance" side; neither can decide for the other. When a Melahirkan
+ * One reviewer's decision. Admin Karyawan decides the "admin" side and payroll
+ * reviewers decide the "finance" side. When a Melahirkan
  * starts or stops being paid, its month's event is rebuilt in the same
  * transaction and the slips are refreshed after it. A Duka has no event.
  */

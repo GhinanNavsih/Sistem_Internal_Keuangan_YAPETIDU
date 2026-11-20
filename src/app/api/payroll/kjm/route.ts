@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { FINANCE_ROLES } from '@/lib/payroll/roles';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { emptyKjmEdits, kjmAssessmentDate, KJM_RULE_VERSION, KJM_SOURCE_KIND, reviewKjm, type KjmCourse, type KjmEdits, type KjmReview } from '@/lib/payroll/kjm';
 import { parseKjmWorkbook } from '@/lib/payroll/kjmWorkbook';
@@ -30,7 +31,7 @@ const reviewHash = (review: KjmReview, version: string) => kjmHash({ review, ver
 const claimDocId = (semester: string, employeeId: string) => `${semester.replace('/', '')}_${employeeId}`;
 export async function GET(request: NextRequest) {
   try {
-    const actor = await requireAuthenticatedProfile(request); requireRole(actor, ['super_admin']);
+    const actor = await requireAuthenticatedProfile(request); requireRole(actor, FINANCE_ROLES);
     const period = validPeriod(request.nextUrl.searchParams.get('period'));
     const master = await loadKjmMaster();
     const id = request.nextUrl.searchParams.get('id');
@@ -52,7 +53,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const actor = await requireAuthenticatedProfile(request); requireRole(actor, ['super_admin']);
+    const actor = await requireAuthenticatedProfile(request); requireRole(actor, FINANCE_ROLES);
     if (request.headers.get('content-type')?.includes('multipart/form-data')) {
       if (Number(request.headers.get('content-length')) > 6_000_000) throw new HttpError(400, 'Maksimum berkas 5 MB.');
       const form = await request.formData();

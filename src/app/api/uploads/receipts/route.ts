@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
-import { FINANCE_ROLES } from '@/lib/payroll/roles';
 import { errorResponse, HttpError, requireAuthenticatedProfile } from '@/lib/server/auth';
 import { assertValidProofFile, isPayrollPeriodOpen, saveUploadedFile } from '@/lib/server/storageUpload';
 
@@ -9,6 +8,9 @@ const SAFE_JOURNEY_ID = /^[A-Za-z0-9_-]{1,180}$/;
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
+    if (actor.role === 'finance_verifier') {
+      throw new HttpError(403, 'Anda tidak memiliki akses ke bukti perjalanan dinas.');
+    }
     const form = await request.formData();
     const journeyId = String(form.get('journeyId') || '');
     const type = String(form.get('type') || '');
@@ -33,9 +35,8 @@ export async function POST(request: NextRequest) {
       throw new HttpError(409, `Periode payroll ${period} sudah ditutup.`);
     }
 
-    const isFinance = FINANCE_ROLES.includes(actor.role);
     const isOwner = Boolean(actor.linkedEmployeeId) && actor.linkedEmployeeId === journey.employeeId;
-    if (!isFinance && actor.role !== 'satker_head' && !isOwner) {
+    if (actor.role !== 'super_admin' && actor.role !== 'satker_head' && !isOwner) {
       throw new HttpError(403, 'Perjalanan dinas ini bukan milik Anda.');
     }
 

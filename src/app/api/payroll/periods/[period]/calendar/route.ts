@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
+import { FINANCE_ROLES } from '@/lib/payroll/roles';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
   satpamRatesForDutyDate,
@@ -208,7 +209,7 @@ export async function POST(
 ) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin']);
+    requireRole(actor, FINANCE_ROLES);
     const { period } = await context.params;
     assertPeriod(period);
     const body = await request.json();
@@ -246,7 +247,7 @@ export async function PATCH(
 ) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin']);
+    requireRole(actor, FINANCE_ROLES);
     const { period } = await context.params;
     assertPeriod(period);
     const body = await request.json();

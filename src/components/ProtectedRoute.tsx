@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { isLoyalisAdminPath, isUserRole, LOYALIS_ADMIN_HOME_PATH } from '@/lib/payroll/roles';
+import { isFinancePayrollPath, isLoyalisAdminPath, isUserRole, LOYALIS_ADMIN_HOME_PATH, PAYROLL_HOME_PATH } from '@/lib/payroll/roles';
 import {
   getEmployeeRouteRedirect,
 } from '@/lib/employeeActivities';
@@ -44,6 +44,7 @@ export default function ProtectedRoute({
   const pathname = usePathname();
 
   const currentProfile = activeProfile || profile;
+  const financeRouteDenied = currentProfile?.role === 'finance_verifier' && !isFinancePayrollPath(pathname);
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
@@ -110,8 +111,8 @@ export default function ProtectedRoute({
           const redirectPath = getEmployeeRouteRedirect(currentProfile, pathname);
           if (redirectPath) router.replace(redirectPath);
         } else if (currentProfile.role === 'finance_verifier') {
-          if (!pathname.startsWith('/dashboard/payroll') && pathname !== '/dashboard/satker-finance') {
-            router.replace('/dashboard/payroll');
+          if (financeRouteDenied) {
+            router.replace(PAYROLL_HOME_PATH);
           }
         } else if (currentProfile.role === 'satker_finance_admin' || currentProfile.role === 'rector_finance') {
           if (pathname !== '/dashboard/satker-finance') router.replace('/dashboard/satker-finance');
@@ -123,7 +124,7 @@ export default function ProtectedRoute({
         }
       }
     }
-  }, [user, profile, currentProfile, loading, uiPreviewHydrated, router, pathname]);
+  }, [user, currentProfile, loading, uiPreviewHydrated, router, pathname, financeRouteDenied]);
 
   if (loading || !uiPreviewHydrated) {
     if (fallback) return <>{fallback}</>;
@@ -181,13 +182,7 @@ export default function ProtectedRoute({
   ) {
     return null;
   }
-  if (
-    profile.role === 'finance_verifier' &&
-    !pathname.startsWith('/dashboard/payroll') &&
-    pathname !== '/dashboard/satker-finance'
-  ) {
-    return null;
-  }
+  if (financeRouteDenied) return null;
   if (
     (profile.role === 'satker_finance_admin' || profile.role === 'rector_finance') &&
     pathname !== '/dashboard/satker-finance'

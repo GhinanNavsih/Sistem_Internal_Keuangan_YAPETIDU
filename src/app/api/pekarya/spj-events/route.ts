@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { NextRequest } from 'next/server';
+import { FINANCE_ROLES } from '@/lib/payroll/roles';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { assertRequestId, isImmutablePayrollStatus } from '@/lib/payroll/domain';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
@@ -164,7 +165,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    requireRole(actor, ['super_admin', 'satker_head', 'finance_verifier']);
+    requireRole(actor, [...FINANCE_ROLES, 'satker_head']);
     assertCategoryAccess(actor, category);
 
     const [employeeSnapshot, eventSnapshot] = await Promise.all([
@@ -219,7 +220,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin', 'satker_head']);
+    requireRole(actor, [...FINANCE_ROLES, 'satker_head']);
     const command = parseCommand(await request.json());
     assertCategoryAccess(actor, command.jobCategory);
     const requestHash = createHash('sha256').update(JSON.stringify(command)).digest('hex');

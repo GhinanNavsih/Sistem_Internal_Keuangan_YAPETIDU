@@ -861,12 +861,6 @@ export async function POST(request: NextRequest) {
           } else {
             const previousTaxApplied = resolveTaxSelection(before);
             taxApplied = effectiveCommand.taxApplied ?? previousTaxApplied;
-            if (taxApplied !== previousTaxApplied && actor.role !== 'super_admin') {
-              throw new HttpError(
-                403,
-                'Hanya Super Admin yang dapat menerapkan atau menghapus pajak penghasilan.',
-              );
-            }
             taxes = resolveSlipTaxes(earnings, deductions, taxApplied);
             if (taxApplied && !previousTaxApplied && taxes.length === 0) {
               throw new HttpError(

@@ -99,11 +99,11 @@ test('either side may go first; the second acceptance pays', () => {
   assert.equal(adminSecond.amount, 450_000, 'the amount Super Admin set is kept');
 });
 
-test('either side sets the amount when accepting, but Super Admin has the last word', () => {
+test('either side sets the amount when accepting, but Badan Keuangan has the last word', () => {
   assert.equal(planBansosDecision(pending, 'admin', 'accept', { amount: 250_000 }).amount, 250_000, 'Admin Karyawan may set it first');
   assert.equal(planBansosDecision(pending, 'finance', 'accept').amount, 500_000, 'no amount keeps the stored one');
   const financeAccepted = { ...pending, financeDecision: 'accepted', amount: 450_000 } as const;
-  assert.throws(() => planBansosDecision(financeAccepted, 'admin', 'accept', { amount: 500_000 }), /ditetapkan Super Admin/);
+  assert.throws(() => planBansosDecision(financeAccepted, 'admin', 'accept', { amount: 500_000 }), /ditetapkan Badan Keuangan/);
   assert.equal(planBansosDecision(financeAccepted, 'admin', 'accept', { amount: 450_000 }).amount, 450_000, 'repeating it is fine');
   assert.throws(() => planBansosDecision(pending, 'finance', 'accept', { amount: 0 }), /Nominal/);
   assert.throws(() => planBansosDecision(pending, 'admin', 'accept', { amount: 1.5 }), /Nominal/);

@@ -5,6 +5,7 @@ import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { usePendingFacilityReportsCount } from '@/lib/usePendingFacilityReportsCount';
 import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
+import { canVerifyPayroll } from '@/lib/payroll/roles';
 import { VENUE_RESERVATION_PATH } from '@/lib/venueReservation';
 import { VENUE_INSPECTION_PATH } from '@/lib/venueInspection';
 import {
@@ -25,7 +26,7 @@ import {
 /**
  * Shared navigation toggles for Loyalis & Pekarya uraian-related payroll pages.
  * Renders two rows:
- *   1. Loyalis row – visible to super_admin and satker_head_loyalis
+ *   1. Loyalis row – visible to the payroll roles and satker_head_loyalis
  *   2. Pekarya row – visible to super_admin and finance_verifier
  * SatKer Pekarya heads (satker_head) and Admin Karyawan (loyalis_admin) navigate from the sidebar instead.
  *
@@ -36,7 +37,7 @@ export default function UraianNavToggles() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { profile } = useAuth();
+  const { profile, activeProfile } = useAuth();
   const pendingFacilityCount = usePendingFacilityReportsCount();
 
   // Derive the active tab from the current pathname
@@ -90,14 +91,9 @@ export default function UraianNavToggles() {
   }, [searchParams]);
 
   // Only render for roles that should see the navigation
-  if (!profile) return null;
-  if (
-    profile.role !== 'super_admin' &&
-    profile.role !== 'satker_head_loyalis' &&
-    profile.role !== 'finance_verifier'
-  ) {
-    return null;
-  }
+  const role = (activeProfile || profile)?.role;
+  const canManagePayroll = canVerifyPayroll(role);
+  if (!canManagePayroll && role !== 'satker_head_loyalis') return null;
 
   const btnCls = (isActive: boolean) =>
     `px-4 py-2 rounded-sm text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
@@ -114,7 +110,7 @@ export default function UraianNavToggles() {
           Loyalis
         </span>
         <div className="flex bg-white p-1 rounded-md w-fit shadow-sm border border-slate-200/60 overflow-x-auto max-w-full">
-          {profile.role === 'super_admin' && (
+          {canManagePayroll && (
             <>
               <button onClick={() => router.push(`/dashboard/payroll/uraian/kjm${getCleanParamsString('kjm')}`)} className={btnCls(activeTab === 'kjm')}>
                 <Banknote className="w-4 h-4" /> Kelebihan Jam Mengajar
@@ -136,8 +132,7 @@ export default function UraianNavToggles() {
             </>
           )}
 
-          {(profile.role === 'super_admin' ||
-            profile.role === 'satker_head_loyalis') && (
+          {(canManagePayroll || role === 'satker_head_loyalis') && (
             <button
               onClick={() => router.push(`/dashboard/payroll/uraian/presensi-loyalis-raw${getCleanParamsString('presensi_loyalis_raw')}`)}
               className={btnCls(activeTab === 'presensi_loyalis_raw')}
@@ -147,7 +142,7 @@ export default function UraianNavToggles() {
             </button>
           )}
 
-          {profile.role === 'super_admin' && (
+          {canManagePayroll && (
             <button
               onClick={() => router.push(`/dashboard/payroll/uraian/senam-pagi${getCleanParamsString('senam_pagi')}`)}
               className={btnCls(activeTab === 'senam_pagi')}
@@ -156,7 +151,7 @@ export default function UraianNavToggles() {
               Senam Pagi
             </button>
           )}
-          {profile.role === 'super_admin' && (
+          {role === 'super_admin' && (
             <button
               onClick={() => router.push(`/dashboard/payroll/uraian/tugas${getCleanParamsString('tugas')}`)}
               className={btnCls(activeTab === 'tugas')}
@@ -165,7 +160,7 @@ export default function UraianNavToggles() {
               Tugas Loyalis
             </button>
           )}
-          {profile.role === 'super_admin' && (
+          {canManagePayroll && (
             <button
               onClick={() => router.push(`/dashboard/payroll/uraian/santunan${getCleanParamsString('santunan')}`)}
               className={btnCls(activeTab === 'santunan')}
@@ -178,14 +173,13 @@ export default function UraianNavToggles() {
       </div>
 
       {/* Row 2: Pekarya Pay Navigation */}
-      {(profile.role === 'super_admin' ||
-        profile.role === 'finance_verifier') && (
+      {canManagePayroll && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 px-1 shrink-0 bg-emerald-50/80 border border-emerald-100 py-1 rounded-sm">
             Pekarya
           </span>
           <div className="flex bg-white p-1 rounded-md w-fit shadow-sm border border-slate-200/60 overflow-x-auto max-w-full">
-            {profile.role === 'super_admin' && (
+            {role === 'super_admin' && (
               <button
                 onClick={() => router.push(`/dashboard/payroll/activity-review?month=${month}&year=${year}`)}
                 className={btnCls(activeTab === 'activity_review')}
@@ -208,7 +202,13 @@ export default function UraianNavToggles() {
               <ScanLine className="w-4 h-4" />
               Rekap Uraian (Pekarya)
             </button>
-            {profile.role === 'super_admin' && (
+            <button
+              onClick={() => router.push(`/dashboard/payroll/uraian/spj-pekarya${getCleanParamsString('kegiatan_spj')}`)}
+              className={btnCls(activeTab === 'kegiatan_spj')}
+            >
+              <FileText className="w-4 h-4" /> Kegiatan SPJ
+            </button>
+            {role === 'super_admin' && (
               <button
                 onClick={() => router.push(`/dashboard/payroll/driver-journeys${getCleanParamsString('driver-journeys')}`)}
                 className={btnCls(activeTab === 'driver_journeys')}
@@ -217,7 +217,7 @@ export default function UraianNavToggles() {
                 Perjalanan Driver
               </button>
             )}
-            {profile.role === 'super_admin' && (
+            {role === 'super_admin' && (
               <button
                 onClick={() => router.push('/dashboard/payroll/facility-reports')}
                 className={btnCls(activeTab === 'facility_reports')}
@@ -234,7 +234,7 @@ export default function UraianNavToggles() {
                 )}
               </button>
             )}
-            {profile.role === 'super_admin' && (
+            {role === 'super_admin' && (
               <button
                 onClick={() => router.push(VENUE_RESERVATION_PATH)}
                 className={btnCls(false)}
@@ -243,7 +243,7 @@ export default function UraianNavToggles() {
                 Reservasi Ruang
               </button>
             )}
-            {profile.role === 'super_admin' && (
+            {role === 'super_admin' && (
               <button
                 onClick={() => router.push(VENUE_INSPECTION_PATH)}
                 className={btnCls(false)}

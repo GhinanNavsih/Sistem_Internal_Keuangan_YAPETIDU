@@ -2,7 +2,7 @@ import {
   getEmployeeActivitiesPath,
   type EmployeeActivityRouteProfile,
 } from '@/lib/employeeActivities';
-import { LOYALIS_ADMIN_HOME_PATH, normalizeUserRole } from '@/lib/payroll/roles';
+import { LOYALIS_ADMIN_HOME_PATH, normalizeUserRole, PAYROLL_HOME_PATH } from '@/lib/payroll/roles';
 
 /**
  * The page a role lands on after signing in, switching to another of the
@@ -27,6 +27,6 @@ export function getRoleHomePath(profile: EmployeeActivityRouteProfile): string {
     case 'loyalis_admin':
       return LOYALIS_ADMIN_HOME_PATH;
     default:
-      return '/dashboard/payroll';
+      return PAYROLL_HOME_PATH;
   }
 }

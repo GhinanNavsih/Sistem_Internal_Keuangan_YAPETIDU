@@ -79,7 +79,7 @@ const REVIEWER_ROLES = [
   'satker_head',
   'loyalis_admin',
 ] as const;
-const REVIEW_READER_ROLES = [...REVIEWER_ROLES, 'satker_head_loyalis'] as const;
+const REVIEW_READER_ROLES = [...REVIEWER_ROLES, 'satker_head_loyalis', 'finance_verifier'] as const;
 
 function stableHash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');

@@ -18,7 +18,7 @@ export const PSQ_ACCOUNT_UNIT_ID = 'loyalis-ili3huhuirf6y7uicy7o8s81bg63';
 export const PSQ_ACCOUNT_SOURCE = psqAkunData.source;
 export const CATALOG_META_REF = adminDb.collection('SatkerFinancialCatalogMeta').doc('catalog');
 export const BOOK_PATH = '/dashboard/satker-finance';
-export const FINANCIAL_READ_ROLES = ['super_admin', 'finance_verifier', 'rector_finance'] as const;
+export const FINANCIAL_READ_ROLES = ['super_admin', 'rector_finance'] as const;
 export const FINANCIAL_EDITOR_ROLES = ['satker_head_loyalis', 'satker_finance_admin'] as const;
 
 export type FinancialUnit = {

@@ -15,7 +15,10 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
-    await requireAuthenticatedProfile(req);
+    const actor = await requireAuthenticatedProfile(req);
+    if (actor.role === 'finance_verifier') {
+      throw new HttpError(403, 'Anda tidak memiliki akses ke perhitungan rute perjalanan.');
+    }
     const body = await req.json();
     const { points } = body;
 

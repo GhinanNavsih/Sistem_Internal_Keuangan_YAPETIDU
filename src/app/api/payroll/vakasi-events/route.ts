@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { jobCategoryForPayrollPeriod } from '@/lib/payroll/blueCollarCategory';
 import { assertRequestId } from '@/lib/payroll/domain';
-import { URAIAN_EDITOR_ROLES } from '@/lib/payroll/roles';
+import { FINANCE_ROLES, URAIAN_EDITOR_ROLES } from '@/lib/payroll/roles';
 import { BANSOS_EVENT_SOURCE_KIND, isBansosEventId } from '@/lib/payroll/santunan';
 import { BONUS_TRIWULAN_SOURCE_KIND, isBonusTriwulanEventId } from '@/lib/payroll/bonusTriwulan';
 import {
@@ -232,7 +232,7 @@ function assertActionAllowed(actor: AuthenticatedProfile, command: VakasiCommand
     requireRole(actor, ['super_admin', 'finance_verifier', 'satker_head_loyalis']);
   }
   if (command.action === 'review' || command.action === 'unapprove') {
-    requireRole(actor, ['super_admin']);
+    requireRole(actor, FINANCE_ROLES);
   }
   if (command.action === 'submit') {
     requireRole(actor, ['satker_head_loyalis', 'super_admin']);
