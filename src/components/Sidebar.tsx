@@ -65,7 +65,7 @@ type SidebarMenuItem = {
 const financeUraianMenu: SidebarMenuItem[] = [
   { name: 'Kelebihan Jam Mengajar', path: `${PAYROLL_RECAP_PATH}/kjm`, icon: Banknote, startsGroup: true, groupLabel: 'Loyalis' },
   { name: 'Kegiatan SatKer', path: `${PAYROLL_RECAP_PATH}/kegiatan-satker`, icon: FileSpreadsheet },
-  { name: 'Vakasi Tambahan (Karyawan)', path: `${PAYROLL_RECAP_PATH}/vakasi-karyawan`, icon: Banknote },
+  { name: 'Vakasi Tambahan', path: `${PAYROLL_RECAP_PATH}/vakasi-karyawan`, icon: Banknote },
   { name: 'Presensi Loyalis', path: `${PAYROLL_RECAP_PATH}/presensi-loyalis-raw`, icon: Clock },
   { name: 'Senam Pagi', path: SENAM_PAGI_PATH, icon: PersonStanding },
   { name: 'Verifikasi Santunan', path: SANTUNAN_REVIEW_PATH, icon: HandHeart },
