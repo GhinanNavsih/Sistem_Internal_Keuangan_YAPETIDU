@@ -14,6 +14,7 @@ import { FileText, Printer } from 'lucide-react';
 import { generateVakasiPimpinanStafPdf, VakasiPimpinanStafRow } from '@/utils/generateVakasiPimpinanStafPdf';
 import { calculateGapok } from '@/utils/payrollLogic';
 import { eligibleFamilyMetrics, familyAllowancePeriodDate } from '@/lib/payroll/familyAllowance';
+import { developerAllowanceForReport } from '@/lib/payroll/developerAllowance';
 
 interface EmployeeRow {
   id: string;
@@ -126,6 +127,7 @@ export default function CetakVakasiPimpinanStafDialog({
 
       // Beras
       const beras = raw.salaryProfile?.tunjanganBeras || 0;
+      const tDeveloper = developerAllowanceForReport(slipStates?.[emp.id]?.earnings, raw.t_developer);
 
       // Presensi (Working hours and amount)
       const presenceEntry = loyalisPresenceData?.entries?.[emp.id];
@@ -162,6 +164,7 @@ export default function CetakVakasiPimpinanStafDialog({
         tBpjsTk +
         tBpjsKes +
         beras +
+        tDeveloper +
         presensiAmount +
         presenceBonus;
 
@@ -177,6 +180,7 @@ export default function CetakVakasiPimpinanStafDialog({
         tBpjsTk,
         tBpjsKes,
         beras,
+        tDeveloper,
         presensiHours,
         presensiAmount,
         presenceBonus,

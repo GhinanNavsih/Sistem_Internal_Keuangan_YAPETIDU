@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { LOGO_YAPETIDU_BASE64, LOGO_UNIPDU_BASE64 } from './logoConstants';
+import { DEVELOPER_ALLOWANCE_LABEL } from '@/lib/payroll/developerAllowance';
 
 export interface VakasiPimpinanStafRow {
   noUrut: number;
@@ -14,6 +15,7 @@ export interface VakasiPimpinanStafRow {
   tBpjsTk?: number;
   tBpjsKes?: number;
   beras: number;
+  tDeveloper?: number;
   presensiHours: number;
   presensiAmount: number;
   presenceBonus?: number;
@@ -74,6 +76,7 @@ export function generateVakasiPimpinanStafPdf(data: VakasiPimpinanStafData, save
   let totalBpjsTk = 0;
   let totalBpjsKes = 0;
   let totalBeras = 0;
+  let totalDeveloper = 0;
   let totalPresensiAmount = 0;
   let totalPresenceBonus = 0;
   let totalJumlah = 0;
@@ -87,6 +90,7 @@ export function generateVakasiPimpinanStafPdf(data: VakasiPimpinanStafData, save
     totalBpjsTk += row.tBpjsTk || 0;
     totalBpjsKes += row.tBpjsKes || 0;
     totalBeras += row.beras || 0;
+    totalDeveloper += row.tDeveloper || 0;
     totalPresensiAmount += row.presensiAmount || 0;
     totalPresenceBonus += row.presenceBonus || 0;
     totalJumlah += row.jumlah || 0;
@@ -110,8 +114,10 @@ export function generateVakasiPimpinanStafPdf(data: VakasiPimpinanStafData, save
   const totalTableWidth = 310; // Landscape Folio table width
   const marginSide = Math.max(10, (pageWidth - totalTableWidth) / 2);
 
-  // Remaining space divided equally among remaining 11 columns (excluding NO (10), NAMA (nameWidth), PRESENSI (38))
-  const equalColWidth = (totalTableWidth - 10 - nameWidth - 38) / 11;
+  const showDeveloper = data.rows.some(row => (row.tDeveloper ?? 0) > 0);
+  const presensiIndex = showDeveloper ? 12 : 11;
+  // Remaining space is shared by the columns apart from NO, NAMA and PRESENSI.
+  const equalColWidth = (totalTableWidth - 10 - nameWidth - 38) / (showDeveloper ? 12 : 11);
 
   // Add logos at top left
   doc.addImage(LOGO_YAPETIDU_BASE64, 'PNG', 10, 8, 18, 18);
@@ -142,6 +148,7 @@ export function generateVakasiPimpinanStafPdf(data: VakasiPimpinanStafData, save
         { content: 'T. BPJS TK', styles: { halign: 'center' as const, valign: 'middle' as const } },
         { content: 'T. BPJS\nKES', styles: { halign: 'center' as const, valign: 'middle' as const } },
         { content: 'BERAS', styles: { halign: 'center' as const, valign: 'middle' as const } },
+        ...(showDeveloper ? [{ content: DEVELOPER_ALLOWANCE_LABEL.toUpperCase(), styles: { halign: 'center' as const, valign: 'middle' as const } }] : []),
         { content: 'PRESENSI', styles: { halign: 'center' as const, valign: 'middle' as const } },
         { content: 'BONUS\nPRESENSI', styles: { halign: 'center' as const, valign: 'middle' as const } },
         { content: 'JUMLAH', styles: { halign: 'center' as const, valign: 'middle' as const } }
@@ -160,6 +167,7 @@ export function generateVakasiPimpinanStafPdf(data: VakasiPimpinanStafData, save
         formatBpjsOrBonus(row.tBpjsTk),
         formatBpjsOrBonus(row.tBpjsKes),
         formatIDR(row.beras),
+        ...(showDeveloper ? [formatBpjsOrBonus(row.tDeveloper)] : []),
         row.presensiHours > 0 ? `${row.presensiHours} Jam X 1.650 = ${formatIDR(row.presensiAmount)}` : '0',
         formatBpjsOrBonus(row.presenceBonus),
         formatIDR(row.jumlah)
@@ -174,6 +182,7 @@ export function generateVakasiPimpinanStafPdf(data: VakasiPimpinanStafData, save
         { content: totalBpjsTk > 0 ? formatIDR(totalBpjsTk) : '', styles: { fontStyle: 'bold' as const } },
         { content: totalBpjsKes > 0 ? formatIDR(totalBpjsKes) : '', styles: { fontStyle: 'bold' as const } },
         { content: totalBeras > 0 ? formatIDR(totalBeras) : '0', styles: { fontStyle: 'bold' as const } },
+        ...(showDeveloper ? [{ content: formatIDR(totalDeveloper), styles: { fontStyle: 'bold' as const } }] : []),
         { content: totalPresensiAmount > 0 ? formatIDR(totalPresensiAmount) : '0', styles: { fontStyle: 'bold' as const } },
         { content: totalPresenceBonus > 0 ? formatIDR(totalPresenceBonus) : '', styles: { fontStyle: 'bold' as const } },
         { content: formatIDR(totalJumlah), styles: { fontStyle: 'bold' as const } }
@@ -214,9 +223,10 @@ export function generateVakasiPimpinanStafPdf(data: VakasiPimpinanStafData, save
       8: { cellWidth: equalColWidth, halign: 'right' as const, fontSize: 7.5 },
       9: { cellWidth: equalColWidth, halign: 'right' as const, fontSize: 7.5 },
       10: { cellWidth: equalColWidth, halign: 'right' as const, fontSize: 7.5 },
-      11: { cellWidth: 38, halign: 'center' as const },
-      12: { cellWidth: equalColWidth, halign: 'right' as const, fontSize: 7.5 },
-      13: { cellWidth: equalColWidth, halign: 'right' as const, fontStyle: 'bold', fontSize: 8 },
+      ...(showDeveloper ? { 11: { cellWidth: equalColWidth, halign: 'right' as const, fontSize: 7.5 } } : {}),
+      [presensiIndex]: { cellWidth: 38, halign: 'center' as const },
+      [presensiIndex + 1]: { cellWidth: equalColWidth, halign: 'right' as const, fontSize: 7.5 },
+      [presensiIndex + 2]: { cellWidth: equalColWidth, halign: 'right' as const, fontStyle: 'bold', fontSize: 8 },
     }
   });
 

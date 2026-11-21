@@ -15,6 +15,7 @@ import { generateGabunganPdf, GabunganRow } from '@/utils/generateGabunganPdf';
 import { calculateGapok } from '@/utils/payrollLogic';
 import { calculateStructuralAllowance } from '@/utils/salaryCalculator';
 import { eligibleFamilyMetrics, familyAllowancePeriodDate } from '@/lib/payroll/familyAllowance';
+import { developerAllowanceForReport } from '@/lib/payroll/developerAllowance';
 
 interface EmployeeRow {
   id: string;
@@ -174,6 +175,7 @@ export default function CetakGabunganDialog({
       const tBpjsTk = getEarningAmount(['T. BPJS TK', 'BPJS Tenaga Kerja', 'BPJS TK'], fallbackTBpjsTk);
       const tBpjsKes = getEarningAmount(['T. BPJS KES', 'BPJS Kesehatan', 'BPJS KES'], fallbackTBpjsKes);
       const beras = getEarningAmount(['Beras', 'Tunjangan Beras'], fallbackBeras);
+      const tDeveloper = developerAllowanceForReport(slip?.earnings, raw.t_developer);
       const presensiAmount = getEarningAmount(['Presensi', 'Vakasi Jam', 'Uang Presensi'], fallbackPresensi);
       const presenceBonus = getEarningAmount(['Bonus Presensi', 'Uang Kehadiran'], fallbackPresenceBonus);
 
@@ -186,6 +188,7 @@ export default function CetakGabunganDialog({
         tBpjsTk +
         tBpjsKes +
         beras +
+        tDeveloper +
         presensiAmount +
         presenceBonus;
 

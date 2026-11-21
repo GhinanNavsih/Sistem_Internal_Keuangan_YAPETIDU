@@ -112,11 +112,6 @@ export async function POST(request: NextRequest) {
     const isLoyalis = loyalisSnapshot.exists;
     const employeeSnapshot = isLoyalis ? loyalisSnapshot : blueSnapshot;
     const collar: 'loyalis' | 'blue' = isLoyalis ? 'loyalis' : 'blue';
-    const raw: ProfileDocument = {
-      ...employeeSnapshot.data(),
-      id: employeeSnapshot.id,
-    };
-
     const now = new Date();
 
     // Which periods are still collecting. Read first: it decides whether any
@@ -183,14 +178,6 @@ export async function POST(request: NextRequest) {
       kepangkatanMatrix[Number(data.credit_score) || 0] = Number(data.allowance) || 0;
     });
 
-    const functionalAllowance = matchFunctionalAllowance(
-      raw.academic_and_tier?.education_level,
-      raw.academic_and_tier?.functional_tier,
-      functionalMatrix,
-    );
-    const kepangkatanAllowance =
-      kepangkatanMatrix[Number(raw.kepangkatan?.cummulativeCredit) || 0] || 0;
-
     const results: PeriodResult[] = [];
 
     for (const periodToken of periods) {
@@ -201,26 +188,6 @@ export async function POST(request: NextRequest) {
       // Gaji Pokok depends on seniority at the period being paid, so each
       // period is computed against its own target date.
       const targetDate = new Date(year, month - 1, 1);
-      const gapok = calculateGapok(toSlipEmployeeView(raw, collar), matrix, targetDate);
-
-      // Presence, vakasi, uraian and koperasi feed rows the profile does not
-      // own, so they are deliberately left at zero and dropped by the merge.
-      const freshEarnings = buildInitialEarnings(
-        raw,
-        gapok,
-        collar,
-        undefined,
-        0,
-        [],
-        functionalAllowance,
-        kepangkatanAllowance,
-        [],
-        0,
-        0,
-        periodToken,
-      );
-      const freshDeductions = buildInitialDeductions(raw, collar, 0, 0, 0, 0);
-
       const result = await adminDb.runTransaction(async (transaction) => {
         const slipRef = adminDb.collection('PayrollSlipStates').doc(slipId);
         const periodRef = adminDb.collection('PayrollPeriods').doc(periodToken);
@@ -255,6 +222,27 @@ export async function POST(request: NextRequest) {
         if (classification === 'no_slip' || classification === 'period_closed') {
           return { period: periodToken, outcome: classification, changes: [] as SlipFieldChange[] };
         }
+
+        // The profile and slip must be read in the same transaction so two
+        // overlapping profile edits cannot apply an older amount last.
+        const currentEmployee = await transaction.get(employeeSnapshot.ref);
+        if (!currentEmployee.exists) {
+          throw new HttpError(404, 'Pegawai payroll tidak ditemukan.');
+        }
+        const raw: ProfileDocument = { ...currentEmployee.data(), id: currentEmployee.id };
+        const gapok = calculateGapok(toSlipEmployeeView(raw, collar), matrix, targetDate);
+        const functionalAllowance = matchFunctionalAllowance(
+          raw.academic_and_tier?.education_level,
+          raw.academic_and_tier?.functional_tier,
+          functionalMatrix,
+        );
+        const kepangkatanAllowance =
+          kepangkatanMatrix[Number(raw.kepangkatan?.cummulativeCredit) || 0] || 0;
+        const freshEarnings = buildInitialEarnings(
+          raw, gapok, collar, undefined, 0, [], functionalAllowance,
+          kepangkatanAllowance, [], 0, 0, periodToken,
+        );
+        const freshDeductions = buildInitialDeductions(raw, collar, 0, 0, 0, 0);
 
         const storedEarnings = validateMoneyFields(before?.earnings ?? [], 'earnings');
         const storedDeductions = validateMoneyFields(before?.deductions ?? [], 'deductions');

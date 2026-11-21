@@ -2,6 +2,7 @@ import { BlueCollarEmployee, UraianEntry } from '@/types';
 import { REKAP_COLUMNS, computeSlipAmount } from '@/utils/rekapConfig';
 import { normalizeSatpamUraianEntry } from '@/lib/payroll/satpamCompensation';
 import { eligibleFamilyMetrics, familyAllowancePercentage, familyAllowancePeriodDate } from '@/lib/payroll/familyAllowance';
+import { developerAllowanceAmount } from '@/lib/payroll/developerAllowance';
 
 /**
  * Calculates the total structural allowance based on the descending-halving rules.
@@ -68,6 +69,7 @@ export function calculateTotalEarnings(
     // Instruksional
     const tInstruksional = emp.t_instruksional || 0;
     total += tInstruksional;
+    total += developerAllowanceAmount(emp.t_developer);
 
     // Vakasi Tambahan (Loyalis)
     if (vakasiTambahanSum) {

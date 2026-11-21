@@ -4,6 +4,11 @@ import { LOGO_YAPETIDU_BASE64, LOGO_UNIPDU_BASE64 } from './logoConstants';
 import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
 import { explainFamilyAllowance } from '@/lib/payroll/familyAllowanceSnapshot';
 import { loyalisPresenceBreakdown } from '@/lib/payroll/loyalisPresencePay';
+import {
+  isOptionalLoyalisAllowanceLabel,
+  loyalisFixedAllowanceGuidance,
+  optionalLoyalisAllowanceRows,
+} from '@/lib/payroll/loyalisAllowances';
 
 /** Alias of the canonical MoneyField; see slipBuilders.SlipField. */
 export type PaySlipField = MoneyField;
@@ -281,9 +286,9 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
     const rankItem = data.earnings.find(e => e.label.toUpperCase() === 'KEPANGKATAN');
     leftRows.push({ type: 'item', label: 'KEPANGKATAN', amount: rankItem ? rankItem.amount : 0 });
 
-    // T. Instruksional
-    const instItem = data.earnings.find(e => e.label.toUpperCase() === 'INSTRUKSIONAL' || e.label.toUpperCase() === 'T. INSTRUKSIONAL');
-    leftRows.push({ type: 'item', label: 'T. INSTRUKSIONAL', amount: instItem ? instItem.amount : 0 });
+    for (const allowance of optionalLoyalisAllowanceRows(data.earnings)) {
+      leftRows.push({ type: 'item', label: allowance.label.toUpperCase(), amount: allowance.amount });
+    }
 
     // T. Hari Tua (10% of gapok)
     const htItem = data.earnings.find(e => e.label.toUpperCase() === 'T. HARI TUA');
@@ -373,12 +378,12 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
 
     const specialLabels = [
       'GAJI POKOK', 'T. KELUARGA', 'TUNJANGAN KELUARGA', 'T. FUNGSIONAL', 'TUNJANGAN JABATAN',
-      'KEPANGKATAN', 'T. INSTRUKSIONAL', 'INSTRUKSIONAL', 'T. HARI TUA', 'T. BPJS TK', 'T. BPJS KES', 'BERAS', 'TUNJANGAN BERAS',
+      'KEPANGKATAN', 'T. HARI TUA', 'T. BPJS TK', 'T. BPJS KES', 'BERAS', 'TUNJANGAN BERAS',
       'PRESENSI', 'BONUS PRESENSI', 'PIKET', 'LEMBUR'
     ];
     const eventItems = data.earnings.filter(e => {
       const labelUpper = e.label.toUpperCase();
-      return !specialLabels.includes(labelUpper) && !labelUpper.startsWith('STRUKTURAL:');
+      return !isOptionalLoyalisAllowanceLabel(e.label) && !specialLabels.includes(labelUpper) && !labelUpper.startsWith('STRUKTURAL:');
     });
 
     if (eventItems.length > 0) {
@@ -878,7 +883,6 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
   const tunjKeluargaVal = earnings.find((e) => e.label.toUpperCase() === 'T. KELUARGA' || e.label.toUpperCase() === 'TUNJANGAN KELUARGA')?.amount || 0;
   const tunjFungsionalVal = earnings.find((e) => e.label.toUpperCase() === 'T. FUNGSIONAL' || e.label.toUpperCase() === 'TUNJANGAN FUNGSIONAL')?.amount || 0;
   const tunjKepangkatanVal = earnings.find((e) => e.label.toUpperCase() === 'KEPANGKATAN')?.amount || 0;
-  const tunjInstruksionalVal = earnings.find((e) => e.label.toUpperCase() === 'T. INSTRUKSIONAL' || e.label.toUpperCase() === 'INSTRUKSIONAL')?.amount || 0;
   const tunjHariTuaVal = earnings.find((e) => e.label.toUpperCase() === 'T. HARI TUA' || e.label.toUpperCase() === 'TUNJANGAN HARI TUA')?.amount || 0;
   const bpjsTkVal = earnings.find((e) => e.label.toUpperCase() === 'T. BPJS TK' || e.label.toUpperCase() === 'BPJS TK')?.amount || 0;
   const bpjsKesVal = earnings.find((e) => e.label.toUpperCase() === 'T. BPJS KES' || e.label.toUpperCase() === 'BPJS KES')?.amount || 0;
@@ -888,7 +892,7 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
     .reduce((sum, e) => sum + e.amount, 0);
 
   const totalVakasiVal = earnings
-    .filter((e) => !['GAJI POKOK', 'T. KELUARGA', 'TUNJANGAN KELUARGA', 'T. FUNGSIONAL', 'TUNJANGAN FUNGSIONAL', 'KEPANGKATAN', 'T. INSTRUKSIONAL', 'INSTRUKSIONAL', 'T. HARI TUA', 'TUNJANGAN HARI TUA', 'T. BPJS TK', 'BPJS TK', 'T. BPJS KES', 'BPJS KES', 'BERAS', 'PRESENSI', 'BONUS PRESENSI', 'PIKET', 'LEMBUR'].includes(e.label.toUpperCase()) && !e.label.toUpperCase().startsWith('STRUKTURAL:'))
+    .filter((e) => !isOptionalLoyalisAllowanceLabel(e.label) && !['GAJI POKOK', 'T. KELUARGA', 'TUNJANGAN KELUARGA', 'T. FUNGSIONAL', 'TUNJANGAN FUNGSIONAL', 'KEPANGKATAN', 'T. HARI TUA', 'TUNJANGAN HARI TUA', 'T. BPJS TK', 'BPJS TK', 'T. BPJS KES', 'BPJS KES', 'BERAS', 'PRESENSI', 'BONUS PRESENSI', 'PIKET', 'LEMBUR'].includes(e.label.toUpperCase()) && !e.label.toUpperCase().startsWith('STRUKTURAL:'))
     .reduce((sum, e) => sum + e.amount, 0);
 
   // Reads both slip shapes: legacy (full earning + Potongan rows) and net.
@@ -903,11 +907,12 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
   if (vakasiEvents.length === 0 && earnings) {
     const standardLabels = [
       'GAJI POKOK', 'T. KELUARGA', 'TUNJANGAN KELUARGA', 'T. FUNGSIONAL', 'TUNJANGAN FUNGSIONAL',
-      'KEPANGKATAN', 'T. INSTRUKSIONAL', 'INSTRUKSIONAL', 'T. HARI TUA', 'TUNJANGAN HARI TUA',
+      'KEPANGKATAN', 'T. HARI TUA', 'TUNJANGAN HARI TUA',
       'T. BPJS TK', 'BPJS TK', 'T. BPJS KES', 'BPJS KES', 'BERAS', 'PRESENSI', 'BONUS PRESENSI',
       'TUNJANGAN JABATAN', 'PIKET', 'LEMBUR'
     ];
     const extracted = earnings.filter(e =>
+      !isOptionalLoyalisAllowanceLabel(e.label) &&
       !standardLabels.includes(e.label.toUpperCase()) &&
       !e.label.toUpperCase().startsWith('STRUKTURAL:') &&
       e.amount > 0
@@ -1076,6 +1081,7 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
   let sections: any[] = [];
 
   if (data.isLoyalis) {
+    const fixedAllowanceGuidance = loyalisFixedAllowanceGuidance(earnings);
     sections = [
       {
         title: '1. Gaji Pokok',
@@ -1173,14 +1179,11 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
         ]
       },
       {
-        title: '7. Tunjangan Hari Tua & Instruksional',
-        bullets: [
-          'Tunjangan Hari Tua = 10% dari Gaji Pokok (subsidi dari Yayasan).',
-          'Tunjangan Instruksional = tunjangan khusus berdasarkan kebijakan/kondisi tertentu.'
-        ],
+        title: `7. ${fixedAllowanceGuidance.title}`,
+        bullets: fixedAllowanceGuidance.bullets,
         params: [
           { label: 'Tunjangan Hari Tua', val: formatIDR(tunjHariTuaVal) },
-          { label: 'T. Instruksional', val: formatIDR(tunjInstruksionalVal) }
+          ...fixedAllowanceGuidance.rows.map(row => ({ label: row.label, val: formatIDR(row.amount) })),
         ]
       },
       {

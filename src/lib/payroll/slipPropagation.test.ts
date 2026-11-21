@@ -11,6 +11,7 @@ import {
   mergeProfileOwnedFields,
   resolvePropagationPeriods,
 } from './slipPropagation';
+import { buildInitialEarnings } from './slipBuilders';
 
 // A stored draft carrying values that came from somewhere other than the
 // employee profile. None of these may ever move.
@@ -105,6 +106,21 @@ test('owned rows are appended when new and removed when the profile drops them',
     { kind: 'earnings', label: 'Struktural: Kepala Unit', oldValue: 1_000_000, newValue: null },
     { kind: 'earnings', label: 'Struktural: Sekretaris', oldValue: null, newValue: 400_000 },
   ]);
+});
+
+test('editing or clearing T. Developer replaces or removes the row on draft propagation', () => {
+  const fresh = (amount: number) => buildInitialEarnings({ t_developer: amount }, 4_000_000, 'loyalis');
+  const stored = [...fresh(450_000), { label: 'Revisi Gaji', amount: 100_000 }];
+  const { merged: updated, changes } = mergeProfileOwnedFields(stored, fresh(500_000), 'earnings');
+  assert.deepEqual(changes, [
+    { kind: 'earnings', label: 'T. Developer', oldValue: 450_000, newValue: 500_000 },
+  ]);
+  const cleared = mergeProfileOwnedFields(updated, fresh(0), 'earnings');
+  assert.deepEqual(cleared.changes, [
+    { kind: 'earnings', label: 'T. Developer', oldValue: 500_000, newValue: null },
+  ]);
+  assert.deepEqual(cleared.merged, [...fresh(0), { label: 'Revisi Gaji', amount: 100_000 }]);
+  assert.equal(isPayRelevantChange(['t_developer']), true);
 });
 
 test('the label allowlist fails closed', () => {

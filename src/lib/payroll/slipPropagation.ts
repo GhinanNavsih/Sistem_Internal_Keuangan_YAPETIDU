@@ -4,6 +4,7 @@ import {
   previousPayrollPeriodToken,
   type MoneyField,
 } from './domain';
+import { DEVELOPER_ALLOWANCE_LABEL } from './developerAllowance';
 
 /**
  * Rules for pushing an employee-profile edit onto an already-saved payslip.
@@ -31,6 +32,7 @@ const PROFILE_OWNED_EARNINGS = new Set([
   't. fungsional',
   'kepangkatan',
   'instruksional',
+  normalizeLabel(DEVELOPER_ALLOWANCE_LABEL),
   't. hari tua',
   't. bpjs tk',
   't. bpjs kes',
@@ -250,6 +252,7 @@ export const PAY_RELEVANT_FIELD_PATHS: readonly string[] = [
   'employment_profile.department_unit',
   'employment_profile.job_role',
   't_instruksional',
+  't_developer',
   'savings.',
   'ziz.',
   'tht.',

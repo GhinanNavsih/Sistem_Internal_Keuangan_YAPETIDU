@@ -61,6 +61,7 @@ import { synchronizeFamilyAllowanceEarnings } from '@/lib/payroll/familyAllowanc
 import { explainFamilyAllowance, readFamilyAllowanceSnapshot, type FamilyAllowanceExplanation } from '@/lib/payroll/familyAllowanceSnapshot';
 import { activityBelongsToPayrollPeriod } from '@/lib/payroll/pekaryaSpj';
 import { loyalisPresenceBreakdown } from '@/lib/payroll/loyalisPresencePay';
+import { isOptionalLoyalisAllowanceLabel, loyalisFixedAllowanceGuidance } from '@/lib/payroll/loyalisAllowances';
 import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
 import {
   composeKoperasiLoanHistoryTrail,
@@ -492,13 +493,7 @@ export default function EmployeePayslipPage() {
       ],
     },
     {
-      id: 'hari_tua_instruksional',
-      title: 'T. Hari Tua & Instruksional',
-      formula: 'THT: 10% × Gapok  |  Instruksional: Kebijakan Yayasan',
-      bullets: [
-        'T. Hari Tua = 10% dari Gaji Pokok (subsidi Yayasan)',
-        'T. Instruksional = tunjangan khusus berdasarkan kebijakan/kondisi tertentu',
-      ],
+      id: 'hari_tua',
     },
     {
       id: 'bpjs_beras',
@@ -1618,7 +1613,6 @@ export default function EmployeePayslipPage() {
     const tunjKeluargaVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'T. KELUARGA' || e.label.toUpperCase() === 'TUNJANGAN KELUARGA')?.amount || 0;
     const tunjFungsionalVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'T. FUNGSIONAL' || e.label.toUpperCase() === 'TUNJANGAN FUNGSIONAL')?.amount || 0;
     const tunjKepangkatanVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'KEPANGKATAN')?.amount || 0;
-    const tunjInstruksionalVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'T. INSTRUKSIONAL' || e.label.toUpperCase() === 'INSTRUKSIONAL')?.amount || 0;
     const tunjHariTuaVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'T. HARI TUA' || e.label.toUpperCase() === 'TUNJANGAN HARI TUA')?.amount || 0;
     const bpjsTkVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'T. BPJS TK' || e.label.toUpperCase() === 'BPJS TK')?.amount || 0;
     const bpjsKesVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'T. BPJS KES' || e.label.toUpperCase() === 'BPJS KES')?.amount || 0;
@@ -1643,7 +1637,6 @@ export default function EmployeePayslipPage() {
       tunjKeluargaVal,
       tunjFungsionalVal,
       tunjKepangkatanVal,
-      tunjInstruksionalVal,
       tunjHariTuaVal,
       bpjsTkVal,
       bpjsKesVal,
@@ -1976,16 +1969,18 @@ export default function EmployeePayslipPage() {
                     I. PENERIMAAN
                   </h4>
                   <div className="space-y-2.5 divide-y divide-slate-100">
-                    {earnings.map((item: PaySlipField, idx: number) => (
-                      <div key={idx} className="flex justify-between items-center pt-2 text-xs font-medium">
-                        <span className="text-black uppercase min-w-0 flex-1 pr-3 break-words" title={item.label}>
-                          {item.label}
-                        </span>
-                        <span className="text-black font-semibold tabular-nums">
-                          {item.amount > 0 ? formatIDR(item.amount) : '-'}
-                        </span>
-                      </div>
-                    ))}
+                    {earnings
+                      .filter((item) => !showLoyalisLayout || !isOptionalLoyalisAllowanceLabel(item.label) || item.amount > 0)
+                      .map((item: PaySlipField, idx: number) => (
+                        <div key={idx} className="flex justify-between items-center pt-2 text-xs font-medium">
+                          <span className="text-black uppercase min-w-0 flex-1 pr-3 break-words" title={item.label}>
+                            {item.label}
+                          </span>
+                          <span className="text-black font-semibold tabular-nums">
+                            {item.amount > 0 ? formatIDR(item.amount) : '-'}
+                          </span>
+                        </div>
+                      ))}
                   </div>
                 </div>
 
@@ -2105,7 +2100,12 @@ export default function EmployeePayslipPage() {
                 </div>
 
                 {showDoc && (() => {
-                  const earningsDocs = showLoyalisLayout ? payrollDocumentation : pekaryaPayrollDocumentation;
+                  const fixedAllowanceGuidance = loyalisFixedAllowanceGuidance(earnings);
+                  const earningsDocs = showLoyalisLayout
+                    ? payrollDocumentation.map(item => item.id === 'hari_tua'
+                      ? { ...item, title: fixedAllowanceGuidance.title, bullets: fixedAllowanceGuidance.bullets }
+                      : item)
+                    : pekaryaPayrollDocumentation;
 
                   return (
                     <div className="animate-in fade-in slide-in-from-top-2 duration-200 space-y-6 pt-2">
@@ -2253,10 +2253,12 @@ export default function EmployeePayslipPage() {
                                     <DocRow label="Total T. Struktural" value={formatIDR(userVariables.totalStrukturalVal)} highlight />
                                   </div>
                                 )}
-                                {item.id === 'hari_tua_instruksional' && (
+                                {item.id === 'hari_tua' && (
                                   <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
                                     <DocRow label="Tunjangan Hari Tua (10% Gapok)" value={formatIDR(userVariables.tunjHariTuaVal)} highlight />
-                                    <DocRow label="T. Instruksional" value={formatIDR(userVariables.tunjInstruksionalVal)} highlight />
+                                    {fixedAllowanceGuidance.rows.map(row => (
+                                      <DocRow key={row.label} label={row.label} value={formatIDR(row.amount)} highlight />
+                                    ))}
                                   </div>
                                 )}
                                 {item.id === 'bpjs_beras' && (
@@ -2273,7 +2275,7 @@ export default function EmployeePayslipPage() {
                                     ) : (
                                       <div className="col-span-3 text-xs text-black italic mb-1">Tidak ada kegiatan resmi terdaftar pada periode ini</div>
                                     )}
-                                    <DocRow label="Total Vakasi Tambahan" value={formatIDR(earnings.filter((e: PaySlipField) => !['GAJI POKOK', 'T. KELUARGA', 'TUNJANGAN KELUARGA', 'T. FUNGSIONAL', 'TUNJANGAN FUNGSIONAL', 'KEPANGKATAN', 'T. INSTRUKSIONAL', 'INSTRUKSIONAL', 'T. HARI TUA', 'TUNJANGAN HARI TUA', 'T. BPJS TK', 'BPJS TK', 'T. BPJS KES', 'BPJS KES', 'BERAS', 'PRESENSI', 'BONUS PRESENSI', 'PIKET', 'LEMBUR'].includes(e.label.toUpperCase()) && !e.label.toUpperCase().startsWith('STRUKTURAL:')).reduce((sum: number, e: PaySlipField) => sum + e.amount, 0))} highlight />
+                                    <DocRow label="Total Vakasi Tambahan" value={formatIDR(earnings.filter((e: PaySlipField) => !isOptionalLoyalisAllowanceLabel(e.label) && !['GAJI POKOK', 'T. KELUARGA', 'TUNJANGAN KELUARGA', 'T. FUNGSIONAL', 'TUNJANGAN FUNGSIONAL', 'KEPANGKATAN', 'T. HARI TUA', 'TUNJANGAN HARI TUA', 'T. BPJS TK', 'BPJS TK', 'T. BPJS KES', 'BPJS KES', 'BERAS', 'PRESENSI', 'BONUS PRESENSI', 'PIKET', 'LEMBUR'].includes(e.label.toUpperCase()) && !e.label.toUpperCase().startsWith('STRUKTURAL:')).reduce((sum: number, e: PaySlipField) => sum + e.amount, 0))} highlight />
                                   </div>
                                 )}
                               </div>

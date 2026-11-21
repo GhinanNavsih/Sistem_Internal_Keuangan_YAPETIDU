@@ -8,6 +8,7 @@ import {
   resolveSlipTaxDetails,
 } from './slipBuilders';
 import { getRekapColumns } from '@/utils/rekapConfig';
+import { calculatePayrollTotals } from './domain';
 
 const amountOf = (fields: { label: string; amount: number }[], label: string) =>
   fields.find((field) => field.label === label)?.amount;
@@ -54,6 +55,27 @@ test('Loyalis earnings derive from the profile and the pay rules', () => {
   assert.equal(amountOf(earnings, 'T. BPJS KES'), 80_000);
   assert.equal(amountOf(earnings, 'Beras'), 250_000);
   assert.equal(amountOf(earnings, 'Instruksional'), 300_000);
+});
+
+test('T. Developer adds to Loyalis earnings only when it has a positive amount', () => {
+  const baseline = buildInitialEarnings({}, 4_000_000, 'loyalis');
+  const earnings = buildInitialEarnings({ t_developer: 450_000 }, 4_000_000, 'loyalis');
+  assert.equal(amountOf(earnings, 'T. Developer'), 450_000);
+  assert.equal(
+    calculatePayrollTotals(earnings, []).totalEarnings,
+    calculatePayrollTotals(baseline, []).totalEarnings + 450_000,
+  );
+  for (const amount of [undefined, null, 0]) {
+    assert.deepEqual(buildInitialEarnings({ t_developer: amount }, 4_000_000, 'loyalis'), baseline);
+  }
+  assert.equal(amountOf(buildInitialEarnings({ t_developer: 450_000 }, 4_000_000, 'blue'), 'T. Developer'), undefined);
+});
+
+test('a Loyalis slip leaves out Instruksional when its amount is missing or zero', () => {
+  for (const amount of [undefined, null, 0]) {
+    const earnings = buildInitialEarnings({ t_instruksional: amount }, 4_000_000, 'loyalis');
+    assert.equal(amountOf(earnings, 'Instruksional'), undefined);
+  }
 });
 
 test('dated child stops contributing to Loyalis earnings in the graduation month', () => {

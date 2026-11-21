@@ -100,6 +100,7 @@ import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/clien
 import { employeeLifecycleAudit, employeeIsActive } from '@/lib/employeeLifecycle';
 import { normalizeNipy } from '@/lib/payroll/attendance';
 import { getPayImpactLabels } from '@/lib/payroll/slipPropagation';
+import { DEVELOPER_ALLOWANCE_LABEL, developerAllowanceAmount } from '@/lib/payroll/developerAllowance';
 import { matchFunctionalAllowance } from '@/lib/payroll/salaryMatrix';
 import { annualPaidLeaveTableFigures } from '@/lib/payroll/annualPaidLeave';
 import StructuralPositionPicker from '@/components/employee/StructuralPositionPicker';
@@ -511,6 +512,20 @@ function describePropagation(results: PropagationResult[]): string {
     );
   }
   return sentences.length > 0 ? ` ${sentences.join(' ')}` : '';
+}
+
+function updateProfileDraftSlips(employeeId: string, changedFields: string[]) {
+  return authenticatedJson<{ results: PropagationResult[] }>(
+    '/api/payroll/employee-profile-propagation',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        employeeId,
+        requestId: createFinancialRequestId('profile-sync'),
+        changedFields,
+      }),
+    },
+  );
 }
 
 function getObjectDiff(oldObj: any, newObj: any, prefix = ''): FieldChange[] {
@@ -1478,6 +1493,9 @@ export default function EmployeesPage() {
           ...(hasTInstruksional && normalizedTInstruksional !== undefined
             ? { t_instruksional: normalizedTInstruksional }
             : {}),
+          ...(formData.t_developer !== undefined
+            ? { t_developer: developerAllowanceAmount(formData.t_developer) }
+            : {}),
           koperasiUserId: formData.koperasiUserId !== undefined ? formData.koperasiUserId : null,
           koperasiAuthUid: formData.koperasiAuthUid !== undefined ? formData.koperasiAuthUid : null,
           audit: {
@@ -1645,6 +1663,9 @@ export default function EmployeesPage() {
               : null,
           },
         };
+        if (editingEmployee && final.t_developer === editingEmployee.t_developer) {
+          delete employeeWritePayload.t_developer;
+        }
       } else {
         const { nipy: _nipy, nipyAssignment: _nipyAssignment, ...blueCollarPayload } = final;
         employeeWritePayload = blueCollarPayload;
@@ -1668,6 +1689,10 @@ export default function EmployeesPage() {
         if (editingEmployee && (!latest.exists() ||
             employeeIsActive(currentTab.collection, latest.data()) !== employeeIsActive(currentTab.collection, editingEmployee))) {
           throw new Error('Status pegawai telah berubah. Muat ulang data sebelum menyimpan.');
+        }
+        if (activeTab === 'loyalis' && editingEmployee && employeeWritePayload.t_developer !== undefined &&
+            latest.data()?.t_developer !== editingEmployee.t_developer) {
+          throw new Error('T. Developer telah berubah. Muat ulang data sebelum menyimpan.');
         }
         if (activeTab === 'blue' && editingEmployee && (
             latest.data()?.employment?.jobCategory !== editingEmployee.employment?.jobCategory ||
@@ -1753,17 +1778,7 @@ export default function EmployeesPage() {
       let propagationNote = '';
       if (editingEmployee && changedFields.length > 0) {
         try {
-          const propagation = await authenticatedJson<{ results: PropagationResult[] }>(
-            '/api/payroll/employee-profile-propagation',
-            {
-              method: 'POST',
-              body: JSON.stringify({
-                employeeId,
-                requestId: createFinancialRequestId('profile-sync'),
-                changedFields,
-              }),
-            },
-          );
+          const propagation = await updateProfileDraftSlips(employeeId, changedFields);
           propagationNote = describePropagation(propagation.results);
         } catch (propagationErr) {
           console.error('Gagal menerapkan perubahan ke slip gaji:', propagationErr);
@@ -1863,6 +1878,7 @@ export default function EmployeesPage() {
       };
 
       let bankSyncFailures = 0;
+      let slipSyncFailed = false;
       // Revert each pending edit in Firestore
       for (const edit of pendingEdits) {
         const collectionName = edit.tab === 'loyalis' ? 'Employees_Loyalis' : 'Employees_BlueCollar';
@@ -1883,6 +1899,15 @@ export default function EmployeesPage() {
             }),
           }, { merge: true });
         });
+        const changedFields = edit.changes.map(change => change.field);
+        if (edit.tab === 'loyalis' && (changedFields.includes('t_developer') || changedFields.includes('t_instruksional'))) {
+          try {
+            await updateProfileDraftSlips(edit.employeeId, changedFields);
+          } catch (propagationErr) {
+            console.error('Gagal menerapkan pembatalan tunjangan ke slip gaji:', propagationErr);
+            slipSyncFailed = true;
+          }
+        }
         if (edit.changes.some(change => /^(banking_info|bankAccount)\./.test(change.field))) {
           try {
             const employee = (await getDocFromServer(docRef)).data();
@@ -1903,7 +1928,13 @@ export default function EmployeesPage() {
 
       await fetchEmployees();
 
-      setMessage({ type: 'success', text: `Seluruh perubahan berhasil dibatalkan dan dikembalikan (revert)!${bankSyncFailures ? ' Sebagian rekening Koperasi belum tersinkron. Gunakan Samakan rekening di halaman Koperasi.' : ''}` });
+      const bankNote = bankSyncFailures
+        ? ' Sebagian rekening Koperasi belum tersinkron. Gunakan Samakan rekening di halaman Koperasi.'
+        : '';
+      const payrollNote = slipSyncFailed
+        ? ' Slip gaji belum diperbarui. Gunakan Refresh Massal di halaman Payroll.'
+        : '';
+      setMessage({ type: 'success', text: `Seluruh perubahan berhasil dibatalkan dan dikembalikan (revert)!${bankNote}${payrollNote}` });
     } catch (err) {
       console.error('Error reverting changes:', err);
       setMessage({ type: 'error', text: 'Gagal membatalkan dan mengembalikan perubahan.' });
@@ -2029,6 +2060,10 @@ export default function EmployeesPage() {
         case 't_instruksional':
           aVal = a.t_instruksional || 0;
           bVal = b.t_instruksional || 0;
+          break;
+        case 't_developer':
+          aVal = developerAllowanceAmount(a.t_developer);
+          bVal = developerAllowanceAmount(b.t_developer);
           break;
         case 'pot_tabungan':
           aVal = a.savings?.deductionAmount || 0;
@@ -2188,7 +2223,7 @@ export default function EmployeesPage() {
   const dataColumnCount = {
     default: isLoyalisAdmin ? 6 : 7,
     debug: isLoyalisAdmin ? 3 : 4,
-    constant: activeTab === 'loyalis' ? (isLoyalisAdmin ? 11 : 12) : 4,
+    constant: activeTab === 'loyalis' ? (isLoyalisAdmin ? 12 : 13) : 4,
     cuti: 6,
   }[tableViewMode];
   const tableColumnCount = dataColumnCount + (canEditEmployees && tableViewMode !== 'cuti' ? 1 : 0);
@@ -2547,6 +2582,9 @@ export default function EmployeesPage() {
                       <TableHead onClick={() => handleSort('t_instruksional')} className="w-[150px] font-semibold text-emerald-800 bg-emerald-50/40 text-right cursor-pointer hover:text-indigo-800 transition-colors">
                         <div className="flex items-center justify-end">T. Instruksional <SortIcon active={sortConfig.key === 't_instruksional'} direction={sortConfig.direction} /></div>
                       </TableHead>
+                      <TableHead onClick={() => handleSort('t_developer')} className="w-[130px] font-semibold text-emerald-800 bg-emerald-50/40 text-right cursor-pointer hover:text-indigo-800 transition-colors">
+                        <div className="flex items-center justify-end">{DEVELOPER_ALLOWANCE_LABEL} <SortIcon active={sortConfig.key === 't_developer'} direction={sortConfig.direction} /></div>
+                      </TableHead>
                       <TableHead onClick={() => handleSort('pot_bpjs')} className="w-[120px] font-semibold text-rose-800 bg-rose-50/40 text-right cursor-pointer hover:text-rose-900 transition-colors">
                         <div className="flex items-center justify-end">Pot. BPJS <SortIcon active={sortConfig.key === 'pot_bpjs'} direction={sortConfig.direction} /></div>
                       </TableHead>
@@ -2824,6 +2862,7 @@ export default function EmployeesPage() {
                           )}
                           <TableCell className="text-right font-medium text-slate-700 text-xs bg-emerald-50/10">{formatIDR(kepangkatanAllowanceMap[emp.id] || 0)}</TableCell>
                           <TableCell className="text-right font-medium text-slate-700 text-xs bg-emerald-50/10">{formatIDR(emp.t_instruksional || 0)}</TableCell>
+                          <TableCell className="text-right font-medium text-slate-700 text-xs bg-emerald-50/10">{formatIDR(developerAllowanceAmount(emp.t_developer))}</TableCell>
                           <TableCell className="text-right font-medium text-slate-700 text-xs bg-rose-50/10">{formatIDR(emp.bpjs?.deductionAmount || 0)}</TableCell>
                           <TableCell className="text-right font-medium text-slate-700 text-xs bg-rose-50/10">{formatIDR(emp.savings?.deductionAmount || 0)}</TableCell>
                           <TableCell className="text-right font-medium text-slate-700 text-xs bg-rose-50/10">{formatIDR(emp.ziz?.deductionAmount || 0)}</TableCell>
@@ -3583,6 +3622,21 @@ export default function EmployeesPage() {
                               type="text"
                               value={formData.t_instruksional ? formatNumberWithDots(formData.t_instruksional) : ''}
                               onChange={e => setFormData((prev: any) => ({ ...prev, t_instruksional: parseDotsToNumber(e.target.value) }))}
+                              placeholder="0"
+                              className="w-full bg-transparent border-none p-0 h-full text-right text-sm outline-none focus:outline-none focus:ring-0 focus:border-none tabular-nums text-slate-900 font-sans"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="loyalis-developer-allowance" className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{DEVELOPER_ALLOWANCE_LABEL} (Rp)</Label>
+                          <div className="flex items-center h-8 rounded-sm bg-white border border-slate-200 px-2.5 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-200 transition-all">
+                            <span className="text-xs font-semibold text-slate-400 mr-1 select-none" aria-hidden="true">Rp</span>
+                            <input
+                              id="loyalis-developer-allowance"
+                              type="text"
+                              inputMode="numeric"
+                              value={formatNumberWithDots(developerAllowanceAmount(formData.t_developer))}
+                              onChange={e => setFormData((prev: FormData) => ({ ...prev, t_developer: parseDotsToNumber(e.target.value) }))}
                               placeholder="0"
                               className="w-full bg-transparent border-none p-0 h-full text-right text-sm outline-none focus:outline-none focus:ring-0 focus:border-none tabular-nums text-slate-900 font-sans"
                             />
