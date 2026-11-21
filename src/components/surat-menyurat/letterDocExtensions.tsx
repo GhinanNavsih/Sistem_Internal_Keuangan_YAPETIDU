@@ -13,7 +13,7 @@ import TextAlign from '@tiptap/extension-text-align';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
 import Image from '@tiptap/extension-image';
-import { formatAssignedPerson, LETTER_ALIGNMENTS, LETTER_CONTENT_WIDTH_U, LETTER_MAX_INDENT, PARAGRAPH_DEFAULTS, SIGNATURE_PLACES } from '@/lib/surat-menyurat/letterDoc';
+import { formatAssignedPerson, LETTER_ALIGNMENTS, LETTER_BASE_PT, LETTER_CONTENT_WIDTH_U, LETTER_MAX_INDENT, LETTER_MAX_ROW_HEIGHT_PT, PARAGRAPH_DEFAULTS, sanitizeRowHeight, SIGNATURE_PLACES } from '@/lib/surat-menyurat/letterDoc';
 import { formatLetterDate } from '@/lib/surat-menyurat/date';
 import type { AssignedPerson } from '@/lib/surat-menyurat/templates';
 import IndonesianDatePicker from './IndonesianDatePicker';
@@ -893,6 +893,107 @@ const TableColumnResize = Extension.create({
   },
 });
 
+const LetterTableRow = TableRow.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      height: {
+        default: null,
+        parseHTML: (element) => sanitizeRowHeight(Number(element.getAttribute('data-height-pt'))),
+        renderHTML: ({ height }) => {
+          const pt = sanitizeRowHeight(height);
+          return pt === null ? {} : { 'data-height-pt': pt, style: `height: calc(var(--u) * ${pt / 12})` };
+        },
+      },
+    };
+  },
+  addProseMirrorPlugins() {
+    const resizeKey = new PluginKey<DecorationSet>('letterRowResize');
+    let cancelDrag: ((destroying?: boolean) => void) | undefined;
+    const rowEdge = (view: EditorView, event: MouseEvent): HTMLTableRowElement | null => {
+      const target = event.target as HTMLElement | null;
+      if (!view.editable || target?.closest?.('.letter-grip')) return null;
+      const cell = target?.closest?.('td,th') as HTMLTableCellElement | null;
+      const row = cell?.closest('tr');
+      if (!cell || !row || !view.dom.contains(row)) return null;
+      const rect = cell.getBoundingClientRect();
+      const table = row.closest('table');
+      if (table && Math.abs(rect.bottom - event.clientY) <= 5) {
+        return table.rows[Math.min(table.rows.length - 1, row.rowIndex + cell.rowSpan - 1)] ?? row;
+      }
+      if (Math.abs(rect.top - event.clientY) <= 5) return table?.rows[row.rowIndex - 1] ?? null;
+      return null;
+    };
+
+    return [new Plugin({
+      key: resizeKey,
+      state: {
+        init: () => DecorationSet.empty,
+        apply: (tr, decorations) => tr.getMeta(resizeKey) ?? decorations.map(tr.mapping, tr.doc),
+      },
+      view: () => ({ destroy: () => cancelDrag?.(true) }),
+      props: {
+        decorations: (state) => resizeKey.getState(state),
+        handleDOMEvents: {
+          mousemove(view, event) {
+            view.dom.classList.toggle('letter-row-resize', Boolean(cancelDrag || rowEdge(view, event)));
+            return false;
+          },
+          mouseleave(view) {
+            if (!cancelDrag) view.dom.classList.remove('letter-row-resize');
+            return false;
+          },
+          mousedown(view, event) {
+            const row = event.button === 0 ? rowEdge(view, event) : null;
+            if (!row) return false;
+            const pos = view.posAtDOM(row, 0) - 1;
+            const rowNode = view.state.doc.nodeAt(pos);
+            if (rowNode?.type.name !== 'tableRow') return false;
+            const pixelsPerPt = parseFloat(getComputedStyle(row).fontSize) / LETTER_BASE_PT;
+            if (!(pixelsPerPt > 0)) return false;
+            event.preventDefault();
+            cancelDrag?.();
+            const doc = view.state.doc;
+            const initialHeight = row.getBoundingClientRect().height;
+            const owner = row.ownerDocument;
+            let height: number | null = null;
+            const move = (next: MouseEvent) => {
+              if (view.state.doc !== doc) return stop();
+              const delta = next.clientY - event.clientY;
+              height = delta === 0 ? null : sanitizeRowHeight(Math.max(1, Math.min(LETTER_MAX_ROW_HEIGHT_PT, (initialHeight + delta) / pixelsPerPt)));
+              const preview = height === null ? DecorationSet.empty : DecorationSet.create(doc, [
+                Decoration.node(pos, pos + rowNode.nodeSize, { style: `height: ${height * pixelsPerPt}px` }),
+              ]);
+              view.dispatch(view.state.tr.setMeta(resizeKey, preview));
+            };
+            const stop = (destroying = false) => {
+              owner.removeEventListener('mousemove', move);
+              owner.removeEventListener('mouseup', finish);
+              owner.defaultView?.removeEventListener('blur', blur);
+              view.dom.classList.remove('letter-row-resize');
+              cancelDrag = undefined;
+              if (!destroying) view.dispatch(view.state.tr.setMeta(resizeKey, DecorationSet.empty));
+            };
+            const blur = () => stop();
+            const finish = () => {
+              stop();
+              if (height !== null && view.state.doc === doc) {
+                view.dispatch(view.state.tr.setNodeAttribute(pos, 'height', height));
+              }
+            };
+            cancelDrag = stop;
+            view.dom.classList.add('letter-row-resize');
+            owner.addEventListener('mousemove', move);
+            owner.addEventListener('mouseup', finish);
+            owner.defaultView?.addEventListener('blur', blur);
+            return true;
+          },
+        },
+      },
+    })];
+  },
+});
+
 /* ---- Selecting parts of a table, as in Google Docs ---- */
 
 /** The table the cursor is in, with where it starts. */
@@ -1233,7 +1334,7 @@ const base = [
   TableSelectionTools,
   ImageFloatDrag,
   MultiSelection,
-  TableRow,
+  LetterTableRow,
   TableHeader,
   TableCell,
   LetterImage.configure({ inline: false, allowBase64: true }),

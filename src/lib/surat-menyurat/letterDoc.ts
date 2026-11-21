@@ -30,6 +30,13 @@ export const LETTER_FONT_FAMILIES = ['Times New Roman', 'Arial', 'Calibri', 'Geo
 export const LETTER_FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36] as const;
 /** The text size of an unmarked letter, in pt. */
 export const LETTER_BASE_PT = 11;
+export const LETTER_MAX_ROW_HEIGHT_PT = 720;
+
+export function sanitizeRowHeight(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 1 && value <= LETTER_MAX_ROW_HEIGHT_PT
+    ? Math.round(value * 10) / 10
+    : null;
+}
 const FONT_SIZE_RANGE = [6, 96] as const;
 /** The writing area of an A4 page (170mm) in letter units, where one unit is 12pt. */
 export const LETTER_CONTENT_WIDTH_U = (170 * 72) / 25.4 / 12;
@@ -98,6 +105,11 @@ function sanitizeAttrs(type: string, value: unknown): Record<string, unknown> | 
     case 'orderedList':
       if (isInt(raw.start, 2, 9999)) result.start = raw.start;
       break;
+    case 'tableRow': {
+      const height = sanitizeRowHeight(raw.height);
+      if (height !== null) result.height = height;
+      break;
+    }
     case 'tableCell':
     case 'tableHeader':
       if (isInt(raw.colspan, 2, 20)) result.colspan = raw.colspan;

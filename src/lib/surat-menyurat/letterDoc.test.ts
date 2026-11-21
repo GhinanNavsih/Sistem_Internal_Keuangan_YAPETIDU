@@ -171,6 +171,20 @@ test('column widths are kept as percentages and refused when out of range', () =
   assert.equal(sanitizeLetterDoc(doc(row([250])))?.content[0].content?.[0].content?.[0].attrs, undefined);
 });
 
+test('table row height survives draft validation while older rows keep automatic height', () => {
+  const cell: LetterNode = { type: 'tableCell', content: [paragraph('Isi')] };
+  const letterDoc = doc({
+    type: 'table',
+    content: [
+      { type: 'tableRow', attrs: { height: 51.24 }, content: [cell] },
+      { type: 'tableRow', content: [cell] },
+      { type: 'tableRow', attrs: { height: -10 }, content: [cell] },
+    ],
+  });
+  const rows = parseLetterDraft({ ...sampleDraft(), letterDoc })?.letterDoc?.content[0].content;
+  assert.deepEqual(rows?.map((row) => row.attrs), [{ height: 51.2 }, undefined, undefined]);
+});
+
 test('a picture may sit inside a table cell', () => {
   const png = 'data:image/png;base64,iVBORw0KGgo=';
   const cell: LetterNode = { type: 'tableCell', content: [paragraph('Tanda tangan'), { type: 'image', attrs: { src: png } }] };

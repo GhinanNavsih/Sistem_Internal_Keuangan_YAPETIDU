@@ -112,6 +112,7 @@ ${D} .letter-handle--rotate{left:50%;top:-34px;margin-left:-7px;width:14px;heigh
 ${D} .letter-handle--rotate:after{content:'';position:absolute;left:50%;top:100%;width:2px;height:18px;margin-left:-1px;background:#1a73e8}
 ${D} .letter-multi-sel{background:#c7d2fe}
 ${D} .ProseMirror.letter-col-resize,${D} .ProseMirror.letter-col-resize td,${D} .ProseMirror.letter-col-resize th{cursor:col-resize}
+${D} .ProseMirror.letter-row-resize:not(.letter-col-resize),${D} .ProseMirror.letter-row-resize:not(.letter-col-resize) :is(td,th){cursor:row-resize}
 ${D} .ProseMirror ::selection{background:#c7d2fe}
 ${D} img.ProseMirror-selectednode,${D} .ProseMirror-selectednode{outline:2px solid #1a73e8}
 ${D} td,${D} th{position:relative}
