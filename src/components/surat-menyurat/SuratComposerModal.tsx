@@ -19,11 +19,11 @@ import { formatNomorSuratKeluar, satkerCodeFor } from '@/lib/surat-menyurat/numb
 import { applyTemplateDefaults, draftFromSurat, draftRecipient, getDefaultDraft, LetterDraftPayload, AssignedPerson, TUJUAN_MAX_LENGTH } from '@/lib/surat-menyurat/templates';
 import { SuratKeluar, TemplateType } from '@/lib/surat-menyurat/types';
 import { extractLetterFields, letterDocText, sanitizeLetterDoc, type LetterDoc } from '@/lib/surat-menyurat/letterDoc';
-import { buildLetterDoc } from '@/lib/surat-menyurat/letterDocBuild';
+import { buildLetterDoc, isRektoratSatker } from '@/lib/surat-menyurat/letterDocBuild';
 import LetterPaper from './LetterPaper';
 import LetterToolbar from './LetterToolbar';
 import { letterDocExtensions, LetterEditorContext, type LetterEditorControls } from './letterDocExtensions';
-import { LETTER_PRINT_CSS } from './letterPaperCss';
+import { LETTER_PRINT_CSS, rektoratPrintCss } from './letterPaperCss';
 import { Loader2, Printer, Save, Upload, Wand2 } from 'lucide-react';
 import SuratKeluarUploadForm from './SuratKeluarUploadForm';
 
@@ -61,8 +61,11 @@ export default function SuratComposerModal({
 }: Props) {
   const { user, profile } = useAuth();
   const isYapetidu = surat?.institutionScope === 'YAPETIDU';
+  const isRektorat = surat
+    ? isRektoratSatker(surat.satkerId, surat.satkerName)
+    : isRektoratSatker(targetSatkerId, defaultSatkerName);
   /** The editor works on the whole letter; an older letter, or a fresh template, is laid out from its fields first. */
-  const withDoc = (value: LetterDraftPayload): LetterDraftPayload => (value.letterDoc ? value : { ...value, letterDoc: buildLetterDoc(value, { isYapetidu }) });
+  const withDoc = (value: LetterDraftPayload): LetterDraftPayload => (value.letterDoc ? value : { ...value, letterDoc: buildLetterDoc(value, { isYapetidu, isRektorat }) });
   const [draft, setDraft] = useState<LetterDraftPayload>(() => {
     if (surat) return withDoc(draftFromSurat(surat, defaultSatkerName));
     const initial = getDefaultDraft(
@@ -147,6 +150,8 @@ export default function SuratComposerModal({
     // The preview pushes the closing block down by itself when a page break would split it; the printer does that on its own.
     printCopy.querySelectorAll<HTMLElement>('.letter-closing').forEach((node) => node.style.removeProperty('margin-top'));
     const letterHtml = printCopy.innerHTML;
+    const rektoratFooter = printContent.parentElement?.querySelector('.rektorat-letter-footer');
+    const printCss = LETTER_PRINT_CSS + (rektoratFooter ? rektoratPrintCss('CSSMarginRule' in window) : '');
     const numberPart = draft.nomorSurat.trim().split('/')[0].trim().replace(/[\\<>:"|?*\x00-\x1f]/g, '-');
     const orderNumber = /^\d+$/.test(numberPart) ? numberPart.padStart(3, '0') : numberPart;
     const templateTitle = TEMPLATE_OPTIONS.find((option) => option.id === draft.templateType)?.title || 'Surat';
@@ -171,10 +176,10 @@ export default function SuratComposerModal({
         <head>
           <meta charset="utf-8">
           <title></title>
-          <style>${LETTER_PRINT_CSS}</style>
+          <style>${printCss}</style>
         </head>
         <body>
-          <div class="letter-sheet"><div class="letter-doc">${letterHtml}</div></div>
+          <div class="letter-sheet"><div class="letter-doc">${letterHtml}</div>${rektoratFooter?.outerHTML ?? ''}</div>
           <script>
             window.onload = function() {
               window.print();
@@ -231,7 +236,7 @@ export default function SuratComposerModal({
 
       const kategori = draft.templateType === 'custom' ? 'Lainnya' : TEMPLATE_OPTIONS.find((option) => option.id === draft.templateType)?.title || 'Lainnya';
       const payload = {
-        ...(!savedId && targetSatkerId ? { satkerId: targetSatkerId } : {}),
+        ...(!savedId && targetSatkerId ? { satkerId: targetSatkerId, satkerName: defaultSatkerName } : {}),
         ...(savedId ? { id: savedId } : { type: 'keluar', institutionScope: 'UNIPDU', sifat: 'biasa', attachments: [] }),
         ...(!savedId || savedTemplateType.current !== draft.templateType ? { kategori } : {}),
         nomorSurat: draft.nomorSurat.trim(),
@@ -383,7 +388,7 @@ export default function SuratComposerModal({
             </div>
             <div className="flex items-start justify-center px-4 pb-4 pt-2 sm:px-6 sm:pb-6">
               <LetterEditorContext.Provider value={controls}>
-                <LetterPaper id="printable-official-letter" draft={draft} isYapetidu={isYapetidu} editor={editor} />
+                <LetterPaper id="printable-official-letter" draft={draft} isYapetidu={isYapetidu} isRektorat={isRektorat} editor={editor} />
               </LetterEditorContext.Provider>
             </div>
           </div>

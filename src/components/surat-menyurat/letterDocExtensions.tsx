@@ -205,13 +205,22 @@ const Kop = Node.create({
   content: 'paragraph+',
   defining: true,
   isolating: true,
-  addAttributes: () => ({ logo: { default: 'unipdu' } }),
+  addAttributes: () => ({
+    logo: {
+      default: 'unipdu',
+      parseHTML: (element) => element.getAttribute('data-logo') || 'unipdu',
+    },
+    variant: {
+      default: null,
+      parseHTML: (element) => element.getAttribute('data-variant') === 'rektorat' ? 'rektorat' : null,
+    },
+  }),
   parseHTML: () => [{ tag: 'div.kop-container', contentElement: '.kop-text' }],
   renderHTML({ node }) {
     const logo = node.attrs.logo === 'yapetidu' ? 'yapetidu' : 'unipdu';
     return [
       'div',
-      { class: 'kop-container' },
+      { class: 'kop-container', 'data-logo': logo, ...(node.attrs.variant === 'rektorat' && { 'data-variant': 'rektorat' }) },
       ['div', { class: 'kop-logo', contenteditable: 'false' }, ['img', { src: encodeURI(LOGOS[logo]), alt: logo === 'yapetidu' ? 'Logo YAPETIDU' : 'Logo UNIPDU', draggable: 'false' }]],
       ['div', { class: 'kop-text' }, 0],
     ];

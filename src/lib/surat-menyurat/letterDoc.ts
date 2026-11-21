@@ -116,6 +116,7 @@ function sanitizeAttrs(type: string, value: unknown): Record<string, unknown> | 
       break;
     case 'kop':
       result.logo = raw.logo === 'yapetidu' ? 'yapetidu' : 'unipdu';
+      if (result.logo === 'unipdu' && raw.variant === 'rektorat') result.variant = 'rektorat';
       break;
     case 'letterDate':
       if (typeof raw.value !== 'string' || (raw.value !== '' && !DATE.test(raw.value))) return null;

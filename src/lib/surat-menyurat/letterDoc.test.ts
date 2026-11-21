@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { extractLetterFields, letterDocText, sanitizeLetterDoc, LETTER_MAX_TEXT, type LetterDoc, type LetterNode } from './letterDoc';
-import { buildLetterDoc } from './letterDocBuild';
+import { buildLetterDoc, isRektoratSatker } from './letterDocBuild';
 import { applyTemplateDefaults, getDefaultDraft, parseLetterDraft, type LetterDraftPayload } from './templates';
 
 const TEMPLATES = ['tugas', 'keterangan', 'undangan', 'pengantar', 'permohonan', 'edaran', 'rekomendasi', 'balasan', 'custom'] as const;
@@ -32,6 +32,26 @@ test('every template builds a letter the server accepts', () => {
     assert.deepEqual(sanitizeLetterDoc(letter), letter, type);
     assert.ok(parseLetterDraft({ ...draft, letterDoc: letter }), type);
   }
+});
+
+test('Rektorat stationery follows the letter owner and survives saving', () => {
+  assert.ok(isRektoratSatker('sekretariat_rektorat', ''));
+  assert.ok(isRektoratSatker('rektorat', ''));
+  assert.ok(isRektoratSatker(undefined, ' Sekretariat Rektorat '));
+  assert.ok(!isRektoratSatker('biro_umum', 'Rektorat'));
+
+  for (const type of TEMPLATES) {
+    const draft = sampleDraft(type);
+    const letterDoc = buildLetterDoc(draft, { isYapetidu: false, isRektorat: true });
+    const [kop] = letterDoc.content;
+    assert.equal(kop.attrs?.variant, 'rektorat');
+    assert.match(kop.content?.[2].content?.[0].text ?? '', /121\/D\/O\/2001/);
+    assert.deepEqual(parseLetterDraft({ ...draft, letterDoc })?.letterDoc, letterDoc);
+    assert.doesNotMatch(letterDocText(letterDoc), /MENDIKNAS/);
+  }
+
+  const [foundationKop] = buildLetterDoc(sampleDraft(), { isYapetidu: true, isRektorat: true }).content;
+  assert.deepEqual(foundationKop.attrs, { logo: 'yapetidu' });
 });
 
 test('a Surat Tugas carries its task giver and people list; other letters do not', () => {

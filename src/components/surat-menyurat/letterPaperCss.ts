@@ -16,8 +16,15 @@ const PT_PER_INCH = 72;
 const BODY_PT = 12;
 /** Size of 1mm, in `--u`. */
 const U_PER_MM = PT_PER_INCH / MM_PER_INCH / BODY_PT;
+const mm = (n: number) => u(n * U_PER_MM);
 
 export const LETTER_PAGE_MM = { width: 210, height: 297, margin: 20 } as const;
+const REKTORAT_TOP_MM = 8;
+const REKTORAT_SIDE_MM = 8;
+export const REKTORAT_TOP_MARGIN_U = REKTORAT_TOP_MM * U_PER_MM;
+export const REKTORAT_ADDRESS = 'PP Darul ‘Ulum Tromol Pos 10 Peterongan Jombang Jawa Timur 61481';
+export const REKTORAT_WEBSITE = 'www.unipdu.ac.id';
+export const REKTORAT_PHONE = '0321-873655, 876771';
 /** Page margin, and the writing area of one page, in `--u`. */
 export const LETTER_MARGIN_U = LETTER_PAGE_MM.margin * U_PER_MM;
 export const LETTER_PAGE_CONTENT_U = (LETTER_PAGE_MM.height - 2 * LETTER_PAGE_MM.margin) * U_PER_MM;
@@ -43,6 +50,13 @@ ${D} .kop-logo{flex:none;width:${u(3.5)};height:${u(3.5)}}
 ${D} .kop-logo img{display:block;width:100%;height:100%;max-width:none;margin:0;object-fit:contain}
 ${D} .kop-text{flex:1;min-width:0;padding:0 ${u(0.625)}}
 ${D} .kop-text p{text-indent:0;line-height:1.25}
+${D} .kop-container[data-variant="rektorat"]{align-items:flex-end;min-height:${mm(29)};margin-inline:${mm(REKTORAT_SIDE_MM - LETTER_PAGE_MM.margin)} ${mm(-10)};padding:0;border:0;break-inside:avoid}
+${D} .kop-container[data-variant="rektorat"] .kop-logo{align-self:flex-start;width:${mm(26)};height:${mm(26)}}
+${D} .kop-container[data-variant="rektorat"] .kop-text{padding:0 0 0 ${mm(3)}}
+${D} .kop-container[data-variant="rektorat"] .kop-text p{line-height:1.35}
+${D} .kop-container[data-variant="rektorat"] .kop-text::after{content:'';display:block;border-bottom:${u(0.1)} solid #111}
+${S} .rektorat-letter-footer{font-size:${u(LETTER_BASE_PT / BODY_PT)};line-height:1.2;text-align:center}
+${S} .rektorat-letter-footer a{color:#00e;text-decoration:underline}
 
 ${D} .meta-row{display:flex}
 ${D} .meta-label{flex:none;width:${u(4.0625)}}
@@ -80,6 +94,8 @@ ${D} .sign-space{height:${u(4.6875)}}
 export const LETTER_SCREEN_CSS = `
 .letter-frame{container-type:inline-size;width:100%;min-width:540px;max-width:${LETTER_PAGE_MM.width}mm;margin-inline:auto}
 ${S}.letter-sheet--screen{--u:calc(100cqw / ${LETTER_SHEET_WIDTH_U.toFixed(4)});position:relative;box-sizing:border-box;padding:${u(LETTER_MARGIN_U)}}
+${S}.letter-sheet--screen.letter-sheet--rektorat{padding-top:${u(REKTORAT_TOP_MARGIN_U)}}
+${S}.letter-sheet--screen .rektorat-letter-footer{position:absolute;inset-inline:${u(LETTER_MARGIN_U)};bottom:${mm(5.4)}}
 ${D} .ProseMirror{cursor:text}
 ${D} .letter-image[data-float]{cursor:move}
 ${D} .letter-handle{display:none;position:absolute;z-index:3;box-sizing:border-box;width:12px;height:12px;border:2px solid #fff;border-radius:2px;background:#1a73e8;box-shadow:0 0 0 1px #1a73e8,0 1px 3px rgba(0,0,0,.35)}
@@ -120,3 +136,22 @@ html,body{margin:0;padding:0;background:#fff}
 ${S}{--u:${BODY_PT}pt}
 ${LETTER_CSS}
 `;
+
+/** Repeat the footer in print margin boxes. Older engines print the HTML footer after the letter. */
+export function rektoratPrintCss(supportsPageMargins: boolean): string {
+  const sidePadding = LETTER_PAGE_MM.margin - REKTORAT_SIDE_MM;
+  const contentHeight = LETTER_PAGE_MM.height - REKTORAT_TOP_MM - LETTER_PAGE_MM.margin;
+  return `
+@page{margin:${REKTORAT_TOP_MM}mm ${REKTORAT_SIDE_MM}mm ${supportsPageMargins ? LETTER_PAGE_MM.margin : 5}mm;
+${supportsPageMargins ? `@bottom-center{
+  content:"${REKTORAT_ADDRESS}\\A Website : ${REKTORAT_WEBSITE} Telp : ${REKTORAT_PHONE}";
+  white-space:pre;text-align:center;vertical-align:middle;font:${LETTER_BASE_PT}pt/1.2 'Times New Roman',Times,serif;color:#111;
+}` : ''}
+}
+${S}{padding-inline:${sidePadding}mm}
+${supportsPageMargins
+    ? `${S} .rektorat-letter-footer{display:none}`
+    : `${D}{min-height:${contentHeight}mm}
+${S} .rektorat-letter-footer{margin-top:5.4mm;break-inside:avoid}`}
+`;
+}

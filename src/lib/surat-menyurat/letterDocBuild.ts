@@ -3,6 +3,12 @@ import type { LetterDoc, LetterMark, LetterNode } from './letterDoc';
 
 export interface LetterDocOptions {
   isYapetidu: boolean;
+  isRektorat?: boolean;
+}
+
+export function isRektoratSatker(satkerId: string | undefined, satkerName?: string): boolean {
+  const id = satkerId || satkerName?.trim().toLowerCase().replace(/\s+/g, '_');
+  return id === 'sekretariat_rektorat' || id === 'rektorat';
 }
 
 const bold: LetterMark = { type: 'bold' };
@@ -33,12 +39,17 @@ const line = (content: LetterNode[], textAlign: 'left' | 'center', extra: Record
  * greetings, body, closing and signature. Older letters and the templates hold their body as three plain
  * paragraphs, which become ordinary paragraphs here.
  */
-export function buildLetterDoc(draft: LetterDraftPayload, { isYapetidu }: LetterDocOptions): LetterDoc {
+export function buildLetterDoc(draft: LetterDraftPayload, { isYapetidu, isRektorat }: LetterDocOptions): LetterDoc {
   const content: LetterNode[] = [];
   const isTask = draft.templateType === 'tugas';
 
   // Letterhead
-  const kopLines: LetterNode[] = [
+  const useRektoratHeader = isRektorat && !isYapetidu;
+  const kopLines: LetterNode[] = useRektoratHeader ? [
+    line(inline('√ Fak. Ilmu Kesehatan    √ Fak. Bisnis, Bahasa dan Pendidikan'), 'left'),
+    line(inline('√ Fak. Agama Islam  √ Fak. Sains & Teknologi √ Program Pasca Sarjana'), 'left'),
+    line(inline('SK. MENDIKNAS RI NOMOR : 121/D/O/2001'), 'left'),
+  ] : [
     line(inline(isYapetidu ? "YAYASAN PESANTREN TINGGI DARUL 'ULUM JOMBANG" : 'UNIVERSITAS PESANTREN TINGGI DARUL ULUM', [bold, size(13.5)]), 'center'),
     line(inline((draft.satkerName || 'SATUAN KERJA').toUpperCase(), [bold]), 'center', { after: 2 }),
     line(inline('Alamat: PP Darul Ulum, Tromol Pos 10 Peterongan Jombang Jawa Timur 61481', [size(8.5)]), 'center'),
@@ -50,7 +61,11 @@ export function buildLetterDoc(draft: LetterDraftPayload, { isYapetidu }: Letter
       'center',
     ),
   ];
-  content.push({ type: 'kop', attrs: { logo: isYapetidu ? 'yapetidu' : 'unipdu' }, content: kopLines });
+  content.push({
+    type: 'kop',
+    attrs: { logo: isYapetidu ? 'yapetidu' : 'unipdu', ...(useRektoratHeader && { variant: 'rektorat' }) },
+    content: kopLines,
+  });
 
   // Nomor, Lampiran, Hal
   const row = (label: string, field: string, value: LetterNode[]): LetterNode => ({

@@ -75,8 +75,11 @@ export default function SuratMenyuratPage() {
   const isSuperAdmin = profile?.role === 'super_admin';
   const satkerDisplayName = profile?.satkerName || profile?.displayName || 'Satuan Kerja Loyalis';
   // Super Admin writes for the SatKer picked in the filter; a head writes for their own.
+  const targetSatkerId = isSuperAdmin && selectedSatkerFilter !== 'all' ? selectedSatkerFilter : undefined;
+  const targetSatker = satkerList.find((s) => s.id === targetSatkerId);
+  const composerSatkerName = targetSatker?.name || satkerDisplayName;
   const satkerInitials = isSuperAdmin
-    ? satkerList.find((s) => s.id === selectedSatkerFilter)?.initials
+    ? targetSatker?.initials
     : profile?.satkerInitials;
 
   const fetchData = useCallback(async (isSilent = false) => {
@@ -507,7 +510,7 @@ export default function SuratMenyuratPage() {
             ) : activeTab === 'keluar' ? (
               <>
               {(inlineComposerOpen || keluarToEdit) && <div ref={keluarComposerRef} className="p-6"><SuratComposerModal
-                key={keluarToEdit?.id ?? 'new'}
+                key={keluarToEdit?.id ?? targetSatkerId ?? 'new'}
                 inline
                 open
                 surat={keluarToEdit}
@@ -515,13 +518,13 @@ export default function SuratMenyuratPage() {
                   setInlineComposerOpen(false);
                   setKeluarToEdit(null);
                 }}
-                defaultSatkerName={satkerDisplayName}
+                defaultSatkerName={composerSatkerName}
                 defaultSatkerInitials={satkerInitials}
                 defaultKepalaName={profile?.displayName || ''}
                 defaultKepalaEmail={userContact.email || profile?.email || user?.email || ''}
                 defaultKepalaPhone={userContact.phone || profile?.phoneNumber || profile?.phone || ''}
                 nextSequence={nextSequence}
-                targetSatkerId={isSuperAdmin && selectedSatkerFilter !== 'all' ? selectedSatkerFilter : undefined}
+                targetSatkerId={targetSatkerId}
                 onSavedToSuratKeluar={() => {
                   const wasEditing = Boolean(keluarToEdit);
                   setInlineComposerOpen(false);
@@ -620,15 +623,16 @@ export default function SuratMenyuratPage() {
 
       {/* Surat Composer Live Template Generator */}
       {composerModalOpen && <SuratComposerModal
+        key={targetSatkerId ?? 'new'}
         open={composerModalOpen}
         onOpenChange={setComposerModalOpen}
-        defaultSatkerName={satkerDisplayName}
+        defaultSatkerName={composerSatkerName}
         defaultSatkerInitials={satkerInitials}
         defaultKepalaName={profile?.displayName || ''}
         defaultKepalaEmail={userContact.email || profile?.email || user?.email || ''}
         defaultKepalaPhone={userContact.phone || profile?.phoneNumber || profile?.phone || ''}
         nextSequence={nextSequence}
-        targetSatkerId={isSuperAdmin && selectedSatkerFilter !== 'all' ? selectedSatkerFilter : undefined}
+        targetSatkerId={targetSatkerId}
         onSavedToSuratKeluar={() => {
           fetchData(true);
         }}

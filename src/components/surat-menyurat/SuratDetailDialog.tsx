@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { SuratMasuk, SuratKeluar, SuratAttachment } from '@/lib/surat-menyurat/types';
 import { draftFromSurat } from '@/lib/surat-menyurat/templates';
+import { isRektoratSatker } from '@/lib/surat-menyurat/letterDocBuild';
 import { uploadFileTypeFor } from '@/lib/uploadFileTypes';
 import { Download, ExternalLink, FileText } from 'lucide-react';
 import LetterPaper from './LetterPaper';
@@ -101,7 +102,11 @@ export default function SuratDetailDialog({ open, onOpenChange, surat, type }: P
           )}
 
           {current?.kind === 'naskah' && naskahDraft && (
-            <LetterPaper draft={naskahDraft} isYapetidu={surat.institutionScope === 'YAPETIDU'} />
+            <LetterPaper
+              draft={naskahDraft}
+              isYapetidu={surat.institutionScope === 'YAPETIDU'}
+              isRektorat={isRektoratSatker(surat.satkerId, surat.satkerName)}
+            />
           )}
 
           {current?.kind === 'file' && (() => {
