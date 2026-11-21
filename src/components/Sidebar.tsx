@@ -12,7 +12,6 @@ import {
   canSimulateDriverJourneys,
   getUserRoleLabel,
   isFinancePayrollPath,
-  PAYROLL_MASTER_PATH,
   PAYROLL_RECAP_PATH,
   SANTUNAN_REVIEW_PATH,
 } from '@/lib/payroll/roles';
@@ -162,12 +161,6 @@ export default function Sidebar() {
       path: '/dashboard/payroll/uraian',
       icon: FileSpreadsheet,
       activePattern: '/dashboard/payroll/uraian'
-    },
-    {
-      name: 'Matriks Gaji',
-      path: PAYROLL_MASTER_PATH,
-      icon: FileSpreadsheet,
-      exact: true,
     },
     {
       name: 'Koperasi',
@@ -331,7 +324,7 @@ export default function Sidebar() {
         : currentProfile.role === 'finance_verifier'
           ? [
               ...adminMenuItems.filter(({ path }) =>
-                path !== PAYROLL_MASTER_PATH && path !== PAYROLL_RECAP_PATH && isFinancePayrollPath(path),
+                path !== PAYROLL_RECAP_PATH && isFinancePayrollPath(path),
               ),
               ...financeUraianMenu.map(item => {
                 const category = item.path.endsWith('/presensi-pekarya')
