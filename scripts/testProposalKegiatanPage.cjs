@@ -151,8 +151,8 @@ const mocks = {
   '@/components/payroll/ReferralFinancePanel': `exports.default=()=>null;`,
   'firebase/firestore': `const T=globalThis.__proposalTest; exports.collection=(_,name)=>({name}); exports.doc=(_,name,id)=>({name,id}); exports.where=(...args)=>args; exports.query=(...args)=>args; exports.serverTimestamp=()=>({seconds:Math.floor(Date.now()/1000)}); exports.onSnapshot=(query,next)=>{const l={next,period:query[1][2]};T.listeners.add(l);T.notify();return()=>T.listeners.delete(l)}; exports.setDoc=T.setDoc; exports.deleteDoc=async(ref)=>{T.deleteCalls.push(ref.id);if(T.deleteFailure)throw T.deleteFailure;T.records.delete(ref.id);T.notify()};`,
   '@/lib/payroll/client': `exports.authenticatedJson=(url,options)=>globalThis.__proposalTest.api(url,options);exports.createFinancialRequestId=(prefix)=>prefix+'_'+Date.now()+'_'+(++globalThis.__proposalTest.nextId);`,
-  '@/utils/generateProposalKegiatanPdf': `exports.generateProposalKegiatanPdf=()=>{};`,
-  '@/utils/generateLpjPdf': `exports.generateLpjPdf=async()=>{};`,
+  '@/utils/generateProposalKegiatanPdf': `const { generateProposalKegiatanPdf } = require('./src/utils/generateProposalKegiatanPdf'); exports.generateProposalKegiatanPdf = (data) => { globalThis.__proposalTest.budgetPdf = generateProposalKegiatanPdf(data, false); };`,
+  '@/utils/generateLpjPdf': `const { generateLpjPdf } = require('./src/utils/generateLpjPdf'); exports.generateLpjPdf = async (data) => { globalThis.__proposalTest.budgetPdf = await generateLpjPdf(data, false); };`,
   '@/utils/generateLpjExpenseReportPdf': `exports.generateLpjExpenseReportPdf=async()=>{};`,
   '@/lib/uploads': `exports.uploadProofFile=async(endpoint,file,fields)=>{const T=globalThis.__proposalTest;T.receiptUploads.push({endpoint,file,fields});if(T.uploadGate)await T.uploadGate;if(T.uploadFailure)throw T.uploadFailure;return T.uploadUrl||'https://receipt.test/uploaded.jpg'};`,
   '@/lib/payroll/expenseReportReceipt': `exports.prepareExpenseReportReceipt=async(file)=>{globalThis.__proposalTest.receiptInputs.push(file);return new File([new Uint8Array([255,216,255,217])],'processed-receipt.jpg',{type:'image/jpeg'})};`,
@@ -296,6 +296,7 @@ async function reset() {
   T.writes = [];
   T.params = 'month=10&year=2026';
   T.apiOptions = [];
+  T.budgetPdf = null;
   T.autoConfirmEdits = true;
   T.failRequests = 0;
   T.enforceRevision = false;
@@ -312,6 +313,57 @@ async function reset() {
   localStorage.clear();
 }
 const tests = [
+  ['proposal budget includes an expense with a blank description in the form and PDF', async () => {
+    T.records.set('saved-event', {
+      ...fixture(),
+      status: 'proposal_draft',
+      pengeluaranRows: [
+        ...fixture().pengeluaranRows,
+        { rowId: 'reserve', type: 'item', uraian: '', rincianQty: '1', rincianRate: 100 },
+      ],
+    });
+    await mount(head);
+    await clickText('Saved event fixture');
+    await clickText('Cetak Proposal (PDF)');
+
+    const pdfRows = T.budgetPdf.lastAutoTable.body;
+    for (const [formLabel, pdfLabel, amount] of [
+      ['Jumlah Pengeluaran Operasional', 'Jumlah Pengeluaran', 100],
+      ['Kepanitiaan', 'Kepanitiaan 10% Pengeluaran', 10],
+      ['Total Pengeluaran Kegiatan', 'TOTAL PENGELUARAN', 110],
+      ['Sisa Dana Operasional', 'SISA DANA OPERASIONAL', 490],
+    ]) {
+      const formLabelCell = [...document.querySelectorAll('td')].find(cell => cell.textContent === formLabel);
+      const pdfRow = pdfRows.find(row => row.cells[1]?.text.join(' ') === pdfLabel);
+      assert.equal(pdfRow.cells[3].text.join(' '), `Rp${amount}`, pdfLabel);
+      const formValueCell = formLabelCell.parentElement.cells[formLabel === 'Kepanitiaan' ? 2 : 1];
+      assert.equal(formValueCell.textContent.replace(/\s/g, ''), `Rp${amount}`, formLabel);
+    }
+    await clickText('Simpan Laporan');
+    assert.equal(T.records.get('saved-event').totalBudget, 110);
+  }],
+  ['LPJ budget includes an expense with a blank description in the form and PDF', async () => {
+    T.records.set('saved-event', {
+      ...fixture(),
+      status: 'lpj_draft',
+      lpjPengeluaranRows: [
+        ...fixture().pengeluaranRows,
+        { rowId: 'reserve', type: 'item', uraian: ' ', rincianQty: 'Paket', rincianRate: 100, realisasi: 80 },
+        { rowId: 'empty', type: 'item', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 },
+      ],
+    });
+    await mount(head);
+    await clickText('Saved event fixture');
+    const label = 'Jumlah Pengeluaran';
+    const findLabel = () => [...document.querySelectorAll('td')].find(cell => cell.textContent === label);
+    if (!findLabel()) await clickText('Seksi 1: Realisasi Keuangan');
+    await clickText('Cetak LPJ (PDF)');
+
+    const pdfRow = T.budgetPdf.lastAutoTable.body.find(row => row.cells[1]?.text.join(' ') === label);
+    const formCells = [...findLabel().parentElement.cells];
+    assert.deepEqual([pdfRow.cells[3].text[0], pdfRow.cells[4].text[0]], ['Rp100', 'Rp80']);
+    assert.deepEqual(formCells.slice(1, 3).map(cell => cell.textContent.replace(/\s/g, '')), ['Rp100', 'Rp80']);
+  }],
   ...['mouse', 'touch', 'pen'].map(pointerType => [`release: opening pointer gesture (${pointerType}) cannot dismiss the confirmation`, async () => {
     T.autoConfirmEdits = false;
     T.records.set('saved-event', { ...fixture(), revision: 1, creatorRole: 'satker_head_loyalis' });

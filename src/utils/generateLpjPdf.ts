@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable, { RowInput } from 'jspdf-autotable';
+import { getProposalBudget, getProposalLineAmount } from '@/lib/payroll/proposalBudget';
 import { ExpenseReport, ProposalExpenseRow } from '@/lib/payroll/proposalExpenseReports';
 import {
   ExpenseReportReceiptEntry,
@@ -38,30 +39,6 @@ export interface LpjPdfData {
   // receipts attached to their (expense-mode) header items.
   expenseReports: ExpenseReport[];
 }
-
-const parseQty = (q: string): number => {
-  if (!q) return 0;
-  const trimmed = q.trim();
-  const parts = trimmed.split(/[xX*]/);
-  if (parts.length > 1) {
-    let product = 1;
-    for (const part of parts) {
-      const cleanPart = part.trim();
-      const match = cleanPart.match(/[\d.]+/);
-      if (!match) continue;
-      let val = parseFloat(match[0]);
-      if (cleanPart.includes('%')) val /= 100;
-      product *= val;
-    }
-    return product;
-  }
-  if (trimmed.endsWith('%')) {
-    const match = trimmed.match(/[\d.]+/);
-    return match ? parseFloat(match[0]) / 100 : 0;
-  }
-  const match = trimmed.match(/[\d.]+/);
-  return match ? parseFloat(match[0]) : 0;
-};
 
 const headStyles = {
   fillColor: [67, 56, 202] as [number, number, number],
@@ -107,6 +84,18 @@ export async function generateLpjPdf(data: LpjPdfData, saveToFile = true): Promi
 
     renderLetterhead(doc);
     const tableStartY = renderTitle(doc, data.realisasiTitle || 'REALISASI', 45);
+    const {
+      yayasanPct,
+      unipduPct,
+      kepanitiaanPct,
+      totalPemasukanAnggaran,
+      yayasanAnggaran,
+      unipduAnggaran,
+      danaOperasionalAnggaran,
+      jumlahPengeluaranAnggaran: jumlahAnggaran,
+      kepanitiaanAnggaran: kepAnggaran,
+      totalPengeluaranAnggaran: totalAnggaran,
+    } = getProposalBudget(data);
 
     const tableRows: RowInput[] = [];
 
@@ -115,7 +104,7 @@ export async function generateLpjPdf(data: LpjPdfData, saveToFile = true): Promi
       { content: 'PEMASUKAN', colSpan: 4, styles: { fontStyle: 'bold' as const } },
     ]);
     data.pemasukanRows.forEach((row, idx) => {
-      const anggaran = parseQty(row.rincianQty) * row.rincianRate;
+      const anggaran = getProposalLineAmount(row);
       const rincianStr = row.rincianQty && row.rincianRate > 0 ? `${row.rincianQty}  x  ${formatIDR(row.rincianRate)}` : '';
       tableRows.push([
         (idx + 1).toString(),
@@ -126,18 +115,13 @@ export async function generateLpjPdf(data: LpjPdfData, saveToFile = true): Promi
       ]);
     });
 
-    const totalPemasukanAnggaran = data.pemasukanRows.reduce((sum, r) => sum + (parseQty(r.rincianQty) * r.rincianRate), 0);
     const totalPemasukanRealisasi = data.pemasukanRows.reduce((sum, r) => sum + r.realisasi, 0);
 
     tableRows.push([
       { content: '', styles: { fontStyle: 'bold' as const } },
       { content: 'Dana Pengembangan', colSpan: 4, styles: { fontStyle: 'bold' as const } },
     ]);
-    const yayasanPct = data.yayasanPercentage ?? 20;
-    const unipduPct = data.unipduPercentage ?? 20;
-    const yayasanAnggaran = totalPemasukanAnggaran * (yayasanPct / 100);
     const yayasanRealisasi = totalPemasukanRealisasi * (yayasanPct / 100);
-    const unipduAnggaran = totalPemasukanAnggaran * (unipduPct / 100);
     const unipduRealisasi = totalPemasukanRealisasi * (unipduPct / 100);
 
     tableRows.push([
@@ -155,9 +139,7 @@ export async function generateLpjPdf(data: LpjPdfData, saveToFile = true): Promi
       { content: formatIDR(unipduRealisasi), styles: { halign: 'right' as const } },
     ]);
 
-    const totalPengembanganAnggaran = yayasanAnggaran + unipduAnggaran;
     const totalPengembanganRealisasi = yayasanRealisasi + unipduRealisasi;
-    const danaOperasionalAnggaran = totalPemasukanAnggaran - totalPengembanganAnggaran;
     const danaOperasionalRealisasi = totalPemasukanRealisasi - totalPengembanganRealisasi;
 
     tableRows.push([
@@ -187,7 +169,7 @@ export async function generateLpjPdf(data: LpjPdfData, saveToFile = true): Promi
         ]);
       } else {
         oIdx += 1;
-        const anggaran = parseQty(row.rincianQty) * row.rincianRate;
+        const anggaran = getProposalLineAmount(row);
         const rincianStr = row.rincianQty && row.rincianRate > 0 ? `${row.rincianQty}  x  ${formatIDR(row.rincianRate)}` : '';
         tableRows.push([
           oIdx.toString(),
@@ -199,19 +181,16 @@ export async function generateLpjPdf(data: LpjPdfData, saveToFile = true): Promi
       }
     });
 
-    const expItems = data.pengeluaranRows.filter((r) => r.type === 'item');
-    const jumlahAnggaran = expItems.reduce((sum, r) => sum + (parseQty(r.rincianQty) * r.rincianRate), 0);
-    const jumlahRealisasi = expItems.reduce((sum, r) => sum + (r.realisasi ?? 0), 0);
-    const kepPerc = data.kepanitiaaanPercentage / 100;
-    const kepAnggaran = jumlahAnggaran * kepPerc;
-    const kepRealisasi = jumlahAnggaran * kepPerc;
-    const totalAnggaran = jumlahAnggaran + kepAnggaran;
+    const jumlahRealisasi = data.pengeluaranRows
+      .filter(row => row.type === 'item')
+      .reduce((sum, row) => sum + (row.realisasi ?? 0), 0);
+    const kepRealisasi = kepAnggaran;
     const totalRealisasi = jumlahRealisasi + kepRealisasi;
 
     const summaryFill = [240, 244, 255] as [number, number, number];
     tableRows.push(
       [{ content: '', styles: { fillColor: summaryFill } }, { content: 'Jumlah Pengeluaran', colSpan: 2, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(jumlahAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(jumlahRealisasi), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }],
-      [{ content: '', styles: { fillColor: summaryFill } }, { content: `Kepanitiaan ${data.kepanitiaaanPercentage}% Pengeluaran`, colSpan: 2, styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepAnggaran), styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepRealisasi), styles: { halign: 'right' as const, fillColor: summaryFill } }],
+      [{ content: '', styles: { fillColor: summaryFill } }, { content: `Kepanitiaan ${kepanitiaanPct}% Pengeluaran`, colSpan: 2, styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepAnggaran), styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepRealisasi), styles: { halign: 'right' as const, fillColor: summaryFill } }],
       [{ content: '', styles: { fillColor: summaryFill } }, { content: 'TOTAL PENGELUARAN', colSpan: 2, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(totalAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(totalRealisasi), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }],
     );
 

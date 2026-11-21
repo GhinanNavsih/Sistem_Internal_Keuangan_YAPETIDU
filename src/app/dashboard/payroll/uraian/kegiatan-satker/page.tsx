@@ -41,6 +41,7 @@ import {
 } from '@/lib/queries/hooks';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import { defaultPayrollPeriodToken } from '@/lib/payroll/domain';
+import { getProposalBudget, getProposalLineAmount } from '@/lib/payroll/proposalBudget';
 import { generateProposalKegiatanPdf } from '@/utils/generateProposalKegiatanPdf';
 import { generateLpjPdf } from '@/utils/generateLpjPdf';
 import { generateLpjExpenseReportPdf } from '@/utils/generateLpjExpenseReportPdf';
@@ -559,45 +560,19 @@ export default function KegiatanSatkerPage() {
   }, [searchParams, profile?.uid, periodToken, canManageProposal, remoteProposalList]);
 
   // ── Stage 1 Proposal Computations ──
-  const totalPemasukanAnggaran = useMemo(() => {
-    return pemasukanRows.reduce((sum, r) => sum + (parseQty(r.rincianQty) * (r.rincianRate || 0)), 0);
-  }, [pemasukanRows]);
-
-  const yayasanAnggaran = useMemo(() => {
-    return totalPemasukanAnggaran * (yayasanPercentage / 100);
-  }, [totalPemasukanAnggaran, yayasanPercentage]);
-
-  const unipduAnggaran = useMemo(() => {
-    return totalPemasukanAnggaran * (unipduPercentage / 100);
-  }, [totalPemasukanAnggaran, unipduPercentage]);
-
-  const totalPengembanganAnggaran = useMemo(() => {
-    return yayasanAnggaran + unipduAnggaran;
-  }, [yayasanAnggaran, unipduAnggaran]);
-
-  const danaOperasionalAnggaran = useMemo(() => {
-    return totalPemasukanAnggaran - totalPengembanganAnggaran;
-  }, [totalPemasukanAnggaran, totalPengembanganAnggaran]);
-
-  const expItems = useMemo(() => {
-    return pengeluaranRows.filter(r => r.type === 'item' && r.uraian.trim());
-  }, [pengeluaranRows]);
-
-  const jumlahPengeluaranAnggaran = useMemo(() => {
-    return expItems.reduce((sum, r) => sum + (parseQty(r.rincianQty) * (r.rincianRate || 0)), 0);
-  }, [expItems]);
-
-  const kepanitiaaanAnggaran = useMemo(() => {
-    return jumlahPengeluaranAnggaran * (kepanitiaaanPercentage / 100);
-  }, [jumlahPengeluaranAnggaran, kepanitiaaanPercentage]);
-
-  const totalPengeluaranAnggaran = useMemo(() => {
-    return jumlahPengeluaranAnggaran + kepanitiaaanAnggaran;
-  }, [jumlahPengeluaranAnggaran, kepanitiaaanAnggaran]);
-
-  const sisaAnggaran = useMemo(() => {
-    return danaOperasionalAnggaran - totalPengeluaranAnggaran;
-  }, [danaOperasionalAnggaran, totalPengeluaranAnggaran]);
+  const {
+    totalPemasukanAnggaran,
+    yayasanAnggaran,
+    unipduAnggaran,
+    totalPengembanganAnggaran,
+    danaOperasionalAnggaran,
+    jumlahPengeluaranAnggaran,
+    kepanitiaanAnggaran,
+    totalPengeluaranAnggaran,
+    sisaAnggaran,
+  } = useMemo(() => getProposalBudget({
+    pemasukanRows, pengeluaranRows, yayasanPercentage, unipduPercentage, kepanitiaaanPercentage,
+  }), [pemasukanRows, pengeluaranRows, yayasanPercentage, unipduPercentage, kepanitiaaanPercentage]);
 
   const isProposalReadOnly = periodClosed || currentProposalStatus === 'lpj_approved' || (!isFinanceReviewer && (currentProposalStatus === 'proposal_approved' || currentProposalStatus === 'proposal_submitted' || currentProposalStatus?.startsWith('lpj_')));
   const isLpjReadOnly = currentProposalStatus === 'lpj_submitted' || currentProposalStatus === 'lpj_approved' ||
@@ -1507,7 +1482,7 @@ export default function KegiatanSatkerPage() {
                     </thead>
                     <tbody>
                       {pemasukanRows.map((row, idx) => {
-                        const anggaran = parseQty(row.rincianQty) * row.rincianRate;
+                        const anggaran = getProposalLineAmount(row);
                         const insertPemasukanBelow = (trigger?: HTMLElement) => {
                           setPemasukanRows(prev => {
                             const c = [...prev];
@@ -1783,7 +1758,7 @@ export default function KegiatanSatkerPage() {
                             </tr>
                           );
                         }
-                        const anggaran = parseQty(row.rincianQty) * row.rincianRate;
+                        const anggaran = getProposalLineAmount(row);
                         return (
                           <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
                             <td className="px-2.5 py-1 text-xs font-bold text-slate-400 text-center">{itemNum}</td>
@@ -1954,7 +1929,7 @@ export default function KegiatanSatkerPage() {
                             <span className="text-xs font-bold text-slate-550">%</span>
                           </div>
                         </td>
-                        <td className="px-3 py-2 text-xs font-bold text-slate-800 text-right font-mono">{fmtRp(kepanitiaaanAnggaran)}</td>
+                        <td className="px-3 py-2 text-xs font-bold text-slate-800 text-right font-mono">{fmtRp(kepanitiaanAnggaran)}</td>
                         <td></td>
                       </tr>
                       <tr className="bg-slate-100/80 font-bold border-t border-slate-200">
@@ -2167,30 +2142,38 @@ export default function KegiatanSatkerPage() {
 
                 {/* SEKSI 1: REALISASI KEUANGAN (FULL COMPREHENSIVE) */}
                 {realisasiEnabled && (() => {
-                  const totalPemasukanAnggaranLPJ = lpjPemasukanRows.reduce((sum, r) => sum + (parseQty(r.rincianQty) * r.rincianRate), 0);
+                  const {
+                    totalPemasukanAnggaran: totalPemasukanAnggaranLPJ,
+                    yayasanAnggaran: yayasanAnggaranLPJ,
+                    unipduAnggaran: unipduAnggaranLPJ,
+                    danaOperasionalAnggaran: danaOperasionalAnggaranLPJ,
+                    jumlahPengeluaranAnggaran: jumlahPengeluaranAnggaranLPJ,
+                    kepanitiaanAnggaran: kepanitiaaanAnggaranLPJ,
+                    totalPengeluaranAnggaran: totalPengeluaranAnggaranLPJ,
+                    sisaAnggaran: sisaAnggaranLPJ,
+                  } = getProposalBudget({
+                    pemasukanRows: lpjPemasukanRows,
+                    pengeluaranRows: lpjPengeluaranRows,
+                    yayasanPercentage,
+                    unipduPercentage,
+                    kepanitiaaanPercentage,
+                  });
                   const totalPemasukanRealisasiLPJ = lpjPemasukanRows.reduce((sum, r) => sum + r.realisasi, 0);
 
-                  const yayasanAnggaranLPJ = totalPemasukanAnggaranLPJ * (yayasanPercentage / 100);
                   const yayasanRealisasiLPJ = totalPemasukanRealisasiLPJ * (yayasanPercentage / 100);
-                  const unipduAnggaranLPJ = totalPemasukanAnggaranLPJ * (unipduPercentage / 100);
                   const unipduRealisasiLPJ = totalPemasukanRealisasiLPJ * (unipduPercentage / 100);
-                  const totalPengembanganAnggaranLPJ = yayasanAnggaranLPJ + unipduAnggaranLPJ;
                   const totalPengembanganRealisasiLPJ = yayasanRealisasiLPJ + unipduRealisasiLPJ;
 
-                  const danaOperasionalAnggaranLPJ = totalPemasukanAnggaranLPJ - totalPengembanganAnggaranLPJ;
                   const danaOperasionalRealisasiLPJ = totalPemasukanRealisasiLPJ - totalPengembanganRealisasiLPJ;
 
-                  const expItemsLPJ = lpjPengeluaranRows.filter(r => r.type === 'item' && r.uraian.trim());
-                  const jumlahPengeluaranAnggaranLPJ = expItemsLPJ.reduce((sum, r) => sum + (parseQty(r.rincianQty) * r.rincianRate), 0);
-                  const jumlahPengeluaranRealisasiLPJ = expItemsLPJ.reduce((sum, r) => sum + (r.realisasi || 0), 0);
+                  const jumlahPengeluaranRealisasiLPJ = lpjPengeluaranRows
+                    .filter(row => row.type === 'item')
+                    .reduce((sum, row) => sum + (row.realisasi ?? 0), 0);
 
-                  const kepanitiaaanAnggaranLPJ = jumlahPengeluaranAnggaranLPJ * (kepanitiaaanPercentage / 100);
-                  const kepanitiaaanRealisasiLPJ = jumlahPengeluaranAnggaranLPJ * (kepanitiaaanPercentage / 100);
+                  const kepanitiaaanRealisasiLPJ = kepanitiaaanAnggaranLPJ;
 
-                  const totalPengeluaranAnggaranLPJ = jumlahPengeluaranAnggaranLPJ + kepanitiaaanAnggaranLPJ;
                   const totalPengeluaranRealisasiLPJ = jumlahPengeluaranRealisasiLPJ + kepanitiaaanRealisasiLPJ;
 
-                  const sisaAnggaranLPJ = danaOperasionalAnggaranLPJ - totalPengeluaranAnggaranLPJ;
                   const sisaRealisasiLPJ = danaOperasionalRealisasiLPJ - totalPengeluaranRealisasiLPJ;
 
                   return (
@@ -2240,7 +2223,7 @@ export default function KegiatanSatkerPage() {
                                 </thead>
                                 <tbody>
                                   {lpjPemasukanRows.map((row, idx) => {
-                                    const anggaran = parseQty(row.rincianQty) * row.rincianRate;
+                                    const anggaran = getProposalLineAmount(row);
                                     const insertLpjPemasukanBelow = () => {
                                       setLpjPemasukanRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }); return c; });
                                     };
@@ -2378,7 +2361,7 @@ export default function KegiatanSatkerPage() {
                                     if (row.type === 'group_header') {
                                       const groupChildren = getExpenseGroupRows(lpjPengeluaranRows, idx);
                                       const groupAnggaran = groupChildren.reduce(
-                                        (sum, child) => sum + (parseQty(child.rincianQty) * child.rincianRate),
+                                        (sum, child) => sum + getProposalLineAmount(child),
                                         0,
                                       );
                                       const groupRealisasi = groupChildren.reduce(
@@ -2419,7 +2402,7 @@ export default function KegiatanSatkerPage() {
                                         </tr>
                                       );
                                     }
-                                    const anggaran = parseQty(row.rincianQty) * row.rincianRate;
+                                    const anggaran = getProposalLineAmount(row);
                                     return (
                                       <React.Fragment key={idx}>
                                         <tr className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
