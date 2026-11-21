@@ -962,7 +962,10 @@ const LetterTableRow = TableRow.extend({
               const delta = next.clientY - event.clientY;
               height = delta === 0 ? null : sanitizeRowHeight(Math.max(1, Math.min(LETTER_MAX_ROW_HEIGHT_PT, (initialHeight + delta) / pixelsPerPt)));
               const preview = height === null ? DecorationSet.empty : DecorationSet.create(doc, [
-                Decoration.node(pos, pos + rowNode.nodeSize, { style: `height: ${height * pixelsPerPt}px` }),
+                Decoration.node(pos, pos + rowNode.nodeSize, {
+                  'data-row-resizing': '',
+                  style: `height: ${height * pixelsPerPt}px`,
+                }),
               ]);
               view.dispatch(view.state.tr.setMeta(resizeKey, preview));
             };

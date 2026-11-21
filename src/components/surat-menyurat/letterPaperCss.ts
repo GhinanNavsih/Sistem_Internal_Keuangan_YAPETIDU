@@ -71,6 +71,7 @@ ${D} table{width:100%;margin:0 0 ${u(0.75)};border-collapse:collapse;table-layou
 ${D} td,${D} th{min-width:1em;padding:${u(0.25)} ${u(0.5)};border:1px solid #111;vertical-align:top}
 ${D} th{background-color:#f1f1f1;font-weight:700;text-align:left}
 ${D} td p,${D} th p{margin:0;text-indent:0}
+${D} tr:is([data-height-pt],[data-row-resizing]) > :is(td,th){padding-block:${u(0.05)};line-height:1.1}
 ${D} tr{break-inside:avoid}
 ${D} img{display:block;max-width:100%;height:auto;margin:0 auto ${u(0.75)}}
 ${D} .letter-image{position:relative;display:block;max-width:100%;margin:0 auto ${u(0.75)}}
