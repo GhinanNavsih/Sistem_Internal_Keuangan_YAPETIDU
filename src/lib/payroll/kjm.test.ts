@@ -122,6 +122,48 @@ test('raw parser parses latest format with Program Studi column', () => {
   assert.equal(r[0].sks, 3);
   assert.equal(r[0].attendance, 10);
 });
+function siaKadWorkbook(attendance: number | string) {
+  const w = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(w, XLSX.utils.aoa_to_sheet([
+    ['DETAIL PRESENSI MENGAJAR DOSEN PER MATA KULIAH'],
+    ['Semester / Tahun: 20252'],
+    [],
+    ['No', 'NIPY', 'Nama Dosen Pengajar', 'Program Studi', 'Kode MK', 'Nama Mata Kuliah', 'Kelas', 'SKS',
+      'Jumlah Mahasiswa', 'Jumlah Hadir (Pertemuan)', 'SKS * Hadir', 'Nomor Rekening'],
+    [1, '01234567890', 'Dosen A', 'PAI', 'MK1', 'Praktik', '4A', 3, 20, 32, 96, '12345'],
+    [],
+    [2, 1234567890, 'Dosen A', 'PAI', 'MK1', 'Praktik', 4, 3, 25, attendance, 99, '12345'],
+  ]), 'KJM');
+  XLSX.utils.book_append_sheet(w, XLSX.utils.aoa_to_sheet([['Ringkasan']]), 'Dosen Rekap');
+  return XLSX.write(w, { type: 'buffer', bookType: 'xlsx' });
+}
+
+test('SIAKAD KJM export preserves source rows and uses meetings instead of weighted hours', () => {
+  const courses = parseKjmWorkbook(siaKadWorkbook(0));
+  assert.deepEqual(courses, [
+    { id: 'kjm_5', sheet: 'KJM', row: 5, lecturer: '01234567890-Dosen A', nipy: '01234567890',
+      program: 'PAI', code: 'MK1', name: 'Praktik', kelas: '4A', sks: 3, attendance: 32 },
+    { id: 'kjm_7', sheet: 'KJM', row: 7, lecturer: '1234567890-Dosen A', nipy: '1234567890',
+      nipyMayHaveLostLeadingZero: true, program: 'PAI', code: 'MK1', name: 'Praktik', kelas: '4', sks: 3, attendance: 0 },
+  ]);
+  assert.deepEqual(groupKjmCourses(filterKjmCourses(courses))[0].courseIds, ['kjm_5', 'kjm_7']);
+  assert.throws(() => parseKjmWorkbook(siaKadWorkbook(' ')), /KJM:7: SKS\/hadir/);
+});
+test('numeric SIAKAD NIPY resolves either stored form and flags conflicting IDs', () => {
+  const [, numeric] = parseKjmWorkbook(siaKadWorkbook(16));
+  const employees = [{ ...employee, nipy: '01234567890' }, { ...employee, id: 'Loyalis_2', nipy: '1234567890' }];
+  const review = (master: KjmEmployee[]) => reviewKjm([numeric], reviewed([numeric]), master, [rate], '2026-09');
+  for (const match of employees) {
+    const result = review([match]);
+    assert.equal(result.assignments[numeric.lecturer], match.id);
+    assert.equal(result.results[0].regular, 42);
+  }
+  const inactive = { ...employees[1], active: false };
+  assert.deepEqual(review([inactive]).ignored, [`${numeric.lecturer}: Non-Aktif`]);
+  const ambiguous = review([employees[0], inactive]);
+  assert.equal(ambiguous.assignments[numeric.lecturer], undefined);
+  assert.ok(ambiguous.issues.some(issue => issue.startsWith(numeric.lecturer)));
+});
 test('rekap excludes NERS, RPL, and Praktek/Praktik only from Tetap Asli', () => {
   const makeCourse = (id: string, sheet: string, changes: Partial<KjmCourse>): KjmCourse => ({ ...course, id, sheet, ...changes });
   const courses = [

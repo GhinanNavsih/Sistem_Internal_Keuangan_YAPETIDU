@@ -265,17 +265,24 @@ to formulas.
 
 ### Upload, review, approval
 
-- Import only `Kontrak Asli` and `Tetap Asli` (case-insensitive names).
-- Preserve source sheet, row, lecturer block, course, class, program, SKS and
-  raw attendance. Normalize lecturer blocks into individual course records.
+- Accept the single-sheet SIAKAD `KJM` export or the legacy pair `Kontrak Asli`
+  and `Tetap Asli` (case-insensitive sheet names).
+- Preserve source sheet, row, lecturer identity, course, class, program, SKS and
+  raw attendance. Normalize legacy lecturer blocks into individual course
+  records. For the SIAKAD export, read attendance from `Jumlah Hadir
+  (Pertemuan)`. The app calculates weighted attendance from SKS and meetings.
 - In the rekap, exclude `Tetap Asli` rows when the source `Prodi` (column I)
   contains `NERS`, the source `Kelas` (column E) contains `RPL`, or the source
   `Nama Mata Kuliah` (column C) contains `Praktek` or `Praktik`, ignoring case.
   Keep these raw rows for auditability, but do not show or calculate them in
-  the rekap. The same text in `Kontrak Asli` does not trigger this filter.
+  the rekap. The SIAKAD export has no Tetap/Kontrak column, so exclusions for
+  those rows can be made during review.
 - Ignore matching Non-Aktif Loyalis. Never automatically fuzzy-match names;
   unresolved/ambiguous NIPY matches require explicit assignment or exclusion
-  with a reason. Stored employee classification is authoritative.
+  with a reason. For numeric 10-digit NIPYs from the SIAKAD export, check both
+  the raw ID and its zero-prefixed form against the master. If both IDs exist,
+  require review before assigning an active employee. Stored employee
+  classification is authoritative.
 - Raw sheets do not contain reliable consortium markers. The review workflow
   first presents a Mata Kuliah classification section, grouped by program and
   Kode MK. Every group defaults to `Reguler`; the admin checks `Konsorsium?`

@@ -4,6 +4,7 @@ export const KJM_RULE_VERSION = '2026-09-09-health-obligation-v1';
 export type KjmType = 'Keluarga' | 'Dosen' | 'Admin';
 export interface KjmCourse {
   id: string; sheet: string; row: number; lecturer: string; nipy: string;
+  nipyMayHaveLostLeadingZero?: true;
   program: string; code: string; name: string; kelas: string;
   sks: number; attendance: number;
 }
@@ -118,7 +119,10 @@ export function reviewKjm(courses: KjmCourse[], edits: KjmEdits, employees: KjmE
   for (const lecturer of lecturers) {
     const source = includedCourses.filter(c => c.lecturer === lecturer);
     const assignment = edits.lecturers[lecturer] || {};
-    const exact = employees.filter(e => e.nipy && e.nipy === source[0].nipy);
+    const nipy = source[0].nipy;
+    // Numeric cells can lose a leading zero, but 10-digit IDs also exist in the master.
+    const paddedNipy = source.some(c => c.nipyMayHaveLostLeadingZero) ? `0${nipy}` : null;
+    const exact = employees.filter(e => e.nipy && (e.nipy === nipy || e.nipy === paddedNipy));
     // Inactive source identities cannot be reassigned to another active employee.
     if (exact.length > 0 && exact.every(e => !e.active)) { ignored.push(`${lecturer}: Non-Aktif`); continue; }
     if (assignment.exclude) {
@@ -126,7 +130,8 @@ export function reviewKjm(courses: KjmCourse[], edits: KjmEdits, employees: KjmE
       ignored.push(`${lecturer}: ${assignment.reason || 'tanpa alasan'}`); continue;
     }
     const eligible = exact.filter(e => e.active);
-    const employee = assignment.employeeId ? employees.find(e => e.id === assignment.employeeId && e.active) : eligible.length === 1 ? eligible[0] : undefined;
+    const automatic = eligible.length === 1 && exact.every(e => e.nipy === eligible[0].nipy) ? eligible[0] : undefined;
+    const employee = assignment.employeeId ? employees.find(e => e.id === assignment.employeeId && e.active) : automatic;
     if (!employee) { issues.push(`${lecturer}: pilih pegawai aktif atau kecualikan dengan alasan.`); continue; }
     assignments[lecturer] = employee.id;
     const defaultRate = rates.find(r => `${r.degree}-${r.group}`.toLowerCase() === employee.education.trim().toLowerCase());

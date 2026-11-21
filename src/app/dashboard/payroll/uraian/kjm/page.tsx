@@ -604,7 +604,7 @@ function KjmContent() {
   return <div className="space-y-6 p-4 md:p-6">
     <section className="rounded-md border bg-white p-5 space-y-4">
       <h2 className="font-bold text-lg">Upload data mentah KJM</h2>
-      <p className="text-sm text-slate-600">Periode pembayaran: <strong>{period}</strong>. Hanya sheet Kontrak Asli dan Tetap Asli yang dibaca. Data tersimpan sebagai draft, bukan penghasilan.</p>
+      <p className="text-sm text-slate-600">Periode pembayaran <strong>{period}</strong>. Unggah sheet KJM atau pasangan sheet Kontrak Asli dan Tetap Asli. Unggahan tersimpan sebagai draft.</p>
       <div className="flex flex-wrap items-end gap-4">
         <div className="w-full sm:w-60 space-y-1.5">
           <label className="text-sm font-medium text-slate-700">Semester sumber</label>
