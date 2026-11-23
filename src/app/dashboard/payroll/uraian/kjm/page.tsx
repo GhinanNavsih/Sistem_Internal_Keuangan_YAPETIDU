@@ -316,6 +316,39 @@ function KjmMetricGroup({ title, items }: {
   </div>;
 }
 
+function KjmPageSkeleton() {
+  return (
+    <div role="status" className="p-4 md:p-6">
+      <span className="sr-only">Memuat data KJM…</span>
+      <div aria-hidden="true" className="space-y-6 motion-safe:animate-pulse">
+        <div className="space-y-4 rounded-md border bg-white p-5">
+          <div className="h-6 w-52 max-w-full rounded bg-slate-200" />
+          <div className="h-5 w-full max-w-lg rounded bg-slate-100" />
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="w-full space-y-1.5 sm:w-60">
+              <div className="h-5 w-28 rounded bg-slate-100" />
+              <div className="h-10 rounded-md bg-slate-100" />
+            </div>
+            <div className="w-full space-y-1.5 sm:w-80">
+              <div className="h-5 w-36 rounded bg-slate-100" />
+              <div className="h-10 rounded-md bg-slate-100" />
+            </div>
+            <div className="h-10 w-40 rounded-sm bg-slate-200" />
+          </div>
+          <div className="h-4 w-full max-w-md rounded bg-slate-100" />
+        </div>
+        <div className="space-y-3 rounded-md border bg-white p-5">
+          <div className="h-6 w-48 max-w-full rounded bg-slate-200" />
+          <div className="flex items-center justify-between gap-4 rounded-md border p-3">
+            <div className="h-5 w-1/2 rounded bg-slate-100" />
+            <div className="h-5 w-24 rounded bg-slate-100" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function KjmContent() {
   const { profile } = useAuth();
   const params = useSearchParams();
@@ -327,6 +360,7 @@ function KjmContent() {
   const [edits, setEdits] = useState<KjmEdits>(emptyKjmEdits);
   const [semester, setSemester] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [loadedPeriod, setLoadedPeriod] = useState<string | null>(null);
   const [busy, setBusy] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -358,14 +392,15 @@ function KjmContent() {
     if (!canVerifyPayroll(profile?.role)) return;
     let cancelled = false;
     const load = async () => {
-      setBusy('Memuat data KJM…'); setDraft(null); setConfirm(null); setError(''); setMessage('');
+      setLoadedPeriod(null); setBusy(''); setDraft(null); setConfirm(null); setError(''); setMessage('');
+      setImports([]); setClosed(false);
       draftRef.current = null; editsRef.current = emptyKjmEdits(); setEdits(emptyKjmEdits()); setAutosaveState('idle');
       try { await refresh(); } catch (e) { if (!cancelled) setError((e as Error).message); }
-      finally { if (!cancelled) setBusy(''); }
+      finally { if (!cancelled) setLoadedPeriod(period); }
     };
     void load();
     return () => { cancelled = true; };
-  }, [profile?.role, refresh]);
+  }, [period, profile?.role, refresh]);
   const fetchDraft = useCallback(async (id: string): Promise<DraftResponse | null> => {
     const data = await authenticatedJson<DraftResponse>(`/api/payroll/kjm?period=${period}&id=${id}`);
     return activePeriod.current === period ? data : null;
@@ -599,8 +634,9 @@ function KjmContent() {
       setMessage('Data impor KJM berhasil dihapus. Riwayat audit tetap disimpan.');
     });
   };
-  if (!profile) return <p className="p-6">Memuat sesi…</p>;
+  if (!profile) return <KjmPageSkeleton />;
   if (!canVerifyPayroll(profile.role)) return <p className="p-6">Halaman KJM tersedia untuk Badan Keuangan dan Super Admin.</p>;
+  if (loadedPeriod !== period) return <KjmPageSkeleton />;
   return <div className="space-y-6 p-4 md:p-6">
     <section className="rounded-md border bg-white p-5 space-y-4">
       <h2 className="font-bold text-lg">Upload data mentah KJM</h2>
@@ -766,4 +802,4 @@ function KjmContent() {
     {busy && <div role="status" aria-live="polite" className="fixed inset-0 z-[60] bg-white/75 backdrop-blur-sm flex items-center justify-center"><p className="rounded-md border bg-white p-6 shadow-lg">{busy}</p></div>}
   </div>;
 }
-export default function KjmPage() { return <Suspense fallback={<p className="p-6">Memuat KJM…</p>}><KjmContent /></Suspense>; }
+export default function KjmPage() { return <Suspense fallback={<KjmPageSkeleton />}><KjmContent /></Suspense>; }
