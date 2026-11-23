@@ -33,7 +33,7 @@ export function isLoyalisBirthMonth(value: unknown, today: string): value is str
   return typeof value === 'string' && isDateOnly(`${value}-01`) && value <= today.slice(0, 7);
 }
 
-function estimateBirthMonth(nik: unknown, today: string): string | undefined {
+export function estimateLoyalisBirthDate(nik: unknown, today: string): string | undefined {
   if (typeof nik !== 'string' && !(typeof nik === 'number' && Number.isSafeInteger(nik))) return;
   const digits = String(nik).trim();
   if (!/^\d{16}$/.test(digits)) return;
@@ -52,7 +52,7 @@ function estimateBirthMonth(nik: unknown, today: string): string | undefined {
       const age = currentYear - Number(date.slice(0, 4)) - Number(date.slice(5) > today.slice(5));
       return age >= 18 && age <= 99;
     });
-  return dates.length === 1 ? dates[0].slice(0, 7) : undefined;
+  return dates.length === 1 ? dates[0] : undefined;
 }
 
 export function buildLoyalisRetirementReview(
@@ -74,7 +74,7 @@ export function buildLoyalisRetirementReview(
 
     const confirmedMonth = confirmedMonths.get(id);
     const isConfirmed = isLoyalisBirthMonth(confirmedMonth, today);
-    const birthMonth = isConfirmed ? confirmedMonth : estimateBirthMonth(nik, today);
+    const birthMonth = isConfirmed ? confirmedMonth : estimateLoyalisBirthDate(nik, today)?.slice(0, 7);
     if (!birthMonth) {
       incomplete.push({ id, name, reason: 'birthMonth' });
       continue;

@@ -37,7 +37,10 @@ async function main() {
   await Promise.all([employeeRef.set(employee), payrollRef.set(payroll)]);
 
   const url = 'http://localhost/api/admin/loyalis-retirement';
-  const get = (authorization = '') => GET(new NextRequest(url, { headers: { authorization } }));
+  const get = (authorization = '', employeeId?: string) => GET(new NextRequest(
+    employeeId ? `${url}?employeeId=${encodeURIComponent(employeeId)}` : url,
+    { headers: { authorization } },
+  ));
   const confirm = (authorization: string, body: unknown) => PUT(new NextRequest(url, {
     method: 'PUT', headers: { authorization, 'content-type': 'application/json' }, body: JSON.stringify(body),
   }));
@@ -69,6 +72,20 @@ async function main() {
   const correction = { ...birthMonth, birthMonth: '1967-12' };
   assert.equal((await confirm(finance.authorization, correction)).status, 200);
   assert.deepEqual(await (await get(employeeAdmin.authorization)).json(), { birthMonths: [correction] });
+  assert.deepEqual(await (await get(employeeAdmin.authorization, employeeRef.id)).json(), { birthMonth: '1967-12', birthDate: null });
+
+  const birthDate = { employeeId: employeeRef.id, birthDate: '1968-02-29' };
+  assert.equal((await confirm(loyalis.authorization, birthDate)).status, 403);
+  assert.equal((await get(loyalis.authorization, employeeRef.id)).status, 403);
+  assert.equal((await confirm(employeeAdmin.authorization, { ...birthDate, birthDate: '1967-02-29' })).status, 400);
+  assert.equal((await confirm(employeeAdmin.authorization, { ...birthDate, birthDate: '9999-01-01' })).status, 400);
+  assert.equal((await confirm(employeeAdmin.authorization, birthDate)).status, 200);
+  assert.deepEqual(await (await get(finance.authorization, employeeRef.id)).json(), { birthMonth: '1968-02', birthDate: birthDate.birthDate });
+  assert.deepEqual(await (await get(finance.authorization)).json(), { birthMonths: [{ employeeId: employeeRef.id, birthMonth: '1968-02' }] });
+  assert.equal((await confirm(finance.authorization, { ...birthMonth, birthMonth: '1968-02' })).status, 200);
+  assert.equal((await confirm(finance.authorization, correction)).status, 409);
+  assert.equal((await privateRef.get()).get('birthDate'), birthDate.birthDate);
+
   assert.deepEqual((await employeeRef.get()).data(), employee);
   assert.deepEqual((await payrollRef.get()).data(), payroll);
   console.log('Loyalis retirement roles, private confirmation, correction, and read-only roster behavior passed.');

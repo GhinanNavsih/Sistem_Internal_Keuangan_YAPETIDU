@@ -106,6 +106,7 @@ import StructuralPositionPicker from '@/components/employee/StructuralPositionPi
 import ConvertToLoyalisDialog from '@/components/employee/ConvertToLoyalisDialog';
 import FamilyAllowanceFields from '@/components/employee/FamilyAllowanceFields';
 import FamilyAllowanceReviewCard from '@/components/employee/FamilyAllowanceReviewCard';
+import LoyalisBirthDateField from '@/components/employee/LoyalisBirthDateField';
 import LoyalisRetirementCard from '@/components/employee/LoyalisRetirementCard';
 import {
   todayInJakarta,
@@ -839,6 +840,7 @@ export default function EmployeesPage() {
   };
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [hasUnsavedBirthDate, setHasUnsavedBirthDate] = useState(false);
   const [isGraduationDialogOpen, setIsGraduationDialogOpen] = useState(false);
   const [focusChildId, setFocusChildId] = useState<string | null>(null);
   const [familyReviewToday, setFamilyReviewToday] = useState(todayInJakarta);
@@ -1227,6 +1229,7 @@ export default function EmployeesPage() {
     setFormData(resetForm(activeTab));
     setIsCustomDept(false);
     setCustomDeptValue('');
+    setHasUnsavedBirthDate(false);
     setIsDialogOpen(true);
   };
 
@@ -1316,12 +1319,13 @@ export default function EmployeesPage() {
       initialBlueFormDataRef.current = preparedBlueFormData;
       setFormData(preparedBlueFormData);
     }
+    setHasUnsavedBirthDate(false);
     setIsDialogOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSavingRef.current) return;
+    if (isSavingRef.current || hasUnsavedBirthDate) return;
     try {
       isSavingRef.current = true;
       setSaving(true);
@@ -3417,6 +3421,16 @@ export default function EmployeesPage() {
                         </p>
                       )}
                     </div>
+                    {isDialogOpen && editingEmployee && user && canEditEmployees && (
+                      <LoyalisBirthDateField
+                        key={editingEmployee.id || getEmpId(editingEmployee)}
+                        employeeId={editingEmployee.id || getEmpId(editingEmployee)}
+                        nik={editingEmployee.personal_info?.nik || editingEmployee.nik}
+                        today={familyReviewToday}
+                        userId={user.uid}
+                        onUnsavedChange={setHasUnsavedBirthDate}
+                      />
+                    )}
                   </div>
                   <div className="space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Akademik &amp; Finansial</h3>
@@ -4179,7 +4193,7 @@ export default function EmployeesPage() {
 
             <DialogFooter className="rounded-b-md p-6 bg-slate-50/50 border-t border-slate-100">
               <Button type="button" variant="ghost" onClick={() => setIsDialogOpen(false)} className="rounded-sm">Batal</Button>
-              <Button type="submit" disabled={saving} className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white px-8">
+              <Button type="submit" disabled={saving || hasUnsavedBirthDate} className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white px-8">
                 {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
                 Simpan Data
               </Button>
