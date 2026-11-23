@@ -46,7 +46,6 @@ import {
   Loader2,
   Users,
   GraduationCap,
-  CheckCircle2,
   AlertCircle,
   ShieldCheck,
   Truck,
@@ -2231,18 +2230,18 @@ export default function EmployeesPage() {
   const showFamilyAllowanceReview =
     activeTab === 'loyalis' && canEditEmployees;
 
+  const activeEmployeeCount = employees.filter(getEmpIsActive).length;
   const statsCards: Array<{
     label: string;
-    value: number;
+    value: number | string;
     icon: React.ReactNode;
     color: string;
     highlight?: boolean;
     onClick?: () => void;
-    filter?: 'all' | 'active' | 'inactive';
+    filter?: 'active' | 'inactive';
   }> = [
-    { label: 'Total Pegawai', value: employees.length, icon: <Users className="w-5 h-5" />, color: 'indigo', filter: 'all' },
-    { label: 'Aktif', value: employees.filter(e => getEmpIsActive(e)).length, icon: <CheckCircle2 className="w-5 h-5" />, color: 'emerald', filter: 'active' },
-    { label: 'Non-Aktif', value: employees.filter(e => !getEmpIsActive(e)).length, icon: <AlertCircle className="w-5 h-5" />, color: 'amber', filter: 'inactive' },
+    { label: 'Aktif / Total Pegawai', value: `${activeEmployeeCount} / ${employees.length}`, icon: <Users className="w-5 h-5" />, color: 'indigo', filter: 'active' },
+    { label: 'Non-Aktif', value: employees.length - activeEmployeeCount, icon: <AlertCircle className="w-5 h-5" />, color: 'amber', filter: 'inactive' },
     {
       label: 'Anak Lulus Perlu Ditinjau',
       value: activeTab === 'loyalis' ? pendingGraduations.length : 0,
@@ -2330,7 +2329,7 @@ export default function EmployeesPage() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           {statsCards.map((stat, i) => {
             const cardContent = (
               <>
@@ -2338,7 +2337,7 @@ export default function EmployeesPage() {
                   {stat.icon}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs text-slate-500 font-medium uppercase tracking-wider truncate" title={stat.label}>
+                  <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">
                     {stat.label}
                   </p>
                   <p className={`text-2xl font-bold ${stat.highlight ? 'text-amber-600' : 'text-slate-900'}`}>
@@ -2396,13 +2395,19 @@ export default function EmployeesPage() {
             const statFilter = stat.filter;
             if (statFilter) {
               const selected = statusFilter === statFilter;
+              const nextFilter = selected ? 'all' : statFilter;
+              const filterTitle = {
+                all: 'Tampilkan semua pegawai',
+                active: 'Tampilkan pegawai aktif',
+                inactive: 'Tampilkan pegawai non-aktif',
+              }[nextFilter];
               return (
                 <button
                   key={i}
                   type="button"
                   aria-pressed={selected}
-                  onClick={() => setStatusFilter(statFilter)}
-                  title={`Tampilkan pegawai: ${stat.label}`}
+                  onClick={() => setStatusFilter(nextFilter)}
+                  title={filterTitle}
                   className={`p-5 bg-white shadow-[0_8px_30px_rgb(0,0,0,0.02)] rounded-md flex items-center gap-4 text-left transition-all cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 ${selected
                     ? 'border-2 border-indigo-500 ring-2 ring-indigo-500/15'
                     : 'border-2 border-transparent hover:bg-slate-50 hover:shadow-md'
