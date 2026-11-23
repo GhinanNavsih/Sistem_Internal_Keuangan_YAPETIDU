@@ -106,6 +106,7 @@ import StructuralPositionPicker from '@/components/employee/StructuralPositionPi
 import ConvertToLoyalisDialog from '@/components/employee/ConvertToLoyalisDialog';
 import FamilyAllowanceFields from '@/components/employee/FamilyAllowanceFields';
 import FamilyAllowanceReviewCard from '@/components/employee/FamilyAllowanceReviewCard';
+import LoyalisRetirementCard from '@/components/employee/LoyalisRetirementCard';
 import {
   todayInJakarta,
   eligibleFamilyMetrics,
@@ -666,10 +667,10 @@ export default function EmployeesPage() {
   const { employeesLoyalis, employeesBlueCollar, gradeCodesBlue, gradeCodesWhite, loading: contextLoading, refreshData, kepangkatanAllowanceMap } = useDashboardData();
   const isLoyalisAdmin = profile?.role === 'loyalis_admin';
   const canEditEmployees = canEditEmployeeProfiles(profile?.role);
-  const loyalisAdminLoyalisQuery = useEmployeesLoyalis(isLoyalisAdmin);
+  const loyalisRosterQuery = useEmployeesLoyalis(canEditEmployees);
   const loyalisAdminBlueCollarQuery = useEmployeesBlueCollar(isLoyalisAdmin);
   const pageEmployeesLoyalis = isLoyalisAdmin
-    ? loyalisAdminLoyalisQuery.data ?? EMPTY_EMPLOYEE_LIST
+    ? loyalisRosterQuery.data ?? EMPTY_EMPLOYEE_LIST
     : employeesLoyalis;
   const pageEmployeesBlueCollar = isLoyalisAdmin
     ? loyalisAdminBlueCollarQuery.data ?? EMPTY_EMPLOYEE_LIST
@@ -821,7 +822,7 @@ export default function EmployeesPage() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [localLoading, setLocalLoading] = useState(false);
   const loyalisAdminDataLoading = isLoyalisAdmin &&
-    (loyalisAdminLoyalisQuery.isPending || loyalisAdminBlueCollarQuery.isPending);
+    (loyalisRosterQuery.isPending || loyalisAdminBlueCollarQuery.isPending);
   const loading = contextLoading || localLoading || loyalisAdminDataLoading;
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active');
@@ -852,6 +853,13 @@ export default function EmployeesPage() {
     .sort((left, right) => left.graduatedAt.localeCompare(right.graduatedAt) ||
       getEmpName(left.employee).localeCompare(getEmpName(right.employee))),
   [pageEmployeesLoyalis, familyReviewToday]);
+  const retirementEmployees = useMemo(() => pageEmployeesLoyalis.map(employee => ({
+    id: employee.id || getEmpId(employee),
+    name: getEmpName(employee) || 'Nama belum tercatat',
+    active: Boolean(getEmpIsActive(employee)),
+    type: normalizeLoyalisType(employee.loyalisType),
+    nik: employee.personal_info?.nik || employee.nik,
+  })), [pageEmployeesLoyalis]);
   const [editingEmployee, setEditingEmployee] = useState<any | null>(null);
   const initialBlueFormDataRef = useRef<any | null>(null);
   const categoryTransferRequestIdRef = useRef<string | null>(null);
@@ -1094,7 +1102,7 @@ export default function EmployeesPage() {
       setLocalLoading(true);
       await Promise.all([
         refreshData(),
-        ...(isLoyalisAdmin ? [loyalisAdminLoyalisQuery.refetch(), loyalisAdminBlueCollarQuery.refetch()] : []),
+        ...(isLoyalisAdmin ? [loyalisRosterQuery.refetch(), loyalisAdminBlueCollarQuery.refetch()] : []),
       ]);
     } catch (err) {
       console.error('Error refreshing employees:', err);
@@ -2424,6 +2432,21 @@ export default function EmployeesPage() {
               </Card>
             );
           })}
+          {activeTab === 'loyalis' && user && canEditEmployees && (
+            <LoyalisRetirementCard
+              key={user.uid}
+              employees={retirementEmployees}
+              today={familyReviewToday}
+              userId={user.uid}
+              rosterLoading={loyalisRosterQuery.isPending}
+              rosterUnavailable={loyalisRosterQuery.isError && !loyalisRosterQuery.data}
+              retryRoster={() => { void loyalisRosterQuery.refetch(); }}
+              onEditType={id => {
+                const employee = pageEmployeesLoyalis.find(row => (row.id || getEmpId(row)) === id);
+                if (employee) window.setTimeout(() => handleOpenEdit(employee), 0);
+              }}
+            />
+          )}
         </div>
 
         {/* Table View Mode Toggle */}
