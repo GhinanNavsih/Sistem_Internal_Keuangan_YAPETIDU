@@ -4,13 +4,6 @@ import { normalizeKjmNipy, type KjmEmployee, type KjmRate, type KjmEdits } from 
 import { HttpError } from './auth';
 
 export const kjmHash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-function dateText(value: unknown): string {
-  if (value && typeof value === 'object' && 'toDate' in value && typeof value.toDate === 'function') {
-    const date = value.toDate() as Date;
-    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
-  }
-  return typeof value === 'string' ? value.slice(0, 10) : '';
-}
 export async function loadKjmMaster(transaction?: FirebaseFirestore.Transaction) {
   const employeeQuery = adminDb.collection('Employees_Loyalis');
   const configRef = adminDb.doc('SalaryMatrix_ExcessAttendance/_config');
@@ -28,7 +21,7 @@ export async function loadKjmMaster(transaction?: FirebaseFirestore.Transaction)
       active: String(e.personal_info?.status || '').trim().toUpperCase() === 'AKTIF', type,
       isDosen: typeof e.isDosen === 'boolean' ? e.isDosen : null, education: String(e.academic_and_tier?.education_level || ''),
       // Jabatan is read-only, auto-derived from structural positions; no structural post means it's blank with no way to type "Dosen" manually.
-      role: jobRole || (type === 'Dosen' ? 'Dosen' : ''), recognizedDate: dateText(e.employment_profile?.date_recognized) };
+      role: jobRole || (type === 'Dosen' ? 'Dosen' : '') };
   });
   const rates: KjmRate[] = rateSnap.docs.flatMap(d => {
     const row = d.data();

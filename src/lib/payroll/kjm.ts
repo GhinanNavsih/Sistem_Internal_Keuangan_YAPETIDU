@@ -1,6 +1,6 @@
 /** Shared, deterministic KJM calculation. No client-supplied money is accepted. */
 export const KJM_SOURCE_KIND = 'kjm_import';
-export const KJM_RULE_VERSION = '2026-09-09-health-obligation-v1';
+export const KJM_RULE_VERSION = '2026-11-23-admin-cap-126-v1';
 export type KjmType = 'Keluarga' | 'Dosen' | 'Admin';
 export interface KjmCourse {
   id: string; sheet: string; row: number; lecturer: string; nipy: string;
@@ -15,7 +15,6 @@ export interface KjmCourseGroup {
 export interface KjmEmployee {
   id: string; name: string; nipy: string; active: boolean;
   type: string; isDosen: boolean | null; education: string; role: string;
-  recognizedDate: string;
 }
 export interface KjmRate { degree: string; group: string; amount: number }
 export interface KjmAdjustment { consortium?: boolean; attendance?: number; exclude?: boolean; reason?: string }
@@ -67,19 +66,10 @@ export function kjmAssessmentDate(period: string): string {
   const [year, month] = period.split('-').map(Number);
   return `${period}-${new Date(Date.UTC(year, month, 0)).getUTCDate()}`;
 }
-export function kjmAdminCap(recognized: string, period: string): number {
-  const asOf = kjmAssessmentDate(period);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(recognized) || recognized > asOf ||
-      !Number.isFinite(Date.parse(recognized)) || new Date(recognized).toISOString().slice(0, 10) !== recognized) {
-    throw new Error('Tanggal Diakui Admin kosong/tidak valid/melebihi periode.');
-  }
-  const anniversary = `${Number(recognized.slice(0, 4)) + 12}${recognized.slice(4)}`;
-  return asOf >= anniversary ? 126 : 84;
-}
 function isKjmHealthEducation(education: string): boolean {
   return education.toLocaleLowerCase('id-ID').includes('kesehatan');
 }
-export function calculateKjm(employee: KjmEmployee, regular: number, consortium: number, rate: KjmRate, period: string): KjmResult {
+export function calculateKjm(employee: KjmEmployee, regular: number, consortium: number, rate: KjmRate): KjmResult {
   if (!['Keluarga', 'Dosen', 'Admin'].includes(employee.type)) throw new Error('Tipe Loyalis belum valid.');
   if (!employee.active) throw new Error('Pegawai Non-Aktif tidak boleh dibayar.');
   if (employee.type === 'Dosen' && employee.isDosen !== true) throw new Error('Status isDosen belum true; periksa master pegawai.');
@@ -89,7 +79,7 @@ export function calculateKjm(employee: KjmEmployee, regular: number, consortium:
   const base = employee.type === 'Dosen' ? healthObligation ?? 112 : 0;
   const reduction = base && healthObligation === null && employee.role.trim().toLowerCase() !== 'dosen' ? 28 : 0;
   const obligation = Math.max(0, base - reduction);
-  const cap = employee.type === 'Admin' ? kjmAdminCap(employee.recognizedDate, period) : 252;
+  const cap = employee.type === 'Admin' ? 126 : 252;
   const excess = Math.min(cap, Math.max(0, regular + consortium - obligation));
   const consortiumExcess = Math.min(consortium, excess);
   const regularExcess = excess - consortiumExcess;
@@ -160,7 +150,7 @@ export function reviewKjm(courses: KjmCourse[], edits: KjmEdits, employees: KjmE
     const employee = employees.find(e => e.id === id)!;
     const rate = rates.find(r => `${r.degree}-${r.group}` === sum.rateKey);
     if (!rate) { issues.push(`${employee.name}: pendidikan tidak ditemukan di matrix; pilih rate dan alasan.`); continue; }
-    try { results.push(calculateKjm(employee, sum.regular, sum.consortium, rate, period)); }
+    try { results.push(calculateKjm(employee, sum.regular, sum.consortium, rate)); }
     catch (e) { issues.push(`${employee.name}: ${(e as Error).message}`); }
   }
   if (!results.length) issues.push('Tidak ada pegawai yang dapat dihitung.');

@@ -19,7 +19,7 @@ async function main() {
   const authorization = `Bearer ${identity.idToken}`;
   await adminDb.doc(`users/${identity.localId}`).set({ role: 'super_admin', displayName: 'KJM TEST' });
   await adminDb.doc('Employees_Loyalis/Loyalis_KjmTest').set({ personal_info: { name: 'KJM TEST', status: 'AKTIF', employee_id_niy: '01123' },
-    loyalisType: 'Keluarga', isDosen: true, academic_and_tier: { education_level: 'S2-Sosial' }, employment_profile: { job_role: 'Dosen' } });
+    loyalisType: 'Admin', isDosen: false, academic_and_tier: { education_level: 'S2-Sosial' }, employment_profile: { job_role: 'Staf' } });
   await adminDb.doc('SalaryMatrix_ExcessAttendance/_config').set({ activeVersion: 'test' });
   const rateRef = adminDb.doc('SalaryMatrix_ExcessAttendance/test/rows/S2');
   await rateRef.set({ education_level: 'S2', rates: { Sosial: 20000 } });
@@ -28,7 +28,7 @@ async function main() {
   const book = (attendance: number) => {
     const w = XLSX.utils.book_new();
     for (const [i, name] of ['Kontrak Asli', 'Tetap Asli'].entries()) XLSX.utils.book_append_sheet(w, XLSX.utils.aoa_to_sheet([
-      ['Program Studi PAI'], ['#', 'Kode MK', 'Nama Mata Kuliah', 'SKS', 'Kelas', 'Hadir'], ['01123-KJM TEST'], [1, `MK${i}`, 'Course', 3, 'A', attendance],
+      ['Program Studi PAI'], ['#', 'Kode MK', 'Nama Mata Kuliah', 'SKS', 'Kelas', 'Hadir'], ['01123-KJM TEST'], [1, `MK${i}`, 'Course', 5, 'A', attendance],
     ]), name);
     return XLSX.write(w, { type: 'buffer', bookType: 'xlsx' });
   };
@@ -63,6 +63,10 @@ async function main() {
   assert.equal((await command({ action: 'save', id, revision: draft.revision, edits })).status, 200);
   assert.equal((await adminDb.collection('VakasiTambahan').get()).size, 0, 'saving review must not pay');
   draft = await load(id);
+  assert.equal(draft.review.issues.length, 0, 'missing Tanggal Diakui must not block Admin');
+  assert.equal(draft.review.results[0].regular, 140);
+  assert.equal(draft.review.results[0].obligation, 0);
+  assert.equal(draft.review.results[0].excess, 126);
   const approve = () => command({ action: 'approve', id, revision: draft.revision, reviewHash: draft.reviewHash, confirmed: true });
   await rateRef.update({ 'rates.Sosial': 21000 });
   assert.equal((await approve()).status, 409, 'changed rate needs a new review');
@@ -74,8 +78,8 @@ async function main() {
   const approvals = await Promise.all([approve(), approve()]);
   for (const response of approvals) assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
   const eventRef = adminDb.doc(`VakasiTambahan/KJM_${id}`);
-  assert.equal((await eventRef.get()).data()?.totalPayout, 1764000);
-  assert.deepEqual((await slipRef.get()).data()?.earnings, [{ label: 'Gaji Pokok', amount: 5000000 }, { label: 'Kelebihan Jam Mengajar 20251', amount: 1764000 }], 'approval atomically updates an existing draft slip');
+  assert.equal((await eventRef.get()).data()?.totalPayout, 2646000);
+  assert.deepEqual((await slipRef.get()).data()?.earnings, [{ label: 'Gaji Pokok', amount: 5000000 }, { label: 'Kelebihan Jam Mengajar 20251', amount: 2646000 }], 'approval atomically updates an existing draft slip');
   assert.equal((await adminDb.collection('VakasiTambahan').get()).size, 1, 'concurrent approvals are idempotent');
   assert.equal((await adminDb.collection('KjmPaymentClaims').get()).size, 1);
   const approved = await load(id);

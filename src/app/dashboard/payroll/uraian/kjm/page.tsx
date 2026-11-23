@@ -632,7 +632,7 @@ function KjmContent() {
         </Button>
       </div>
       {closed && <p className="text-amber-700">Periode sudah ditutup. Data hanya dapat dilihat.</p>}
-      <p className="text-xs text-slate-500">Masa kerja Admin dinilai pada akhir bulan payroll. Non-Aktif diabaikan. Satu pegawai hanya boleh memperoleh KJM sekali untuk semester sumber yang sama.</p>
+      <p className="text-xs text-slate-500">Batas KJM Admin adalah 126 unit SKS × hadir diakui. Non-Aktif diabaikan. Satu pegawai hanya boleh memperoleh KJM sekali untuk semester sumber yang sama.</p>
     </section>
     {error && <p role="alert" className="rounded-md bg-red-50 p-4 text-red-700">{error}</p>}
     {message && <p role="status" className="rounded-md bg-emerald-50 p-4 text-emerald-800">{message}</p>}
@@ -703,7 +703,7 @@ function KjmContent() {
                 </select></label>
                 <label className="text-xs">Alasan pemetaan/rate/pengecualian<input aria-label={`Alasan ${lecturer}`} className={inputClass} maxLength={500} value={assignment.reason || ''} disabled={!editable || !!inactive} onChange={e => setAssignment(lecturer, { reason: e.target.value })} /></label>
                 <label className="text-sm flex items-center gap-2"><input type="checkbox" checked={!!assignment.exclude} disabled={!editable || !!inactive} onChange={e => setAssignment(lecturer, { exclude: e.target.checked })} /> Kecualikan identitas sumber ini</label>
-                <p className="text-xs text-slate-500 md:col-span-2">{employee && `${employee.type} · isDosen: ${String(employee.isDosen)} · ${employee.education} · Jabatan: ${employee.role || 'kosong'} · Diakui: ${employee.recognizedDate || 'kosong'}`}</p>
+                <p className="text-xs text-slate-500 md:col-span-2">{employee && `${employee.type} · isDosen: ${String(employee.isDosen)} · ${employee.education} · Jabatan: ${employee.role || 'kosong'}`}</p>
               </div>
               <div className="overflow-x-auto"><table className="w-full text-xs text-left"><thead className="bg-slate-50"><tr>{['Sumber / Prodi', 'Mata kuliah / Kelas', 'SKS', 'Hadir asli', 'Hadir dikoreksi', 'SKS × diakui', 'Jenis', 'Kecualikan'].map(h => <th key={h} className="p-2 whitespace-nowrap">{h}</th>)}</tr></thead><tbody>
                 {rows.map(c => { const edit = edits.courses[c.id] || {}; const correctedAttendance = edit.attendance ?? Math.min(c.attendance, 14); return <tr key={c.id} id={`course-${c.id}`} className="border-t">
@@ -727,7 +727,7 @@ function KjmContent() {
           <div><h2 className="font-bold text-lg">3. Periksa perhitungan dan setujui</h2><p className="text-xs text-slate-500">{review.results.length} pegawai dalam hasil perhitungan</p></div>
           <div className="rounded-md bg-indigo-50 px-3 py-2 text-right"><p className="text-xs font-semibold uppercase tracking-wide text-indigo-500">Total KJM</p><p className="text-lg font-bold text-indigo-700">{rupiah(review.total)}</p></div>
         </div>
-        <p className="text-sm text-slate-600">Tanggal penilaian masa kerja: {review.assessmentDate} · Matrix {draft.status === 'approved' ? draft.rateVersion : master.version}. Angka jam adalah unit SKS × hadir diakui. Konsorsium diprioritaskan dalam batas kelebihan.</p>
+        <p className="text-sm text-slate-600">Matrix {draft.status === 'approved' ? draft.rateVersion : master.version}. Angka jam adalah unit SKS × hadir diakui. Konsorsium diprioritaskan dalam batas kelebihan.</p>
         {review.ignored.length > 0 && <details className="text-sm text-slate-500"><summary>{review.ignored.length} identitas diabaikan</summary><ul className="list-disc pl-5">{review.ignored.map(s => <li key={s}>{s}</li>)}</ul></details>}
         <div className="grid gap-3 lg:grid-cols-2">
           {review.results.map(r => {

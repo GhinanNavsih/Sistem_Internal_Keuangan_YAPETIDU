@@ -1,52 +1,50 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as XLSX from 'xlsx';
-import { calculateKjm, emptyKjmEdits, filterKjmCourses, groupKjmCourses, kjmAdminCap, reviewKjm, type KjmCourse, type KjmEdits, type KjmEmployee } from './kjm';
+import { calculateKjm, emptyKjmEdits, filterKjmCourses, groupKjmCourses, reviewKjm, type KjmCourse, type KjmEdits, type KjmEmployee } from './kjm';
 import { parseKjmWorkbook } from './kjmWorkbook';
 import { isPayableVakasiTambahan, vakasiApprovedEarningsForEmployee } from './vakasiTambahan';
 
-const employee: KjmEmployee = { id: 'Loyalis_1', name: 'Test', nipy: '01123', active: true, type: 'Dosen', isDosen: true, education: 'S2-Sosial', role: 'Dosen', recognizedDate: '2014-09-30' };
+const employee: KjmEmployee = { id: 'Loyalis_1', name: 'Test', nipy: '01123', active: true, type: 'Dosen', isDosen: true, education: 'S2-Sosial', role: 'Dosen' };
 const rate = { degree: 'S2', group: 'Sosial', amount: 20000 };
 const course: KjmCourse = { id: 'tetap_6', sheet: 'Tetap Asli', row: 6, lecturer: '01123-Test', nipy: '01123', program: 'PAI', code: 'MK1', name: 'Course', kelas: 'A', sks: 3, attendance: 16 };
 const reviewed = (courses: KjmCourse[] = [course]): KjmEdits => ({ ...emptyKjmEdits(), consortiumReviewed: true,
   courses: Object.fromEntries(courses.map(item => [item.id, { consortium: false }])) });
 test('regular Dosen obligation is 112, with only the non-Dosen jabatan reduction', () => {
-  const r = calculateKjm(employee, 140, 0, rate, '2026-09');
+  const r = calculateKjm(employee, 140, 0, rate);
   assert.equal(r.obligation, 112); assert.equal(r.total, 560000);
-  assert.equal(calculateKjm({ ...employee, role: 'Dekan' }, 140, 0, rate, '2026-09').obligation, 84);
-  assert.throws(() => calculateKjm({ ...employee, role: '' }, 140, 0, rate, '2026-09'), /Jabatan/);
+  assert.equal(calculateKjm({ ...employee, role: 'Dekan' }, 140, 0, rate).obligation, 84);
+  assert.throws(() => calculateKjm({ ...employee, role: '' }, 140, 0, rate), /Jabatan/);
 });
 test('Kesehatan Dosen obligation is 4 SKS × 14 and excess starts above 56', () => {
   const e = { ...employee, education: 'S2-Kesehatan', role: 'Dosen' };
   const healthRate = { degree: 'S2', group: 'Kesehatan', amount: 37500 };
-  const atObligation = calculateKjm(e, 56, 0, healthRate, '2026-09');
+  const atObligation = calculateKjm(e, 56, 0, healthRate);
   assert.equal(atObligation.base, 56); assert.equal(atObligation.reduction, 0);
   assert.equal(atObligation.obligation, 56); assert.equal(atObligation.excess, 0); assert.equal(atObligation.total, 0);
-  const overObligation = calculateKjm({ ...e, education: 'S3-kesehatan' }, 84, 0, healthRate, '2026-09');
+  const overObligation = calculateKjm({ ...e, education: 'S3-kesehatan' }, 84, 0, healthRate);
   assert.equal(overObligation.obligation, 56); assert.equal(overObligation.excess, 28); assert.equal(overObligation.total, 1050000);
 });
 test('Keluarga has no obligation but is capped at 252', () => {
-  const r = calculateKjm({ ...employee, type: 'Keluarga', role: '' }, 300, 0, rate, '2026-09');
+  const r = calculateKjm({ ...employee, type: 'Keluarga', role: '' }, 300, 0, rate);
   assert.equal(r.base, 0); assert.equal(r.reduction, 0); assert.equal(r.cap, 252); assert.equal(r.total, 5040000);
 });
-test('Admin remains eligible with isDosen false: zero obligation and service caps', () => {
+test('Admin with isDosen false has zero obligation and a fixed cap of 126', () => {
   const e = { ...employee, type: 'Admin', isDosen: false, role: 'Staf' };
-  const before = calculateKjm(e, 200, 0, rate, '2026-08');
-  const at = calculateKjm(e, 200, 0, rate, '2026-09');
-  assert.equal(before.cap, 84); assert.equal(at.cap, 126);
-  assert.equal(at.obligation, 0); assert.equal(at.reduction, 0);
-  assert.equal(kjmAdminCap('2014-10-01', '2026-09'), 84);
-  assert.throws(() => kjmAdminCap('', '2026-09'));
-  assert.throws(() => kjmAdminCap('2027-01-01', '2026-09'));
-  assert.throws(() => kjmAdminCap('2014-02-30', '2026-09'));
+  const result = calculateKjm(e, 200, 0, rate);
+  assert.equal(result.cap, 126);
+  assert.equal(result.excess, 126);
+  assert.equal(result.obligation, 0);
+  assert.equal(result.reduction, 0);
+  assert.equal(calculateKjm(e, 100, 0, rate).excess, 100);
 });
 test('consortium takes priority inside counted excess, never exceeds total', () => {
-  const r = calculateKjm(employee, 140, 60, rate, '2026-09');
+  const r = calculateKjm(employee, 140, 60, rate);
   assert.equal(r.excess, 88); assert.equal(r.consortiumExcess, 60); assert.equal(r.regularExcess, 28);
   assert.equal(r.total, 2060000);
-  const c = calculateKjm(employee, 0, 180, rate, '2026-09');
+  const c = calculateKjm(employee, 0, 180, rate);
   assert.equal(c.regularExcess, 0); assert.equal(c.consortiumExcess, 68);
-  assert.equal(calculateKjm(employee, 40, 0, rate, '2026-09').total, 0);
+  assert.equal(calculateKjm(employee, 40, 0, rate).total, 0);
 });
 test('cap attendance before SKS weighting; preserve explicit zero correction', () => {
   const e = { ...employee, type: 'Keluarga' };

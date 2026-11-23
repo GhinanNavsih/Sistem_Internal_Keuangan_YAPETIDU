@@ -189,20 +189,16 @@ obligation calculation. For Keluarga, the jabatan reduction is not applicable
 because there is no attendance obligation to reduce. The same applies to Admin:
 zero obligation must never become negative. Missing Dosen jabatan requires review.
 
-### Category caps and service date (confirmed 2026-09-08)
+### Category caps
 
 | Stored loyalisType | Maximum recognized excess |
 | --- | ---: |
 | Keluarga | 252 |
 | Dosen | 252 |
-| Admin, recognized service below 12 years | 84 |
-| Admin, recognized service 12 years or above | 126 |
+| Admin | 126 |
 
-Use `employment_profile.date_recognized` (Tanggal Diakui), not the hire date
-or NIPY, compared with the selected payroll period. Exactly 12 years belongs
-to the **126** category. The app uses the selected month's last calendar day
-as the visible service assessment date, never the computer's current date.
-Missing/future recognized dates for Admin block approval.
+All Admin employees have a fixed cap of 126 recognized SKS-attendance units
+regardless of service length.
 
 ## 5. KJM earning flow
 
