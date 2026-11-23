@@ -1,4 +1,5 @@
 import admin, { adminDb } from '@/lib/firebase-admin';
+import { canReadAllSatkerFinance } from '@/lib/payroll/roles';
 import type { DocumentReference, Transaction } from 'firebase-admin/firestore';
 import { AuthenticatedProfile, HttpError } from '@/lib/server/auth';
 import { DEFAULT_ACCOUNTS, FinancialAccount, isCashAccount, OpeningBalances, withAccountPostingDefaults } from '@/lib/satker-finance/core';
@@ -18,7 +19,6 @@ export const PSQ_ACCOUNT_UNIT_ID = 'loyalis-ili3huhuirf6y7uicy7o8s81bg63';
 export const PSQ_ACCOUNT_SOURCE = psqAkunData.source;
 export const CATALOG_META_REF = adminDb.collection('SatkerFinancialCatalogMeta').doc('catalog');
 export const BOOK_PATH = '/dashboard/satker-finance';
-export const FINANCIAL_READ_ROLES = ['super_admin', 'rector_finance'] as const;
 export const FINANCIAL_EDITOR_ROLES = ['satker_head_loyalis', 'satker_finance_admin'] as const;
 
 export type FinancialUnit = {
@@ -32,7 +32,7 @@ export type FinancialUnit = {
 };
 
 export function canReadAll(actor: AuthenticatedProfile) {
-  return (FINANCIAL_READ_ROLES as readonly string[]).includes(actor.role);
+  return canReadAllSatkerFinance(actor.role);
 }
 
 export function canEditUnit(actor: AuthenticatedProfile, unit: FinancialUnit) {

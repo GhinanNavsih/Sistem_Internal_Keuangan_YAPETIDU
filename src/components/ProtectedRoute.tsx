@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { isFinancePayrollPath, isLoyalisAdminPath, isUserRole, LOYALIS_ADMIN_HOME_PATH, PAYROLL_HOME_PATH } from '@/lib/payroll/roles';
+import { isFinanceDashboardPath, isLoyalisAdminPath, isUserRole, LOYALIS_ADMIN_HOME_PATH, PAYROLL_HOME_PATH } from '@/lib/payroll/roles';
 import {
   getEmployeeRouteRedirect,
 } from '@/lib/employeeActivities';
@@ -44,7 +44,7 @@ export default function ProtectedRoute({
   const pathname = usePathname();
 
   const currentProfile = activeProfile || profile;
-  const financeRouteDenied = currentProfile?.role === 'finance_verifier' && !isFinancePayrollPath(pathname);
+  const financeRouteDenied = currentProfile?.role === 'finance_verifier' && !isFinanceDashboardPath(pathname);
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {

@@ -55,7 +55,8 @@ export const PAYROLL_HOME_PATH = '/dashboard/payroll';
 export const PAYROLL_MASTER_PATH = `${PAYROLL_HOME_PATH}/master`;
 export const PAYROLL_RECAP_PATH = `${PAYROLL_HOME_PATH}/uraian`;
 
-const FINANCE_PAYROLL_PATHS = new Set([
+const FINANCE_DASHBOARD_PATHS = new Set([
+  '/dashboard/satker-finance',
   PAYROLL_HOME_PATH,
   PAYROLL_MASTER_PATH,
   LOYALIS_ADMIN_HOME_PATH,
@@ -75,8 +76,12 @@ const FINANCE_PAYROLL_PATHS = new Set([
   `${PAYROLL_RECAP_PATH}/spj-pekarya`,
 ]);
 
-export function isFinancePayrollPath(pathname: string): boolean {
-  return FINANCE_PAYROLL_PATHS.has(pathname.replace(/\/$/, ''));
+export function isFinanceDashboardPath(pathname: string): boolean {
+  return FINANCE_DASHBOARD_PATHS.has(pathname.replace(/\/$/, ''));
+}
+
+export function canReadAllSatkerFinance(role: unknown): boolean {
+  return role === 'super_admin' || role === 'rector_finance' || role === 'finance_verifier';
 }
 
 export const FINANCE_ROLES: readonly UserRole[] = [

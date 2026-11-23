@@ -3,7 +3,7 @@ import test from 'node:test';
 import { EMPLOYEE_ACTIVITY_PATHS } from './employeeActivities';
 import {
   getUserRoleLabel,
-  isFinancePayrollPath,
+  isFinanceDashboardPath,
   isLoyalisAdminPath,
   LOYALIS_ADMIN_HOME_PATH,
 } from './payroll/roles';
@@ -20,21 +20,21 @@ test('each role lands on its own home page', () => {
   assert.equal(getRoleHomePath({ role: 'finance_verifier' }), '/dashboard/payroll');
 });
 
-test('Badan Keuangan is confined to payslips and their supporting payroll pages', () => {
-  assert.equal(isFinancePayrollPath(getRoleHomePath({ role: 'finance_verifier' })), true);
+test('Badan Keuangan can open payroll pages and Keuangan SatKer', () => {
+  assert.equal(isFinanceDashboardPath(getRoleHomePath({ role: 'finance_verifier' })), true);
   for (const path of [
     '/dashboard/payroll/master',
     '/dashboard/employees',
+    '/dashboard/satker-finance',
     '/dashboard/payroll/koperasi',
     '/dashboard/payroll/simpan-pinjam',
     '/dashboard/payroll/uraian/rekap-pekarya',
     '/dashboard/payroll/uraian/presensi-loyalis-raw',
     '/dashboard/payroll/uraian/kjm',
-  ]) assert.equal(isFinancePayrollPath(path), true, path);
+  ]) assert.equal(isFinanceDashboardPath(path), true, path);
 
   for (const path of [
     '/dashboard/users',
-    '/dashboard/satker-finance',
     '/dashboard/surat-menyurat',
     '/dashboard/reservasi-ruang',
     '/dashboard/pemeriksaan-ruang',
@@ -43,7 +43,7 @@ test('Badan Keuangan is confined to payslips and their supporting payroll pages'
     '/dashboard/payroll/uraian/tugas',
     '/dashboard/payroll/uraian/simulasi-perjalanan',
     '/employee/payslip',
-  ]) assert.equal(isFinancePayrollPath(path), false, path);
+  ]) assert.equal(isFinanceDashboardPath(path), false, path);
 });
 
 test('honorer and ketua shift land on their own activity workflow', () => {

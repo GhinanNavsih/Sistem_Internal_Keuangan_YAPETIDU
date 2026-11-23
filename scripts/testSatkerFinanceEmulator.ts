@@ -31,7 +31,8 @@ async function main() {
   const secretary = await signUp('secretary@example.test');
   const outsider = await signUp('outsider@example.test');
   const rector = await signUp('rector@example.test');
-  for (const [identity, role] of [[bak, 'super_admin'], [head, 'satker_head_loyalis'], [secretary, 'satker_finance_admin'], [outsider, 'satker_head_loyalis'], [rector, 'rector_finance']] as const) {
+  const finance = await signUp('finance@example.test');
+  for (const [identity, role] of [[bak, 'super_admin'], [head, 'satker_head_loyalis'], [secretary, 'satker_finance_admin'], [outsider, 'satker_head_loyalis'], [rector, 'rector_finance'], [finance, 'finance_verifier']] as const) {
     await adminDb.collection('users').doc(identity.uid).set({ role, displayName: role, disabled: false });
   }
   await adminDb.collection('Employees_Loyalis').doc('private-test').set({ name: 'Private employee' });
@@ -65,6 +66,12 @@ async function main() {
   // A head Super Admin already assigned, and a finance secretary, are not given an extra book.
   assert.deepEqual((await succeeds(await read(head, { academicYear: '2026-2027', month: '9' }))).units.map((unit: { id: string }) => unit.id), ['puskomnet']);
   assert.equal((await succeeds(await read(secretary, { academicYear: '2026-2027', month: '9' }))).units.length, 1);
+  const financeView = await succeeds(await read(finance, { academicYear: base.academicYear }));
+  assert.deepEqual(new Set(financeView.units.map((unit: { id: string }) => unit.id)), new Set([base.unitId, ownUnit.id]));
+  assert.equal(financeView.editorUsers, undefined);
+  assert.equal((await succeeds(await read(finance, base))).unit.id, base.unitId);
+  assert.equal((await succeeds(await read(finance, { ...base, unitId: 'ALL' }))).unit.id, 'ALL');
+  assert.equal((await invoke(finance, { ...base, action: 'SAVE_OPENING', openingBalances: {}, expectedRevision: 0 })).status, 403);
   // Removing a head from their own book sticks: it is not created again.
   await succeeds(await invoke(bak, { action: 'SAVE_UNIT', id: ownUnit.id, name: ownUnit.name, headName: ownUnit.headName, adminName: '', editorUids: [], expectedRevision: ownUnit.revision }));
   assert.equal((await succeeds(await read(outsider, { academicYear: '2026-2027', month: '9' }))).units.length, 0);

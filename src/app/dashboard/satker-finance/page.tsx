@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useAuth } from '@/lib/AuthContext';
+import { canReadAllSatkerFinance } from '@/lib/payroll/roles';
 import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import AccountSwitcher from '@/components/AccountSwitcher';
 import {
@@ -137,7 +138,7 @@ export default function SatkerFinancePage() {
   const [bookCheck, setBookCheck] = useState<BookReadResult | null>(null);
   const unitAccountEditorRef = useRef<HTMLDivElement>(null);
   const isAdmin = profile?.role === 'super_admin';
-  const canReadAll = profile?.role === 'super_admin' || profile?.role === 'rector_finance';
+  const canReadAll = canReadAllSatkerFinance(profile?.role);
   const canEdit = !!profile && (isAdmin || (['satker_head_loyalis', 'satker_finance_admin'].includes(profile.role) && data?.unit?.editorUids?.includes(profile.uid)));
   const months = useMemo(() => fiscalMonths(academicYear), [academicYear]);
   const reversedIds = useMemo(() => reversedEntryIds(data?.entries || []), [data?.entries]);

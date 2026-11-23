@@ -11,7 +11,7 @@ import {
   canReserveVenues,
   canSimulateDriverJourneys,
   getUserRoleLabel,
-  isFinancePayrollPath,
+  isFinanceDashboardPath,
   PAYROLL_RECAP_PATH,
   SANTUNAN_REVIEW_PATH,
 } from '@/lib/payroll/roles';
@@ -324,7 +324,7 @@ export default function Sidebar() {
         : currentProfile.role === 'finance_verifier'
           ? [
               ...adminMenuItems.filter(({ path }) =>
-                path !== PAYROLL_RECAP_PATH && isFinancePayrollPath(path),
+                path !== PAYROLL_RECAP_PATH && isFinanceDashboardPath(path),
               ),
               ...financeUraianMenu.map(item => {
                 const category = item.path.endsWith('/presensi-pekarya')
