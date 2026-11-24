@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable, { RowInput } from 'jspdf-autotable';
-import { getProposalBudget, getProposalLineAmount } from '@/lib/payroll/proposalBudget';
+import { getProposalBalanceLabel, getProposalBudget, getProposalLineAmount } from '@/lib/payroll/proposalBudget';
 import { ExpenseReport, ProposalExpenseRow } from '@/lib/payroll/proposalExpenseReports';
 import {
   ExpenseReportReceiptEntry,
@@ -95,6 +95,7 @@ export async function generateLpjPdf(data: LpjPdfData, saveToFile = true): Promi
       jumlahPengeluaranAnggaran: jumlahAnggaran,
       kepanitiaanAnggaran: kepAnggaran,
       totalPengeluaranAnggaran: totalAnggaran,
+      sisaAnggaran,
     } = getProposalBudget(data);
 
     const tableRows: RowInput[] = [];
@@ -186,12 +187,20 @@ export async function generateLpjPdf(data: LpjPdfData, saveToFile = true): Promi
       .reduce((sum, row) => sum + (row.realisasi ?? 0), 0);
     const kepRealisasi = kepAnggaran;
     const totalRealisasi = jumlahRealisasi + kepRealisasi;
+    const sisaRealisasi = danaOperasionalRealisasi - totalRealisasi;
 
     const summaryFill = [240, 244, 255] as [number, number, number];
+    const balanceStyles = { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill };
     tableRows.push(
       [{ content: '', styles: { fillColor: summaryFill } }, { content: 'Jumlah Pengeluaran', colSpan: 2, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(jumlahAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(jumlahRealisasi), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }],
       [{ content: '', styles: { fillColor: summaryFill } }, { content: `Kepanitiaan ${kepanitiaanPct}% Pengeluaran`, colSpan: 2, styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepAnggaran), styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepRealisasi), styles: { halign: 'right' as const, fillColor: summaryFill } }],
       [{ content: '', styles: { fillColor: summaryFill } }, { content: 'TOTAL PENGELUARAN', colSpan: 2, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(totalAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(totalRealisasi), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }],
+      [
+        { content: '', styles: { fillColor: summaryFill } },
+        { content: '', colSpan: 2, styles: { fillColor: summaryFill } },
+        { content: `${getProposalBalanceLabel(sisaAnggaran)}\n${formatIDR(sisaAnggaran)}`, styles: balanceStyles },
+        { content: `${getProposalBalanceLabel(sisaRealisasi)}\n${formatIDR(sisaRealisasi)}`, styles: balanceStyles },
+      ],
     );
 
     autoTable(doc, {

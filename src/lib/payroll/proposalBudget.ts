@@ -6,6 +6,10 @@ export function getProposalLineAmount(row: BudgetLine): number {
   return parseProposalQty(row.rincianQty) * (row.rincianRate || 0);
 }
 
+export function getProposalBalanceLabel(balance: number): 'SURPLUS' | 'DEFICIT' {
+  return balance < 0 ? 'DEFICIT' : 'SURPLUS';
+}
+
 export function getProposalBudget({
   pemasukanRows = [],
   pengeluaranRows = [],

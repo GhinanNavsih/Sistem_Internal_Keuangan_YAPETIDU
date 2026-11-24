@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { LOGO_UNIPDU_BASE64 } from './logoConstants';
-import { getProposalBudget, getProposalLineAmount } from '@/lib/payroll/proposalBudget';
+import { getProposalBalanceLabel, getProposalBudget, getProposalLineAmount } from '@/lib/payroll/proposalBudget';
 import { getExpenseGroupRows, type ProposalExpenseRow } from '@/lib/payroll/proposalExpenseReports';
 import { getPrintableProposalSignatures } from '@/lib/payroll/proposalSignatures';
 
@@ -179,6 +179,7 @@ export function generateProposalKegiatanPdf(data: ProposalKegiatanPdfData, saveT
   }
 
   // 4. Pengeluaran
+  const summaryFill = [240, 244, 255] as [number, number, number];
   if (data.pengeluaranRows && data.pengeluaranRows.length > 0) {
     const pengeluaranRows = data.pengeluaranRows;
 
@@ -212,22 +213,19 @@ export function generateProposalKegiatanPdf(data: ProposalKegiatanPdfData, saveT
         ]);
       }
     });
-    const summaryFill = [240, 244, 255] as [number, number, number];
     tableRows.push(
       [{ content: '', styles: { fillColor: summaryFill } }, { content: 'Jumlah Pengeluaran', colSpan: 2, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(jumlahAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: '', styles: { fillColor: summaryFill } }],
       [{ content: '', styles: { fillColor: summaryFill } }, { content: `Kepanitiaan ${kepanitiaanPct}% Pengeluaran`, colSpan: 2, styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepAnggaran), styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: '', styles: { fillColor: summaryFill } }],
       [{ content: '', styles: { fillColor: summaryFill } }, { content: 'TOTAL PENGELUARAN', colSpan: 2, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(totalAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: '', styles: { fillColor: summaryFill } }],
     );
-
-    if (data.pemasukanRows && data.pemasukanRows.length > 0) {
-      tableRows.push([
-        { content: '', styles: { fillColor: summaryFill } },
-        { content: 'SISA DANA OPERASIONAL', colSpan: 2, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } },
-        { content: formatIDR(sisaAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } },
-        { content: '', styles: { fillColor: summaryFill } }
-      ]);
-    }
   }
+
+  tableRows.push([
+    { content: '', styles: { fillColor: summaryFill } },
+    { content: getProposalBalanceLabel(sisaAnggaran), colSpan: 2, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } },
+    { content: formatIDR(sisaAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } },
+    { content: '', styles: { fillColor: summaryFill } },
+  ]);
 
   autoTable(doc, {
     startY: tableStartY,

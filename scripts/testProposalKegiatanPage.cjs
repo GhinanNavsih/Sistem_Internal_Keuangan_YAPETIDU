@@ -331,7 +331,7 @@ const tests = [
       ['Jumlah Pengeluaran Operasional', 'Jumlah Pengeluaran', 100],
       ['Kepanitiaan', 'Kepanitiaan 10% Pengeluaran', 10],
       ['Total Pengeluaran Kegiatan', 'TOTAL PENGELUARAN', 110],
-      ['Sisa Dana Operasional', 'SISA DANA OPERASIONAL', 490],
+      ['SURPLUS', 'SURPLUS', 490],
     ]) {
       const formLabelCell = [...document.querySelectorAll('td')].find(cell => cell.textContent === formLabel);
       const pdfRow = pdfRows.find(row => row.cells[1]?.text.join(' ') === pdfLabel);
@@ -342,10 +342,30 @@ const tests = [
     await clickText('Simpan Laporan');
     assert.equal(T.records.get('saved-event').totalBudget, 110);
   }],
+  ['a balanced proposal shows SURPLUS in the form and PDF', async () => {
+    T.records.set('saved-event', {
+      ...fixture(),
+      status: 'proposal_draft',
+      kepanitiaaanPercentage: 0,
+      pengeluaranRows: [
+        ...fixture().pengeluaranRows,
+        { rowId: 'cost', type: 'item', uraian: 'Biaya acara', rincianQty: '1', rincianRate: 600 },
+      ],
+    });
+    await mount(head);
+    await clickText('Saved event fixture');
+    await clickText('Cetak Proposal (PDF)');
+
+    const formLabel = [...document.querySelectorAll('td')].find(cell => cell.textContent === 'SURPLUS');
+    assert.equal(formLabel?.nextElementSibling?.textContent.replace(/\s/g, ''), 'Rp0');
+    const balanceCells = T.budgetPdf.lastAutoTable.body.at(-1).cells;
+    assert.deepEqual([balanceCells[1].text[0], balanceCells[3].text[0]], ['SURPLUS', 'Rp0']);
+  }],
   ['LPJ budget includes an expense with a blank description in the form and PDF', async () => {
     T.records.set('saved-event', {
       ...fixture(),
       status: 'lpj_draft',
+      lpjPemasukanRows: [{ ...fixture().pemasukanRows[0], realisasi: 100 }],
       lpjPengeluaranRows: [
         ...fixture().pengeluaranRows,
         { rowId: 'reserve', type: 'item', uraian: ' ', rincianQty: 'Paket', rincianRate: 100, realisasi: 80 },
@@ -363,6 +383,12 @@ const tests = [
     const formCells = [...findLabel().parentElement.cells];
     assert.deepEqual([pdfRow.cells[3].text[0], pdfRow.cells[4].text[0]], ['Rp100', 'Rp80']);
     assert.deepEqual(formCells.slice(1, 3).map(cell => cell.textContent.replace(/\s/g, '')), ['Rp100', 'Rp80']);
+
+    const balanceCells = T.budgetPdf.lastAutoTable.body.at(-1).cells;
+    assert.deepEqual(balanceCells[3].text, ['SURPLUS', 'Rp490']);
+    assert.deepEqual(balanceCells[4].text, ['DEFICIT', 'Rp-30']);
+    const formBalanceCells = [...findLabel().closest('tbody').rows].at(-1).cells;
+    assert.deepEqual([...formBalanceCells].slice(1, 3).map(cell => cell.textContent.replace(/\s/g, '')), ['SURPLUSRp490', 'DEFICIT-Rp30']);
   }],
   ...['mouse', 'touch', 'pen'].map(pointerType => [`release: opening pointer gesture (${pointerType}) cannot dismiss the confirmation`, async () => {
     T.autoConfirmEdits = false;

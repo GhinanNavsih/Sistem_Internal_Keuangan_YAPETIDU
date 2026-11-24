@@ -41,7 +41,7 @@ import {
 } from '@/lib/queries/hooks';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import { defaultPayrollPeriodToken } from '@/lib/payroll/domain';
-import { getProposalBudget, getProposalLineAmount } from '@/lib/payroll/proposalBudget';
+import { getProposalBalanceLabel, getProposalBudget, getProposalLineAmount } from '@/lib/payroll/proposalBudget';
 import { generateProposalKegiatanPdf } from '@/utils/generateProposalKegiatanPdf';
 import { generateLpjPdf } from '@/utils/generateLpjPdf';
 import { generateLpjExpenseReportPdf } from '@/utils/generateLpjExpenseReportPdf';
@@ -1938,7 +1938,7 @@ export default function KegiatanSatkerPage() {
                         <td></td>
                       </tr>
                       <tr className={`font-bold border-t ${sisaAnggaran >= 0 ? 'bg-emerald-50/70 text-emerald-950' : 'bg-rose-50/70 text-rose-950'}`}>
-                        <td colSpan={4} className="px-3 py-3 text-xs font-black text-right uppercase">Sisa Dana Operasional</td>
+                        <td colSpan={4} className="px-3 py-3 text-xs font-black text-right uppercase">{getProposalBalanceLabel(sisaAnggaran)}</td>
                         <td className="px-3 py-3 text-sm font-black text-right font-mono">{fmtRp(sisaAnggaran)}</td>
                         <td></td>
                       </tr>
@@ -2496,10 +2496,16 @@ export default function KegiatanSatkerPage() {
                                     <td className="px-3 py-2.5 text-xs font-black text-slate-800 text-right font-mono">{fmtRp(totalPengeluaranRealisasiLPJ)}</td>
                                     <td></td>
                                   </tr>
-                                  <tr className={`border-t-2 border-slate-200 ${sisaAnggaranLPJ >= 0 ? 'bg-emerald-50/40' : 'bg-rose-50/40'}`}>
-                                    <td colSpan={4} className={`px-3 py-3 text-xs font-black text-right uppercase ${sisaAnggaranLPJ >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}>Sisa / Defisit Dana Operasional</td>
-                                    <td className={`px-3 py-3 text-xs font-black text-right font-mono ${sisaAnggaranLPJ >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{sisaAnggaranLPJ < 0 ? '-' : ''}{fmtRp(Math.abs(sisaAnggaranLPJ))}</td>
-                                    <td className={`px-3 py-3 text-xs font-black text-right font-mono ${sisaRealisasiLPJ >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{sisaRealisasiLPJ < 0 ? '-' : ''}{fmtRp(Math.abs(sisaRealisasiLPJ))}</td>
+                                  <tr className="border-t-2 border-slate-200 bg-slate-50">
+                                    <td colSpan={4}></td>
+                                    <td className={`px-3 py-3 text-xs font-black text-right font-mono ${sisaAnggaranLPJ >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                                      <div className="font-sans">{getProposalBalanceLabel(sisaAnggaranLPJ)}</div>
+                                      {sisaAnggaranLPJ < 0 ? '-' : ''}{fmtRp(Math.abs(sisaAnggaranLPJ))}
+                                    </td>
+                                    <td className={`px-3 py-3 text-xs font-black text-right font-mono ${sisaRealisasiLPJ >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                                      <div className="font-sans">{getProposalBalanceLabel(sisaRealisasiLPJ)}</div>
+                                      {sisaRealisasiLPJ < 0 ? '-' : ''}{fmtRp(Math.abs(sisaRealisasiLPJ))}
+                                    </td>
                                     <td></td>
                                   </tr>
                                 </tbody>
