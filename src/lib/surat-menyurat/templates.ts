@@ -28,23 +28,18 @@ export interface LetterDraftPayload {
   taskAssigner?: AssignedPerson;
 }
 
-/** Longest recipient text; also fits older letters whose name and institution are merged into one. */
-export const TUJUAN_MAX_LENGTH = 400;
-
 const templateTypes: TemplateType[] = ['tugas', 'keterangan', 'undangan', 'pengantar', 'permohonan', 'edaran', 'rekomendasi', 'balasan', 'custom'];
-const draftFieldLimits: Record<Exclude<keyof LetterDraftPayload, 'templateType' | 'satkerHeadEmail' | 'satkerHeadPhone' | 'assignedPeople' | 'taskAssigner' | 'letterDoc'>, number> = {
-  nomorSurat: 100, lampiranKeterangan: 150, perihal: 250, tanggalSurat: 10,
-  tujuanNama: TUJUAN_MAX_LENGTH, tujuanAlamatKota: 150,
-  salamPembuka: 1000, isiParagraf1: 10000, isiParagraf2: 10000,
-  isiParagraf3: 10000, salamPenutup: 1000, penandatanganNama: 100,
-  penandatanganJabatan: 100, penandatanganNipy: 100, satkerName: 150,
+/** The text fields a draft must carry as strings. Letters have no length limit. */
+const draftTextFields: Record<Exclude<keyof LetterDraftPayload, 'templateType' | 'satkerHeadEmail' | 'satkerHeadPhone' | 'assignedPeople' | 'taskAssigner' | 'letterDoc'>, true> = {
+  nomorSurat: true, lampiranKeterangan: true, perihal: true, tanggalSurat: true,
+  tujuanNama: true, tujuanAlamatKota: true,
+  salamPembuka: true, isiParagraf1: true, isiParagraf2: true,
+  isiParagraf3: true, salamPenutup: true, penandatanganNama: true,
+  penandatanganJabatan: true, penandatanganNipy: true, satkerName: true,
 };
-const optionalDraftFieldLimits: Record<string, number> = {
-  satkerHeadEmail: 150,
-  satkerHeadPhone: 50,
-};
+const optionalDraftTextFields = ['satkerHeadEmail', 'satkerHeadPhone'] as const;
 
-/** Reject invalid or oversized drafts rather than silently losing edited text. */
+/** Reject drafts with invalid structure or wrongly typed fields rather than silently losing edited text. */
 export function parseLetterDraft(value: unknown): LetterDraftPayload | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   let raw = value as Record<string, unknown>;
@@ -55,13 +50,13 @@ export function parseLetterDraft(value: unknown): LetterDraftPayload | null {
   if (legacyInstansi && typeof raw.tujuanNama === 'string') {
     raw = { ...raw, tujuanNama: [raw.tujuanNama.trim(), legacyInstansi].filter(Boolean).join('\n') };
   }
-  for (const [key, limit] of Object.entries(draftFieldLimits)) {
-    if (typeof raw[key] !== 'string' || raw[key].length > limit) return null;
+  for (const key of Object.keys(draftTextFields)) {
+    if (typeof raw[key] !== 'string') return null;
     result[key] = raw[key];
   }
-  for (const [key, limit] of Object.entries(optionalDraftFieldLimits)) {
+  for (const key of optionalDraftTextFields) {
     if (raw[key] !== undefined && raw[key] !== null) {
-      if (typeof raw[key] !== 'string' || raw[key].length > limit) return null;
+      if (typeof raw[key] !== 'string') return null;
       result[key] = raw[key];
     }
   }
@@ -74,7 +69,7 @@ export function parseLetterDraft(value: unknown): LetterDraftPayload | null {
     if (!Array.isArray(raw.assignedPeople) || raw.assignedPeople.length > 100) return null;
     const people: AssignedPerson[] = [];
     for (const item of raw.assignedPeople) {
-      if (!item || typeof item !== 'object' || !['Employees_Loyalis', 'Employees_BlueCollar'].includes(item.collection) || typeof item.id !== 'string' || !item.id || item.id.length > 150 || typeof item.name !== 'string' || !item.name.trim() || item.name.length > 150 || typeof item.role !== 'string' || item.role.length > 150) return null;
+      if (!item || typeof item !== 'object' || !['Employees_Loyalis', 'Employees_BlueCollar'].includes(item.collection) || typeof item.id !== 'string' || !item.id || typeof item.name !== 'string' || !item.name.trim() || typeof item.role !== 'string') return null;
       if (people.some((person) => person.id === item.id && person.collection === item.collection)) return null;
       people.push({ id: item.id, collection: item.collection, name: item.name, role: item.role });
     }
@@ -82,7 +77,7 @@ export function parseLetterDraft(value: unknown): LetterDraftPayload | null {
   }
   if (raw.taskAssigner !== undefined) {
     const item = raw.taskAssigner as AssignedPerson | null;
-    if (!item || typeof item !== 'object' || !['Employees_Loyalis', 'Employees_BlueCollar'].includes(item.collection) || typeof item.id !== 'string' || !item.id || item.id.length > 150 || typeof item.name !== 'string' || !item.name.trim() || item.name.length > 150 || typeof item.role !== 'string' || item.role.length > 150) return null;
+    if (!item || typeof item !== 'object' || !['Employees_Loyalis', 'Employees_BlueCollar'].includes(item.collection) || typeof item.id !== 'string' || !item.id || typeof item.name !== 'string' || !item.name.trim() || typeof item.role !== 'string') return null;
     result.taskAssigner = { id: item.id, collection: item.collection, name: item.name, role: item.role };
   }
   return result as unknown as LetterDraftPayload;

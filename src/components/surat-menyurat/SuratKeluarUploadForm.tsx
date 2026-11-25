@@ -9,7 +9,6 @@ import { OptionSelect } from '@/components/ui/option-select';
 import { useAuth } from '@/lib/AuthContext';
 import { KATEGORI_SURAT_KELUAR } from '@/lib/surat-menyurat/constants';
 import type { ExtractedSuratKeluar } from '@/lib/surat-menyurat/extractSuratKeluar';
-import { TUJUAN_MAX_LENGTH } from '@/lib/surat-menyurat/templates';
 import type { SuratAttachment, SuratKeluar } from '@/lib/surat-menyurat/types';
 import { UPLOAD_ACCEPT, UPLOAD_TYPES_TEXT, uploadFileProblem } from '@/lib/uploadFileTypes';
 import { AlertCircle, ArrowLeft, FileText, Loader2, Trash2, Upload } from 'lucide-react';
@@ -121,7 +120,7 @@ export default function SuratKeluarUploadForm({ surat = null, targetSatkerId, on
     if (attachments.length === 0) return setError('Unggah berkas surat yang telah ditandatangani.');
     if (!nomorSurat.trim()) return setError('Nomor surat wajib diisi.');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(tanggalSurat)) return setError('Tanggal surat wajib diisi.');
-    if (!tujuan.trim() || tujuan.length > TUJUAN_MAX_LENGTH) return setError(`Tujuan surat wajib diisi dan maksimal ${TUJUAN_MAX_LENGTH} karakter.`);
+    if (!tujuan.trim()) return setError('Tujuan surat wajib diisi.');
     if (!perihal.trim()) return setError('Perihal surat wajib diisi.');
 
     try {

@@ -16,7 +16,7 @@ import { OptionSelect } from '@/components/ui/option-select';
 import { useAuth } from '@/lib/AuthContext';
 import { TEMPLATE_OPTIONS } from '@/lib/surat-menyurat/constants';
 import { formatNomorSuratKeluar, satkerCodeFor } from '@/lib/surat-menyurat/numbering';
-import { applyTemplateDefaults, draftFromSurat, draftRecipient, getDefaultDraft, LetterDraftPayload, AssignedPerson, TUJUAN_MAX_LENGTH } from '@/lib/surat-menyurat/templates';
+import { applyTemplateDefaults, draftFromSurat, draftRecipient, getDefaultDraft, LetterDraftPayload, AssignedPerson } from '@/lib/surat-menyurat/templates';
 import { SuratKeluar, TemplateType } from '@/lib/surat-menyurat/types';
 import { extractLetterFields, letterDocText, sanitizeLetterDoc, type LetterDoc } from '@/lib/surat-menyurat/letterDoc';
 import { buildLetterDoc, isRektoratSatker } from '@/lib/surat-menyurat/letterDocBuild';
@@ -217,8 +217,8 @@ export default function SuratComposerModal({
       return false;
     }
     const tujuan = draftRecipient(draft);
-    if (!tujuan || tujuan.length > TUJUAN_MAX_LENGTH) {
-      setError(`Tujuan surat wajib diisi dan maksimal ${TUJUAN_MAX_LENGTH} karakter.`);
+    if (!tujuan) {
+      setError('Tujuan surat wajib diisi.');
       return false;
     }
 
@@ -243,11 +243,11 @@ export default function SuratComposerModal({
         tanggalSurat: draft.tanggalSurat,
         tujuan,
         perihal: draft.perihal.trim(),
-        ...(!savedId ? { ringkasan: combinedBody.slice(0, 300) } : {}),
+        ...(!savedId ? { ringkasan: combinedBody } : {}),
         penandatanganNama: draft.penandatanganNama.trim(),
         penandatanganJabatan: draft.penandatanganJabatan.trim(),
         templateType: draft.templateType,
-        contentBody: combinedBody.slice(0, 10000),
+        contentBody: combinedBody,
         lampiranKeterangan: draft.lampiranKeterangan,
         // The written letter replaces the fields older letters used for greetings and body.
         letterDraft: { ...draft, salamPembuka: '', salamPenutup: '', isiParagraf1: '', isiParagraf2: '', isiParagraf3: '' },
@@ -286,7 +286,7 @@ export default function SuratComposerModal({
   const pickAssigner = (person: AssignedPerson) => {
     setDraft((prev) => ({ ...prev, taskAssigner: person }));
     // The task giver signs the letter, so the signature takes their name and title (and no NIPY).
-    editor?.chain().setLetterField('penandatanganNama', person.name.slice(0, 100)).setLetterField('penandatanganJabatan', `${person.role.slice(0, 100)},`).setLetterField('penandatanganNipy', '').run();
+    editor?.chain().setLetterField('penandatanganNama', person.name).setLetterField('penandatanganJabatan', `${person.role},`).setLetterField('penandatanganNipy', '').run();
   };
   const controls: LetterEditorControls = {
     assigned: draft.assignedPeople ?? NO_PEOPLE,

@@ -219,7 +219,7 @@ test('recorded and legacy letters reopen with their actual agenda data and text'
   assert.equal(agendaChanged.tujuanNama, 'Penerima Baru');
   assert.equal(agendaChanged.perihal, 'Hal Baru');
   assert.equal(agendaChanged.isiParagraf1, 'Pembuka');
-  assert.equal(parseLetterDraft({ ...saved, isiParagraf1: 'x'.repeat(10001) }), null);
+  assert.equal(parseLetterDraft({ ...saved, isiParagraf1: 'x'.repeat(100000) })?.isiParagraf1.length, 100000);
 
   // The SatKer name box shows the name the letterhead shows, even for drafts saved without one
   assert.equal(draftFromSurat({ ...surat, letterDraft: { ...saved, satkerName: '' } }, 'Lain').satkerName, 'BAK');
@@ -240,8 +240,8 @@ test('recorded and legacy letters reopen with their actual agenda data and text'
     satkerHeadPhone: '081234567890',
   };
   assert.deepEqual(parseLetterDraft(withContacts), withContacts);
-  assert.equal(parseLetterDraft({ ...withContacts, satkerHeadEmail: 'x'.repeat(151) }), null);
-  assert.equal(parseLetterDraft({ ...withContacts, satkerHeadPhone: 'x'.repeat(51) }), null);
+  assert.equal(parseLetterDraft({ ...withContacts, satkerHeadEmail: 'x'.repeat(151) })?.satkerHeadEmail?.length, 151);
+  assert.equal(parseLetterDraft({ ...withContacts, satkerHeadPhone: 'x'.repeat(51) })?.satkerHeadPhone?.length, 51);
 
   const defaultWithContacts = getDefaultDraft('BAK', 'Ahmad', 'Kepala BAK', 'bak@unipdu.ac.id', '081234567890');
   assert.equal(defaultWithContacts.satkerHeadEmail, 'bak@unipdu.ac.id');

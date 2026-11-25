@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { extractLetterFields, letterDocText, sanitizeLetterDoc, LETTER_MAX_TEXT, type LetterDoc, type LetterNode } from './letterDoc';
-import { buildLetterDoc, isRektoratSatker } from './letterDocBuild';
+import { extractLetterFields, letterDocText, sanitizeLetterDoc, type LetterDoc, type LetterNode } from './letterDoc';
+import { buildLetterDoc, isFakultasSainsSatker, isRektoratSatker } from './letterDocBuild';
 import { applyTemplateDefaults, getDefaultDraft, parseLetterDraft, type LetterDraftPayload } from './templates';
 
 const TEMPLATES = ['tugas', 'keterangan', 'undangan', 'pengantar', 'permohonan', 'edaran', 'rekomendasi', 'balasan', 'custom'] as const;
@@ -23,6 +23,19 @@ test('a letter is laid out as letterhead, numbered rows, recipient, body, closin
   assert.deepEqual(kinds(letter).filter((type, index, all) => type !== all[index - 1]), ['kop', 'labelRow', 'paragraph', 'closing']);
   assert.equal(letter.content[0].attrs?.logo, 'unipdu');
   assert.equal(buildLetterDoc(sampleDraft(), { isYapetidu: true }).content[0].attrs?.logo, 'yapetidu');
+});
+
+test('the Fakultas Sains & Teknologi letterhead has its own layout and passes the server check', () => {
+  const draft = { ...sampleDraft(), satkerName: 'FAK. SAINS DAN TEKNOLOGI' };
+  const letter = buildLetterDoc(draft, { isYapetidu: false });
+  const [kop] = letter.content;
+  assert.equal(kop.attrs?.variant, 'saintek');
+  assert.equal(kop.content?.[1].content?.[0].text, 'FAKULTAS SAINS DAN TEKNOLOGI');
+  assert.deepEqual(sanitizeLetterDoc(letter), letter);
+  assert.equal(buildLetterDoc({ ...draft, satkerName: 'Biro Umum' }, { isYapetidu: false }).content[0].attrs?.variant, undefined);
+  assert.equal(buildLetterDoc(draft, { isYapetidu: true }).content[0].attrs?.variant, undefined);
+  assert.ok(isFakultasSainsSatker('Fakultas Sains & Teknologi'));
+  assert.ok(!isFakultasSainsSatker('Sekretariat Rektorat'));
 });
 
 test('every template builds a letter the server accepts', () => {
@@ -266,9 +279,8 @@ test('settings are limited to known values', () => {
   assert.deepEqual(result, { type: 'paragraph', attrs: { firstLine: false }, content: [{ type: 'text', text: 'x' }] });
 });
 
-test('a letter that is too long or has too many pictures is refused', () => {
-  assert.ok(sanitizeLetterDoc(doc(paragraph('a'.repeat(LETTER_MAX_TEXT)))));
-  assert.equal(sanitizeLetterDoc(doc(paragraph('a'.repeat(LETTER_MAX_TEXT + 1)))), null);
+test('a letter of any length is kept, but too many pictures are refused', () => {
+  assert.ok(sanitizeLetterDoc(doc(paragraph('a'.repeat(500000)))));
   const image = (size: number): LetterNode => ({ type: 'image', attrs: { src: `data:image/png;base64,${'A'.repeat(size)}` } });
   assert.ok(sanitizeLetterDoc(doc(image(300000))));
   assert.equal(sanitizeLetterDoc(doc(image(450000))), null);

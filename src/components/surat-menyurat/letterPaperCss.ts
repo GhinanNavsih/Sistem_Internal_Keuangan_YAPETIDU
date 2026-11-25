@@ -5,7 +5,7 @@
  * Every length is a multiple of `--u`, the body font size: `12pt` when printing, and a share of the
  * sheet width on screen. The sheet therefore scales as a whole and keeps the proportions of an A4 page.
  */
-import { LETTER_BASE_PT, LETTER_MAX_INDENT } from '@/lib/surat-menyurat/letterDoc';
+import { LETTER_BASE_PT, LETTER_MAX_INDENT, SAINTEK_BLUE } from '@/lib/surat-menyurat/letterDoc';
 
 const u = (n: number) => `calc(var(--u) * ${n})`;
 const S = '.letter-sheet';
@@ -55,6 +55,10 @@ ${D} .kop-container[data-variant="rektorat"] .kop-logo{align-self:flex-start;wid
 ${D} .kop-container[data-variant="rektorat"] .kop-text{padding:0 0 0 ${mm(3)}}
 ${D} .kop-container[data-variant="rektorat"] .kop-text p{line-height:1.35}
 ${D} .kop-container[data-variant="rektorat"] .kop-text::after{content:'';display:block;border-bottom:${u(0.1)} solid #111}
+${D} .kop-container[data-variant="saintek"]{padding-bottom:${u(0.4)};border-bottom-color:${SAINTEK_BLUE}}
+${D} .kop-container[data-variant="saintek"] .kop-logo{width:${mm(26)};height:${mm(26)}}
+${D} .kop-container[data-variant="saintek"] .kop-text{padding:0 0 0 ${mm(4)}}
+${D} .kop-container[data-variant="saintek"] .kop-text p{line-height:1.2;color:${SAINTEK_BLUE};font-family:Arial,Helvetica,sans-serif}
 ${S} .rektorat-letter-footer{font-size:${u(LETTER_BASE_PT / BODY_PT)};line-height:1.2;text-align:center}
 ${S} .rektorat-letter-footer a{color:#00e;text-decoration:underline}
 

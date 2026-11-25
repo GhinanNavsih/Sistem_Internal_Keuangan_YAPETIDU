@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { normalizeExtractedSuratKeluar } from './extractSuratKeluar';
 
-test('model output for an outgoing letter is cleaned and bounded', () => {
+test('model output for an outgoing letter is cleaned', () => {
   const result = normalizeExtractedSuratKeluar({
     nomorSurat: '  185/B.1/AAK/11/2026 ',
     tanggalSurat: '2026-11-17',
@@ -17,7 +17,7 @@ test('model output for an outgoing letter is cleaned and bounded', () => {
   assert.equal(result.nomorSurat, '185/B.1/AAK/11/2026');
   assert.equal(result.tanggalSurat, '2026-11-17');
   assert.equal(result.tujuan, 'Bapak/Ibu Dosen - UNIPDU');
-  assert.equal(result.ringkasan.length, 1000);
+  assert.equal(result.ringkasan.length, 2000);
   assert.ok(!('extra' in result));
 });
 

@@ -13,7 +13,7 @@ import TextAlign from '@tiptap/extension-text-align';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
 import Image from '@tiptap/extension-image';
-import { formatAssignedPerson, LETTER_ALIGNMENTS, LETTER_BASE_PT, LETTER_CONTENT_WIDTH_U, LETTER_MAX_INDENT, LETTER_MAX_ROW_HEIGHT_PT, PARAGRAPH_DEFAULTS, sanitizeRowHeight, SIGNATURE_PLACES } from '@/lib/surat-menyurat/letterDoc';
+import { formatAssignedPerson, KOP_VARIANTS, LETTER_ALIGNMENTS, LETTER_BASE_PT, LETTER_CONTENT_WIDTH_U, LETTER_MAX_INDENT, LETTER_MAX_ROW_HEIGHT_PT, PARAGRAPH_DEFAULTS, sanitizeRowHeight, SIGNATURE_PLACES } from '@/lib/surat-menyurat/letterDoc';
 import { formatLetterDate } from '@/lib/surat-menyurat/date';
 import type { AssignedPerson } from '@/lib/surat-menyurat/templates';
 import IndonesianDatePicker from './IndonesianDatePicker';
@@ -212,7 +212,10 @@ const Kop = Node.create({
     },
     variant: {
       default: null,
-      parseHTML: (element) => element.getAttribute('data-variant') === 'rektorat' ? 'rektorat' : null,
+      parseHTML: (element) => {
+        const variant = element.getAttribute('data-variant');
+        return (KOP_VARIANTS as readonly string[]).includes(variant ?? '') ? variant : null;
+      },
     },
   }),
   parseHTML: () => [{ tag: 'div.kop-container', contentElement: '.kop-text' }],
@@ -220,7 +223,7 @@ const Kop = Node.create({
     const logo = node.attrs.logo === 'yapetidu' ? 'yapetidu' : 'unipdu';
     return [
       'div',
-      { class: 'kop-container', 'data-logo': logo, ...(node.attrs.variant === 'rektorat' && { 'data-variant': 'rektorat' }) },
+      { class: 'kop-container', 'data-logo': logo, ...(node.attrs.variant && { 'data-variant': node.attrs.variant }) },
       ['div', { class: 'kop-logo', contenteditable: 'false' }, ['img', { src: encodeURI(LOGOS[logo]), alt: logo === 'yapetidu' ? 'Logo YAPETIDU' : 'Logo UNIPDU', draggable: 'false' }]],
       ['div', { class: 'kop-text' }, 0],
     ];

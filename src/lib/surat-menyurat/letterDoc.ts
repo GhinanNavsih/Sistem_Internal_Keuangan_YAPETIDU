@@ -28,6 +28,10 @@ export const LETTER_MAX_INDENT = 6;
 export const PARAGRAPH_DEFAULTS = { textAlign: 'justify', indent: 0, firstLine: true, after: 9 } as const;
 export const LETTER_FONT_FAMILIES = ['Times New Roman', 'Arial', 'Calibri', 'Georgia', 'Verdana', 'Tahoma', 'Courier New'] as const;
 export const LETTER_FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36] as const;
+/** Letterhead layouts other than the default centred one. */
+export const KOP_VARIANTS = ['rektorat', 'saintek'] as const;
+/** Blue of the Fakultas Sains & Teknologi letterhead text and rule. */
+export const SAINTEK_BLUE = '#4a6fa5';
 /** The text size of an unmarked letter, in pt. */
 export const LETTER_BASE_PT = 11;
 export const LETTER_MAX_ROW_HEIGHT_PT = 720;
@@ -46,8 +50,7 @@ export const PARAGRAPH_FIELDS = ['tujuanLabel', 'tujuanNama', 'tujuanAlamatKota'
 export const ROW_FIELDS = ['nomorSurat', 'lampiranKeterangan', 'perihal'] as const;
 export type LetterRowField = (typeof ROW_FIELDS)[number];
 
-/** Limits for what one letter may hold. */
-export const LETTER_MAX_TEXT = 40000;
+/** Limits on a letter's structure and on the size of its pictures. */
 export const LETTER_MAX_IMAGE_CHARS = 400000;
 export const LETTER_MAX_IMAGES_CHARS = 600000;
 const MAX_NODES = 8000;
@@ -128,7 +131,7 @@ function sanitizeAttrs(type: string, value: unknown): Record<string, unknown> | 
       break;
     case 'kop':
       result.logo = raw.logo === 'yapetidu' ? 'yapetidu' : 'unipdu';
-      if (result.logo === 'unipdu' && raw.variant === 'rektorat') result.variant = 'rektorat';
+      if (result.logo === 'unipdu' && (KOP_VARIANTS as readonly unknown[]).includes(raw.variant)) result.variant = raw.variant as (typeof KOP_VARIANTS)[number];
       break;
     case 'letterDate':
       if (typeof raw.value !== 'string' || (raw.value !== '' && !DATE.test(raw.value))) return null;
@@ -137,7 +140,7 @@ function sanitizeAttrs(type: string, value: unknown): Record<string, unknown> | 
     case 'image':
       if (typeof raw.src !== 'string' || raw.src.length > LETTER_MAX_IMAGE_CHARS || !DATA_IMAGE.test(raw.src)) return null;
       result.src = raw.src;
-      if (typeof raw.alt === 'string' && raw.alt) result.alt = raw.alt.slice(0, 200);
+      if (typeof raw.alt === 'string' && raw.alt) result.alt = raw.alt;
       if (typeof raw.width === 'number' && raw.width >= 5 && raw.width < 99.5) result.width = Math.round(raw.width * 10) / 10;
       if (raw.align === 'left' || raw.align === 'right') result.align = raw.align;
       if (raw.wrap === true) result.wrap = true;
@@ -192,13 +195,12 @@ function upgradeRow(node: unknown): unknown {
 
 /**
  * Checks a stored or submitted letter against the small set of things the editor can make, and returns a
- * clean copy (only known nodes, marks and settings). Returns null when anything else is found or it is too large.
+ * clean copy (only known nodes, marks and settings). Returns null when anything else is found or it exceeds the picture or structure limits.
  */
 export function sanitizeLetterDoc(value: unknown): LetterDoc | null {
   const root = record(value);
   if (root.type !== 'doc' || !Array.isArray(root.content)) return null;
   let nodes = 0;
-  let textLength = 0;
   let imageChars = 0;
 
   const clean = (node: unknown, parentType: string, depth: number): LetterNode | null => {
@@ -219,8 +221,6 @@ export function sanitizeLetterDoc(value: unknown): LetterDoc | null {
 
     if (type === 'text') {
       if (typeof raw.text !== 'string' || !raw.text) return null;
-      textLength += raw.text.length;
-      if (textLength > LETTER_MAX_TEXT) return null;
       result.text = raw.text;
       if (raw.marks !== undefined) {
         if (!Array.isArray(raw.marks)) return null;

@@ -1,13 +1,12 @@
 import { InstitutionScope, SifatSurat, SuratAttachment } from './types';
-import { TUJUAN_MAX_LENGTH } from './templates';
 
 const VALID_SIFAT: readonly SifatSurat[] = ['biasa', 'penting', 'segera', 'rahasia'];
 const VALID_SCOPES: readonly InstitutionScope[] = ['UNIPDU', 'YAPETIDU', 'SATKER'];
 const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
-export function sanitizeText(val: unknown, max = 300): string {
+export function sanitizeText(val: unknown): string {
   if (typeof val !== 'string') return '';
-  return val.trim().slice(0, max);
+  return val.trim();
 }
 
 export function validateSuratMasukInput(raw: Record<string, unknown>): {
@@ -31,36 +30,36 @@ export function validateSuratMasukInput(raw: Record<string, unknown>): {
     attachments: SuratAttachment[];
   };
 } {
-  const nomorSurat = sanitizeText(raw.nomorSurat, 100);
+  const nomorSurat = sanitizeText(raw.nomorSurat);
   if (!nomorSurat) return { ok: false, error: 'Nomor surat wajib diisi.' };
 
-  const tanggalSurat = sanitizeText(raw.tanggalSurat, 10);
+  const tanggalSurat = sanitizeText(raw.tanggalSurat);
   if (!ISO_DATE_REGEX.test(tanggalSurat)) return { ok: false, error: 'Tanggal surat tidak valid (YYYY-MM-DD).' };
 
-  const tanggalDiterima = sanitizeText(raw.tanggalDiterima, 10);
+  const tanggalDiterima = sanitizeText(raw.tanggalDiterima);
   if (!ISO_DATE_REGEX.test(tanggalDiterima)) return { ok: false, error: 'Tanggal diterima tidak valid (YYYY-MM-DD).' };
 
-  const pengirim = sanitizeText(raw.pengirim, 150);
+  const pengirim = sanitizeText(raw.pengirim);
   if (!pengirim) return { ok: false, error: 'Pengirim surat wajib diisi.' };
 
-  const penerima = sanitizeText(raw.penerima, 150) || 'Kepala SatKer';
-  const perihal = sanitizeText(raw.perihal, 250);
+  const penerima = sanitizeText(raw.penerima) || 'Kepala SatKer';
+  const perihal = sanitizeText(raw.perihal);
   if (!perihal) return { ok: false, error: 'Perihal surat wajib diisi.' };
 
   const sifat = (raw.sifat as SifatSurat) || 'biasa';
   if (!VALID_SIFAT.includes(sifat)) return { ok: false, error: 'Sifat surat tidak valid.' };
 
-  const kategori = sanitizeText(raw.kategori, 100) || 'Lainnya';
-  const ringkasan = sanitizeText(raw.ringkasan, 1000);
+  const kategori = sanitizeText(raw.kategori) || 'Lainnya';
+  const ringkasan = sanitizeText(raw.ringkasan);
 
   const institutionScope = (raw.institutionScope && VALID_SCOPES.includes(raw.institutionScope as InstitutionScope))
     ? (raw.institutionScope as InstitutionScope)
     : undefined;
 
   const nomorUrut = typeof raw.nomorUrut === 'number' && raw.nomorUrut > 0 ? raw.nomorUrut : undefined;
-  const kodeSurat = sanitizeText(raw.kodeSurat, 30) || undefined;
-  const kodeArsip = sanitizeText(raw.kodeArsip, 60) || undefined;
-  const usiaArsip = sanitizeText(raw.usiaArsip, 60) || undefined;
+  const kodeSurat = sanitizeText(raw.kodeSurat) || undefined;
+  const kodeArsip = sanitizeText(raw.kodeArsip) || undefined;
+  const usiaArsip = sanitizeText(raw.usiaArsip) || undefined;
 
   const attachments = Array.isArray(raw.attachments) ? (raw.attachments as SuratAttachment[]) : [];
 
@@ -111,25 +110,25 @@ export function validateSuratKeluarInput(raw: Record<string, unknown>): {
     attachments: SuratAttachment[];
   };
 } {
-  const nomorSurat = sanitizeText(raw.nomorSurat, 100);
+  const nomorSurat = sanitizeText(raw.nomorSurat);
   if (!nomorSurat) return { ok: false, error: 'Nomor surat keluar wajib diisi.' };
 
-  const tanggalSurat = sanitizeText(raw.tanggalSurat, 10);
+  const tanggalSurat = sanitizeText(raw.tanggalSurat);
   if (!ISO_DATE_REGEX.test(tanggalSurat)) return { ok: false, error: 'Tanggal surat tidak valid (YYYY-MM-DD).' };
 
-  const tujuan = sanitizeText(raw.tujuan, TUJUAN_MAX_LENGTH);
+  const tujuan = sanitizeText(raw.tujuan);
   if (!tujuan) return { ok: false, error: 'Tujuan surat wajib diisi.' };
 
-  const perihal = sanitizeText(raw.perihal, 250);
+  const perihal = sanitizeText(raw.perihal);
   if (!perihal) return { ok: false, error: 'Perihal surat keluar wajib diisi.' };
 
   const sifat = (raw.sifat as SifatSurat) || 'biasa';
   if (!VALID_SIFAT.includes(sifat)) return { ok: false, error: 'Sifat surat tidak valid.' };
 
-  const kategori = sanitizeText(raw.kategori, 100) || 'Lainnya';
-  const ringkasan = sanitizeText(raw.ringkasan, 1000);
-  const penandatanganNama = sanitizeText(raw.penandatanganNama, 100);
-  const penandatanganJabatan = sanitizeText(raw.penandatanganJabatan, 100);
+  const kategori = sanitizeText(raw.kategori) || 'Lainnya';
+  const ringkasan = sanitizeText(raw.ringkasan);
+  const penandatanganNama = sanitizeText(raw.penandatanganNama);
+  const penandatanganJabatan = sanitizeText(raw.penandatanganJabatan);
 
   const institutionScope = (raw.institutionScope && VALID_SCOPES.includes(raw.institutionScope as InstitutionScope))
     ? (raw.institutionScope as InstitutionScope)
@@ -137,13 +136,13 @@ export function validateSuratKeluarInput(raw: Record<string, unknown>): {
 
   const nomorUrut = typeof raw.nomorUrut === 'number' && raw.nomorUrut > 0 ? raw.nomorUrut : undefined;
   const nomorUrutEnd = typeof raw.nomorUrutEnd === 'number' && raw.nomorUrutEnd > 0 ? raw.nomorUrutEnd : undefined;
-  const kodeSurat = sanitizeText(raw.kodeSurat, 30) || undefined;
-  const kodeArsip = sanitizeText(raw.kodeArsip, 60) || undefined;
-  const usiaArsip = sanitizeText(raw.usiaArsip, 60) || undefined;
+  const kodeSurat = sanitizeText(raw.kodeSurat) || undefined;
+  const kodeArsip = sanitizeText(raw.kodeArsip) || undefined;
+  const usiaArsip = sanitizeText(raw.usiaArsip) || undefined;
 
-  const templateType = sanitizeText(raw.templateType, 50) || undefined;
-  const contentBody = typeof raw.contentBody === 'string' ? raw.contentBody.slice(0, 10000) : undefined;
-  const lampiranKeterangan = sanitizeText(raw.lampiranKeterangan, 150) || undefined;
+  const templateType = sanitizeText(raw.templateType) || undefined;
+  const contentBody = typeof raw.contentBody === 'string' ? raw.contentBody : undefined;
+  const lampiranKeterangan = sanitizeText(raw.lampiranKeterangan) || undefined;
   const attachments = Array.isArray(raw.attachments) ? (raw.attachments as SuratAttachment[]) : [];
 
   return {

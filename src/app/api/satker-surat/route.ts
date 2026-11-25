@@ -222,7 +222,7 @@ export async function POST(request: NextRequest) {
         throw new HttpError(400, validation.error || 'Data surat keluar tidak valid.');
       }
       const letterDraft = body.letterDraft === undefined ? undefined : parseLetterDraft(body.letterDraft);
-      if (letterDraft === null) throw new HttpError(400, 'Naskah surat tidak valid atau terlalu panjang.');
+      if (letterDraft === null) throw new HttpError(400, 'Naskah surat tidak valid.');
 
       const docData: SuratKeluar & { type: string } = {
         id,
@@ -297,7 +297,7 @@ export async function PUT(request: NextRequest) {
     if (body.letterDraft !== undefined) {
       if (existingData.type !== 'keluar') throw new HttpError(400, 'Naskah hanya untuk surat keluar.');
       const letterDraft = parseLetterDraft(body.letterDraft);
-      if (!letterDraft) throw new HttpError(400, 'Naskah surat tidak valid atau terlalu panjang.');
+      if (!letterDraft) throw new HttpError(400, 'Naskah surat tidak valid.');
       updates.letterDraft = letterDraft;
       updates.templateType = letterDraft.templateType;
     }

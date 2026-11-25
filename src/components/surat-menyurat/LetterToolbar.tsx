@@ -220,7 +220,7 @@ export default function LetterToolbar({ editor, onError }: { editor: Editor | nu
     try {
       const src = await imageToDataUrl(file);
       if (imageChars(editor) + src.length > LETTER_MAX_IMAGES_CHARS) throw new Error('Total ukuran gambar dalam surat sudah mencapai batas. Hapus atau perkecil gambar lain.');
-      editor.chain().focus().setImage({ src, alt: file.name.replace(/\.[^.]+$/, '').slice(0, 200), width: 50 } as never).run();
+      editor.chain().focus().setImage({ src, alt: file.name.replace(/\.[^.]+$/, ''), width: 50 } as never).run();
     } catch (error) {
       onError(error instanceof Error ? error.message : 'Gambar tidak dapat ditambahkan.');
     }
