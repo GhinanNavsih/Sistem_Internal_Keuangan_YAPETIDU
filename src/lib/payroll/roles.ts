@@ -84,6 +84,16 @@ export function canReadAllSatkerFinance(role: unknown): boolean {
   return role === 'super_admin' || role === 'rector_finance' || role === 'finance_verifier';
 }
 
+// Badan Keuangan records and corrects every SatKer's books without being on each unit's editor list.
+export function canEditAllSatkerFinance(role: unknown): boolean {
+  return role === 'super_admin' || role === 'finance_verifier';
+}
+
+// Deleting a SatKer account: the Kepala SatKer Loyalis on that book, plus anyone who can edit every book.
+export function canDeleteSatkerAccount(role: unknown, isEditorOfBook: boolean): boolean {
+  return canEditAllSatkerFinance(role) || (role === 'satker_head_loyalis' && isEditorOfBook);
+}
+
 export const FINANCE_ROLES: readonly UserRole[] = [
   'super_admin',
   'finance_verifier',

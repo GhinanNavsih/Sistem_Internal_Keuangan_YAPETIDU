@@ -5,7 +5,7 @@ import { errorResponse, HttpError, requireAuthenticatedProfile, requireRole } fr
 import {
   ACCOUNT_COLLECTION, CATALOG_META_REF, assertUnitEdit, audit, canReadAll, ensureOwnUnit, ensureUnassignedHeadUnits, fixedAssetCollection, fixedAssetFrom, getUnit,
   type FinancialUnitListItem, activeHeadInitialsByUid, inactiveHeadUids, isInactiveHeadBook, listUnits, loadAccounts, loadFixedAssets, loadSignatureEmployees, unitAccountCatalogSource, openingFrom, publicYear, UNIT_COLLECTION, unitAccountCatalogMetaRef,
-  unitAccountCollection, yearRef,
+  unitAccountCollection, YEAR_COLLECTION, yearRef,
 } from '@/lib/server/satkerFinance';
 import {
   accountId as financialAccountId, academicYearFor, buildFinancialStatements, buildVoucher, CASH_FLOW_SECTIONS,
@@ -13,6 +13,8 @@ import {
   OpeningBalances, type AccountType, type CashFlowAmounts, validateEntryDate, validateOpeningBalances,
 } from '@/lib/satker-finance/core';
 import { entryChangeBlocker } from '@/lib/satker-finance/entryEditing';
+import { accountDeletionBlocker, journalsUsingAccount, openingHasValue, openingWithout } from '@/lib/satker-finance/accountDeletion';
+import { canDeleteSatkerAccount } from '@/lib/payroll/roles';
 import { cashFlowSignaturesFrom, defaultCashFlowSignatures, validateCashFlowSignatures } from '@/lib/satker-finance/signatures';
 import { importUnitBook } from '@/lib/server/satkerBookImport';
 import {
@@ -343,6 +345,67 @@ export async function POST(request: NextRequest) {
           action: requestedId ? 'UNIT_ACCOUNT_UPDATED' : 'UNIT_ACCOUNT_CREATED', target: `${unitId}:${localAccountId}`,
           before: before.data() || null, after, unitId, actorUid: actor.uid, actorRole: actor.role,
           at: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      });
+      return Response.json({ ok: true }, { headers: noStore });
+    }
+    if (action === 'DELETE_UNIT_ACCOUNT') {
+      const unitId = string(raw.unitId, 'SatKer', 50);
+      const unit = await getUnit(actor, unitId);
+      if (!canDeleteSatkerAccount(actor.role, unit.editorUids.includes(actor.uid))) throw new HttpError(403, 'Anda tidak dapat menghapus akun SatKer ini.');
+      const localAccountId = string(raw.accountId, 'Akun SatKer', 120);
+      const expectedRevision = raw.expectedRevision;
+      const expectedCatalogRevision = raw.expectedCatalogRevision;
+      if (!Number.isInteger(expectedRevision) || !Number.isInteger(expectedCatalogRevision)) throw new HttpError(400, 'Versi akun tidak valid. Muat ulang sebelum menghapus.');
+      const account = (await loadAccounts(unitId)).find((item) => item.localAccountId === localAccountId);
+      if (!account) throw new HttpError(404, 'Akun SatKer tidak ditemukan. Muat ulang daftar akun.');
+      // Journals, opening balances, fixed assets and reconciliations refer to the ledger identity (financialAccountId).
+      const key = financialAccountId(account);
+      // Standard accounts (base_) come from the shared catalog, so deleting one leaves a marker that hides it for this SatKer only.
+      const standard = localAccountId.startsWith('base_');
+      const label = `Akun ${account.code} ${account.name}`.trim();
+      const accountRef = unitAccountCollection(unitId).doc(localAccountId);
+      const catalogMeta = unitAccountCatalogMetaRef(unitId);
+      const assetsRef = fixedAssetCollection(unitId);
+      const prefix = `${unitId}_`;
+      const yearsRef = adminDb.collection(YEAR_COLLECTION).where(admin.firestore.FieldPath.documentId(), '>=', prefix)
+        .where(admin.firestore.FieldPath.documentId(), '<', `${prefix}`);
+      await adminDb.runTransaction(async (tx) => {
+        const [accountDoc, meta, yearDocs, assetDocs] = await Promise.all([tx.get(accountRef), tx.get(catalogMeta), tx.get(yearsRef), tx.get(assetsRef)]);
+        // POST_ENTRY writes CATALOG_META_REF with every journal, so reading it makes a journal posted meanwhile (even the first of a new year) retry this check.
+        await tx.get(CATALOG_META_REF);
+        if (Number(meta.data()?.revision || 0) !== expectedCatalogRevision) throw new HttpError(409, 'Daftar akun SatKer berubah. Muat ulang sebelum menghapus.');
+        const revision = Number(accountDoc.data()?.revision || 0);
+        if (revision !== expectedRevision) throw new HttpError(409, 'Akun berubah. Muat ulang sebelum menghapus.');
+        // Read every journal of the SatKer in this transaction: a journal posted meanwhile changes its year, so this check retries.
+        const books = await Promise.all(yearDocs.docs.map(async (yearDoc) => ({
+          yearDoc,
+          entries: await tx.get(yearDoc.ref.collection('entries')),
+          reconciliations: await tx.get(yearDoc.ref.collection('bankReconciliations')),
+        })));
+        const journals = books.flatMap(({ entries }) => entries.docs.map((doc) => ({ ...doc.data(), id: doc.id }) as Pick<JournalEntry, 'id' | 'date' | 'description' | 'lines'>));
+        const openingYears = books.filter(({ yearDoc }) => openingHasValue(openingFrom(yearDoc.data()?.openingBalances), key))
+          .map(({ yearDoc }) => String(yearDoc.data()?.academicYear || yearDoc.id));
+        const assetUses = assetDocs.docs.map((doc) => fixedAssetFrom(doc.id, doc.data()))
+          .filter((asset) => [asset.assetAccountId, asset.accumulatedAccountId, asset.expenseAccountId].includes(key)).length;
+        const reconciliations = books.flatMap(({ reconciliations: found }) => found.docs).filter((doc) => doc.data().accountId === key).length;
+        const blocker = accountDeletionBlocker({ journals: journalsUsingAccount(journals, key), openingYears, fixedAssets: assetUses, reconciliations }, label);
+        if (blocker) throw new HttpError(409, blocker);
+
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        // Only zero rows can remain for the account here. The map is replaced whole, so no saved balance keeps the deleted account.
+        for (const { yearDoc } of books) {
+          const opening = openingFrom(yearDoc.data()?.openingBalances);
+          if (!(key in opening)) continue;
+          tx.update(yearDoc.ref, { openingBalances: openingWithout(opening, key), revision: admin.firestore.FieldValue.increment(1), updatedAt: now });
+        }
+        if (standard) tx.set(accountRef, { code: account.code, deleted: true, revision: revision + 1, updatedAt: now, updatedBy: actor.uid });
+        else tx.delete(accountRef);
+        tx.set(catalogMeta, { revision: Number(meta.data()?.revision || 0) + 1, updatedAt: now }, { merge: true });
+        tx.create(adminDb.collection('SatkerFinancialConfigAudit').doc(), {
+          action: 'UNIT_ACCOUNT_DELETED', target: `${unitId}:${localAccountId}`,
+          before: { code: account.code, name: account.name, type: account.type, standard, revision }, after: null,
+          unitId, actorUid: actor.uid, actorRole: actor.role, at: now,
         });
       });
       return Response.json({ ok: true }, { headers: noStore });

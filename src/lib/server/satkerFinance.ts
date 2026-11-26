@@ -1,5 +1,5 @@
 import admin, { adminDb } from '@/lib/firebase-admin';
-import { canReadAllSatkerFinance } from '@/lib/payroll/roles';
+import { canEditAllSatkerFinance, canReadAllSatkerFinance } from '@/lib/payroll/roles';
 import type { DocumentReference, Transaction } from 'firebase-admin/firestore';
 import { AuthenticatedProfile, HttpError } from '@/lib/server/auth';
 import { DEFAULT_ACCOUNTS, FinancialAccount, isCashAccount, OpeningBalances, withAccountPostingDefaults } from '@/lib/satker-finance/core';
@@ -36,7 +36,7 @@ export function canReadAll(actor: AuthenticatedProfile) {
 }
 
 export function canEditUnit(actor: AuthenticatedProfile, unit: FinancialUnit) {
-  return actor.role === 'super_admin' ||
+  return canEditAllSatkerFinance(actor.role) ||
     ((FINANCIAL_EDITOR_ROLES as readonly string[]).includes(actor.role) && unit.editorUids.includes(actor.uid));
 }
 
@@ -245,7 +245,8 @@ export async function loadAccounts(unitId?: string): Promise<FinancialAccount[]>
   const unitDefaults = accountsForUnit(unitId, globalAccounts);
   const localSnapshot = await unitAccountCollection(unitId).get();
   const localById = new Map(localSnapshot.docs.map((doc) => [doc.id, doc.data()]));
-  const unitAccounts = unitDefaults.map((account) => {
+  // A standard account deleted for this SatKer stays hidden here; DELETE_UNIT_ACCOUNT leaves that marker.
+  const unitAccounts = unitDefaults.filter((account) => localById.get(`base_${account.code}`)?.deleted !== true).map((account) => {
     const localAccountId = `base_${account.code}`;
     const local = localById.get(localAccountId);
     if (!local) return { ...account, localAccountId, revision: 0 };

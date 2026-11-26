@@ -71,7 +71,8 @@ async function main() {
   assert.equal(financeView.editorUsers, undefined);
   assert.equal((await succeeds(await read(finance, base))).unit.id, base.unitId);
   assert.equal((await succeeds(await read(finance, { ...base, unitId: 'ALL' }))).unit.id, 'ALL');
-  assert.equal((await invoke(finance, { ...base, action: 'SAVE_OPENING', openingBalances: {}, expectedRevision: 0 })).status, 403);
+  // Badan Keuangan may edit every book (canEditAllSatkerFinance): an unbalanced opening passes authorization and fails validation, so nothing is saved.
+  assert.equal((await invoke(finance, { ...base, action: 'SAVE_OPENING', openingBalances: { '10000': { debit: 1000, credit: 0 } }, expectedRevision: 0 })).status, 400);
   // Removing a head from their own book sticks: it is not created again.
   await succeeds(await invoke(bak, { action: 'SAVE_UNIT', id: ownUnit.id, name: ownUnit.name, headName: ownUnit.headName, adminName: '', editorUids: [], expectedRevision: ownUnit.revision }));
   assert.equal((await succeeds(await read(outsider, { academicYear: '2026-2027', month: '9' }))).units.length, 0);
@@ -525,6 +526,53 @@ async function main() {
       { accountCode: 'biro_umum_52130', debit: 300000, credit: 0, description: 'BBM LGX dikoreksi' },
       { accountCode: '10000', debit: 0, credit: 300000 },
     ] }));
+
+  // Deleting an account in Akun: who may, what blocks it, and what a standard account leaves behind.
+  const hapus = { unitId: 'akun-hapus', academicYear: '2026-2027' };
+  await succeeds(await invoke(bak, { action: 'SAVE_UNIT', id: 'akun-hapus', name: 'Akun Hapus', headName: 'Kepala Hapus', adminName: '', editorUids: [head.uid, secretary.uid] }));
+  const hapusView = async () => succeeds(await read(head, { ...hapus, month: '9' }));
+  const hapusAccount = async (code: string) => (await hapusView()).accounts.find((account: { code: string }) => account.code === code);
+  const addAccount = async (code: string, name: string, type: string) => {
+    const view = await hapusView();
+    await succeeds(await invoke(head, { ...hapus, action: 'SAVE_UNIT_ACCOUNT', code, name, type, expectedRevision: 0, expectedCatalogRevision: view.accountCatalogRevision }));
+    return hapusAccount(code);
+  };
+  const deleteAccount = async (actor: typeof bak, code: string) => {
+    const view = await hapusView();
+    const account = view.accounts.find((item: { code: string }) => item.code === code);
+    return invoke(actor, { ...hapus, action: 'DELETE_UNIT_ACCOUNT', accountId: account.localAccountId, expectedRevision: account.revision, expectedCatalogRevision: view.accountCatalogRevision });
+  };
+  const uji = await addAccount('52990', 'Akun uji', 'KELUAR');
+  const saldo = await addAccount('12990', 'Akun saldo', 'AKTIVA');
+  // The Sekretariat editor and a Kepala SatKer Loyalis outside the book may not delete.
+  assert.equal((await deleteAccount(secretary, '52990')).status, 403);
+  assert.equal((await deleteAccount(outsider, '52990')).status, 403);
+  // A journal uses the account: the delete names it, and succeeds once the journal is removed.
+  await succeeds(await invoke(head, { ...hapus, action: 'POST_ENTRY', entryId: 'hapus-voucher-1', monthIndex: 9, date: '2026-09-02', kind: 'EXPENSE', accountCode: uji.localAccountId, paymentAccountCode: '10000', amount: 100, description: 'Perawatan uji' }));
+  const blockedByJournal = await deleteAccount(head, '52990');
+  assert.equal(blockedByJournal.status, 409);
+  assert.match((await blockedByJournal.json()).error, /dipakai di 1 jurnal \(2026-09-02 Perawatan uji\)/);
+  await succeeds(await invoke(head, { ...hapus, action: 'DELETE_ENTRY', entryId: 'hapus-voucher-1', expectedRevision: 0, reason: 'Salah input' }));
+  await succeeds(await deleteAccount(head, '52990'));
+  assert.equal(await hapusAccount('52990'), undefined);
+  // An opening balance blocks until it is cleared; clearing leaves zero rows, which the delete removes with the account.
+  const yearRevision = async () => Number((await adminDb.collection('SatkerFinancialYears').doc('akun-hapus_2026-2027').get()).data()?.revision || 0);
+  await succeeds(await invoke(head, { ...hapus, action: 'SAVE_OPENING', openingBalances: { [saldo.localAccountId]: { debit: 100, credit: 0 }, '10000': { debit: 0, credit: 100 } }, expectedRevision: await yearRevision() }));
+  const blockedByOpening = await deleteAccount(head, '12990');
+  assert.equal(blockedByOpening.status, 409);
+  assert.match((await blockedByOpening.json()).error, /saldo awal pada tahun buku 2026-2027/);
+  await succeeds(await invoke(head, { ...hapus, action: 'SAVE_OPENING', openingBalances: { [saldo.localAccountId]: { debit: 0, credit: 0 }, '10000': { debit: 0, credit: 0 } }, expectedRevision: await yearRevision() }));
+  await succeeds(await deleteAccount(head, '12990'));
+  const yearAfter = (await adminDb.collection('SatkerFinancialYears').doc('akun-hapus_2026-2027').get()).data()!;
+  assert.equal(Object.prototype.hasOwnProperty.call(yearAfter.openingBalances, saldo.localAccountId), false);
+  // A standard account is hidden for this SatKer only and cannot be posted to; an account with the same number brings it back.
+  await succeeds(await deleteAccount(head, '52103'));
+  assert.equal(await hapusAccount('52103'), undefined);
+  assert.equal((await invoke(head, { ...hapus, action: 'POST_ENTRY', entryId: 'hapus-voucher-2', monthIndex: 9, date: '2026-09-03', kind: 'EXPENSE', accountCode: '52103', paymentAccountCode: '10000', amount: 50, description: 'Tidak boleh' })).status, 400);
+  const restored = await addAccount('52103', 'Akun dasar kembali', 'KELUAR');
+  assert.ok(restored.localAccountId.startsWith('custom_'));
+  const otherSatker = await succeeds(await read(head, { ...base, month: '9' }));
+  assert.ok(otherSatker.accounts.some((account: { code: string }) => account.code === '52103'), 'puskomnet still lists the standard account');
 
   console.log('SatKer finance emulator workflow passed.');
   await admin.app().delete();

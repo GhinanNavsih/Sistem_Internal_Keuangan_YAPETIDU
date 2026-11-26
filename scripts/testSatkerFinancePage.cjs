@@ -110,6 +110,28 @@ async function select(label, value) {
 }
 const noWorkflow = () => assert.doesNotMatch(document.body.textContent, /Draf|Kirim laporan|Pengajuan & persetujuan|Menunggu BAK|Minta revisi|Legacy approval notice|Penutupan tahun buku|Riwayat versi laporan/);
 
+test('a Kepala SatKer Loyalis on the book can delete an account after confirming; the Sekretariat editor cannot', async () => {
+  const savedAccounts = T.accounts;
+  const savedConfirm = window.confirm;
+  T.accounts = core.DEFAULT_ACCOUNTS.map(account => ({ ...account, localAccountId: `base_${account.code}`, revision: 0 }));
+  const row = code => [...document.querySelectorAll('tbody tr')].find(tr => tr.querySelector('td')?.textContent.trim() === code);
+  const hapus = code => [...(row(code)?.querySelectorAll('button') || [])].find(button => button.textContent.trim() === 'Hapus');
+  try {
+    await mount(); await click('Akun');
+    assert.ok(hapus('52101'), 'the Kepala SatKer Loyalis sees Hapus');
+    window.confirm = () => false;
+    const writes = T.writes.length;
+    await act(async () => hapus('52101').click()); await settle();
+    assert.equal(T.writes.length, writes, 'nothing is sent without confirmation');
+    window.confirm = () => true;
+    await act(async () => hapus('52101').click()); await settle();
+    assert.deepEqual({ action: T.writes.at(-1).action, accountId: T.writes.at(-1).accountId }, { action: 'DELETE_UNIT_ACCOUNT', accountId: 'base_52101' });
+    await unmount(); await mount('satker_finance_admin'); await click('Akun');
+    assert.ok(row('52101'), 'the Akun table still lists the account');
+    assert.equal(hapus('52101'), undefined, 'the Sekretariat editor cannot delete');
+  } finally { window.confirm = savedConfirm; T.accounts = savedAccounts; await unmount(); }
+});
+
 test('duplicate account numbers show a floating error and cannot be submitted', async () => {
   try {
     await mount(); await click('Akun'); await click('Buat akun baru');

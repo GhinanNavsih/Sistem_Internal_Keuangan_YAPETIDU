@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useAuth } from '@/lib/AuthContext';
-import { canReadAllSatkerFinance } from '@/lib/payroll/roles';
+import { canDeleteSatkerAccount, canEditAllSatkerFinance, canReadAllSatkerFinance } from '@/lib/payroll/roles';
 import { useConfirmLogout } from '@/components/LogoutConfirmProvider';
 import AccountSwitcher from '@/components/AccountSwitcher';
 import {
@@ -139,7 +139,8 @@ export default function SatkerFinancePage() {
   const unitAccountEditorRef = useRef<HTMLDivElement>(null);
   const isAdmin = profile?.role === 'super_admin';
   const canReadAll = canReadAllSatkerFinance(profile?.role);
-  const canEdit = !!profile && (isAdmin || (['satker_head_loyalis', 'satker_finance_admin'].includes(profile.role) && data?.unit?.editorUids?.includes(profile.uid)));
+  const canEdit = !!profile && (isAdmin || canEditAllSatkerFinance(profile.role) || (['satker_head_loyalis', 'satker_finance_admin'].includes(profile.role) && data?.unit?.editorUids?.includes(profile.uid)));
+  const canDeleteAccounts = !!profile && canDeleteSatkerAccount(profile.role, !!data?.unit?.editorUids?.includes(profile.uid));
   const months = useMemo(() => fiscalMonths(academicYear), [academicYear]);
   const reversedIds = useMemo(() => reversedEntryIds(data?.entries || []), [data?.entries]);
   const cashFlowReceipts = useMemo(() => month === 'ANNUAL' ? [] : journalReceiptRefs({ entries: data?.entries || [], accounts: data?.accounts || [], academicYear, monthIndex: month }), [data?.entries, data?.accounts, academicYear, month]);
@@ -245,6 +246,14 @@ export default function SatkerFinancePage() {
       setCreatingUnitAccount(false);
       setUnitAccountDraft({ code: '', name: '', type: 'AKTIVA', cashEquivalent: false, contra: false, cashFlowSection: 'OPERATING' });
     }
+  };
+
+  // The server refuses while a journal, opening balance, fixed asset or reconciliation still uses the account, and says what to remove first.
+  const deleteUnitAccount = async (account: FinancialAccount) => {
+    if (!account.localAccountId) return;
+    if (!window.confirm(`Hapus akun ${account.code} · ${account.name || '(belum bernama)'}? Akun yang sudah dipakai di jurnal, saldo awal, aset tetap, atau rekonsiliasi tidak dapat dihapus.`)) return;
+    const deleted = await post('DELETE_UNIT_ACCOUNT', { accountId: account.localAccountId, expectedRevision: account.revision || 0, expectedCatalogRevision: data?.accountCatalogRevision || 0 });
+    if (deleted && unitAccountId === account.localAccountId) { setUnitAccountId(''); setCreatingUnitAccount(false); }
   };
 
   // The sheet whose name shares the most words with the unit's name, so the usual Akun and Jurnal pair is preselected.
@@ -756,7 +765,7 @@ export default function SatkerFinancePage() {
             <td className={leftCell}>{accountTypeItems[account.type]}</td>
             <td className={leftCell}>{account.normalBalance ? normalBalanceItems[account.normalBalance] : '—'}{account.normalBalance && account.normalBalance !== groupNormalBalance(account.type) && <span className="text-xs text-slate-500"> (pengurang)</span>}</td>
             <td className={leftCell}>{isCashAccount(account) ? 'Kas/bank' : account.cashFlowSection ? cashFlowItems[account.cashFlowSection] : '—'}</td>
-            <td className={leftCell}><button type="button" className={lightButton} onClick={() => { setUnitAccountId(account.localAccountId || financialAccountId(account)); setCreatingUnitAccount(false); setUnitAccountDraft({ code: account.code, name: account.name, type: account.type, cashEquivalent: isCashAccount(account), contra: !!account.normalBalance && account.normalBalance !== groupNormalBalance(account.type), cashFlowSection: account.cashFlowSection || defaultCashFlowSection(account.type, account.code) }); }}>Ubah</button></td></tr>)}</tbody></table></div>
+            <td className={leftCell}><button type="button" className={lightButton} onClick={() => { setUnitAccountId(account.localAccountId || financialAccountId(account)); setCreatingUnitAccount(false); setUnitAccountDraft({ code: account.code, name: account.name, type: account.type, cashEquivalent: isCashAccount(account), contra: !!account.normalBalance && account.normalBalance !== groupNormalBalance(account.type), cashFlowSection: account.cashFlowSection || defaultCashFlowSection(account.type, account.code) }); }}>Ubah</button>{canDeleteAccounts && account.localAccountId && <button type="button" className={`${dangerGhostButton} ml-2`} disabled={busy} onClick={() => void deleteUnitAccount(account)}>Hapus</button>}</td></tr>)}</tbody></table></div>
         </Section>}
         {tab === 'pengaturan' && isAdmin && <div className="space-y-5"><Section title="Unit SatKer & pengelola"><div className="grid gap-3 md:grid-cols-2"><label className="text-xs font-medium text-slate-500">ID unik<input className={`${field} mt-1`} value={unitDraft.id} onChange={(event) => setUnitDraft({ ...unitDraft, id: event.target.value })} placeholder="puskomnet" /></label><label className="text-xs font-medium text-slate-500">Nama SatKer<input className={`${field} mt-1`} value={unitDraft.name} onChange={(event) => setUnitDraft({ ...unitDraft, name: event.target.value })} /></label><label className="text-xs font-medium text-slate-500">Nama Kepala SatKer<input className={`${field} mt-1`} value={unitDraft.headName} onChange={(event) => setUnitDraft({ ...unitDraft, headName: event.target.value })} /></label><label className="text-xs font-medium text-slate-500">Nama sekretariat / bendahara<input className={`${field} mt-1`} value={unitDraft.adminName} onChange={(event) => setUnitDraft({ ...unitDraft, adminName: event.target.value })} /></label></div><p className="mt-4 text-xs font-medium text-slate-500">Akun yang boleh mengelola buku keuangan unit ini</p><div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{data.editorUsers?.map((editor) => <label key={editor.uid} className="flex items-center gap-2 rounded-md border border-slate-100 p-2 text-sm"><input type="checkbox" checked={unitDraft.editorUids.includes(editor.uid)} onChange={(event) => setUnitDraft({ ...unitDraft, editorUids: event.target.checked ? [...unitDraft.editorUids, editor.uid] : unitDraft.editorUids.filter((uid) => uid !== editor.uid) })} />{editor.displayName} <span className="text-xs text-slate-400">{editor.role}</span></label>)}</div><div className="mt-4 flex gap-2"><button className={button} disabled={busy} onClick={() => void post('SAVE_UNIT', unitDraft)}>Simpan SatKer</button><button className={lightButton} onClick={() => setUnitDraft({ id: '', name: '', headName: '', adminName: '', editorUids: [], expectedRevision: 0 })}>Unit baru</button></div></Section>
           <Section title="Katalog akun umum · 129 kode">
