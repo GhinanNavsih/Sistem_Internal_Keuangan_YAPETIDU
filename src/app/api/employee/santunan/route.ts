@@ -48,6 +48,7 @@ export async function POST(request: NextRequest) {
       ['kind', 'eventDate', 'subjectName', 'relationship', 'relationshipOther', 'note']
         .map((key) => [key, form.get(key) ?? undefined]),
     );
+    if (fields.kind === 'duka') throw new HttpError(400, 'Ajuan Duka tidak lagi dapat diajukan.');
     let submission;
     try {
       submission = validateBansosSubmission(fields, jakartaToday());

@@ -8,7 +8,6 @@ import {
   Check,
   ChevronLeft,
   ChevronsUpDown,
-  Flower2,
   HandHeart,
   Loader2,
   LogOut,
@@ -36,13 +35,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { OptionSelect } from '@/components/ui/option-select';
 import { useAuth } from '@/lib/AuthContext';
 import {
   BANSOS_KIND_LABELS,
-  BANSOS_RELATIONSHIPS,
   isBansosAwaiting,
-  type BansosKind,
   type BansosEmployeeView,
 } from '@/lib/payroll/santunan';
 import { authenticatedFormData, authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
@@ -60,16 +56,15 @@ function todayInJakarta(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
 }
 
-const KIND_OPTIONS = ['duka', 'melahirkan'] as const;
-const RELATIONSHIP_OPTIONS = BANSOS_RELATIONSHIPS.filter((option) => option.value !== 'lainnya');
+const KIND_OPTIONS = ['melahirkan'] as const;
+type SubmittableKind = (typeof KIND_OPTIONS)[number];
 
-const KIND_DETAILS: Record<BansosKind, { icon: typeof Flower2; hint: string }> = {
-  duka: { icon: Flower2, hint: 'Keluarga meninggal dunia' },
+const KIND_DETAILS: Record<SubmittableKind, { icon: typeof Baby; hint: string }> = {
   melahirkan: { icon: Baby, hint: 'Kelahiran anak' },
 };
 
 /** The icon tile and the two lines of a kind; `kind` null is the "nothing chosen yet" card. */
-function KindCard({ kind, active }: { kind: BansosKind | null; active: boolean }) {
+function KindCard({ kind, active }: { kind: SubmittableKind | null; active: boolean }) {
   const Icon = kind ? KIND_DETAILS[kind].icon : HandHeart;
   return (
     <span className="flex min-w-0 flex-1 items-center gap-3">
@@ -79,7 +74,7 @@ function KindCard({ kind, active }: { kind: BansosKind | null; active: boolean }
       <span className="min-w-0">
         <span className="block text-sm font-bold text-slate-800">{kind ? BANSOS_KIND_LABELS[kind] : 'Pilih jenis ajuan'}</span>
         <span className="block text-xs text-slate-500">
-          {kind ? KIND_DETAILS[kind].hint : 'Duka atau Melahirkan'}
+          {kind ? KIND_DETAILS[kind].hint : 'Melahirkan'}
         </span>
       </span>
     </span>
@@ -104,9 +99,8 @@ export default function BansosRequestPage() {
   const [loadError, setLoadError] = useState('');
   const [notice, setNotice] = useState<SnackbarMessage | null>(null);
 
-  const [kind, setKind] = useState<BansosKind | null>(null);
+  const [kind, setKind] = useState<SubmittableKind | null>(null);
   const [eventDate, setEventDate] = useState('');
-  const [relationship, setRelationship] = useState('');
   const [subjectName, setSubjectName] = useState('');
   const [note, setNote] = useState('');
   const [proof, setProof] = useState<File | null>(null);
@@ -150,7 +144,6 @@ export default function BansosRequestPage() {
   const resetForm = () => {
     setKind(null);
     setEventDate('');
-    setRelationship('');
     setSubjectName('');
     setNote('');
     setProof(null);
@@ -158,22 +151,17 @@ export default function BansosRequestPage() {
     submissionIdRef.current = null;
   };
 
-  const chooseKind = (next: BansosKind) => {
+  const chooseKind = (next: SubmittableKind) => {
     setKind(next);
     setEventDate('');
-    setRelationship('');
     setSubjectName('');
     edited();
   };
 
   const missing = (): string => {
     if (!kind) return 'Pilih jenis ajuan terlebih dahulu.';
-    if (!eventDate) return kind === 'duka' ? 'Isi tanggal meninggal.' : 'Isi tanggal lahir.';
+    if (!eventDate) return 'Isi tanggal lahir.';
     if (eventDate > today) return 'Tanggal tidak boleh setelah hari ini.';
-    if (kind === 'duka') {
-      if (!relationship) return 'Pilih hubungan keluarga.';
-      if (subjectName.trim().length < 2) return 'Isi nama almarhum/almarhumah.';
-    }
     if (!proof) return 'Lampirkan bukti terlebih dahulu.';
     if (proofProblem) return proofProblem;
     return '';
@@ -193,9 +181,6 @@ export default function BansosRequestPage() {
     form.set('kind', kind!);
     form.set('eventDate', eventDate);
     form.set('subjectName', subjectName);
-    if (kind === 'duka') {
-      form.set('relationship', relationship);
-    }
     if (note.trim()) form.set('note', note);
     form.set('file', proof!);
     setSending(true);
@@ -296,31 +281,6 @@ export default function BansosRequestPage() {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
-
-              {kind === 'duka' && (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <label htmlFor="bansos-relationship" className={labelClass}>Hubungan keluarga</label>
-                    <OptionSelect
-                      id="bansos-relationship"
-                      value={relationship}
-                      placeholder="Pilih hubungan"
-                      onValueChange={(value) => { setRelationship(value); edited(); }}
-                      options={RELATIONSHIP_OPTIONS}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label htmlFor="bansos-subject" className={labelClass}>Nama almarhum/almarhumah</label>
-                    <Input id="bansos-subject" value={subjectName} maxLength={120}
-                      onChange={(event) => { setSubjectName(event.target.value); edited(); }} className={inputClass} />
-                  </div>
-                  <div className="space-y-2">
-                    <label htmlFor="bansos-date" className={labelClass}>Tanggal meninggal</label>
-                    <Input id="bansos-date" type="date" max={today} value={eventDate}
-                      onChange={(event) => { setEventDate(event.target.value); edited(); }} className={inputClass} />
-                  </div>
-                </div>
-              )}
 
               {kind === 'melahirkan' && (
                 <div className="grid gap-4 sm:grid-cols-2">
